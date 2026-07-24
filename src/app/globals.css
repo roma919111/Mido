@@ -1,0 +1,114 @@
+@import "tailwindcss";
+
+:root {
+  --background: #07090d;
+  --foreground: #f3f5f7;
+  --accent: #2ee6a6;
+  --accent-2: #ffb05c;
+  --accent-strong: #57f0ba;
+  --surface-elevated: #171b24;
+  --font-display: var(--font-syne), ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-body);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body);
+}
+
+.studio-backdrop {
+  background:
+    radial-gradient(1200px 600px at 12% -10%, rgba(46, 230, 166, 0.16), transparent 55%),
+    radial-gradient(900px 500px at 90% 0%, rgba(255, 176, 92, 0.12), transparent 50%),
+    radial-gradient(700px 500px at 50% 100%, rgba(80, 120, 255, 0.08), transparent 55%),
+    linear-gradient(180deg, #0a0d13 0%, #07090d 45%, #05070a 100%);
+}
+
+.studio-backdrop::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse at center, black 20%, transparent 75%);
+  opacity: 0.45;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-18px);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animation-delay-1 {
+  animation-delay: 0.08s;
+}
+
+.animation-delay-2 {
+  animation-delay: 0.16s;
+}
+
+.animate-float {
+  animation: float 9s ease-in-out infinite;
+}
+
+.animate-float-delayed {
+  animation: float 11s ease-in-out infinite;
+  animation-delay: 1.2s;
+}
+
+.animate-shimmer {
+  animation: shimmer 2.8s linear infinite;
+}
+
+select option {
+  background: #12151c;
+  color: #f3f5f7;
+}
