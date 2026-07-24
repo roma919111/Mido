@@ -1,64 +1,36 @@
 import { NextResponse } from "next/server";
-import {
-  callOpenArtTool,
-  isOpenArtConfigured,
-  OpenArtConfigError,
-  parseToolPayload,
-} from "@/lib/openart-mcp";
+import { getCurrentUser } from "@/lib/auth/session";
+import { repository } from "@/lib/db/repository";
+import { isOpenArtConfigured } from "@/lib/openart-mcp";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 export const runtime = "nodejs";
 
 export async function GET() {
-  if (!isOpenArtConfigured()) {
+  const user = await getCurrentUser();
+  if (!user) {
     return NextResponse.json({
       configured: false,
-      credits: 100,
-      plan: "Demo",
-      email: undefined,
-      message:
-        "Set OPENART_ACCESS_TOKEN to connect your OpenArt account. Showing demo credits until then.",
+      authenticated: false,
+      credits: 0,
+      plan: "Guest",
+      openArtConfigured: isOpenArtConfigured(),
+      supabaseConfigured: isSupabaseConfigured(),
     });
   }
 
-  try {
-    const result = await callOpenArtTool("openart_account_get");
-    if (result.isError) {
-      const payload = parseToolPayload(result);
-      return NextResponse.json(
-        {
-          configured: true,
-          error: payload.rawText ?? "Failed to load OpenArt account",
-        },
-        { status: 502 },
-      );
-    }
+  const transactions = await repository.listTransactions(user.id, 8);
 
-    const payload = parseToolPayload(result);
-    const user = (payload.user as Record<string, unknown> | undefined) ?? payload;
-    const credits =
-      typeof payload.credits === "number"
-        ? payload.credits
-        : typeof user.credits === "number"
-          ? user.credits
-          : 0;
-
-    return NextResponse.json({
-      configured: true,
-      credits,
-      plan: (payload.plan as string | undefined) ?? (user.plan as string | undefined) ?? "Free",
-      email: (user.email as string | undefined) ?? (payload.email as string | undefined),
-    });
-  } catch (error) {
-    if (error instanceof OpenArtConfigError) {
-      return NextResponse.json({ configured: false, credits: 100, error: error.message }, { status: 401 });
-    }
-
-    return NextResponse.json(
-      {
-        configured: true,
-        error: error instanceof Error ? error.message : "Account lookup failed",
-      },
-      { status: 500 },
-    );
-  }
+  return NextResponse.json({
+    configured: true,
+    authenticated: true,
+    credits: user.credits,
+    plan: user.subscriptionTier,
+    email: user.email,
+    fullName: user.fullName,
+    avatarUrl: user.avatarUrl,
+    openArtConfigured: isOpenArtConfigured(),
+    supabaseConfigured: isSupabaseConfigured(),
+    transactions,
+  });
 }

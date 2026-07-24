@@ -1,55 +1,64 @@
 # Studio AI
 
-A modern Next.js (App Router) studio for generating **AI images** and **AI videos** powered by [OpenArt MCP](https://mcp.openart.ai/mcp).
+A professional **OpenArt.ai-inspired** creator studio built with Next.js App Router, Tailwind CSS, Lucide icons, Supabase, and OpenArt MCP.
 
 ## Features
 
-- Dark **Studio AI** workbench UI (Tailwind CSS)
-- Mode switcher: Text-to-Image · Text-to-Video · Image-to-Video
-- Prompt editor with **Enhance Prompt with AI**
-- Start Frame + Reference Image dropzones
-- Video duration (5s / 10s) and quality (720p / 1080p)
-- Credit balance + Upgrade CTA
-- Media gallery with video player, download, and copy-prompt
-- Next.js API routes using `@modelcontextprotocol/sdk` → `https://mcp.openart.ai/mcp`
+- Dark OpenArt-style shell: pitch-black canvas (`#0B0F17`), cyan neon accents, glassmorphism header/sidebar
+- Left navigation: Home, Create/Generate, Community Feed, Workflows, Models, My Library, Settings
+- Generation workbench: Text to Image, Text to Video, Image to Video, Inpaint / Edit
+- Prompt tools: AI Enhance, Negative Prompt, Style Presets, Aspect Ratios, video duration/resolution
+- Supabase auth + PostgreSQL schema for users, credits, generations, favorites
+- Local demo auth/database fallback when Supabase env vars are not set
+- OpenArt MCP generation via `@modelcontextprotocol/sdk`
+- Community / private masonry feeds with download, copy prompt, reuse settings, like
+- Upgrade modal: Free ($0 / 50), Pro ($15 / 1000), Master ($35 / 3500)
 
 ## Quick start
 
 ```bash
 npm install
 cp .env.example .env.local
-# add OPENART_ACCESS_TOKEN
 npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Without `OPENART_ACCESS_TOKEN`, the app runs in **demo mode** (sample media + local credit counter) so the UI stays fully usable.
+### Local demo mode (default)
 
-## OpenArt auth
+If Supabase is not configured, Studio AI stores customers in `.data/studio-db.json`:
 
-OpenArt MCP authenticates via OAuth (no long-lived API key). After you connect `https://mcp.openart.ai/mcp` in an MCP-compatible client and sign in, set:
+1. Sign up at `/signup` (starts with **50 credits**)
+2. Generate on `/create` (image **-2**, video **-10**)
+3. Browse `/community` and `/library`
+
+### Supabase mode
+
+1. Create a Supabase project
+2. Run `supabase/schema.sql` in the SQL editor
+3. Set:
 
 ```env
-OPENART_ACCESS_TOKEN=your_bearer_token
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...
+```
+
+### OpenArt MCP
+
+```env
+OPENART_ACCESS_TOKEN=your_oauth_bearer_token
 OPENART_MCP_URL=https://mcp.openart.ai/mcp
 ```
 
-## API routes
+Without an OpenArt token, generations still succeed in demo mode with sample media and are saved to the customer library.
 
-| Route | Purpose |
+## Credit costs
+
+| Action | Credits |
 | --- | --- |
-| `GET /api/account` | Credits / plan via `openart_account_get` |
-| `POST /api/enhance` | Prompt enhancement |
-| `POST /api/upload` | Sign + PUT reference images via `openart_upload_sign` |
-| `POST /api/generate` | `openart_generate_image` / `openart_generate_video` + wait |
-| `GET /api/status` | Poll `openart_creation_get` |
-| `GET /api/creations` | List history via `openart_creation_list` |
-
-## Models used
-
-- **Image:** `nano-banana-2-lite` (`text2image` / `image2image`)
-- **Video:** `pixverseV6` (`text2video` / `image2video`) with Standard `720p` or Pro `1080p`
+| Generate Image / Inpaint | 2 |
+| Generate Video | 10 |
 
 ## Scripts
 

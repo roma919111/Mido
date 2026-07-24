@@ -1,90 +1,122 @@
-import type { GenerationMode, VideoDuration, VideoQuality, VisualReference } from "./types";
+import type {
+  AspectRatio,
+  GenerationMode,
+  StylePreset,
+  VideoDuration,
+  VideoQuality,
+  VisualReference,
+} from "./types";
 
 export const IMAGE_MODEL = "nano-banana-2-lite";
 export const VIDEO_MODEL = "pixverseV6";
 
-export const CREDIT_COSTS = {
-  image: 15,
-  video: {
-    standard: { 5: 70, 10: 140 } as Record<VideoDuration, number>,
-    pro: { 5: 150, 10: 300 } as Record<VideoDuration, number>,
-  },
+/** App-facing credit costs (Studio AI wallet). */
+export const APP_CREDIT_COSTS = {
+  image: 2,
+  video: 10,
+  inpaint: 2,
 } as const;
 
-export function estimateCredits(
-  mode: GenerationMode,
-  duration: VideoDuration = 5,
-  quality: VideoQuality = "standard",
-): number {
-  if (mode === "text-to-image") return CREDIT_COSTS.image;
-  return CREDIT_COSTS.video[quality][duration];
+export const STYLE_PRESET_PROMPTS: Record<Exclude<StylePreset, "none">, string> = {
+  cinematic:
+    "cinematic lighting, anamorphic lens feel, film color grade, dramatic atmosphere",
+  anime: "anime illustration style, clean linework, vibrant cel shading, expressive eyes",
+  photorealistic:
+    "photorealistic photography, natural skin texture, accurate lighting, 85mm lens",
+  cyberpunk:
+    "cyberpunk neon nightlife, holographic accents, rainy reflective streets, futuristic city",
+  "3d-render":
+    "octane 3d render, subsurface scattering, crisp materials, studio product lighting",
+};
+
+export function estimateAppCredits(mode: GenerationMode): number {
+  if (mode === "text-to-image" || mode === "inpaint") return APP_CREDIT_COSTS.image;
+  return APP_CREDIT_COSTS.video;
 }
 
 export function qualityToResolution(quality: VideoQuality): "720p" | "1080p" {
   return quality === "pro" ? "1080p" : "720p";
 }
 
-export function getModelConfig(mode: GenerationMode): { model: string; toolMode: string; media: "image" | "video" } {
-  switch (mode) {
-    case "text-to-image":
-      return { model: IMAGE_MODEL, toolMode: "text2image", media: "image" };
-    case "text-to-video":
-      return { model: VIDEO_MODEL, toolMode: "text2video", media: "video" };
-    case "image-to-video":
-      return { model: VIDEO_MODEL, toolMode: "image2video", media: "video" };
-  }
+export function applyStyleToPrompt(prompt: string, style: StylePreset = "none"): string {
+  if (!style || style === "none") return prompt.trim();
+  const suffix = STYLE_PRESET_PROMPTS[style];
+  if (!suffix) return prompt.trim();
+  if (prompt.toLowerCase().includes(suffix.slice(0, 18).toLowerCase())) return prompt.trim();
+  return `${prompt.trim()}. ${suffix}`;
 }
 
 export function buildGenerationParams(input: {
   mode: GenerationMode;
   prompt: string;
-  duration: VideoDuration;
-  quality: VideoQuality;
+  negativePrompt?: string;
+  stylePreset?: StylePreset;
+  aspectRatio?: AspectRatio;
+  duration?: VideoDuration;
+  quality?: VideoQuality;
   startFrame?: VisualReference | null;
   referenceImage?: VisualReference | null;
 }): { model: string; toolMode: string; media: "image" | "video"; params: Record<string, unknown> } {
-  const { model, toolMode, media } = getModelConfig(input.mode);
-  const resolution = qualityToResolution(input.quality);
+  const prompt = applyStyleToPrompt(input.prompt, input.stylePreset ?? "none");
+  const aspectRatio = input.aspectRatio ?? "1:1";
+  const duration = input.duration ?? 5;
+  const resolution = qualityToResolution(input.quality ?? "standard");
 
-  if (input.mode === "text-to-image") {
+  if (input.mode === "text-to-image" || input.mode === "inpaint") {
     const params: Record<string, unknown> = {
-      prompt: input.prompt,
+      prompt:
+        input.mode === "inpaint"
+          ? `${prompt}. Carefully edit the provided reference while preserving composition.`
+          : prompt,
       imageCount: 1,
-      aspectRatio: "1:1",
+      aspectRatio,
       autoEnhancePrompt: false,
     };
 
-    if (input.referenceImage) {
+    if (input.negativePrompt?.trim()) {
+      params.negativePrompt = input.negativePrompt.trim();
+    }
+
+    if (input.referenceImage || input.startFrame) {
+      const ref = input.referenceImage ?? input.startFrame;
       return {
-        model,
+        model: IMAGE_MODEL,
         toolMode: "image2image",
         media: "image",
         params: {
           ...params,
-          visualReferences: [input.referenceImage],
+          visualReferences: [ref],
         },
       };
     }
 
-    return { model, toolMode, media, params };
+    return {
+      model: IMAGE_MODEL,
+      toolMode: "text2image",
+      media: "image",
+      params,
+    };
   }
 
   if (input.mode === "text-to-video") {
     const styleHint = input.referenceImage
-      ? ` Match the visual style and subject identity from the reference image (${input.referenceImage.label}).`
+      ? ` Match the visual style from reference (${input.referenceImage.label}).`
       : "";
 
-    const params: Record<string, unknown> = {
-      prompt: `${input.prompt}${styleHint}`.trim(),
-      videoCount: 1,
-      duration: input.duration,
-      resolution,
-      aspectRatio: "16:9",
-      generateAudio: false,
-      autoEnhancePrompt: false,
+    return {
+      model: VIDEO_MODEL,
+      toolMode: "text2video",
+      media: "video",
+      params: {
+        prompt: `${prompt}${styleHint}`.trim(),
+        videoCount: 1,
+        duration,
+        resolution,
+        aspectRatio: aspectRatio === "1:1" || aspectRatio === "4:3" ? "16:9" : aspectRatio,
+        generateAudio: false,
+        autoEnhancePrompt: false,
+      },
     };
-
-    return { model, toolMode, media, params };
   }
 
   if (!input.startFrame) {
@@ -92,14 +124,14 @@ export function buildGenerationParams(input: {
   }
 
   return {
-    model,
-    toolMode,
-    media,
+    model: VIDEO_MODEL,
+    toolMode: "image2video",
+    media: "video",
     params: {
-      prompt: input.prompt,
+      prompt,
       videoCount: 1,
       startFrame: input.startFrame,
-      duration: input.duration,
+      duration,
       resolution,
       generateAudio: false,
     },
