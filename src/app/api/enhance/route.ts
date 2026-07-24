@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { enhancePrompt } from "@/lib/prompt-enhance";
+import { enhancePrompt, enhancePromptVariant } from "@/lib/prompt-enhance";
 import type { GenerationMode } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
       enhanced,
       variants: [
         enhanced,
-        enhancePrompt(`${prompt}. Emphasize mood and texture.`, mode),
+        enhancePromptVariant(prompt, mode, "Emphasize mood and texture"),
         prompt,
       ],
     });

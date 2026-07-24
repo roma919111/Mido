@@ -39,5 +39,10 @@ export function enhancePrompt(prompt: string, mode: string): string {
       ? "Centered subject, intentional framing"
       : "Smooth camera movement, temporally consistent subject";
 
-  return `${cleaned}. ${framing}, ${style}, ${suffix}.`;
+  return `${cleaned.replace(/\.$/, "")}. ${framing}, ${style}, ${suffix}.`;
+}
+
+export function enhancePromptVariant(prompt: string, mode: string, emphasis: string): string {
+  const base = prompt.trim().replace(/\s+/g, " ").replace(/\.$/, "");
+  return enhancePrompt(`${base}. ${emphasis}`, mode);
 }

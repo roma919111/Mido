@@ -70,8 +70,12 @@ export function buildGenerationParams(input: {
   }
 
   if (input.mode === "text-to-video") {
+    const styleHint = input.referenceImage
+      ? ` Match the visual style and subject identity from the reference image (${input.referenceImage.label}).`
+      : "";
+
     const params: Record<string, unknown> = {
-      prompt: input.prompt,
+      prompt: `${input.prompt}${styleHint}`.trim(),
       videoCount: 1,
       duration: input.duration,
       resolution,
@@ -79,11 +83,6 @@ export function buildGenerationParams(input: {
       generateAudio: false,
       autoEnhancePrompt: false,
     };
-
-    if (input.referenceImage) {
-      // PixVerse text2video doesn't take references; fall through with prompt only.
-      // Style guidance is folded into the prompt on the client/API.
-    }
 
     return { model, toolMode, media, params };
   }

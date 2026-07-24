@@ -50,7 +50,7 @@ export function StudioApp() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
   const [account, setAccount] = useState<AccountInfo>({
-    credits: 10,
+    credits: 100,
     configured: false,
     plan: "Demo",
   });
@@ -83,7 +83,7 @@ export function StudioApp() {
         return;
       }
       setAccount({
-        credits: typeof data.credits === "number" ? data.credits : 10,
+        credits: typeof data.credits === "number" ? data.credits : 100,
         configured: Boolean(data.configured),
         plan: data.plan,
         email: data.email,

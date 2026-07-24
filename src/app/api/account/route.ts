@@ -12,7 +12,7 @@ export async function GET() {
   if (!isOpenArtConfigured()) {
     return NextResponse.json({
       configured: false,
-      credits: 10,
+      credits: 100,
       plan: "Demo",
       email: undefined,
       message:
@@ -50,7 +50,7 @@ export async function GET() {
     });
   } catch (error) {
     if (error instanceof OpenArtConfigError) {
-      return NextResponse.json({ configured: false, credits: 10, error: error.message }, { status: 401 });
+      return NextResponse.json({ configured: false, credits: 100, error: error.message }, { status: 401 });
     }
 
     return NextResponse.json(
