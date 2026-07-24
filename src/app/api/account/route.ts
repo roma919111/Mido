@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { DEFAULT_DEMO_CREDITS } from "@/lib/models";
 import {
   callOpenArtTool,
   isOpenArtConfigured,
@@ -12,11 +13,11 @@ export async function GET() {
   if (!isOpenArtConfigured()) {
     return NextResponse.json({
       configured: false,
-      credits: 100,
+      credits: DEFAULT_DEMO_CREDITS,
       plan: "Demo",
       email: undefined,
       message:
-        "Set OPENART_ACCESS_TOKEN to connect your OpenArt account. Showing demo credits until then.",
+        "Set OPENART_ACCESS_TOKEN to connect your OpenArt account. Showing 10 free demo credits until then.",
     });
   }
 
@@ -50,7 +51,10 @@ export async function GET() {
     });
   } catch (error) {
     if (error instanceof OpenArtConfigError) {
-      return NextResponse.json({ configured: false, credits: 100, error: error.message }, { status: 401 });
+      return NextResponse.json(
+        { configured: false, credits: DEFAULT_DEMO_CREDITS, error: error.message },
+        { status: 401 },
+      );
     }
 
     return NextResponse.json(

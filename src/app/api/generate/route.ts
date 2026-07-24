@@ -70,7 +70,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const creditsUsed = estimateCredits(mode, duration, quality);
+    const creditsUsed = estimateCredits(
+      mode,
+      duration,
+      quality,
+      isOpenArtConfigured() ? "openart" : "demo",
+    );
 
     if (!isOpenArtConfigured()) {
       // Demo path so the UI remains usable without credentials.

@@ -3,7 +3,17 @@ import type { GenerationMode, VideoDuration, VideoQuality, VisualReference } fro
 export const IMAGE_MODEL = "nano-banana-2-lite";
 export const VIDEO_MODEL = "pixverseV6";
 
-export const CREDIT_COSTS = {
+/** Local demo meter so the UI stays usable without OpenArt credits. */
+export const DEMO_CREDIT_COSTS = {
+  image: 1,
+  video: {
+    standard: { 5: 2, 10: 3 } as Record<VideoDuration, number>,
+    pro: { 5: 3, 10: 4 } as Record<VideoDuration, number>,
+  },
+} as const;
+
+/** Approximate OpenArt costs for the models/modes used by this app. */
+export const OPENART_CREDIT_COSTS = {
   image: 15,
   video: {
     standard: { 5: 70, 10: 140 } as Record<VideoDuration, number>,
@@ -11,20 +21,30 @@ export const CREDIT_COSTS = {
   },
 } as const;
 
+export const DEFAULT_DEMO_CREDITS = 10;
+
+export type CreditPricing = "demo" | "openart";
+
 export function estimateCredits(
   mode: GenerationMode,
   duration: VideoDuration = 5,
   quality: VideoQuality = "standard",
+  pricing: CreditPricing = "demo",
 ): number {
-  if (mode === "text-to-image") return CREDIT_COSTS.image;
-  return CREDIT_COSTS.video[quality][duration];
+  const table = pricing === "openart" ? OPENART_CREDIT_COSTS : DEMO_CREDIT_COSTS;
+  if (mode === "text-to-image") return table.image;
+  return table.video[quality][duration];
 }
 
 export function qualityToResolution(quality: VideoQuality): "720p" | "1080p" {
   return quality === "pro" ? "1080p" : "720p";
 }
 
-export function getModelConfig(mode: GenerationMode): { model: string; toolMode: string; media: "image" | "video" } {
+export function getModelConfig(mode: GenerationMode): {
+  model: string;
+  toolMode: string;
+  media: "image" | "video";
+} {
   switch (mode) {
     case "text-to-image":
       return { model: IMAGE_MODEL, toolMode: "text2image", media: "image" };
@@ -47,11 +67,11 @@ export function buildGenerationParams(input: {
   const resolution = qualityToResolution(input.quality);
 
   if (input.mode === "text-to-image") {
+    // nano-banana-2-lite schemas set additionalProperties:false — only send known fields.
     const params: Record<string, unknown> = {
       prompt: input.prompt,
       imageCount: 1,
       aspectRatio: "1:1",
-      autoEnhancePrompt: false,
     };
 
     if (input.referenceImage) {
@@ -74,17 +94,19 @@ export function buildGenerationParams(input: {
       ? ` Match the visual style and subject identity from the reference image (${input.referenceImage.label}).`
       : "";
 
-    const params: Record<string, unknown> = {
-      prompt: `${input.prompt}${styleHint}`.trim(),
-      videoCount: 1,
-      duration: input.duration,
-      resolution,
-      aspectRatio: "16:9",
-      generateAudio: false,
-      autoEnhancePrompt: false,
+    return {
+      model,
+      toolMode,
+      media,
+      params: {
+        prompt: `${input.prompt}${styleHint}`.trim(),
+        videoCount: 1,
+        duration: input.duration,
+        resolution,
+        aspectRatio: "16:9",
+        generateAudio: false,
+      },
     };
-
-    return { model, toolMode, media, params };
   }
 
   if (!input.startFrame) {

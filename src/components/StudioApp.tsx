@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { estimateCredits } from "@/lib/models";
+import { DEFAULT_DEMO_CREDITS, estimateCredits } from "@/lib/models";
 import type {
   AccountInfo,
   GalleryItem,
@@ -20,6 +20,7 @@ import { PromptInput } from "./PromptInput";
 import { VideoControls } from "./VideoControls";
 
 const GALLERY_KEY = "studio-ai-gallery-v1";
+const CREDITS_KEY = "studio-ai-demo-credits-v1";
 
 function loadGallery(): GalleryItem[] {
   if (typeof window === "undefined") return [];
@@ -31,6 +32,23 @@ function loadGallery(): GalleryItem[] {
   } catch {
     return [];
   }
+}
+
+function loadDemoCredits(): number {
+  if (typeof window === "undefined") return DEFAULT_DEMO_CREDITS;
+  try {
+    const raw = window.localStorage.getItem(CREDITS_KEY);
+    if (raw == null) return DEFAULT_DEMO_CREDITS;
+    const value = Number(raw);
+    return Number.isFinite(value) ? Math.max(0, value) : DEFAULT_DEMO_CREDITS;
+  } catch {
+    return DEFAULT_DEMO_CREDITS;
+  }
+}
+
+function saveDemoCredits(credits: number) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(CREDITS_KEY, String(Math.max(0, credits)));
 }
 
 export function StudioApp() {
@@ -50,13 +68,14 @@ export function StudioApp() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
   const [account, setAccount] = useState<AccountInfo>({
-    credits: 100,
+    credits: DEFAULT_DEMO_CREDITS,
     configured: false,
     plan: "Demo",
   });
 
   useEffect(() => {
     setGallery(loadGallery());
+    setAccount((prev) => ({ ...prev, credits: loadDemoCredits() }));
   }, []);
 
   useEffect(() => {
@@ -64,12 +83,78 @@ export function StudioApp() {
   }, [gallery]);
 
   useEffect(() => {
+    if (!account.configured) {
+      saveDemoCredits(account.credits);
+    }
+  }, [account.credits, account.configured]);
+
+  useEffect(() => {
     void refreshAccount();
   }, []);
 
+  // Poll OpenArt for any in-progress gallery items.
+  useEffect(() => {
+    const pending = gallery.filter(
+      (item) =>
+        (item.status === "pending" || item.status === "running") &&
+        item.historyId &&
+        !item.historyId.startsWith("demo_") &&
+        !item.historyId.startsWith("local_"),
+    );
+
+    if (pending.length === 0) return;
+
+    let cancelled = false;
+
+    const poll = async () => {
+      for (const item of pending) {
+        try {
+          const res = await fetch(`/api/status?historyId=${encodeURIComponent(item.historyId)}`);
+          if (!res.ok || cancelled) continue;
+          const data = await res.json();
+          const status = String(data.status ?? "").toUpperCase();
+          const url = (data.urls as string[] | undefined)?.[0] ?? "";
+
+          if (status === "COMPLETED" || url) {
+            setGallery((prev) =>
+              prev.map((row) =>
+                row.historyId === item.historyId
+                  ? { ...row, status: "completed", url: url || row.url }
+                  : row,
+              ),
+            );
+          } else if (status === "FAILED" || status === "CANCELLED") {
+            setGallery((prev) =>
+              prev.map((row) =>
+                row.historyId === item.historyId
+                  ? {
+                      ...row,
+                      status: status === "CANCELLED" ? "cancelled" : "failed",
+                      error: data.error || "Generation failed",
+                    }
+                  : row,
+              ),
+            );
+          }
+        } catch {
+          // keep polling
+        }
+      }
+    };
+
+    void poll();
+    const id = window.setInterval(() => void poll(), 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [gallery]);
+
+  const pricing = account.configured ? "openart" : "demo";
+
   const creditCost = useMemo(
-    () => estimateCredits(mode, duration, quality),
-    [mode, duration, quality],
+    () => estimateCredits(mode, duration, quality, pricing),
+    [mode, duration, quality, pricing],
   );
 
   const isVideoMode = mode !== "text-to-image";
@@ -79,15 +164,32 @@ export function StudioApp() {
       const res = await fetch("/api/account");
       const data = (await res.json()) as AccountInfo & { error?: string; message?: string };
       if (!res.ok) {
-        setAccount((prev) => ({ ...prev, configured: false }));
+        setAccount((prev) => ({
+          ...prev,
+          configured: false,
+          credits: loadDemoCredits(),
+          plan: "Demo",
+        }));
         return;
       }
-      setAccount({
-        credits: typeof data.credits === "number" ? data.credits : 100,
-        configured: Boolean(data.configured),
-        plan: data.plan,
-        email: data.email,
-      });
+
+      if (data.configured) {
+        setAccount({
+          credits: typeof data.credits === "number" ? data.credits : 0,
+          configured: true,
+          plan: data.plan,
+          email: data.email,
+        });
+      } else {
+        setAccount((prev) => ({
+          ...prev,
+          credits: loadDemoCredits(),
+          configured: false,
+          plan: "Demo",
+          email: undefined,
+        }));
+      }
+
       if (data.message) setStatusMessage(data.message);
     } catch {
       // keep demo credits
@@ -187,7 +289,11 @@ export function StudioApp() {
 
     setGenerating(true);
     setError(null);
-    setStatusMessage("Sending request to OpenArt MCP…");
+    setStatusMessage(
+      account.configured
+        ? "Sending request to OpenArt MCP…"
+        : "Running demo generation…",
+    );
 
     const optimisticId = `local_${Date.now()}`;
     const optimistic: GalleryItem = {
@@ -256,9 +362,11 @@ export function StudioApp() {
       if (data.message) setStatusMessage(data.message);
       else if (status === "completed") setStatusMessage("Generation complete.");
       else if (status === "failed") setError(data.error || "Generation failed");
-      else setStatusMessage("Still generating on OpenArt — refresh status shortly.");
+      else setStatusMessage("Still generating on OpenArt — status will refresh automatically.");
 
-      await refreshAccount();
+      if (account.configured) {
+        await refreshAccount();
+      }
     } catch (err) {
       setAccount((prev) => ({ ...prev, credits: prev.credits + creditCost }));
       setGallery((prev) =>

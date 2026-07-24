@@ -24,7 +24,7 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Without `OPENART_ACCESS_TOKEN`, the app runs in **demo mode** (sample media + local credit counter) so the UI stays fully usable.
+Without `OPENART_ACCESS_TOKEN`, the app runs in **demo mode** (sample media + **10 Free Credits**) so the UI stays fully usable. Demo costs: image `1`, video `2–4` credits depending on duration/quality.
 
 ## OpenArt auth
 
