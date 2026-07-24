@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Outfit, Syne } from "next/font/google";
+import { AppProviders } from "@/components/providers/AppProviders";
 import "./globals.css";
 
 const syne = Syne({
@@ -15,9 +16,9 @@ const outfit = Outfit({
 });
 
 export const metadata: Metadata = {
-  title: "Studio AI — OpenArt Image & Video Generator",
+  title: "Studio AI — OpenArt Creator Studio",
   description:
-    "Modern dark-mode studio for generating AI images and videos powered by OpenArt MCP.",
+    "Professional OpenArt-inspired studio for AI image and video generation with Supabase auth, credits, and private libraries.",
 };
 
 export default function RootLayout({
@@ -27,7 +28,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${syne.variable} ${outfit.variable} h-full antialiased`}>
-      <body className="min-h-full font-sans">{children}</body>
+      <body className="min-h-full font-sans">
+        <AppProviders>{children}</AppProviders>
+      </body>
     </html>
   );
 }
