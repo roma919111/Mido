@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/customer-auth";
-import { getPlan, getTopUp, type PlanId } from "@/lib/plans";
+import {
+  canPurchasePlan,
+  getPlan,
+  getTopUp,
+  isHighestPlan,
+  type PlanId,
+} from "@/lib/plans";
 import {
   createCheckoutSession,
   createTopUpCheckoutSession,
@@ -52,6 +58,36 @@ export async function POST(request: Request) {
     const plan = getPlan(planId);
     if (!plan || !planId) {
       return NextResponse.json({ error: "Invalid plan" }, { status: 400 });
+    }
+
+    if (user.planId === planId) {
+      return NextResponse.json(
+        {
+          error: "هذه باقتك الحالية. يمكنك الترقية للباقة الأعلى أو إضافة كريدت.",
+          code: "same_plan",
+        },
+        { status: 409 },
+      );
+    }
+
+    if (isHighestPlan(user.planId)) {
+      return NextResponse.json(
+        {
+          error: "أنت على أعلى باقة. أضف كريدت من حزم الشحن الإضافي.",
+          code: "highest_plan_topup_only",
+        },
+        { status: 409 },
+      );
+    }
+
+    if (!canPurchasePlan(user.planId, planId)) {
+      return NextResponse.json(
+        {
+          error: "لا يمكن الرجوع لباقة أدنى. الترقية متاحة للباقة الأعلى فقط.",
+          code: "downgrade_blocked",
+        },
+        { status: 409 },
+      );
     }
 
     if (!(await isStripeConfigured())) {
