@@ -17,6 +17,8 @@ export interface UserRecord {
   avatarUrl?: string;
   credits: number;
   planId: PlanId;
+  /** One free 9s Veronix video already used */
+  freeVeronixUsed?: boolean;
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
   createdAt: string;
@@ -105,6 +107,7 @@ export async function createUser(input: {
     avatarUrl: input.avatarUrl,
     credits: 0,
     planId: null,
+    freeVeronixUsed: false,
     createdAt: now,
     updatedAt: now,
   };
@@ -216,6 +219,7 @@ export function publicUser(user: UserRecord) {
     name: user.name,
     credits: user.credits,
     planId: user.planId,
+    freeVeronixUsed: Boolean(user.freeVeronixUsed),
     createdAt: user.createdAt,
   };
 }

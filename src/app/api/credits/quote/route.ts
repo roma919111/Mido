@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
+import { getCurrentUser } from "@/lib/customer-auth";
 import { quoteMultipleModels } from "@/lib/credit-quote";
+import {
+  FREE_VERONIX_DURATION_SECONDS,
+  isFreeVeronixEligible,
+  VERONIX_MODEL_ID,
+} from "@/lib/free-trial";
 import { OpenArtConfigError } from "@/lib/openart-mcp";
 
 export const runtime = "nodejs";
@@ -16,35 +22,58 @@ export async function POST(request: Request) {
       generateAudio?: boolean;
     };
 
-    const modelIds = body.modelIds?.filter(Boolean) ?? [];
+    const modelIds = body.modelIds?.filter(Boolean) ?? [VERONIX_MODEL_ID];
     if (!modelIds.length) {
       return NextResponse.json({ error: "modelIds required" }, { status: 400 });
     }
 
-    const media = body.media ?? "image";
+    const media = body.media ?? "video";
+    const duration = body.duration ?? FREE_VERONIX_DURATION_SECONDS;
     const result = await quoteMultipleModels(
       modelIds,
       {
         media,
-        mode:
-          body.mode ||
-          (media === "image" ? "text2image" : "text2video"),
+        mode: body.mode || (media === "image" ? "text2image" : "text2video"),
         aspectRatio: body.aspectRatio,
         resolution: body.resolution,
-        duration: body.duration,
+        duration,
         generateAudio: body.generateAudio,
       },
       { allowCache: true },
     );
 
-    const allLive = result.quotes.every(
+    const user = await getCurrentUser();
+    const freeTrial = isFreeVeronixEligible(user, {
+      modelId: modelIds[0],
+      media,
+      duration,
+    });
+
+    const quotes = result.quotes.map((q) => ({
+      ...q,
+      openArtCredits: q.openArtCredits,
+      listPriceCredits: q.totalCredits,
+      totalCredits: freeTrial ? 0 : q.totalCredits,
+      unitCredits: freeTrial ? 0 : q.unitCredits,
+      freeTrial,
+      pricingNote: freeTrial
+        ? `مجاني لأول مرة (فيديو Veronix ${FREE_VERONIX_DURATION_SECONDS} ثوانٍ). السعر العادي بعد التجربة: ${q.totalCredits} كريدت (OpenArt × 1.8).`
+        : q.pricingNote,
+    }));
+    const totalCredits = quotes.reduce((sum, q) => sum + q.totalCredits, 0);
+
+    const allLive = quotes.every(
       (q) => (q.source === "openart" || q.source === "openart-cache") && q.available,
     );
     return NextResponse.json({
-      ...result,
+      quotes,
+      totalCredits,
+      listPriceCredits: result.totalCredits,
+      freeTrial,
+      freeVeronixUsed: Boolean(user?.freeVeronixUsed),
       multiplier: result.multiplier,
       source: allLive
-        ? result.quotes.every((q) => q.source === "openart")
+        ? quotes.every((q) => q.source === "openart")
           ? "openart"
           : "openart-cache"
         : "mixed",
@@ -58,7 +87,6 @@ export async function POST(request: Request) {
         (/not connected|غير متصل|setup\/openart/i.test(error.message) ||
           Boolean((error as { needsAuth?: boolean }).needsAuth)));
 
-    // Use 422 (not 500) so Cloudflare tunnels don't replace the JSON body with HTML.
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : "Quote failed",

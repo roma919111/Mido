@@ -10,6 +10,7 @@ export interface CustomerUser {
   name: string;
   credits: number;
   planId: string | null;
+  freeVeronixUsed?: boolean;
 }
 
 interface AppHeaderProps {
