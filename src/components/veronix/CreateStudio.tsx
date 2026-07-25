@@ -20,8 +20,13 @@ import {
 } from "@/lib/free-trial";
 import type { VisualReference } from "@/lib/types";
 import { fetchJson } from "@/lib/fetch-json";
+import { veronixDownloadPath } from "@/lib/media-proxy";
 import { ModelsModal } from "./ModelsModal";
 import type { CustomerUser } from "./AppHeader";
+
+/** Poll long enough for slow Seedance/OpenArt jobs (~15 min). */
+const PREVIEW_POLL_ATTEMPTS = 180;
+const PREVIEW_POLL_MS = 5000;
 
 const ASPECTS = ["9:16", "16:9", "1:1", "4:3", "3:4"] as const;
 const RESOLUTIONS = ["360p", "480p", "720p", "1080p", "1K"] as const;
@@ -67,6 +72,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     status: "running" | "completed" | "failed";
   } | null>(null);
   const [shareNote, setShareNote] = useState<string | null>(null);
+  const [genStartedAt, setGenStartedAt] = useState<number | null>(null);
+  const [elapsedSec, setElapsedSec] = useState(0);
+
+  const waitingResult = generating || preview?.status === "running";
 
   const allModels = useMemo(
     () => [...imageModels, ...videoModels],
@@ -77,6 +86,19 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   useEffect(() => {
     if (lockedMedia) setMedia(lockedMedia);
   }, [lockedMedia]);
+
+  useEffect(() => {
+    if (!waitingResult || genStartedAt == null) {
+      if (!waitingResult) setElapsedSec(0);
+      return;
+    }
+    const tick = () => {
+      setElapsedSec(Math.max(0, Math.floor((Date.now() - genStartedAt) / 1000)));
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [waitingResult, genStartedAt]);
 
   useEffect(() => {
     void (async () => {
@@ -297,52 +319,76 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     }
   }
 
-  async function pollPreview(historyId: string, mediaType: "image" | "video") {
-    for (let i = 0; i < 40; i += 1) {
-      await new Promise((r) => setTimeout(r, 3000));
-      const { res, data } = await fetchJson<{
-        status?: string;
-        urls?: string[];
-        error?: string;
-      }>(`/api/status?historyId=${encodeURIComponent(historyId)}`);
-      if (!res.ok) continue;
-      const st = String(data.status || "").toUpperCase();
-      const url = data.urls?.[0];
-      if (url) {
-        setPreview({ url, mediaType, historyId, status: "completed" });
-        setStatus(null);
-        return;
+  async function pollPreview(
+    historyId: string,
+    mediaType: "image" | "video",
+    startedAt: number,
+  ) {
+    for (let i = 0; i < PREVIEW_POLL_ATTEMPTS; i += 1) {
+      await new Promise((r) => setTimeout(r, PREVIEW_POLL_MS));
+      try {
+        const { res, data } = await fetchJson<{
+          status?: string;
+          urls?: string[];
+          error?: string;
+          pollAfterSeconds?: number;
+        }>(`/api/status?historyId=${encodeURIComponent(historyId)}`);
+        if (!res.ok) continue;
+        const st = String(data.status || "").toUpperCase();
+        const url = data.urls?.[0];
+        if (url) {
+          setPreview({ url, mediaType, historyId, status: "completed" });
+          setStatus(null);
+          setGenStartedAt(null);
+          return;
+        }
+        if (st === "FAILED" || st === "CANCELLED") {
+          setPreview({ url: "", mediaType, historyId, status: "failed" });
+          setError(data.error || "فشل التوليد");
+          setGenStartedAt(null);
+          return;
+        }
+        setPreview((prev) =>
+          prev
+            ? { ...prev, status: "running" }
+            : { url: "", mediaType, historyId, status: "running" },
+        );
+        setStatus(`Generating… ${elapsedLabel(Math.floor((Date.now() - startedAt) / 1000))}`);
+        if (typeof data.pollAfterSeconds === "number" && data.pollAfterSeconds > 5) {
+          await new Promise((r) => setTimeout(r, Math.min(data.pollAfterSeconds! * 1000, 20000)));
+        }
+      } catch {
+        // Keep waiting — tunnel blips should not abort a long Seedance job.
       }
-      if (st === "FAILED" || st === "CANCELLED") {
-        setPreview({ url: "", mediaType, historyId, status: "failed" });
-        setError(data.error || "فشل التوليد");
-        return;
-      }
-      setPreview((prev) =>
-        prev
-          ? { ...prev, status: "running" }
-          : { url: "", mediaType, historyId, status: "running" },
-      );
     }
+    setStatus("ما زال التوليد جاريًا — افتح Assets لمتابعة النتيجة");
+  }
+
+  function elapsedLabel(sec: number) {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return m > 0 ? `${m}m ${s}s` : `${s}s`;
   }
 
   async function handleShare() {
     if (!preview?.url) return;
     setShareNote(null);
+    const shareUrl =
+      typeof window !== "undefined" ? `${window.location.origin}/assets` : "/assets";
     try {
       if (navigator.share) {
         await navigator.share({
           title: "Veronix.ai",
           text: prompt.trim() || "Generated with Veronix.ai",
-          url: preview.url,
+          url: shareUrl,
         });
         return;
       }
-      await navigator.clipboard.writeText(preview.url);
+      await navigator.clipboard.writeText(shareUrl);
       setShareNote("تم نسخ رابط المشاركة");
     } catch {
       try {
-        await navigator.clipboard.writeText(preview.url);
+        await navigator.clipboard.writeText(shareUrl);
         setShareNote("تم نسخ رابط المشاركة");
       } catch {
         setShareNote("تعذر المشاركة — انسخ الرابط يدوياً");
@@ -351,10 +397,20 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   }
 
   async function handleDownload() {
-    if (!preview?.url) return;
+    if (!preview?.url && !preview?.historyId) return;
     setShareNote(null);
+    const path = veronixDownloadPath({
+      historyId: preview.historyId,
+      url: preview.url,
+      mediaType: preview.mediaType,
+    });
+    if (!path) {
+      setShareNote("الملف غير جاهز للتحميل");
+      return;
+    }
     try {
-      const res = await fetch(preview.url);
+      const res = await fetch(path, { credentials: "same-origin" });
+      if (!res.ok) throw new Error("download failed");
       const blob = await res.blob();
       const ext = preview.mediaType === "video" ? "mp4" : "png";
       const objectUrl = URL.createObjectURL(blob);
@@ -366,7 +422,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       a.remove();
       URL.revokeObjectURL(objectUrl);
     } catch {
-      window.open(preview.url, "_blank", "noopener,noreferrer");
+      // Same-origin fallback only — never open OpenArt CDN in a new tab.
+      const a = document.createElement("a");
+      a.href = path;
+      a.download = `veronix-${Date.now()}.${preview.mediaType === "video" ? "mp4" : "png"}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
     }
   }
 
@@ -398,9 +460,12 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       return;
     }
 
+    const startedAt = Date.now();
     setGenerating(true);
+    setGenStartedAt(startedAt);
+    setElapsedSec(0);
     setStatus(
-      freeTrial ? "جاري توليد فيديوك المجاني (9 ثوانٍ)…" : "جاري التوليد…",
+      freeTrial ? "جاري توليد فيديوك المجاني (9 ثوانٍ)…" : "Generating…",
     );
     try {
       const mode =
@@ -456,6 +521,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       const failed = data.results?.find((r) => r.error);
       if (failed?.error) {
         setError(failed.error);
+        setGenStartedAt(null);
         return;
       }
 
@@ -470,6 +536,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           status: "completed",
         });
         setStatus(null);
+        setGenStartedAt(null);
       } else if (historyId) {
         setPreview({
           url: "",
@@ -477,15 +544,17 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           historyId,
           status: "running",
         });
-        setStatus("جاري تجهيز المعاينة…");
-        void pollPreview(historyId, media);
+        setStatus("Generating…");
+        void pollPreview(historyId, media, startedAt);
       } else {
         setStatus("تم إرسال الطلب — افتح Assets لمتابعة النتيجة");
+        setGenStartedAt(null);
       }
 
       await onUserRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "فشل التوليد");
+      setGenStartedAt(null);
     } finally {
       setGenerating(false);
     }
@@ -776,18 +845,18 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         </span>
       </button>
 
-      {(preview || generating) && (
+      {(preview || waitingResult) && (
         <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141821]">
           <div className="flex items-center justify-between border-b border-white/8 px-4 py-3">
             <p className="text-sm font-semibold text-white">معاينة النتيجة</p>
-            {preview?.status === "running" && (
-              <span className="inline-flex items-center gap-1 text-xs text-white/50">
+            {waitingResult && (
+              <span className="inline-flex items-center gap-1 text-xs tabular-nums text-[#22f0ff]">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                جاري التجهيز…
+                Generating · {elapsedLabel(elapsedSec)}
               </span>
             )}
           </div>
-          <div className="aspect-video bg-black/50">
+          <div className="relative aspect-video bg-black/50">
             {preview?.url && preview.mediaType === "video" ? (
               <video
                 src={preview.url}
@@ -803,10 +872,32 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 className="h-full w-full object-contain"
               />
             ) : (
-              <div className="flex h-full items-center justify-center text-sm text-white/40">
-                {generating || preview?.status === "running"
-                  ? "ستظهر المعاينة هنا بعد اكتمال التوليد"
-                  : "لا توجد معاينة بعد"}
+              <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-white/40">
+                {waitingResult ? (
+                  <>
+                    <Loader2 className="h-8 w-8 animate-spin text-[#22f0ff]" />
+                    <p className="text-base font-semibold tracking-wide text-white">
+                      Generating
+                    </p>
+                    <p className="tabular-nums text-[#22f0ff]">
+                      {elapsedLabel(elapsedSec)}
+                    </p>
+                    <p className="px-6 text-center text-xs text-white/35">
+                      الفيديو قد يستغرق عدة دقائق — ستظهر المعاينة هنا تلقائيًا
+                    </p>
+                  </>
+                ) : (
+                  "لا توجد معاينة بعد"
+                )}
+              </div>
+            )}
+            {waitingResult && preview?.url && (
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/55">
+                <Loader2 className="h-8 w-8 animate-spin text-[#22f0ff]" />
+                <p className="mt-2 text-base font-semibold text-white">Generating</p>
+                <p className="mt-1 tabular-nums text-[#22f0ff]">
+                  {elapsedLabel(elapsedSec)}
+                </p>
               </div>
             )}
           </div>
@@ -823,7 +914,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             <button
               type="button"
               onClick={() => void handleDownload()}
-              disabled={!preview?.url}
+              disabled={!preview?.url && !preview?.historyId}
               className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] py-3 text-sm font-semibold text-white disabled:opacity-40"
             >
               <Download className="h-4 w-4" />

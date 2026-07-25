@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AppHeader, type CustomerUser } from "./AppHeader";
 import { BottomNav } from "./BottomNav";
 import { fetchJson } from "@/lib/fetch-json";
+import { veronixDownloadPath } from "@/lib/media-proxy";
 
 interface AssetItem {
   id: string;
@@ -143,13 +144,17 @@ export function AssetsPage() {
                 </p>
                 {item.url && (
                   <a
-                    href={item.url}
-                    target="_blank"
-                    rel="noreferrer"
+                    href={
+                      veronixDownloadPath({
+                        historyId: item.historyId,
+                        url: item.url,
+                        mediaType: item.mediaType,
+                      }) || "/assets"
+                    }
                     className="inline-block text-xs text-[#22f0ff]"
                     download
                   >
-                    فتح / تحميل
+                    تحميل
                   </a>
                 )}
                 {item.error && <p className="text-xs text-rose-300">{item.error}</p>}
