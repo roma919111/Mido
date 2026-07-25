@@ -29,7 +29,7 @@ export function MediaGallery({ items }: MediaGalleryProps) {
             Media Gallery
           </h2>
           <p className="mt-1 text-sm text-white/45">
-            Recently generated images and videos from your Studio session.
+            Recently generated images and videos from your VYRONIX.AI session.
           </p>
         </div>
         <p className="text-xs uppercase tracking-[0.18em] text-white/30">{items.length} items</p>
