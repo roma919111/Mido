@@ -21,7 +21,7 @@ import {
 } from "@/lib/free-trial";
 import type { VisualReference } from "@/lib/types";
 import { fetchJson } from "@/lib/fetch-json";
-import { veronixDownloadPath } from "@/lib/media-proxy";
+import { veronixDownloadPath, veronixMediaSrc } from "@/lib/media-proxy";
 import { ModelsModal } from "./ModelsModal";
 import type { CustomerUser } from "./AppHeader";
 
@@ -950,15 +950,28 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           <div className="relative aspect-video bg-black/50">
             {preview?.url && preview.mediaType === "video" ? (
               <video
-                src={preview.url}
+                src={
+                  veronixMediaSrc({
+                    historyId: preview.historyId,
+                    url: preview.url,
+                    mediaType: "video",
+                  }) || undefined
+                }
                 controls
                 playsInline
+                controlsList="nodownload"
                 className="h-full w-full object-contain"
               />
             ) : preview?.url && preview.mediaType === "image" ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={preview.url}
+                src={
+                  veronixMediaSrc({
+                    historyId: preview.historyId,
+                    url: preview.url,
+                    mediaType: "image",
+                  }) || preview.url
+                }
                 alt="preview"
                 className="h-full w-full object-contain"
               />

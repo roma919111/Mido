@@ -5,7 +5,7 @@ import Link from "next/link";
 import { AppHeader, type CustomerUser } from "./AppHeader";
 import { BottomNav } from "./BottomNav";
 import { fetchJson } from "@/lib/fetch-json";
-import { veronixDownloadPath } from "@/lib/media-proxy";
+import { veronixDownloadPath, veronixMediaSrc } from "@/lib/media-proxy";
 
 interface AssetItem {
   id: string;
@@ -72,10 +72,42 @@ export function AssetsPage() {
         }}
       />
       <main className="mx-auto max-w-6xl px-4 pb-28 pt-8 sm:px-6" dir="rtl">
-        <h1 className="font-display text-3xl font-extrabold">Assets</h1>
-        <p className="mt-2 text-sm text-white/50">
-          كل توليداتك محفوظة في حسابك — فيديو وصور.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="font-display text-3xl font-extrabold">Assets</h1>
+            <p className="mt-2 text-sm text-white/50">
+              كل توليداتك محفوظة في حسابك — فيديو وصور.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/create/video"
+              className="inline-flex h-9 items-center rounded-full bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-3 text-xs font-semibold text-white"
+            >
+              إنشاء فيديو
+            </Link>
+            <Link
+              href="/create/image"
+              className="inline-flex h-9 items-center rounded-full border border-white/15 px-3 text-xs font-semibold text-white/85"
+            >
+              إنشاء صورة
+            </Link>
+            {user && (
+              <button
+                type="button"
+                onClick={() => {
+                  void fetch("/api/auth/customer/logout", { method: "POST" }).then(() => {
+                    setUser(null);
+                    setAssets([]);
+                  });
+                }}
+                className="inline-flex h-9 items-center rounded-full border border-rose-400/35 px-3 text-xs font-semibold text-rose-100"
+              >
+                خروج
+              </button>
+            )}
+          </div>
+        </div>
 
         <div className="mt-4 flex gap-2">
           {(
@@ -124,9 +156,31 @@ export function AssetsPage() {
               <div className="aspect-square bg-black/40">
                 {item.url && item.mediaType === "image" ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={item.url} alt="" className="h-full w-full object-cover" />
+                  <img
+                    src={
+                      veronixMediaSrc({
+                        historyId: item.historyId,
+                        url: item.url,
+                        mediaType: "image",
+                      }) || item.url
+                    }
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
                 ) : item.url && item.mediaType === "video" ? (
-                  <video src={item.url} controls className="h-full w-full object-cover" />
+                  <video
+                    src={
+                      veronixMediaSrc({
+                        historyId: item.historyId,
+                        url: item.url,
+                        mediaType: "video",
+                      }) || undefined
+                    }
+                    controls
+                    playsInline
+                    controlsList="nodownload"
+                    className="h-full w-full object-cover"
+                  />
                 ) : (
                   <div className="flex h-full items-center justify-center text-xs text-white/35">
                     {item.status === "running" ? "جارٍ التوليد…" : item.status}

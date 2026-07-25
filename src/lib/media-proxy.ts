@@ -1,5 +1,6 @@
 /**
- * Build same-origin download URLs so customers never see OpenArt CDN links.
+ * Same-origin media URLs so customers never see OpenArt CDN links
+ * in the address bar, download sheet, or video player source.
  */
 
 const ALLOWED_HOST_SUFFIXES = [".openart.ai", ".openart.com"];
@@ -22,24 +23,29 @@ function toBase64Url(raw: string): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
-export function veronixDownloadPath(input: {
-  historyId?: string | null;
-  url?: string | null;
-  mediaType?: "image" | "video";
-}): string | null {
+function buildMediaApiPath(
+  input: {
+    historyId?: string | null;
+    url?: string | null;
+    mediaType?: "image" | "video";
+  },
+  mode: "download" | "stream",
+): string | null {
   const mediaType = input.mediaType || "video";
   const ext = mediaType === "video" ? "mp4" : "png";
   const filename = `veronix-${Date.now()}.${ext}`;
+  const endpoint =
+    mode === "download" ? "/api/media/download" : "/api/media/stream";
 
-  // Already hosted on Veronix — keep same-origin (no OpenArt).
   const existing = input.url?.trim();
   if (existing?.startsWith("/generations/")) {
+    if (mode === "stream") return existing;
     const qs = new URLSearchParams({
       local: existing,
       type: mediaType,
       filename,
     });
-    return `/api/media/download?${qs.toString()}`;
+    return `${endpoint}?${qs.toString()}`;
   }
 
   if (input.historyId?.trim()) {
@@ -48,14 +54,23 @@ export function veronixDownloadPath(input: {
       type: mediaType,
       filename,
     });
-    return `/api/media/download?${qs.toString()}`;
+    return `${endpoint}?${qs.toString()}`;
   }
 
   const raw = input.url?.trim();
   if (!raw) return null;
+
+  // Absolute same-origin paths (already Veronix).
+  if (raw.startsWith("/") && !raw.startsWith("//")) {
+    return mode === "stream" ? raw : null;
+  }
+
   try {
     const parsed = new URL(raw);
-    if (!isAllowedMediaHost(parsed.hostname)) return null;
+    if (!isAllowedMediaHost(parsed.hostname)) {
+      // Non-OpenArt absolute URL: use as-is for stream only if same site later.
+      return null;
+    }
   } catch {
     return null;
   }
@@ -65,5 +80,25 @@ export function veronixDownloadPath(input: {
     type: mediaType,
     filename,
   });
-  return `/api/media/download?${qs.toString()}`;
+  return `${endpoint}?${qs.toString()}`;
+}
+
+/** Force-download through Veronix with a Veronix filename. */
+export function veronixDownloadPath(input: {
+  historyId?: string | null;
+  url?: string | null;
+  mediaType?: "image" | "video";
+}): string | null {
+  return buildMediaApiPath(input, "download");
+}
+
+/** Playback / preview source through Veronix (hides OpenArt CDN). */
+export function veronixMediaSrc(input: {
+  historyId?: string | null;
+  url?: string | null;
+  mediaType?: "image" | "video";
+}): string | null {
+  const existing = input.url?.trim();
+  if (existing?.startsWith("/generations/")) return existing;
+  return buildMediaApiPath(input, "stream") || existing || null;
 }

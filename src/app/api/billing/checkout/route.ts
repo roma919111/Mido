@@ -16,10 +16,14 @@ import {
   createTopUpCheckoutSession,
   isStripeConfigured,
 } from "@/lib/stripe";
-import { adjustCredits, publicUser, updateUser } from "@/lib/db";
+import { publicUser, updateUser } from "@/lib/db";
 
 export const runtime = "nodejs";
 
+/**
+ * Paid plans and top-ups NEVER grant credits here.
+ * Credits/plan unlock only after Stripe payment (webhook or /api/billing/confirm).
+ */
 export async function POST(request: Request) {
   try {
     const user = await getCurrentUser();
@@ -46,12 +50,15 @@ export async function POST(request: Request) {
       }
 
       if (!(await isStripeConfigured())) {
-        const updated = await adjustCredits(user.id, pack.credits);
-        return NextResponse.json({
-          demo: true,
-          message: `Stripe غير مفعّل. تمت إضافة ${pack.credits} كريدت للتجربة.`,
-          user: publicUser(updated),
-        });
+        return NextResponse.json(
+          {
+            error:
+              "الدفع غير مفعّل حاليًا. لا يمكن إضافة كريدت بدون دفع عبر Stripe. افتح /setup/stripe وأدخل المفاتيح أولًا.",
+            code: "stripe_required",
+            needsStripeSetup: true,
+          },
+          { status: 503 },
+        );
       }
 
       const session = await createTopUpCheckoutSession({
@@ -114,15 +121,15 @@ export async function POST(request: Request) {
     }
 
     if (!(await isStripeConfigured())) {
-      // Dev / demo activation when Stripe keys are not set yet.
-      await cancelStripeSubscription(user.stripeSubscriptionId);
-      await updateUser(user.id, { planId, stripeSubscriptionId: undefined });
-      const updated = await adjustCredits(user.id, plan.monthlyCredits);
-      return NextResponse.json({
-        demo: true,
-        message: `Stripe غير مفعّل. تم تفعيل ${plan.name} وإضافة ${plan.monthlyCredits} كريدت للتجربة.`,
-        user: publicUser(updated),
-      });
+      return NextResponse.json(
+        {
+          error:
+            "الدفع غير مفعّل حاليًا. لا تتم الترقية ولا يُضاف أي كريدت بدون دفع حقيقي عبر Stripe. افتح /setup/stripe وأدخل المفاتيح أولًا.",
+          code: "stripe_required",
+          needsStripeSetup: true,
+        },
+        { status: 503 },
+      );
     }
 
     const session = await createCheckoutSession({

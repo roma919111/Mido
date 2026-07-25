@@ -85,25 +85,37 @@ export function PricingPage() {
     try {
       const { res, data } = await fetchJson<{
         url?: string;
-        demo?: boolean;
         ok?: boolean;
         message?: string;
         error?: string;
         user?: CustomerUser;
+        needsStripeSetup?: boolean;
+        code?: string;
       }>("/api/billing/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error(data.error || "فشل الدفع");
+      if (!res.ok) {
+        throw new Error(
+          data.error ||
+            (data.needsStripeSetup
+              ? "الدفع غير مفعّل — لن تُضاف كريدت بدون Stripe."
+              : "فشل الدفع"),
+        );
+      }
       if (data.url) {
+        // Real Stripe Checkout only — credits apply after paid webhook/confirm.
         window.location.href = data.url;
         return;
       }
-      if (data.demo || data.ok) {
+      if (data.ok) {
+        // Free-plan switch only (no credits granted).
         setMessage(data.message || "تم التحديث بنجاح.");
         if (data.user) setUser(data.user);
+        return;
       }
+      throw new Error("لم يكتمل الدفع. لن تُضاف كريدت بدون دفع ناجح.");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "فشل الدفع");
     } finally {

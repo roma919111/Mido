@@ -41,7 +41,7 @@ export function AppHeader({ user, onLogout }: AppHeaderProps) {
           </Link>
 
           {user ? (
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5 sm:gap-2">
               <Link
                 href="/assets"
                 className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/80 sm:h-9 sm:w-9"
@@ -52,9 +52,9 @@ export function AppHeader({ user, onLogout }: AppHeaderProps) {
               <button
                 type="button"
                 onClick={onLogout}
-                className="hidden text-xs text-white/45 hover:text-white sm:inline"
+                className="inline-flex h-8 items-center rounded-full border border-white/15 px-2.5 text-xs text-white/80 hover:border-rose-400/40 hover:text-rose-100 sm:h-9 sm:px-3 sm:text-sm"
               >
-                Logout
+                خروج
               </button>
             </div>
           ) : (
