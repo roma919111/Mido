@@ -22,7 +22,8 @@ export function AuthForm({ mode }: AuthFormProps) {
   const [error, setError] = useState<string | null>(urlError);
   const [loading, setLoading] = useState(false);
   const [googleReady, setGoogleReady] = useState(false);
-  const [showEmail, setShowEmail] = useState(false);
+  // Always show email form so customers can register even if Google is offline.
+  const [showEmail, setShowEmail] = useState(true);
 
   useEffect(() => {
     void (async () => {

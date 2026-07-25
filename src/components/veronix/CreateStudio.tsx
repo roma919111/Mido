@@ -175,7 +175,15 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
       error?: string;
       visualReference?: VisualReference;
     }>("/api/upload", { method: "POST", body: form });
-    if (!res.ok) throw new Error(data.error || "Upload failed");
+    if (!res.ok) {
+      const msg = data.error || "فشل رفع الصورة";
+      if (/OPENART_ACCESS_TOKEN|Platform OpenArt|not connected/i.test(msg)) {
+        throw new Error(
+          "رفع الصور يحتاج ربط حساب المنصة. افتح /setup/openart ثم أعد المحاولة.",
+        );
+      }
+      throw new Error(msg);
+    }
     return data.visualReference as VisualReference;
   }
 
