@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import {
   Camera,
   ChevronDown,
+  Download,
   ImagePlus,
   Loader2,
+  Share2,
   Sparkles,
   WandSparkles,
   X,
@@ -42,7 +44,6 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
   const [duration, setDuration] = useState<number>(FREE_VERONIX_DURATION_SECONDS);
   const [generateAudio, setGenerateAudio] = useState(false);
   const [freeTrial, setFreeTrial] = useState(false);
-  const [listPriceCredits, setListPriceCredits] = useState<number | null>(null);
   const [refs, setRefs] = useState<VisualReference[]>([]);
   const [refPreviews, setRefPreviews] = useState<string[]>([]);
   const [startFrame, setStartFrame] = useState<VisualReference | null>(null);
@@ -57,6 +58,13 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [platformReady, setPlatformReady] = useState<boolean | null>(null);
+  const [preview, setPreview] = useState<{
+    url: string;
+    mediaType: "image" | "video";
+    historyId?: string;
+    status: "running" | "completed" | "failed";
+  } | null>(null);
+  const [shareNote, setShareNote] = useState<string | null>(null);
 
   const allModels = useMemo(
     () => [...imageModels, ...videoModels],
@@ -155,7 +163,6 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
           throw new Error(data.error || "تعذر جلب سعر الكريدت");
         }
         setCreditCost(data.totalCredits);
-        setListPriceCredits(data.listPriceCredits ?? data.totalCredits);
         setFreeTrial(Boolean(data.freeTrial));
         const quote = data.quotes?.[0];
         const live = Boolean(
@@ -281,9 +288,84 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
     }
   }
 
+  async function pollPreview(historyId: string, mediaType: "image" | "video") {
+    for (let i = 0; i < 40; i += 1) {
+      await new Promise((r) => setTimeout(r, 3000));
+      const { res, data } = await fetchJson<{
+        status?: string;
+        urls?: string[];
+        error?: string;
+      }>(`/api/status?historyId=${encodeURIComponent(historyId)}`);
+      if (!res.ok) continue;
+      const st = String(data.status || "").toUpperCase();
+      const url = data.urls?.[0];
+      if (url) {
+        setPreview({ url, mediaType, historyId, status: "completed" });
+        setStatus(null);
+        return;
+      }
+      if (st === "FAILED" || st === "CANCELLED") {
+        setPreview({ url: "", mediaType, historyId, status: "failed" });
+        setError(data.error || "فشل التوليد");
+        return;
+      }
+      setPreview((prev) =>
+        prev
+          ? { ...prev, status: "running" }
+          : { url: "", mediaType, historyId, status: "running" },
+      );
+    }
+  }
+
+  async function handleShare() {
+    if (!preview?.url) return;
+    setShareNote(null);
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: "Veronix.ai",
+          text: prompt.trim() || "Generated with Veronix.ai",
+          url: preview.url,
+        });
+        return;
+      }
+      await navigator.clipboard.writeText(preview.url);
+      setShareNote("تم نسخ رابط المشاركة");
+    } catch {
+      try {
+        await navigator.clipboard.writeText(preview.url);
+        setShareNote("تم نسخ رابط المشاركة");
+      } catch {
+        setShareNote("تعذر المشاركة — انسخ الرابط يدوياً");
+      }
+    }
+  }
+
+  async function handleDownload() {
+    if (!preview?.url) return;
+    setShareNote(null);
+    try {
+      const res = await fetch(preview.url);
+      const blob = await res.blob();
+      const ext = preview.mediaType === "video" ? "mp4" : "png";
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = `veronix-${Date.now()}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch {
+      window.open(preview.url, "_blank", "noopener,noreferrer");
+    }
+  }
+
   async function handleGenerate() {
     setError(null);
     setStatus(null);
+    setShareNote(null);
+    setPreview(null);
 
     if (!user) {
       router.push(`/signup?next=${encodeURIComponent("/")}&paywall=1`);
@@ -298,7 +380,7 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
       return;
     }
     if (creditCost == null || !creditLive) {
-      setError(quoteError || "انتظر مزامنة التكلفة قبل التوليد.");
+      setError(quoteError || "انتظر حساب التكلفة قبل التوليد.");
       return;
     }
     if (!freeTrial && (user.credits <= 0 || user.credits < creditCost)) {
@@ -326,7 +408,12 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
         needsAuth?: boolean;
         needsPaywall?: boolean;
         freeTrial?: boolean;
-        results?: Array<{ error?: string; status?: string }>;
+        results?: Array<{
+          error?: string;
+          status?: string;
+          historyId?: string;
+          urls?: string[];
+        }>;
       }>("/api/create", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -358,13 +445,33 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
       if (!res.ok) throw new Error(data.error || "فشل التوليد");
 
       const failed = data.results?.find((r) => r.error);
-      if (failed?.error) setError(failed.error);
-      else {
-        setStatus(
-          freeTrial
-            ? "تم إرسال فيديوك المجاني — تابع النتيجة من Assets"
-            : "تم إرسال الطلب — تابع النتيجة من Assets",
-        );
+      if (failed?.error) {
+        setError(failed.error);
+        return;
+      }
+
+      const ok = data.results?.find((r) => !r.error);
+      const firstUrl = ok?.urls?.[0] || "";
+      const historyId = ok?.historyId;
+      if (firstUrl) {
+        setPreview({
+          url: firstUrl,
+          mediaType: media,
+          historyId,
+          status: "completed",
+        });
+        setStatus(null);
+      } else if (historyId) {
+        setPreview({
+          url: "",
+          mediaType: media,
+          historyId,
+          status: "running",
+        });
+        setStatus("جاري تجهيز المعاينة…");
+        void pollPreview(historyId, media);
+      } else {
+        setStatus("تم إرسال الطلب — افتح Assets لمتابعة النتيجة");
       }
 
       await onUserRefresh();
@@ -647,19 +754,66 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
               : "—"}
         </span>
       </button>
-      <p className="text-center text-[11px] text-white/40">
-        {quoting
-          ? "جاري مزامنة التكلفة من OpenArt × 1.8…"
-          : freeTrial && creditLive
-            ? `تجربة مجانية — السعر العادي لاحقاً ${listPriceCredits ?? "—"} كريدت`
-            : creditLive && creditCost != null
-              ? `التكلفة المتزامنة: −${creditCost} كريدت (OpenArt × 1.8)`
-              : selectedModel && !selectedModel.available
-                ? "هذا الموديل غير متاح بعد — اختر موديلًا متاحًا"
-                : quoteError
-                  ? quoteError
-                  : "تعذر مزامنة التكلفة"}
-      </p>
+
+      {(preview || generating) && (
+        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141821]">
+          <div className="flex items-center justify-between border-b border-white/8 px-4 py-3">
+            <p className="text-sm font-semibold text-white">معاينة النتيجة</p>
+            {preview?.status === "running" && (
+              <span className="inline-flex items-center gap-1 text-xs text-white/50">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                جاري التجهيز…
+              </span>
+            )}
+          </div>
+          <div className="aspect-video bg-black/50">
+            {preview?.url && preview.mediaType === "video" ? (
+              <video
+                src={preview.url}
+                controls
+                playsInline
+                className="h-full w-full object-contain"
+              />
+            ) : preview?.url && preview.mediaType === "image" ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={preview.url}
+                alt="preview"
+                className="h-full w-full object-contain"
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center text-sm text-white/40">
+                {generating || preview?.status === "running"
+                  ? "ستظهر المعاينة هنا بعد اكتمال التوليد"
+                  : "لا توجد معاينة بعد"}
+              </div>
+            )}
+          </div>
+          <div className="flex gap-2 p-3">
+            <button
+              type="button"
+              onClick={() => void handleShare()}
+              disabled={!preview?.url}
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 py-3 text-sm font-semibold text-white disabled:opacity-40"
+            >
+              <Share2 className="h-4 w-4 text-[#22f0ff]" />
+              Share
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleDownload()}
+              disabled={!preview?.url}
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] py-3 text-sm font-semibold text-white disabled:opacity-40"
+            >
+              <Download className="h-4 w-4" />
+              Download
+            </button>
+          </div>
+          {shareNote && (
+            <p className="px-4 pb-3 text-center text-xs text-[#22f0ff]">{shareNote}</p>
+          )}
+        </div>
+      )}
 
       <ModelsModal
         open={modelsOpen}
