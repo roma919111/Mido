@@ -43,8 +43,10 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
   const [endFrame, setEndFrame] = useState<VisualReference | null>(null);
   const [startPreview, setStartPreview] = useState<string | null>(null);
   const [endPreview, setEndPreview] = useState<string | null>(null);
-  const [creditCost, setCreditCost] = useState(15);
+  const [creditCost, setCreditCost] = useState<number | null>(null);
   const [creditLive, setCreditLive] = useState(false);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [needsOwnerSetup, setNeedsOwnerSetup] = useState(false);
   const [quoting, setQuoting] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -89,7 +91,8 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
     void (async () => {
       if (!selectedModelId) return;
       setQuoting(true);
-      setError(null);
+      setQuoteError(null);
+      setNeedsOwnerSetup(false);
       try {
         const mode =
           media === "image"
@@ -102,8 +105,10 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
         const { res, data } = await fetchJson<{
           totalCredits: number;
           liveOpenArt?: boolean;
+          synced?: boolean;
           source?: string;
           error?: string;
+          needsOwnerSetup?: boolean;
           quotes?: Array<{ available?: boolean; source?: string; totalCredits?: number }>;
         }>("/api/credits/quote", {
           method: "POST",
@@ -119,14 +124,29 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
           }),
         });
         if (cancelled) return;
-        if (!res.ok) throw new Error(data.error || "تعذر جلب سعر الكريدت");
+        if (!res.ok) {
+          setCreditCost(null);
+          setCreditLive(false);
+          setNeedsOwnerSetup(Boolean(data.needsOwnerSetup));
+          throw new Error(data.error || "تعذر جلب سعر الكريدت");
+        }
         setCreditCost(data.totalCredits);
         const quote = data.quotes?.[0];
-        setCreditLive(Boolean(quote?.source === "openart" && quote.available));
+        const live = Boolean(
+          data.liveOpenArt ||
+            data.synced ||
+            (quote?.available &&
+              (quote.source === "openart" || quote.source === "openart-cache")),
+        );
+        setCreditLive(live);
+        if (!live) {
+          setQuoteError("لم تُزامن التكلفة بعد — اختر موديلًا متاحًا أو أعد المحاولة");
+        }
       } catch (err) {
         if (!cancelled) {
           setCreditLive(false);
-          setError(err instanceof Error ? err.message : "تعذر مزامنة تكلفة الكريدت");
+          setCreditCost(null);
+          setQuoteError(err instanceof Error ? err.message : "تعذر مزامنة تكلفة الكريدت");
         }
       } finally {
         if (!cancelled) setQuoting(false);
@@ -230,6 +250,10 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
     }
     if (!selectedModel?.available) {
       setError("هذا الموديل غير متاح للتوليد حاليًا. اختر موديلًا متاحًا.");
+      return;
+    }
+    if (creditCost == null || !creditLive) {
+      setError(quoteError || "انتظر مزامنة التكلفة قبل التوليد.");
       return;
     }
     if (user.credits < creditCost) {
@@ -514,18 +538,27 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
         )}
         {generating ? "جاري التوليد…" : quoting ? "يحسب السعر…" : "Generate"}
         <span className="rounded-full bg-black/20 px-2.5 py-0.5 text-xs tabular-nums">
-          −{creditCost}
+          {quoting ? "…" : creditLive && creditCost != null ? `−${creditCost}` : "—"}
         </span>
       </button>
       <p className="text-center text-[11px] text-white/40">
         {quoting
-          ? "جاري حساب التكلفة…"
-          : creditLive
-            ? `التكلفة: −${creditCost} كريدت`
+          ? "جاري مزامنة التكلفة…"
+          : creditLive && creditCost != null
+            ? `التكلفة المتزامنة: −${creditCost} كريدت`
             : selectedModel && !selectedModel.available
               ? "هذا الموديل غير متاح بعد — اختر موديلًا متاحًا"
-              : "اختر موديلًا متاحًا لعرض التكلفة"}
+              : quoteError
+                ? quoteError
+                : "تعذر مزامنة التكلفة"}
       </p>
+      {needsOwnerSetup && (
+        <p className="text-center text-[11px]">
+          <a href="/setup/openart" className="text-[#22f0ff] underline-offset-2 hover:underline">
+            ربط حساب المنصة لمزامنة التكاليف
+          </a>
+        </p>
+      )}
 
       <ModelsModal
         open={modelsOpen}

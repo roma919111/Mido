@@ -96,15 +96,18 @@ export async function POST(request: Request) {
     const quotes = [];
     for (const modelId of modelIds) {
       quotes.push(
-        await quoteOpenArtCredits({
-          modelId,
-          media,
-          mode,
-          aspectRatio: body.aspectRatio,
-          resolution: body.resolution,
-          duration: body.duration,
-          generateAudio: body.generateAudio,
-        }),
+        await quoteOpenArtCredits(
+          {
+            modelId,
+            media,
+            mode,
+            aspectRatio: body.aspectRatio,
+            resolution: body.resolution,
+            duration: body.duration,
+            generateAudio: body.generateAudio,
+          },
+          { allowCache: false },
+        ),
       );
     }
     const totalCredits = quotes.reduce((s, q) => s + q.totalCredits, 0);

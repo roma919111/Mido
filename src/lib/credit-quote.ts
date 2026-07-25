@@ -1,5 +1,6 @@
-import { callOpenArtTool, parseToolPayload } from "@/lib/openart-mcp";
+import { callOpenArtTool, OpenArtConfigError, parseToolPayload } from "@/lib/openart-mcp";
 import { getCatalogModel, resolveMcpModel } from "@/lib/model-catalog";
+import { lookupCachedCost } from "@/lib/openart-cost-cache";
 
 export interface QuoteInput {
   modelId: string;
@@ -22,7 +23,13 @@ export interface QuoteResult {
   available: boolean;
   config: Record<string, unknown>;
   pricingNote?: string;
-  source: "openart" | "estimate";
+  source: "openart" | "openart-cache" | "estimate";
+  cached?: boolean;
+}
+
+export interface QuoteOptions {
+  /** Allow seeded/synced OpenArt cost cache when owner MCP is offline (UI only). */
+  allowCache?: boolean;
 }
 
 function fallbackEstimate(input: QuoteInput): number {
@@ -53,7 +60,42 @@ function resolveMode(
   return supported.find((m) => m.includes("image")) || supported[0] || requested;
 }
 
-export async function quoteOpenArtCredits(input: QuoteInput): Promise<QuoteResult> {
+async function quoteFromCache(
+  input: QuoteInput,
+  mcpModel: string,
+  mode: string,
+  params: Record<string, unknown>,
+): Promise<QuoteResult | null> {
+  const cached = await lookupCachedCost({
+    model: mcpModel,
+    mode,
+    resolution: input.resolution,
+    duration: input.duration,
+    generateAudio: input.generateAudio,
+    aspectRatio: input.aspectRatio,
+  });
+  if (!cached) return null;
+  return {
+    modelId: input.modelId,
+    mcpModel,
+    mode,
+    totalCredits: cached.totalCredits,
+    unitCredits: cached.unitCredits,
+    available: true,
+    config: cached.config,
+    pricingNote: cached.scaled
+      ? "Synced from OpenArt cost table (duration scaled)."
+      : "Synced from OpenArt cost table.",
+    source: "openart-cache",
+    cached: true,
+  };
+}
+
+export async function quoteOpenArtCredits(
+  input: QuoteInput,
+  options: QuoteOptions = {},
+): Promise<QuoteResult> {
+  const allowCache = options.allowCache !== false;
   const catalog = getCatalogModel(input.modelId);
   const mcpModel = catalog ? resolveMcpModel(catalog) : input.modelId;
   const available = Boolean(catalog?.available && catalog.mcpId);
@@ -118,11 +160,21 @@ export async function quoteOpenArtCredits(input: QuoteInput): Promise<QuoteResul
       source: "openart",
     };
   } catch (error) {
-    // Prefer failing closed for live models so the Generate button never shows a fake price.
+    if (allowCache) {
+      const fromCache = await quoteFromCache(input, mcpModel, mode, params);
+      if (fromCache) return fromCache;
+    }
+
+    const needsOwner =
+      error instanceof OpenArtConfigError ||
+      (error instanceof Error && /not connected|unauthorized|Reconnect/i.test(error.message));
+
     throw new Error(
-      error instanceof Error
-        ? `تعذر مزامنة تكلفة Veronix للموديل ${catalog?.name || mcpModel}: ${error.message}`
-        : `تعذر مزامنة تكلفة Veronix للموديل ${catalog?.name || mcpModel}`,
+      needsOwner
+        ? `تعذر مزامنة التكلفة: حساب المنصة غير متصل. افتح /setup/openart لربط الحساب.`
+        : error instanceof Error
+          ? `تعذر مزامنة تكلفة Veronix للموديل ${catalog?.name || mcpModel}: ${error.message}`
+          : `تعذر مزامنة تكلفة Veronix للموديل ${catalog?.name || mcpModel}`,
     );
   }
 }
@@ -130,11 +182,12 @@ export async function quoteOpenArtCredits(input: QuoteInput): Promise<QuoteResul
 export async function quoteMultipleModels(
   modelIds: string[],
   base: Omit<QuoteInput, "modelId">,
+  options?: QuoteOptions,
 ): Promise<{ quotes: QuoteResult[]; totalCredits: number }> {
   const unique = [...new Set(modelIds)].slice(0, 4);
   const quotes: QuoteResult[] = [];
   for (const modelId of unique) {
-    quotes.push(await quoteOpenArtCredits({ ...base, modelId }));
+    quotes.push(await quoteOpenArtCredits({ ...base, modelId }, options));
   }
   const totalCredits = quotes.reduce((sum, q) => sum + q.totalCredits, 0);
   return { quotes, totalCredits };
