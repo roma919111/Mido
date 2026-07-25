@@ -18,27 +18,38 @@ A modern Next.js (App Router) studio for generating **AI images** and **AI video
 ```bash
 npm install
 cp .env.example .env.local
-# add OPENART_ACCESS_TOKEN
+# set AUTH_SECRET and APP_BASE_URL
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000) and click **Sign in with OpenArt**.
 
-`OPENART_ACCESS_TOKEN` is **required**. There is no demo mode — Generate Image / Generate Video call live OpenArt MCP (`https://mcp.openart.ai/mcp`) via `@modelcontextprotocol/sdk`, and the UI shows the raw live response or error.
+There is no demo mode — Generate Image / Generate Video call live OpenArt MCP (`https://mcp.openart.ai/mcp`) via `@modelcontextprotocol/sdk`, and the UI shows the raw live response or error.
 
-## OpenArt auth
+## OpenArt OAuth
 
-OpenArt MCP authenticates via OAuth (no long-lived API key). After you connect `https://mcp.openart.ai/mcp` in an MCP-compatible client and sign in, set:
+VYRONIX.AI runs the MCP OAuth authorization-code + PKCE flow against OpenArt:
+
+1. `GET /api/auth/login` — dynamic client registration + redirect to OpenArt
+2. `GET /api/auth/callback` — exchanges the code for tokens (stored in an encrypted HttpOnly cookie)
+3. API routes use the session access token (with refresh) for `https://mcp.openart.ai/mcp`
 
 ```env
-OPENART_ACCESS_TOKEN=your_bearer_token
+AUTH_SECRET=replace-with-a-long-random-string
+APP_BASE_URL=http://localhost:3000
 OPENART_MCP_URL=https://mcp.openart.ai/mcp
+# Optional headless fallback only:
+# OPENART_ACCESS_TOKEN=
 ```
 
 ## API routes
 
 | Route | Purpose |
 | --- | --- |
+| `GET /api/auth/login` | Start OpenArt OAuth (DCR + PKCE) |
+| `GET /api/auth/callback` | OAuth redirect handler |
+| `GET/POST /api/auth/logout` | Clear OAuth session cookie |
+| `GET /api/auth/session` | Auth status (`oauth` / `env` / needsAuth) |
 | `GET /api/account` | Credits / plan via `openart_account_get` |
 | `POST /api/enhance` | Prompt enhancement |
 | `POST /api/upload` | Sign + PUT reference images via `openart_upload_sign` |

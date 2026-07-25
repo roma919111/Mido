@@ -77,6 +77,7 @@ export async function GET(request: Request) {
         {
           error: error.message,
           live: false,
+          needsAuth: error.needsAuth,
           mcpEndpoint: MCP_ENDPOINT,
           items: [],
         },

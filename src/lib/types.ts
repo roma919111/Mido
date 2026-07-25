@@ -36,6 +36,8 @@ export interface AccountInfo {
   live?: boolean;
   mcpEndpoint?: string;
   error?: string;
+  needsAuth?: boolean;
+  authMethod?: "oauth" | "env" | null;
 }
 
 export interface GenerateRequest {
