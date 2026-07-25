@@ -7,6 +7,8 @@ const nextConfig: NextConfig = {
     "127.0.0.1",
     "*.loca.lt",
     "loca.lt",
+    "*.trycloudflare.com",
+    "trycloudflare.com",
   ],
   images: {
     remotePatterns: [
