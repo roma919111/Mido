@@ -16,7 +16,9 @@ import {
 import {
   durationBoundsForModel,
   formOptionsForModel,
+  IMAGE_MODELS,
   resolutionLabel,
+  VIDEO_MODELS,
   type CatalogModel,
 } from "@/lib/model-catalog";
 import {
@@ -47,8 +49,8 @@ interface CreateStudioProps {
 export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioProps) {
   const router = useRouter();
   const [media, setMedia] = useState<"image" | "video">(lockedMedia || "video");
-  const [imageModels, setImageModels] = useState<CatalogModel[]>([]);
-  const [videoModels, setVideoModels] = useState<CatalogModel[]>([]);
+  const [imageModels, setImageModels] = useState<CatalogModel[]>(IMAGE_MODELS);
+  const [videoModels, setVideoModels] = useState<CatalogModel[]>(VIDEO_MODELS);
   const [selectedModelId, setSelectedModelId] = useState(VERONIX_MODEL_ID);
   const [modelsOpen, setModelsOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
@@ -151,15 +153,37 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   }, [waitingResult, genStartedAt]);
 
   useEffect(() => {
+    let cancelled = false;
     void (async () => {
-      // Force a fresh OpenArt catalog + cost sync so Generate shows ×1.8 for every model.
-      const { data } = await fetchJson<{
-        image: CatalogModel[];
-        video: CatalogModel[];
-      }>("/api/models?sync=1");
-      setImageModels(data.image || []);
-      setVideoModels(data.video || []);
+      // Fast path first so the picker never opens empty while sync runs.
+      try {
+        const { data } = await fetchJson<{
+          image: CatalogModel[];
+          video: CatalogModel[];
+        }>("/api/models");
+        if (cancelled) return;
+        if (data.image?.length) setImageModels(data.image);
+        if (data.video?.length) setVideoModels(data.video);
+      } catch {
+        // Keep static catalog already in state.
+      }
+
+      // Background refresh from OpenArt (duration/resolution/audio + costs).
+      try {
+        const { data } = await fetchJson<{
+          image: CatalogModel[];
+          video: CatalogModel[];
+        }>("/api/models?sync=1");
+        if (cancelled) return;
+        if (data.image?.length) setImageModels(data.image);
+        if (data.video?.length) setVideoModels(data.video);
+      } catch {
+        // Keep whatever we already have.
+      }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
