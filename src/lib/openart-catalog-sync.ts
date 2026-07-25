@@ -458,7 +458,10 @@ export async function loadSyncedCatalog(): Promise<SyncedCatalogFile | null> {
   try {
     const raw = await readFile(CATALOG_FILE, "utf8");
     const parsed = JSON.parse(raw) as SyncedCatalogFile;
-    if (Array.isArray(parsed.image) && Array.isArray(parsed.video)) return parsed;
+    if (Array.isArray(parsed.image) && Array.isArray(parsed.video)) {
+      const merged = mergeLiveIntoFullCatalog(parsed);
+      return { ...parsed, image: merged.image, video: merged.video };
+    }
   } catch {
     // ignore
   }
@@ -485,6 +488,15 @@ export async function getLiveCatalog(options?: {
   } catch {
     const existing = await loadSyncedCatalog();
     if (existing) return { ...existing, syncedNow: false, live: false };
-    throw new Error("تعذر مزامنة موديلات OpenArt");
+    // Static full catalog (live + coming soon) when OpenArt is offline.
+    const merged = mergeLiveIntoFullCatalog({ image: [], video: [] });
+    return {
+      updatedAt: new Date().toISOString(),
+      source: "openart_model_list",
+      image: merged.image,
+      video: merged.video,
+      syncedNow: false,
+      live: false,
+    };
   }
 }
