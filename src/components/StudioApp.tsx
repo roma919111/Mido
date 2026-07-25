@@ -102,8 +102,6 @@ export function StudioApp() {
     return () => {
       cancelled = true;
     };
-    // Mount-only bootstrap.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const creditCost = useMemo(
