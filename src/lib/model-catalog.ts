@@ -12,6 +12,46 @@ export interface CatalogModel {
   /** Short customer-facing tagline under the name */
   tagline?: string;
   available: boolean;
+  /** Synced from openart_model_form_get (video models) */
+  durationMin?: number;
+  durationMax?: number;
+  durationDefault?: number;
+}
+
+/** Fallback OpenArt duration bounds when live form sync is unavailable. */
+export const VIDEO_DURATION_FALLBACKS: Record<
+  string,
+  { min: number; max: number; default: number }
+> = {
+  "byte-plus-seedance-2-mini": { min: 4, max: 15, default: 5 },
+  "byte-plus-seedance-2": { min: 4, max: 15, default: 5 },
+  "byte-plus-seedance-2-fast": { min: 4, max: 15, default: 5 },
+  "gemini-omni-flash": { min: 3, max: 10, default: 5 },
+  "kling-3-omni": { min: 3, max: 15, default: 5 },
+  pixverseV6: { min: 1, max: 15, default: 5 },
+  "wan2-7": { min: 2, max: 15, default: 5 },
+  "grok-imagine-1-5": { min: 1, max: 15, default: 5 },
+};
+
+export function durationBoundsForModel(model: CatalogModel | null | undefined): {
+  min: number;
+  max: number;
+  default: number;
+} {
+  if (!model || model.kind !== "video") {
+    return { min: 4, max: 15, default: 5 };
+  }
+  const fallback =
+    (model.mcpId && VIDEO_DURATION_FALLBACKS[model.mcpId]) || {
+      min: 4,
+      max: 15,
+      default: 5,
+    };
+  return {
+    min: model.durationMin ?? fallback.min,
+    max: model.durationMax ?? fallback.max,
+    default: model.durationDefault ?? fallback.default,
+  };
 }
 
 /**
@@ -86,6 +126,17 @@ export const IMAGE_MODELS: CatalogModel[] = [
   },
 ];
 
+function withDurationFallback(model: CatalogModel): CatalogModel {
+  const bounds = model.mcpId ? VIDEO_DURATION_FALLBACKS[model.mcpId] : undefined;
+  if (!bounds) return model;
+  return {
+    ...model,
+    durationMin: model.durationMin ?? bounds.min,
+    durationMax: model.durationMax ?? bounds.max,
+    durationDefault: model.durationDefault ?? bounds.default,
+  };
+}
+
 export const VIDEO_MODELS: CatalogModel[] = [
   {
     id: "seedance-2-mini",
@@ -153,7 +204,7 @@ export const VIDEO_MODELS: CatalogModel[] = [
     modes: ["image2video"],
     available: true,
   },
-];
+].map(withDurationFallback);
 
 export const ALL_MODELS = [...IMAGE_MODELS, ...VIDEO_MODELS];
 

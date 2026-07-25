@@ -13,7 +13,10 @@ import {
   WandSparkles,
   X,
 } from "lucide-react";
-import type { CatalogModel } from "@/lib/model-catalog";
+import {
+  durationBoundsForModel,
+  type CatalogModel,
+} from "@/lib/model-catalog";
 import {
   FREE_VERONIX_DURATION_SECONDS,
   FREE_VERONIX_RESOLUTION,
@@ -29,7 +32,8 @@ import type { CustomerUser } from "./AppHeader";
 const PREVIEW_POLL_ATTEMPTS = 180;
 const PREVIEW_POLL_MS = 5000;
 
-const ASPECTS = ["9:16", "16:9", "1:1", "4:3", "3:4"] as const;
+const IMAGE_ASPECTS = ["1:1", "16:9", "9:16", "4:3", "3:4"] as const;
+const VIDEO_ASPECT = "16:9";
 const RESOLUTIONS = ["360p", "480p", "720p", "1080p", "1K"] as const;
 
 interface CreateStudioProps {
@@ -86,6 +90,21 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     [imageModels, videoModels],
   );
   const selectedModel = allModels.find((m) => m.id === selectedModelId) ?? null;
+  const durationBounds = durationBoundsForModel(selectedModel);
+
+  const applyVideoModelDefaults = (model: CatalogModel | null | undefined) => {
+    setAspectRatio(VIDEO_ASPECT);
+    if (!model) return;
+    const freeLocked =
+      model.id === VERONIX_MODEL_ID && !user?.freeVeronixUsed;
+    if (freeLocked) {
+      setDuration(FREE_VERONIX_DURATION_SECONDS);
+      setResolution(FREE_VERONIX_RESOLUTION);
+      return;
+    }
+    const bounds = durationBoundsForModel(model);
+    setDuration(bounds.max);
+  };
 
   useEffect(() => {
     if (lockedMedia) setMedia(lockedMedia);
@@ -96,7 +115,16 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     if (!freeSettingsLocked) return;
     setDuration(FREE_VERONIX_DURATION_SECONDS);
     setResolution(FREE_VERONIX_RESOLUTION);
+    setAspectRatio(VIDEO_ASPECT);
   }, [freeSettingsLocked]);
+
+  // Paid / post-trial: select model → duration = synced OpenArt max; aspect locked 16:9.
+  useEffect(() => {
+    if (media !== "video" || !selectedModel || freeSettingsLocked) return;
+    setAspectRatio(VIDEO_ASPECT);
+    const bounds = durationBoundsForModel(selectedModel);
+    setDuration(bounds.max);
+  }, [media, selectedModelId, selectedModel, freeSettingsLocked]);
 
   useEffect(() => {
     if (!waitingResult || genStartedAt == null) {
@@ -148,16 +176,18 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     } else {
       const stillValid = videoModels.some((m) => m.id === selectedModelId && m.available);
       if (!stillValid) {
-        const veronix =
-          videoModels.find((m) => m.id === VERONIX_MODEL_ID && m.available)?.id ||
-          videoModels.find((m) => m.available)?.id ||
-          VERONIX_MODEL_ID;
-        setSelectedModelId(veronix);
-        setDuration(FREE_VERONIX_DURATION_SECONDS);
+        const next =
+          videoModels.find((m) => m.id === VERONIX_MODEL_ID && m.available) ||
+          videoModels.find((m) => m.available) ||
+          null;
+        setSelectedModelId(next?.id || VERONIX_MODEL_ID);
+        applyVideoModelDefaults(next);
+      } else {
+        setAspectRatio(VIDEO_ASPECT);
       }
-      setAspectRatio("16:9");
     }
-  }, [media, imageModels, videoModels, selectedModelId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- apply defaults only on media/catalog identity changes
+  }, [media, imageModels, videoModels, selectedModelId, user?.freeVeronixUsed]);
 
   useEffect(() => {
     let cancelled = false;
@@ -842,15 +872,23 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           <label className="space-y-1 text-xs text-white/50">
             النسبة
             <select
-              value={aspectRatio}
-              onChange={(e) => setAspectRatio(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white"
+              value={media === "video" ? VIDEO_ASPECT : aspectRatio}
+              onChange={(e) => {
+                if (media === "video") return;
+                setAspectRatio(e.target.value);
+              }}
+              disabled={media === "video"}
+              className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white disabled:opacity-70"
             >
-              {ASPECTS.map((a) => (
-                <option key={a} value={a}>
-                  {a}
-                </option>
-              ))}
+              {media === "video" ? (
+                <option value={VIDEO_ASPECT}>{VIDEO_ASPECT} · ثابت</option>
+              ) : (
+                IMAGE_ASPECTS.map((a) => (
+                  <option key={a} value={a}>
+                    {a}
+                  </option>
+                ))
+              )}
             </select>
           </label>
           {media === "video" && (
@@ -883,18 +921,25 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             </div>
             <input
               type="range"
-              min={4}
-              max={15}
+              min={durationBounds.min}
+              max={durationBounds.max}
               step={1}
-              value={duration}
+              value={Math.min(
+                durationBounds.max,
+                Math.max(durationBounds.min, duration),
+              )}
               disabled={freeSettingsLocked}
               onChange={(e) => setDuration(Number(e.target.value))}
               className="w-full accent-[#22f0ff] disabled:opacity-60"
             />
             <div className="flex justify-between text-[10px] text-white/35">
-              <span>4s</span>
-              <span className="text-[#22f0ff]">6s مجاني</span>
-              <span>15s</span>
+              <span>{durationBounds.min}s</span>
+              {selectedModelId === VERONIX_MODEL_ID && !user?.freeVeronixUsed ? (
+                <span className="text-[#22f0ff]">6s مجاني</span>
+              ) : (
+                <span className="text-[#22f0ff]">أقصى {durationBounds.max}s</span>
+              )}
+              <span>{durationBounds.max}s</span>
             </div>
             <label className="mt-2 flex items-center gap-2 text-sm text-white/70">
               <input
@@ -1045,17 +1090,15 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         onClose={() => setModelsOpen(false)}
         onChange={(id) => {
           setSelectedModelId(id);
-          if (lockedMedia) {
-            if (lockedMedia === "video" && id === VERONIX_MODEL_ID) {
-              setDuration(FREE_VERONIX_DURATION_SECONDS);
-            }
+          const videoModel = videoModels.find((m) => m.id === id);
+          if (videoModel) {
+            if (!lockedMedia) setMedia("video");
+            applyVideoModelDefaults(videoModel);
             return;
           }
-          if (videoModels.some((m) => m.id === id)) {
-            setMedia("video");
-            if (id === VERONIX_MODEL_ID) setDuration(FREE_VERONIX_DURATION_SECONDS);
-          } else if (imageModels.some((m) => m.id === id)) {
-            setMedia("image");
+          if (imageModels.some((m) => m.id === id)) {
+            if (!lockedMedia) setMedia("image");
+            setAspectRatio("1:1");
           }
         }}
       />

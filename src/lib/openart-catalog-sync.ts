@@ -6,6 +6,7 @@ import {
   parseToolPayload,
 } from "@/lib/openart-mcp";
 import type { CatalogModel, ModelKind } from "@/lib/model-catalog";
+import { VIDEO_DURATION_FALLBACKS } from "@/lib/model-catalog";
 import { saveCostCache } from "@/lib/openart-cost-cache";
 import type { CostCacheItem } from "@/lib/openart-cost-defaults";
 import { VERONIX_MODEL_ID } from "@/lib/free-trial";
@@ -96,6 +97,7 @@ function buildCatalogFromOpenArt(models: OpenArtModelRow[]): SyncedCatalogFile {
 
     if (videoModes.length) {
       const isVeronix = mcpId === "byte-plus-seedance-2-mini";
+      const fallback = VIDEO_DURATION_FALLBACKS[mcpId];
       video.push({
         id: catalogIdFor(mcpId, "video"),
         name: displayNameFor(mcpId, name, "video"),
@@ -107,6 +109,9 @@ function buildCatalogFromOpenArt(models: OpenArtModelRow[]): SyncedCatalogFile {
         tagline: isVeronix
           ? "موديل فيديو حصري — أول فيديو 6 ثوانٍ مجاني (480p)"
           : row.description?.slice(0, 120),
+        durationMin: fallback?.min,
+        durationMax: fallback?.max,
+        durationDefault: fallback?.default,
       });
     }
   }
@@ -124,6 +129,93 @@ function buildCatalogFromOpenArt(models: OpenArtModelRow[]): SyncedCatalogFile {
     image,
     video,
   };
+}
+
+type DurationBounds = { min: number; max: number; default: number };
+
+function resolveSchemaNode(
+  node: unknown,
+  defs: Record<string, unknown>,
+  depth = 0,
+): Record<string, unknown> | null {
+  if (!node || typeof node !== "object" || depth > 8) return null;
+  const obj = node as Record<string, unknown>;
+  if (typeof obj.$ref === "string") {
+    const key = obj.$ref.replace(/^#\/\$defs\//, "");
+    return resolveSchemaNode(defs[key], defs, depth + 1);
+  }
+  return obj;
+}
+
+/** Pull duration min/max/default from openart_model_form_get jsonSchema. */
+export function extractDurationBounds(
+  payload: Record<string, unknown>,
+): DurationBounds | null {
+  const schema = payload.jsonSchema as Record<string, unknown> | undefined;
+  if (!schema) return null;
+  const defs = (schema.$defs as Record<string, unknown>) || {};
+  const topDefaults = (payload.defaults as Record<string, unknown>) || {};
+
+  const visit = (node: unknown, depth = 0): DurationBounds | null => {
+    if (!node || typeof node !== "object" || depth > 12) return null;
+    const obj = resolveSchemaNode(node, defs) || (node as Record<string, unknown>);
+    const props = obj.properties as Record<string, unknown> | undefined;
+    if (props?.duration) {
+      const durationSchema = resolveSchemaNode(props.duration, defs);
+      if (
+        durationSchema &&
+        typeof durationSchema.minimum === "number" &&
+        typeof durationSchema.maximum === "number"
+      ) {
+        const def =
+          typeof durationSchema.default === "number"
+            ? durationSchema.default
+            : typeof topDefaults.duration === "number"
+              ? topDefaults.duration
+              : 5;
+        return {
+          min: durationSchema.minimum,
+          max: durationSchema.maximum,
+          default: def,
+        };
+      }
+    }
+    for (const key of ["allOf", "oneOf", "anyOf"] as const) {
+      const arr = obj[key];
+      if (!Array.isArray(arr)) continue;
+      for (const item of arr) {
+        const found = visit(item, depth + 1);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  return visit(schema);
+}
+
+async function enrichVideoDurations(catalog: SyncedCatalogFile): Promise<void> {
+  for (const model of catalog.video) {
+    if (!model.mcpId || !model.modes?.length) continue;
+    const mode = model.modes.includes("text2video")
+      ? "text2video"
+      : model.modes[0];
+    try {
+      const result = await callOpenArtTool("openart_model_form_get", {
+        model: model.mcpId,
+        mode,
+      });
+      const payload = parseToolPayload(result);
+      if (result.isError) continue;
+      const bounds = extractDurationBounds(payload);
+      if (!bounds) continue;
+      model.durationMin = bounds.min;
+      model.durationMax = bounds.max;
+      model.durationDefault = bounds.default;
+    } catch {
+      // keep fallback bounds
+    }
+  }
 }
 
 function parseCostItems(payload: Record<string, unknown>): CostCacheItem[] {
@@ -167,6 +259,7 @@ export async function syncOpenArtCatalogAndCosts(): Promise<{
   }
 
   const catalog = buildCatalogFromOpenArt(models);
+  await enrichVideoDurations(catalog);
   await mkdir(DATA_DIR, { recursive: true });
   await writeFile(CATALOG_FILE, JSON.stringify(catalog, null, 2), "utf8");
 

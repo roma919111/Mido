@@ -7,7 +7,12 @@ import {
   FREE_VERONIX_RESOLUTION,
   isFreeVeronixEligible,
 } from "@/lib/free-trial";
-import { getCatalogModel, resolveMcpModel, setLiveCatalogCache } from "@/lib/model-catalog";
+import {
+  durationBoundsForModel,
+  getCatalogModel,
+  resolveMcpModel,
+  setLiveCatalogCache,
+} from "@/lib/model-catalog";
 import { loadSyncedCatalog } from "@/lib/openart-catalog-sync";
 import { audioParamForMcpModel, mapResolutionForMcpModel } from "@/lib/model-params";
 import {
@@ -196,9 +201,11 @@ export async function POST(request: Request) {
         : body.resolution ?? "720p";
       const mappedResolution = mapResolutionForMcpModel(mcpModel, uiResolution);
       // Free trial: model renders prompt for 4s only; 2s VYRONIX outro is added locally later.
+      const bounds = durationBoundsForModel(catalog);
+      const requestedDuration = body.duration ?? bounds.max;
       const modelDuration = freeTrial
         ? FREE_VERONIX_MODEL_DURATION_SECONDS
-        : (body.duration ?? 6);
+        : Math.min(bounds.max, Math.max(bounds.min, requestedDuration));
       const params: Record<string, unknown> =
         media === "image"
           ? {
@@ -215,7 +222,8 @@ export async function POST(request: Request) {
               videoCount: 1,
               duration: modelDuration,
               ...(mappedResolution ? { resolution: mappedResolution } : {}),
-              aspectRatio: body.aspectRatio ?? "16:9",
+              // Product rule: video output is locked to 16:9.
+              aspectRatio: "16:9",
               ...audioParamForMcpModel(mcpModel, body.generateAudio),
               autoEnhancePrompt: false,
               ...(body.startFrame ? { startFrame: body.startFrame } : {}),
