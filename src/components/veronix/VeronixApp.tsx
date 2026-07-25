@@ -32,13 +32,13 @@ export function VeronixApp() {
       <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 studio-backdrop" />
       <AppHeader user={user} onLogout={() => void logout()} />
       <main>
-        <section className="mx-auto max-w-3xl px-4 pt-6 sm:px-6">
+        <section className="mx-auto max-w-3xl px-4 pt-6 sm:px-6" dir="rtl">
           <p className="text-xs uppercase tracking-[0.22em] text-[#22f0ff]/80">Create</p>
-          <h1 className="mt-2 font-display text-3xl font-extrabold tracking-tight">
+          <h1 className="mt-2 font-display text-3xl font-extrabold tracking-tight" dir="ltr">
             Veronix.ai Studio
           </h1>
-          <p className="mt-2 max-w-xl text-sm text-white/50">
-            توليد صور وفيديو عبر Veronix.ai مع أسعار كريدت حية، حسابات زبائن، وباقات شهرية.
+          <p className="mt-2 max-w-xl text-sm leading-relaxed text-white/55">
+            استوديو لتوليد الصور والفيديو. اختر موديلًا واحدًا، اكتب وصفك، واضغط Generate.
           </p>
         </section>
         <CreateStudio user={user} onUserRefresh={refreshUser} />

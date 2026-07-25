@@ -238,7 +238,7 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
     }
 
     setGenerating(true);
-    setStatus("جاري التوليد عبر Veronix…");
+    setStatus("جاري التوليد…");
     try {
       const mode =
         media === "image"
@@ -519,12 +519,12 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
       </button>
       <p className="text-center text-[11px] text-white/40">
         {quoting
-          ? "جاري مزامنة التكلفة من Veronix…"
+          ? "جاري حساب التكلفة…"
           : creditLive
-            ? `تكلفة ${selectedModel?.name || "الموديل"} متزامنة مباشرة · −${creditCost} كريدت`
+            ? `التكلفة: −${creditCost} كريدت`
             : selectedModel && !selectedModel.available
-              ? "هذا الموديل غير متاح للتوليد بعد — اختر موديلًا متاحًا لعرض السعر الحقيقي"
-              : "اختر موديلًا متاحًا لعرض تكلفة الكريدت"}
+              ? "هذا الموديل غير متاح بعد — اختر موديلًا متاحًا"
+              : "اختر موديلًا متاحًا لعرض التكلفة"}
       </p>
 
       <ModelsModal
