@@ -1,12 +1,26 @@
 import { callOpenArtTool, OpenArtConfigError, parseToolPayload } from "@/lib/openart-mcp";
-import { getCatalogModel, resolveMcpModel } from "@/lib/model-catalog";
+import { ALL_MODELS, getCatalogModel, resolveMcpModel } from "@/lib/model-catalog";
+import { audioParamForMcpModel, mapResolutionForMcpModel } from "@/lib/model-params";
 import { lookupCachedCost } from "@/lib/openart-cost-cache";
 
-/** Veronix wallet credits = OpenArt credits × this factor. */
+/** Veronix wallet credits = OpenArt base credits × this fixed markup. */
 export const VERONIX_CREDIT_MULTIPLIER = 1.8;
 
+/** Apply the platform markup to every model — no per-model exceptions. */
 export function toVeronixCredits(openArtCredits: number): number {
-  return Math.max(1, Math.round(Number(openArtCredits) * VERONIX_CREDIT_MULTIPLIER));
+  const base = Number(openArtCredits);
+  if (!Number.isFinite(base) || base <= 0) return 1;
+  return Math.max(1, Math.round(base * VERONIX_CREDIT_MULTIPLIER));
+}
+
+export function withMultiplierNote(note?: string): string {
+  const base = note?.trim();
+  const tag = `Veronix price = OpenArt × ${VERONIX_CREDIT_MULTIPLIER}`;
+  if (!base) return tag;
+  if (base.includes("× 1.8") || base.includes("×1.8") || base.includes(String(VERONIX_CREDIT_MULTIPLIER))) {
+    return base;
+  }
+  return `${base} · ${tag}`;
 }
 
 export interface QuoteInput {
@@ -25,8 +39,12 @@ export interface QuoteResult {
   modelId: string;
   mcpModel: string;
   mode: string;
+  /** Final Veronix wallet debit (OpenArt × 1.8). */
   totalCredits: number;
   unitCredits: number;
+  /** Raw OpenArt credits before markup (for audit / UI transparency). */
+  openArtCredits: number;
+  multiplier: number;
   available: boolean;
   config: Record<string, unknown>;
   pricingNote?: string;
@@ -56,7 +74,6 @@ function resolveMode(
   const supported = catalog?.modes ?? [];
   if (!supported.length) return requested;
   if (supported.includes(requested)) return requested;
-  // Fall back to a supported mode for this model (e.g. Grok Imagine = image2video only)
   if (input.media === "video") {
     return (
       supported.find((m) => m.includes("video")) ||
@@ -67,33 +84,65 @@ function resolveMode(
   return supported.find((m) => m.includes("image")) || supported[0] || requested;
 }
 
+function buildParams(
+  input: QuoteInput,
+  mcpModel: string,
+): Record<string, unknown> {
+  if (input.media === "image") {
+    return {
+      imageCount: input.imageCount ?? 1,
+      aspectRatio: input.aspectRatio ?? "1:1",
+    };
+  }
+
+  const resolution = mapResolutionForMcpModel(mcpModel, input.resolution ?? "720p");
+  return {
+    videoCount: input.videoCount ?? 1,
+    duration: input.duration ?? 5,
+    ...(resolution ? { resolution } : {}),
+    aspectRatio: input.aspectRatio ?? "16:9",
+    ...audioParamForMcpModel(mcpModel, input.generateAudio),
+  };
+}
+
 async function quoteFromCache(
   input: QuoteInput,
   mcpModel: string,
   mode: string,
   params: Record<string, unknown>,
 ): Promise<QuoteResult | null> {
+  const mappedRes =
+    typeof params.resolution === "string"
+      ? params.resolution
+      : mapResolutionForMcpModel(mcpModel, input.resolution);
+
   const cached = await lookupCachedCost({
     model: mcpModel,
     mode,
-    resolution: input.resolution,
+    resolution: mappedRes,
     duration: input.duration,
     generateAudio: input.generateAudio,
     aspectRatio: input.aspectRatio,
   });
   if (!cached) return null;
-  const totalCredits = toVeronixCredits(cached.totalCredits);
+
+  const openArtCredits = cached.totalCredits;
+  const totalCredits = toVeronixCredits(openArtCredits);
   return {
     modelId: input.modelId,
     mcpModel,
     mode,
     totalCredits,
     unitCredits: totalCredits,
+    openArtCredits,
+    multiplier: VERONIX_CREDIT_MULTIPLIER,
     available: true,
     config: cached.config,
-    pricingNote: cached.scaled
-      ? "Synced from OpenArt cost table (duration scaled) × 1.8."
-      : "Synced from OpenArt cost table × 1.8.",
+    pricingNote: withMultiplierNote(
+      cached.scaled
+        ? "Synced from OpenArt cost table (duration scaled)"
+        : "Synced from OpenArt cost table",
+    ),
     source: "openart-cache",
     cached: true,
   };
@@ -107,36 +156,23 @@ export async function quoteOpenArtCredits(
   const catalog = getCatalogModel(input.modelId);
   const mcpModel = catalog ? resolveMcpModel(catalog) : input.modelId;
   const available = Boolean(catalog?.available && catalog.mcpId);
-
   const mode = resolveMode(catalog, input);
-
-  const params: Record<string, unknown> =
-    input.media === "image"
-      ? {
-          imageCount: input.imageCount ?? 1,
-          aspectRatio: input.aspectRatio ?? "1:1",
-        }
-      : {
-          videoCount: input.videoCount ?? 1,
-          duration: input.duration ?? 5,
-          resolution: input.resolution ?? "720p",
-          aspectRatio: input.aspectRatio ?? "16:9",
-          // Kling uses generateSound; PixVerse/Seedance use generateAudio.
-          ...(mcpModel.includes("kling")
-            ? { generateSound: Boolean(input.generateAudio) }
-            : { generateAudio: Boolean(input.generateAudio) }),
-        };
+  const params = buildParams(input, mcpModel);
 
   if (!available) {
-    const totalCredits = toVeronixCredits(fallbackEstimate(input));
+    const openArtCredits = fallbackEstimate(input);
+    const totalCredits = toVeronixCredits(openArtCredits);
     return {
       modelId: input.modelId,
       mcpModel,
       mode,
       totalCredits,
       unitCredits: totalCredits,
+      openArtCredits,
+      multiplier: VERONIX_CREDIT_MULTIPLIER,
       available: false,
       config: params,
+      pricingNote: withMultiplierNote("Estimate for unavailable model"),
       source: "estimate",
     };
   }
@@ -154,21 +190,26 @@ export async function quoteOpenArtCredits(
 
     const items = (payload.items as Array<Record<string, unknown>> | undefined) ?? [];
     const first = items[0] ?? payload;
-    const totalCredits = Number(first.totalCredits ?? first.unitCredits ?? 0);
-    if (!Number.isFinite(totalCredits) || totalCredits <= 0) {
+    const openArtCredits = Number(first.totalCredits ?? first.unitCredits ?? 0);
+    if (!Number.isFinite(openArtCredits) || openArtCredits <= 0) {
       throw new Error("Invalid credit quote from OpenArt");
     }
 
-    const veronixCredits = toVeronixCredits(totalCredits);
+    const veronixCredits = toVeronixCredits(openArtCredits);
+    const openArtUnit = Number(first.unitCredits ?? openArtCredits);
     return {
       modelId: input.modelId,
       mcpModel,
       mode,
       totalCredits: veronixCredits,
-      unitCredits: toVeronixCredits(Number(first.unitCredits ?? totalCredits)),
+      unitCredits: toVeronixCredits(openArtUnit),
+      openArtCredits,
+      multiplier: VERONIX_CREDIT_MULTIPLIER,
       available: true,
       config: (first.config as Record<string, unknown>) ?? params,
-      pricingNote: typeof payload.pricingNote === "string" ? payload.pricingNote : undefined,
+      pricingNote: withMultiplierNote(
+        typeof payload.pricingNote === "string" ? payload.pricingNote : undefined,
+      ),
       source: "openart",
     };
   } catch (error) {
@@ -195,12 +236,17 @@ export async function quoteMultipleModels(
   modelIds: string[],
   base: Omit<QuoteInput, "modelId">,
   options?: QuoteOptions,
-): Promise<{ quotes: QuoteResult[]; totalCredits: number }> {
+): Promise<{ quotes: QuoteResult[]; totalCredits: number; multiplier: number }> {
   const unique = [...new Set(modelIds)].slice(0, 4);
   const quotes: QuoteResult[] = [];
   for (const modelId of unique) {
     quotes.push(await quoteOpenArtCredits({ ...base, modelId }, options));
   }
   const totalCredits = quotes.reduce((sum, q) => sum + q.totalCredits, 0);
-  return { quotes, totalCredits };
+  return { quotes, totalCredits, multiplier: VERONIX_CREDIT_MULTIPLIER };
+}
+
+/** All live catalog models that must always go through ×1.8. */
+export function listPricedCatalogModels() {
+  return ALL_MODELS.filter((m) => m.available && m.mcpId);
 }

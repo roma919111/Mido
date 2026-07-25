@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "tunnel:vyronix": "npx --yes localtunnel --port 3000 --subdomain vyronix-ai",
-    "tunnel:named": "bash scripts/run-named-tunnel.sh"
+    "tunnel:named": "bash scripts/run-named-tunnel.sh",
+    "verify:pricing": "node scripts/verify-pricing.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

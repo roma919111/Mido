@@ -97,7 +97,8 @@ export function PricingPage() {
       <main className="mx-auto max-w-5xl px-4 pb-28 pt-8 sm:px-6" dir="rtl">
         <h1 className="font-display text-3xl font-extrabold">الباقات الشهرية</h1>
         <p className="mt-2 text-white/50">
-          باقتان اقتصاديتان من 10$ إلى 15$. الكريدت يُضاف لمحفظة Veronix ويُخصم حسب التسعير ×1.8.
+          باقتان اقتصاديتان من 10$ إلى 15$. الكريدت يُضاف لمحفظة Veronix، والتوليد يُسعَّر دائماً
+          بمعادلة ثابتة: تكلفة OpenArt × 1.8 لجميع الموديلات (صورة وفيديو).
         </p>
         {message && (
           <p className="mt-4 rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-50">

@@ -42,6 +42,7 @@ export async function POST(request: Request) {
     );
     return NextResponse.json({
       ...result,
+      multiplier: result.multiplier,
       source: allLive
         ? result.quotes.every((q) => q.source === "openart")
           ? "openart"

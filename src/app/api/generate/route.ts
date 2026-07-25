@@ -147,6 +147,13 @@ export async function POST(request: Request) {
       const mcpModel = catalog ? resolveMcpModel(catalog) : quote.mcpModel;
       const toolName = media === "image" ? "openart_generate_image" : "openart_generate_video";
 
+      const { audioParamForMcpModel, mapResolutionForMcpModel } = await import(
+        "@/lib/model-params"
+      );
+      const mappedResolution = mapResolutionForMcpModel(
+        mcpModel,
+        body.resolution ?? "720p",
+      );
       const params: Record<string, unknown> =
         media === "image"
           ? {
@@ -162,11 +169,9 @@ export async function POST(request: Request) {
               prompt,
               videoCount: 1,
               duration: body.duration ?? 5,
-              resolution: body.resolution ?? "720p",
+              ...(mappedResolution ? { resolution: mappedResolution } : {}),
               aspectRatio: body.aspectRatio ?? "16:9",
-              ...(mcpModel.includes("kling")
-                ? { generateSound: Boolean(body.generateAudio) }
-                : { generateAudio: Boolean(body.generateAudio) }),
+              ...audioParamForMcpModel(mcpModel, body.generateAudio),
               autoEnhancePrompt: false,
               ...(body.startFrame ? { startFrame: body.startFrame } : {}),
               ...(body.endFrame ? { endFrame: body.endFrame } : {}),

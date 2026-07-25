@@ -78,7 +78,15 @@ function scoreMatch(
   if (wantRes && res) {
     if (res === wantRes) score += 50;
     else if (res.includes(wantRes) || wantRes.includes(res)) score += 20;
-    else score -= 10;
+    // Kling: UI 720p maps to std — treat as equivalent for cache hits.
+    else if (
+      (wantRes === "std" && ["360p", "480p", "720p", "std"].includes(res)) ||
+      (res === "std" && ["360p", "480p", "720p", "std"].includes(wantRes)) ||
+      (wantRes === "pro" && ["1080p", "1k", "pro"].includes(res)) ||
+      (res === "pro" && ["1080p", "1k", "pro"].includes(wantRes))
+    ) {
+      score += 45;
+    } else score -= 10;
   }
   const dur = Number(item.config.duration);
   if (wanted.duration && Number.isFinite(dur) && dur > 0) {
