@@ -1,24 +1,39 @@
 import Stripe from "stripe";
 import { getAppBaseUrl } from "@/lib/app-url";
 import { getPlan, getTopUp, type PlanId } from "@/lib/plans";
+import { loadStripeCredentials } from "@/lib/stripe-credentials";
 
 export { getAppBaseUrl };
 
 let stripeSingleton: Stripe | null = null;
+let stripeKeyUsed: string | null = null;
 
-export function isStripeConfigured(): boolean {
-  return Boolean(process.env.STRIPE_SECRET_KEY?.trim());
+export async function isStripeConfigured(): Promise<boolean> {
+  const creds = await loadStripeCredentials();
+  return Boolean(creds?.secretKey);
 }
 
-export function getStripe(): Stripe {
-  const key = process.env.STRIPE_SECRET_KEY?.trim();
+export async function getStripe(): Promise<Stripe> {
+  const creds = await loadStripeCredentials();
+  const key = creds?.secretKey?.trim();
   if (!key) {
     throw new Error("STRIPE_SECRET_KEY is not configured");
   }
-  if (!stripeSingleton) {
+  if (!stripeSingleton || stripeKeyUsed !== key) {
     stripeSingleton = new Stripe(key);
+    stripeKeyUsed = key;
   }
   return stripeSingleton;
+}
+
+export async function getStripeWebhookSecret(): Promise<string | undefined> {
+  const creds = await loadStripeCredentials();
+  return creds?.webhookSecret?.trim() || process.env.STRIPE_WEBHOOK_SECRET?.trim() || undefined;
+}
+
+export function resetStripeClient(): void {
+  stripeSingleton = null;
+  stripeKeyUsed = null;
 }
 
 export function getStripePriceId(planId: PlanId): string | undefined {
@@ -36,7 +51,7 @@ export async function createCheckoutSession(input: {
   const plan = getPlan(input.planId);
   if (!plan) throw new Error("Unknown plan");
 
-  const stripe = getStripe();
+  const stripe = await getStripe();
   const base = getAppBaseUrl();
   const priceId = getStripePriceId(input.planId);
 
@@ -90,7 +105,7 @@ export async function createTopUpCheckoutSession(input: {
   const pack = getTopUp(input.topUpId);
   if (!pack) throw new Error("Unknown top-up pack");
 
-  const stripe = getStripe();
+  const stripe = await getStripe();
   const base = getAppBaseUrl();
 
   const session = await stripe.checkout.sessions.create({

@@ -1,18 +1,18 @@
 import { NextResponse } from "next/server";
-import { getStripe, isStripeConfigured } from "@/lib/stripe";
+import { getStripe, getStripeWebhookSecret, isStripeConfigured } from "@/lib/stripe";
 import { adjustCredits, findUserById, updateUser } from "@/lib/db";
 import { getPlan, getTopUp, type PlanId } from "@/lib/plans";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  if (!isStripeConfigured()) {
+  if (!(await isStripeConfigured())) {
     return NextResponse.json({ error: "Stripe not configured" }, { status: 503 });
   }
 
-  const stripe = getStripe();
+  const stripe = await getStripe();
   const signature = request.headers.get("stripe-signature");
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
+  const webhookSecret = await getStripeWebhookSecret();
   const rawBody = await request.text();
 
   let event;

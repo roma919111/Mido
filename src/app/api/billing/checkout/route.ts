@@ -25,7 +25,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Invalid top-up pack" }, { status: 400 });
       }
 
-      if (!isStripeConfigured()) {
+      if (!(await isStripeConfigured())) {
         const updated = await adjustCredits(user.id, pack.credits);
         return NextResponse.json({
           demo: true,
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid plan" }, { status: 400 });
     }
 
-    if (!isStripeConfigured()) {
+    if (!(await isStripeConfigured())) {
       // Dev / demo activation when Stripe keys are not set yet.
       await updateUser(user.id, { planId });
       const updated = await adjustCredits(user.id, plan.monthlyCredits);

@@ -75,6 +75,14 @@ export function PricingPage() {
         {message && (
           <p className="mt-4 rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-50">
             {message}
+            {/Stripe غير مفعّل/i.test(message) ? (
+              <>
+                {" "}
+                <a href="/setup/stripe" className="font-semibold text-[#22f0ff] underline-offset-2 hover:underline">
+                  ربط Stripe
+                </a>
+              </>
+            ) : null}
           </p>
         )}
         <div className="mt-8 grid gap-4 md:grid-cols-2">
