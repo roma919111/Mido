@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "tunnel:vyronix": "npx --yes localtunnel --port 3000 --subdomain vyronix"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

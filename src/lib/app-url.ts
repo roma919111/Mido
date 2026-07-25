@@ -1,4 +1,4 @@
-import { CANONICAL_ORIGIN } from "@/lib/site";
+import { PREVIEW_ORIGIN } from "@/lib/site";
 
 function isEphemeralTunnel(url: string): boolean {
   try {
@@ -10,7 +10,8 @@ function isEphemeralTunnel(url: string): boolean {
 
 /**
  * Public origin used for Google OAuth, Stripe redirects, and owner OAuth.
- * Prefer APP_BASE_URL; fall back to the locked brand domain (never a random tunnel).
+ * Prefer APP_BASE_URL. Ephemeral Cloudflare quick tunnels are rejected in favor
+ * of the stable Vyronix preview host until a purchased domain is configured.
  */
 export function getAppBaseUrl(): string {
   const fromEnv =
@@ -19,15 +20,14 @@ export function getAppBaseUrl(): string {
     "";
 
   if (fromEnv) {
-    // Reject ephemeral Cloudflare quick-tunnel hosts so OAuth stays stable.
     if (isEphemeralTunnel(fromEnv)) {
-      return CANONICAL_ORIGIN;
+      return PREVIEW_ORIGIN;
     }
     return fromEnv.replace(/\/$/, "");
   }
 
   if (process.env.NODE_ENV === "production") {
-    return CANONICAL_ORIGIN;
+    return PREVIEW_ORIGIN;
   }
 
   return "http://localhost:3000";

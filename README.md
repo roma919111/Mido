@@ -26,14 +26,21 @@ npm run dev
 3. Button shows `−{totalCredits}` from that live quote (sum if multi-select).
 4. On Generate, the same quote path is used again before deducting the customer wallet.
 
-### Domain (stable)
+### Public preview URL (before buying a domain)
 
-Production public URL is locked to **https://veronix.ai** (`APP_BASE_URL`). Do not use ephemeral `*.trycloudflare.com` hosts for OAuth. See `/setup/domain` for Cloudflare tunnel DNS steps.
+Stable free branded link: **https://vyronix.loca.lt**
+
+```bash
+npm run start -- --hostname 0.0.0.0 --port 3000
+npm run tunnel:vyronix   # keeps the same https://vyronix.loca.lt name
+```
+
+Set `APP_BASE_URL=https://vyronix.loca.lt`. When you later buy a real domain, change that one env var and update the Google redirect URI once. See `/setup/domain`.
 
 ### Google Sign-In
 
 1. Google Cloud Console → APIs & Services → Credentials → OAuth client (Web).
-2. Authorized redirect URI (fixed): `https://veronix.ai/api/auth/google/callback`
+2. Authorized redirect URI (preview): `https://vyronix.loca.lt/api/auth/google/callback`
 3. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env.local` (once).
 4. Customers use **Continue with Google** on `/login` and `/signup`.
 

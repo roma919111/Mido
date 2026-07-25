@@ -5,8 +5,7 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: [
     "localhost",
     "127.0.0.1",
-    "veronix.ai",
-    "www.veronix.ai",
+    "vyronix.loca.lt",
     "*.loca.lt",
     "loca.lt",
     "*.trycloudflare.com",

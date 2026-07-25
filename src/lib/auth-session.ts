@@ -28,20 +28,21 @@ export type OpenArtAuthSession = {
 };
 
 export function getAppBaseUrl(request?: Request): string {
+  const preview = "https://vyronix.loca.lt";
   const configured =
     process.env.APP_BASE_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim();
   if (configured) {
     try {
       const host = new URL(configured).hostname;
       if (/\.trycloudflare\.com$/i.test(host)) {
-        return "https://veronix.ai";
+        return preview;
       }
     } catch {
       /* keep configured */
     }
     return configured.replace(/\/$/, "");
   }
-  if (process.env.NODE_ENV === "production") return "https://veronix.ai";
+  if (process.env.NODE_ENV === "production") return preview;
   if (process.env.VERCEL_URL?.trim()) return `https://${process.env.VERCEL_URL.trim()}`;
   if (request) {
     const origin = new URL(request.url).origin;
