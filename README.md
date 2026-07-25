@@ -26,11 +26,15 @@ npm run dev
 3. Button shows `−{totalCredits}` from that live quote (sum if multi-select).
 4. On Generate, the same quote path is used again before deducting the customer wallet.
 
+### Domain (stable)
+
+Production public URL is locked to **https://veronix.ai** (`APP_BASE_URL`). Do not use ephemeral `*.trycloudflare.com` hosts for OAuth. See `/setup/domain` for Cloudflare tunnel DNS steps.
+
 ### Google Sign-In
 
 1. Google Cloud Console → APIs & Services → Credentials → OAuth client (Web).
-2. Authorized redirect URI: `{APP_BASE_URL}/api/auth/google/callback`
-3. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env.local`.
+2. Authorized redirect URI (fixed): `https://veronix.ai/api/auth/google/callback`
+3. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env.local` (once).
 4. Customers use **Continue with Google** on `/login` and `/signup`.
 
 ### Billing / Stripe — what you need to provide

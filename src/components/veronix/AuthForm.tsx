@@ -21,6 +21,7 @@ export function AuthForm({ mode }: AuthFormProps) {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(urlError);
   const [loading, setLoading] = useState(false);
+  const [googleConfigured, setGoogleConfigured] = useState(false);
   const [redirectUri, setRedirectUri] = useState("");
 
   useEffect(() => {
@@ -30,8 +31,10 @@ export function AuthForm({ mode }: AuthFormProps) {
           configured?: boolean;
           redirectUri?: string;
         }>("/api/auth/google/status");
+        setGoogleConfigured(Boolean(data.configured));
         setRedirectUri(data.redirectUri || "");
       } catch {
+        setGoogleConfigured(false);
         setRedirectUri("");
       }
     })();
@@ -60,6 +63,10 @@ export function AuthForm({ mode }: AuthFormProps) {
     }
   }
 
+  const googleHref = `/api/auth/google?next=${encodeURIComponent(next)}${
+    paywall ? "&paywall=1" : ""
+  }`;
+
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4 py-10" dir="rtl">
       <Link href="/" className="w-fit">
@@ -81,7 +88,6 @@ export function AuthForm({ mode }: AuthFormProps) {
         </p>
       )}
 
-      {/* Primary path: email — works for every customer without Google Console */}
       <form onSubmit={onSubmit} className="mt-6 space-y-3">
         {mode === "signup" && (
           <input
@@ -119,17 +125,32 @@ export function AuthForm({ mode }: AuthFormProps) {
         </button>
       </form>
 
-      {/* Google disabled until Authorized redirect URI matches current public URL.
-          Credentials are already saved once; only the tunnel redirect URI drifts. */}
-      <p className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] text-white/45">
-        Google متوقف مؤقتًا: مفاتيح Google محفوظة مرة واحدة، لكن رابط الموقع المؤقت تغيّر فيحتاج تحديث
-        Redirect URI في Google Console فقط — مو إعادة إدخال Client ID. استخدم البريد أعلاه الآن.
-        {redirectUri ? (
-          <span className="mt-1 block break-all text-white/30" dir="ltr">
-            أضف هذا في Authorized redirect URIs: {redirectUri}
-          </span>
-        ) : null}
-      </p>
+      {googleConfigured ? (
+        <>
+          <div className="my-4 flex items-center gap-3 text-[11px] text-white/30">
+            <span className="h-px flex-1 bg-white/10" />
+            أو
+            <span className="h-px flex-1 bg-white/10" />
+          </div>
+          <a
+            href={googleHref}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-white px-4 py-3 text-sm font-semibold text-[#111]"
+          >
+            المتابعة مع Google
+          </a>
+          <p className="mt-2 text-center text-[11px] text-white/35" dir="ltr">
+            Redirect: {redirectUri || "https://veronix.ai/api/auth/google/callback"}
+          </p>
+        </>
+      ) : (
+        <p className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] text-white/45">
+          Google غير مفعّل بعد. استخدم البريد، أو أكمل{" "}
+          <Link href="/setup/google" className="text-[#22f0ff]">
+            إعداد Google
+          </Link>
+          .
+        </p>
+      )}
 
       {error && <p className="mt-3 text-sm text-rose-300">{error}</p>}
 

@@ -20,7 +20,10 @@ async function requireCreds() {
   return creds;
 }
 
-/** Public site origin for OAuth redirects (tunnel-safe). */
+/**
+ * Public site origin for OAuth redirects.
+ * Always prefer APP_BASE_URL / canonical veronix.ai — never follow ephemeral tunnel Host headers.
+ */
 export function resolvePublicOrigin(request?: Request): string {
   const configured = getAppBaseUrl().replace(/\/$/, "");
   if (configured && !/localhost|127\.0\.0\.1/i.test(configured)) {
@@ -31,10 +34,13 @@ export function resolvePublicOrigin(request?: Request): string {
       request.headers.get("x-forwarded-host") ||
       request.headers.get("host") ||
       new URL(request.url).host;
-    const proto =
-      request.headers.get("x-forwarded-proto") ||
-      (host.includes("localhost") ? "http" : "https");
-    if (host) return `${proto}://${host}`.replace(/\/$/, "");
+    // Ignore trycloudflare hosts so Google redirect stays on the brand domain.
+    if (host && !/\.trycloudflare\.com$/i.test(host.split(":")[0] || "")) {
+      const proto =
+        request.headers.get("x-forwarded-proto") ||
+        (host.includes("localhost") ? "http" : "https");
+      return `${proto}://${host}`.replace(/\/$/, "");
+    }
   }
   return configured || "http://localhost:3000";
 }

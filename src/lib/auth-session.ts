@@ -28,10 +28,25 @@ export type OpenArtAuthSession = {
 };
 
 export function getAppBaseUrl(request?: Request): string {
-  const configured = process.env.APP_BASE_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (configured) return configured.replace(/\/$/, "");
+  const configured =
+    process.env.APP_BASE_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (configured) {
+    try {
+      const host = new URL(configured).hostname;
+      if (/\.trycloudflare\.com$/i.test(host)) {
+        return "https://veronix.ai";
+      }
+    } catch {
+      /* keep configured */
+    }
+    return configured.replace(/\/$/, "");
+  }
+  if (process.env.NODE_ENV === "production") return "https://veronix.ai";
   if (process.env.VERCEL_URL?.trim()) return `https://${process.env.VERCEL_URL.trim()}`;
-  if (request) return new URL(request.url).origin;
+  if (request) {
+    const origin = new URL(request.url).origin;
+    if (!/\.trycloudflare\.com$/i.test(new URL(origin).hostname)) return origin;
+  }
   return "http://localhost:3000";
 }
 
