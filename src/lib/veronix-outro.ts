@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, rm, writeFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { FREE_VERONIX_OUTRO_SECONDS } from "@/lib/free-trial";
@@ -166,9 +166,7 @@ export async function appendVyronixOutro(sourceUrl: string): Promise<string> {
     ]);
 
     await copyFile(finalTmp, outPublic);
-    // Sanity: file must exist and be non-trivial.
-    const { statSync } = await import("node:fs");
-    const st = statSync(outPublic);
+    const st = await stat(outPublic);
     if (st.size < 2000) {
       throw new Error("Branded output too small");
     }
