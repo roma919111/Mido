@@ -19,20 +19,20 @@ export interface CatalogModel {
  * Models with mcpId are live via OpenArt MCP; others appear in UI as listed.
  */
 export const IMAGE_MODELS: CatalogModel[] = [
-  { id: "auto", name: "Auto", kind: "image", mcpId: "nano-banana-2-lite", modes: ["text2image", "image2image"], badge: "Auto", available: false },
-  { id: "gpt-image-2", name: "GPT Image 2", kind: "image", mcpId: "gpt-image-2", modes: ["text2image", "image2image"], available: false },
-  { id: "nano-banana-2-lite", name: "Nano Banana 2 Lite", kind: "image", mcpId: "nano-banana-2-lite", modes: ["text2image", "image2image"], available: false },
-  { id: "nano-banana-2", name: "Nano Banana 2", kind: "image", mcpId: "nano-banana-2", modes: ["text2image", "image2image"], available: false },
+  { id: "auto", name: "Auto", kind: "image", mcpId: "nano-banana-2-lite", modes: ["text2image", "image2image"], badge: "Auto", available: true },
+  { id: "gpt-image-2", name: "GPT Image 2", kind: "image", mcpId: "gpt-image-2", modes: ["text2image", "image2image"], available: true },
+  { id: "nano-banana-2-lite", name: "Nano Banana 2 Lite", kind: "image", mcpId: "nano-banana-2-lite", modes: ["text2image", "image2image"], available: true },
+  { id: "nano-banana-2", name: "Nano Banana 2", kind: "image", mcpId: "nano-banana-2", modes: ["text2image", "image2image"], available: true },
   { id: "seedream-5-pro", name: "Seedream 5.0 Pro", kind: "image", available: false },
-  { id: "nano-banana-pro", name: "Nano Banana Pro", kind: "image", mcpId: "nano-banana-pro", modes: ["text2image", "image2image"], available: false },
+  { id: "nano-banana-pro", name: "Nano Banana Pro", kind: "image", mcpId: "nano-banana-pro", modes: ["text2image", "image2image"], available: true },
   { id: "recraft-v4", name: "Recraft V4", kind: "image", available: false },
   { id: "recraft", name: "Recraft (image & SVG generation model)", kind: "image", available: false },
   { id: "reve-2-1", name: "Reve 2.1", kind: "image", available: false },
   { id: "wan-2-7-image", name: "Wan 2.7", kind: "image", available: false },
   { id: "grok-imagine-image", name: "Grok Imagine", kind: "image", available: false },
-  { id: "seedream-5-lite", name: "Seedream 5.0 Lite", kind: "image", mcpId: "byte-plus-seedream-5-lite", modes: ["text2image", "image2image"], available: false },
-  { id: "seedream-4-5", name: "Seedream 4.5", kind: "image", mcpId: "byte-plus-seedream-4-5", modes: ["text2image", "image2image"], available: false },
-  { id: "kling-3-omni-image", name: "Kling 3.0 Omni", kind: "image", mcpId: "kling-3-omni", modes: ["text2image", "image2image"], available: false },
+  { id: "seedream-5-lite", name: "Seedream 5.0 Lite", kind: "image", mcpId: "byte-plus-seedream-5-lite", modes: ["text2image", "image2image"], available: true },
+  { id: "seedream-4-5", name: "Seedream 4.5", kind: "image", mcpId: "byte-plus-seedream-4-5", modes: ["text2image", "image2image"], available: true },
+  { id: "kling-3-omni-image", name: "Kling 3.0 Omni", kind: "image", mcpId: "kling-3-omni", modes: ["text2image", "image2image"], available: true },
   { id: "nano-banana", name: "Nano Banana", kind: "image", available: false },
   { id: "seedream-4", name: "Seedream 4.0", kind: "image", available: false },
   { id: "qwen-image-2", name: "Qwen Image 2", kind: "image", available: false },
@@ -59,7 +59,7 @@ export const IMAGE_MODELS: CatalogModel[] = [
 ];
 
 export const VIDEO_MODELS: CatalogModel[] = [
-  // Customer-facing: Veronix ONLY (Seedance Mini backend)
+  // Veronix (Seedance Mini) first — default customer choice
   {
     id: "seedance-2-mini",
     name: "Veronix",
@@ -70,14 +70,14 @@ export const VIDEO_MODELS: CatalogModel[] = [
     tagline: "موديل فيديو حصري — أول فيديو 9 ثوانٍ مجاني",
     available: true,
   },
-  // Kept for future / owner tooling — hidden from customers
-  { id: "seedance-2", name: "Seedance 2.0", kind: "video", mcpId: "byte-plus-seedance-2", modes: ["text2video", "image2video", "element2video"], available: false },
-  { id: "seedance-2-fast", name: "Seedance 2.0 Fast", kind: "video", mcpId: "byte-plus-seedance-2-fast", modes: ["text2video", "image2video", "element2video"], available: false },
-  { id: "gemini-omni-flash", name: "Gemini Omni Flash", kind: "video", mcpId: "gemini-omni-flash", modes: ["text2video", "image2video", "element2video"], available: false },
-  { id: "kling-3-omni", name: "Kling 3.0 Omni", kind: "video", mcpId: "kling-3-omni", modes: ["text2video", "image2video", "element2video"], available: false },
-  { id: "pixverse-v6", name: "PixVerse V6", kind: "video", mcpId: "pixverseV6", modes: ["text2video", "image2video"], available: false },
-  { id: "wan-2-7", name: "Wan 2.7", kind: "video", mcpId: "wan2-7", modes: ["text2video", "image2video", "element2video"], available: false },
-  { id: "grok-imagine", name: "Grok Imagine", kind: "video", mcpId: "grok-imagine-1-5", modes: ["image2video"], available: false },
+  { id: "seedance-2", name: "Seedance 2.0", kind: "video", mcpId: "byte-plus-seedance-2", modes: ["text2video", "image2video", "element2video"], available: true },
+  { id: "seedance-2-fast", name: "Seedance 2.0 Fast", kind: "video", mcpId: "byte-plus-seedance-2-fast", modes: ["text2video", "image2video", "element2video"], available: true },
+  { id: "gemini-omni-flash", name: "Gemini Omni Flash", kind: "video", mcpId: "gemini-omni-flash", modes: ["text2video", "image2video", "element2video"], available: true },
+  { id: "kling-3-omni", name: "Kling 3.0 Omni", kind: "video", mcpId: "kling-3-omni", modes: ["text2video", "image2video", "element2video"], available: true },
+  { id: "pixverse-v6", name: "PixVerse V6", kind: "video", mcpId: "pixverseV6", modes: ["text2video", "image2video"], available: true },
+  { id: "wan-2-7", name: "Wan 2.7", kind: "video", mcpId: "wan2-7", modes: ["text2video", "image2video", "element2video"], available: true },
+  { id: "grok-imagine", name: "Grok Imagine", kind: "video", mcpId: "grok-imagine-1-5", modes: ["image2video"], available: true },
+  // Not exposed via MCP yet — kept for future, hidden in UI when unavailable
   { id: "pixverse-c1", name: "PixVerse C1", kind: "video", available: false },
   { id: "happyhorse-1-1", name: "HappyHorse 1.1", kind: "video", available: false },
   { id: "happyhorse", name: "HappyHorse", kind: "video", available: false },
@@ -95,7 +95,7 @@ export const VIDEO_MODELS: CatalogModel[] = [
   { id: "wan-2-5", name: "Wan 2.5", kind: "video", available: false },
   { id: "hailuo-02", name: "Hailuo 02", kind: "video", available: false },
   { id: "hailuo-2-3", name: "Hailuo 2.3", kind: "video", available: false },
-  { id: "kling-2-1", kind: "video", name: "Kling 2.1", available: false },
+  { id: "kling-2-1", name: "Kling 2.1", kind: "video", available: false },
   { id: "seedance-1", name: "Seedance 1", kind: "video", available: false },
   { id: "vidu-q3", name: "Vidu Q3", kind: "video", available: false },
   { id: "pixverse-5", name: "PixVerse 5", kind: "video", available: false },

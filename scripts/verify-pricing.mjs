@@ -1,12 +1,20 @@
 #!/usr/bin/env node
 /**
- * Verify Veronix markup: customer Veronix model quote = OpenArt × 1.8
+ * Verify Veronix markup: every live model quote = OpenArt × 1.8
  * Usage: node scripts/verify-pricing.mjs [baseUrl]
  */
 const BASE = process.argv[2] || "http://127.0.0.1:3000";
 const MULTIPLIER = 1.8;
 
 const CASES = [
+  { id: "auto", media: "image", mode: "text2image" },
+  { id: "gpt-image-2", media: "image", mode: "text2image" },
+  { id: "nano-banana-2-lite", media: "image", mode: "text2image" },
+  { id: "nano-banana-2", media: "image", mode: "text2image" },
+  { id: "nano-banana-pro", media: "image", mode: "text2image" },
+  { id: "seedream-5-lite", media: "image", mode: "text2image" },
+  { id: "seedream-4-5", media: "image", mode: "text2image" },
+  { id: "kling-3-omni-image", media: "image", mode: "text2image" },
   {
     id: "seedance-2-mini",
     media: "video",
@@ -14,25 +22,59 @@ const CASES = [
     resolution: "720p",
     duration: 9,
     generateAudio: true,
-    label: "Veronix 9s audio",
   },
   {
-    id: "seedance-2-mini",
+    id: "seedance-2",
+    media: "video",
+    mode: "text2video",
+    resolution: "720p",
+    duration: 5,
+    generateAudio: true,
+  },
+  {
+    id: "seedance-2-fast",
+    media: "video",
+    mode: "text2video",
+    resolution: "720p",
+    duration: 5,
+    generateAudio: true,
+  },
+  {
+    id: "gemini-omni-flash",
+    media: "video",
+    mode: "text2video",
+    resolution: "720p",
+    duration: 5,
+  },
+  {
+    id: "kling-3-omni",
+    media: "video",
+    mode: "text2video",
+    resolution: "720p",
+    duration: 5,
+    generateAudio: true,
+  },
+  {
+    id: "pixverse-v6",
     media: "video",
     mode: "text2video",
     resolution: "720p",
     duration: 5,
     generateAudio: false,
-    label: "Veronix 5s",
   },
   {
-    id: "seedance-2-mini",
+    id: "wan-2-7",
     media: "video",
     mode: "text2video",
     resolution: "720p",
-    duration: 9,
-    generateAudio: false,
-    label: "Veronix 9s",
+    duration: 5,
+  },
+  {
+    id: "grok-imagine",
+    media: "video",
+    mode: "image2video",
+    resolution: "720p",
+    duration: 5,
   },
 ];
 
@@ -48,7 +90,7 @@ async function quote(c) {
       modelIds: [c.id],
       media: c.media,
       mode: c.mode,
-      aspectRatio: "16:9",
+      aspectRatio: c.media === "image" ? "1:1" : "16:9",
       resolution: c.resolution,
       duration: c.duration,
       generateAudio: c.generateAudio,
@@ -59,44 +101,41 @@ async function quote(c) {
 }
 
 let failed = 0;
-console.log(`Verifying Veronix ×${MULTIPLIER} against ${BASE}\n`);
+console.log(`Verifying ×${MULTIPLIER} against ${BASE}\n`);
 
 const modelsRes = await fetch(`${BASE}/api/models`);
 const models = await modelsRes.json();
-const videoIds = (models.video || []).map((m) => m.id);
-console.log("Customer models:", videoIds.join(", ") || "(none)");
-if (videoIds.length !== 1 || videoIds[0] !== "seedance-2-mini") {
-  console.log("FAIL customer catalog must expose Veronix only");
+const liveVideo = (models.video || []).filter((m) => m.available).map((m) => m.id);
+const liveImage = (models.image || []).filter((m) => m.available).map((m) => m.id);
+console.log("Live image:", liveImage.join(", "));
+console.log("Live video:", liveVideo.join(", "));
+if (!liveVideo.includes("seedance-2-mini") || liveImage.length < 1 || liveVideo.length < 2) {
+  console.log("FAIL expected full live catalog (not Veronix-only)");
   failed++;
 } else {
-  console.log("OK   customer catalog = Veronix only\n");
+  console.log("OK   full live catalog restored\n");
 }
 
 for (const c of CASES) {
   const { status, data } = await quote(c);
   const q = data.quotes?.[0];
   if (status !== 200 || !q) {
-    console.log(`FAIL ${c.label}: HTTP ${status} ${data.error || ""}`);
+    console.log(`FAIL ${c.id}: HTTP ${status} ${data.error || ""}`);
     failed++;
     continue;
   }
   const openArt = q.openArtCredits;
-  const listPrice = q.listPriceCredits ?? (data.freeTrial ? data.listPriceCredits : q.totalCredits);
-  // When anonymous, free trial is false so totalCredits should equal list price.
-  const billed = q.totalCredits;
+  const listPrice = data.listPriceCredits ?? q.listPriceCredits ?? q.totalCredits;
   const want = expected(openArt);
-  const mathOk = (data.freeTrial ? listPrice : billed) === want || billed === want || listPrice === want;
-  // Prefer checking openArt * 1.8 against listPriceCredits when present
-  const checkBase = data.listPriceCredits ?? (data.freeTrial ? null : billed);
-  const okMath = checkBase == null ? mathOk : checkBase === want;
   const multOk = Number(data.multiplier ?? q.multiplier) === MULTIPLIER;
+  const mathOk = Number(listPrice) === want || Number(q.totalCredits) === want;
   const liveOk = q.source === "openart" || q.source === "openart-cache";
-  const ok = multOk && okMath && liveOk && q.available;
+  const ok = multOk && mathOk && liveOk && q.available;
   if (!ok) failed++;
   console.log(
-    `${ok ? "OK  " : "FAIL"} ${c.label.padEnd(18)} openArt=${String(openArt).padStart(4)} → ×1.8=${String(want).padStart(4)} billed=${billed} list=${data.listPriceCredits ?? "—"} source=${q.source} freeTrial=${Boolean(data.freeTrial)}`,
+    `${ok ? "OK  " : "FAIL"} ${c.id.padEnd(22)} openArt=${String(openArt).padStart(4)} → ${String(want).padStart(4)} source=${q.source}`,
   );
 }
 
-console.log(`\n${failed === 0 ? "PASS" : "FAIL"}: checks remaining=${failed}`);
+console.log(`\n${failed === 0 ? "PASS" : "FAIL"}: remaining=${failed}`);
 process.exit(failed === 0 ? 0 : 1);

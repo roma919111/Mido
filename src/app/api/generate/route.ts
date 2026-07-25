@@ -2,11 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { adjustCredits, createAsset, updateAsset, updateUser } from "@/lib/db";
 import { quoteOpenArtCredits } from "@/lib/credit-quote";
-import {
-  FREE_VERONIX_DURATION_SECONDS,
-  isFreeVeronixEligible,
-  VERONIX_MODEL_ID,
-} from "@/lib/free-trial";
+import { isFreeVeronixEligible } from "@/lib/free-trial";
 import { getCatalogModel, resolveMcpModel } from "@/lib/model-catalog";
 import { audioParamForMcpModel, mapResolutionForMcpModel } from "@/lib/model-params";
 import {
@@ -83,10 +79,9 @@ export async function POST(request: Request) {
 
     const body = (await request.json()) as GenBody;
     const prompt = body.prompt?.trim();
-    const media = body.media ?? "video";
-    const modelIds = [...new Set(body.modelIds?.filter(Boolean) ?? [])].slice(0, 1);
+    const media = body.media ?? "image";
+    const modelIds = [...new Set(body.modelIds?.filter(Boolean) ?? [])].slice(0, 4);
     const waitForResult = body.waitForResult === true;
-    const duration = body.duration ?? FREE_VERONIX_DURATION_SECONDS;
 
     if (!prompt) {
       return NextResponse.json({ error: "prompt is required" }, { status: 400 });
@@ -95,21 +90,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Select at least one model" }, { status: 400 });
     }
 
-    // Customers may only generate with Veronix
-    if (modelIds.some((id) => id !== VERONIX_MODEL_ID) || media !== "video") {
-      return NextResponse.json(
-        {
-          error: "التوليد متاح حالياً على موديل Veronix للفيديو فقط.",
-          allowedModel: VERONIX_MODEL_ID,
-        },
-        { status: 422 },
-      );
-    }
-
     const mode =
       body.mode ||
       resolveToolMode(media, Boolean(body.startFrame), Boolean(body.referenceImages?.length));
 
+    // Quote exact OpenArt costs for all selected models
     const quotes = [];
     for (const modelId of modelIds) {
       quotes.push(
@@ -120,7 +105,7 @@ export async function POST(request: Request) {
             mode,
             aspectRatio: body.aspectRatio,
             resolution: body.resolution,
-            duration,
+            duration: body.duration,
             generateAudio: body.generateAudio,
           },
           { allowCache: false },
@@ -128,11 +113,15 @@ export async function POST(request: Request) {
       );
     }
 
-    const freeTrial = isFreeVeronixEligible(user, {
-      modelId: modelIds[0],
-      media,
-      duration,
-    });
+    // Free trial only when generating a single Veronix 9s video.
+    const freeTrial =
+      modelIds.length === 1 &&
+      isFreeVeronixEligible(user, {
+        modelId: modelIds[0],
+        media,
+        duration: body.duration,
+      });
+
     const billedQuotes = quotes.map((q) => ({
       ...q,
       totalCredits: freeTrial ? 0 : q.totalCredits,
@@ -140,6 +129,7 @@ export async function POST(request: Request) {
       freeTrial,
     }));
     const totalCredits = billedQuotes.reduce((s, q) => s + q.totalCredits, 0);
+    const listPrice = quotes.reduce((s, q) => s + q.totalCredits, 0);
 
     if (!freeTrial && user.credits <= 0) {
       return NextResponse.json(
@@ -147,7 +137,7 @@ export async function POST(request: Request) {
           error: "رصيدك صفر. أضف كريدت أو رقِّ الباقة للمتابعة.",
           needsPaywall: true,
           credits: user.credits,
-          requiredCredits: quotes.reduce((s, q) => s + q.totalCredits, 0),
+          requiredCredits: listPrice,
           quotes: billedQuotes,
         },
         { status: 402 },
@@ -171,14 +161,15 @@ export async function POST(request: Request) {
     if (unavailable.length) {
       return NextResponse.json(
         {
-          error: `موديل Veronix غير متاح للتوليد حالياً.`,
+          error: `هذه الموديلات غير متاحة للتوليد حاليًا على Veronix: ${unavailable
+            .map((q) => q.modelId)
+            .join(", ")}`,
           quotes: billedQuotes,
         },
         { status: 422 },
       );
     }
 
-    // Claim free trial before generation so concurrent requests cannot double-use it.
     if (freeTrial) {
       await updateUser(user.id, { freeVeronixUsed: true });
     } else if (totalCredits > 0) {
@@ -189,26 +180,38 @@ export async function POST(request: Request) {
     for (const quote of billedQuotes) {
       const catalog = getCatalogModel(quote.modelId);
       const mcpModel = catalog ? resolveMcpModel(catalog) : quote.mcpModel;
-      const toolName = "openart_generate_video";
+      const toolName = media === "image" ? "openart_generate_image" : "openart_generate_video";
+
       const mappedResolution = mapResolutionForMcpModel(
         mcpModel,
         body.resolution ?? "720p",
       );
-      const params: Record<string, unknown> = {
-        prompt,
-        videoCount: 1,
-        duration,
-        ...(mappedResolution ? { resolution: mappedResolution } : {}),
-        aspectRatio: body.aspectRatio ?? "16:9",
-        ...audioParamForMcpModel(mcpModel, body.generateAudio),
-        autoEnhancePrompt: false,
-        ...(body.startFrame ? { startFrame: body.startFrame } : {}),
-        ...(body.endFrame ? { endFrame: body.endFrame } : {}),
-      };
+      const params: Record<string, unknown> =
+        media === "image"
+          ? {
+              prompt,
+              imageCount: 1,
+              aspectRatio: body.aspectRatio ?? "1:1",
+              autoEnhancePrompt: false,
+              ...(body.referenceImages?.length
+                ? { visualReferences: body.referenceImages }
+                : {}),
+            }
+          : {
+              prompt,
+              videoCount: 1,
+              duration: body.duration ?? 9,
+              ...(mappedResolution ? { resolution: mappedResolution } : {}),
+              aspectRatio: body.aspectRatio ?? "16:9",
+              ...audioParamForMcpModel(mcpModel, body.generateAudio),
+              autoEnhancePrompt: false,
+              ...(body.startFrame ? { startFrame: body.startFrame } : {}),
+              ...(body.endFrame ? { endFrame: body.endFrame } : {}),
+            };
 
       const asset = await createAsset({
         userId: user.id,
-        mediaType: "video",
+        mediaType: media,
         url: "",
         prompt,
         mode,
@@ -234,7 +237,6 @@ export async function POST(request: Request) {
           if (!freeTrial && quote.totalCredits > 0) {
             await adjustCredits(user.id, quote.totalCredits);
           }
-          // Do not restore free trial on failure — prevents farming; user can contact support.
           results.push({
             modelId: quote.modelId,
             error: nestedError,
