@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import {
   callOpenArtTool,
-  isOpenArtConfigured,
   OpenArtConfigError,
   parseToolPayload,
 } from "@/lib/openart-mcp";
@@ -9,17 +8,9 @@ import type { VisualReference } from "@/lib/types";
 
 export const runtime = "nodejs";
 
-export async function POST(request: Request) {
-  if (!isOpenArtConfigured()) {
-    return NextResponse.json(
-      {
-        error:
-          "OPENART_ACCESS_TOKEN is required for uploads. Add your OpenArt bearer token to .env.local.",
-      },
-      { status: 401 },
-    );
-  }
+const MCP_ENDPOINT = process.env.OPENART_MCP_URL ?? "https://mcp.openart.ai/mcp";
 
+export async function POST(request: Request) {
   try {
     const form = await request.formData();
     const file = form.get("file");
@@ -48,7 +39,13 @@ export async function POST(request: Request) {
     if (signResult.isError) {
       const payload = parseToolPayload(signResult);
       return NextResponse.json(
-        { error: payload.rawText ?? "Failed to sign upload" },
+        {
+          error: payload.rawText ?? "Failed to sign upload",
+          live: true,
+          mcpEndpoint: MCP_ENDPOINT,
+          details: payload,
+          raw: signResult,
+        },
         { status: 502 },
       );
     }
@@ -71,7 +68,13 @@ export async function POST(request: Request) {
 
     if (!signURL) {
       return NextResponse.json(
-        { error: "Upload sign response missing signURL", details: signed },
+        {
+          error: "Upload sign response missing signURL",
+          live: true,
+          mcpEndpoint: MCP_ENDPOINT,
+          details: signed,
+          raw: signResult,
+        },
         { status: 502 },
       );
     }
@@ -91,6 +94,8 @@ export async function POST(request: Request) {
         {
           error: `Upload PUT failed (${putResponse.status})`,
           detail,
+          live: true,
+          mcpEndpoint: MCP_ENDPOINT,
         },
         { status: 502 },
       );
@@ -129,14 +134,33 @@ export async function POST(request: Request) {
     return NextResponse.json({
       visualReference: reference,
       accessURL: mediaUrl,
+      live: true,
+      mcpEndpoint: MCP_ENDPOINT,
+      details: signed,
+      raw: signResult,
     });
   } catch (error) {
     if (error instanceof OpenArtConfigError) {
-      return NextResponse.json({ error: error.message }, { status: 401 });
+      return NextResponse.json(
+        {
+          error: error.message,
+          live: false,
+          mcpEndpoint: MCP_ENDPOINT,
+        },
+        { status: 401 },
+      );
     }
 
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Upload failed" },
+      {
+        error: error instanceof Error ? error.message : "Upload failed",
+        live: true,
+        mcpEndpoint: MCP_ENDPOINT,
+        details:
+          error instanceof Error
+            ? { name: error.name, message: error.message, stack: error.stack }
+            : { error },
+      },
       { status: 500 },
     );
   }

@@ -22,6 +22,7 @@ import { PromptInput } from "./PromptInput";
 import { VideoControls } from "./VideoControls";
 
 const GALLERY_KEY = "studio-ai-gallery-v1";
+const MCP_ENDPOINT = "https://mcp.openart.ai/mcp";
 
 function loadGallery(): GalleryItem[] {
   if (typeof window === "undefined") return [];
@@ -32,6 +33,14 @@ function loadGallery(): GalleryItem[] {
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
+  }
+}
+
+function formatLivePayload(payload: unknown): string {
+  try {
+    return JSON.stringify(payload, null, 2);
+  } catch {
+    return String(payload);
   }
 }
 
@@ -50,11 +59,13 @@ export function StudioApp() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [liveMcpResponse, setLiveMcpResponse] = useState<string | null>(null);
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
   const [account, setAccount] = useState<AccountInfo>({
-    credits: 100,
+    credits: 0,
     configured: false,
-    plan: "Demo",
+    live: false,
+    mcpEndpoint: MCP_ENDPOINT,
   });
 
   useEffect(() => {
@@ -79,20 +90,64 @@ export function StudioApp() {
   async function refreshAccount() {
     try {
       const res = await fetch("/api/account");
-      const data = (await res.json()) as AccountInfo & { error?: string; message?: string };
+      const data = (await res.json()) as AccountInfo & {
+        error?: string;
+        details?: unknown;
+        raw?: unknown;
+        mcpEndpoint?: string;
+        live?: boolean;
+      };
+
+      setLiveMcpResponse(
+        formatLivePayload({
+          route: "GET /api/account → openart_account_get",
+          httpStatus: res.status,
+          mcpEndpoint: data.mcpEndpoint ?? MCP_ENDPOINT,
+          body: data,
+        }),
+      );
+
       if (!res.ok) {
-        setAccount((prev) => ({ ...prev, configured: false }));
+        setAccount({
+          credits: 0,
+          configured: false,
+          live: Boolean(data.live),
+          mcpEndpoint: data.mcpEndpoint ?? MCP_ENDPOINT,
+          plan: undefined,
+          email: undefined,
+          error: data.error,
+        });
+        setError(data.error || "Failed to connect to OpenArt MCP account");
         return;
       }
+
       setAccount({
-        credits: typeof data.credits === "number" ? data.credits : 100,
+        credits: typeof data.credits === "number" ? data.credits : 0,
         configured: Boolean(data.configured),
+        live: data.live !== false,
+        mcpEndpoint: data.mcpEndpoint ?? MCP_ENDPOINT,
         plan: data.plan,
         email: data.email,
       });
-      if (data.message) setStatusMessage(data.message);
-    } catch {
-      // keep demo credits
+      setError(null);
+      setStatusMessage("Live OpenArt MCP account connected.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Account lookup failed";
+      setAccount({
+        credits: 0,
+        configured: false,
+        live: false,
+        mcpEndpoint: MCP_ENDPOINT,
+        error: message,
+      });
+      setError(message);
+      setLiveMcpResponse(
+        formatLivePayload({
+          route: "GET /api/account → openart_account_get",
+          error: message,
+          mcpEndpoint: MCP_ENDPOINT,
+        }),
+      );
     }
   }
 
@@ -112,19 +167,6 @@ export function StudioApp() {
     }
 
     try {
-      if (!account.configured) {
-        const demoRef: VisualReference = {
-          type: "image",
-          id: `local_${Date.now()}`,
-          url: localUrl,
-          label: file.name || "local-image",
-        };
-        if (target === "start") setStartFrame(demoRef);
-        else setReferenceImage(demoRef);
-        setStatusMessage("Demo upload stored locally. Connect OpenArt to upload to the cloud.");
-        return;
-      }
-
       const form = new FormData();
       form.append("file", file);
       form.append("purpose", purpose);
@@ -132,11 +174,22 @@ export function StudioApp() {
 
       const res = await fetch("/api/upload", { method: "POST", body: form });
       const data = await res.json();
+
+      setLiveMcpResponse(
+        formatLivePayload({
+          route: "POST /api/upload → openart_upload_sign",
+          httpStatus: res.status,
+          mcpEndpoint: data.mcpEndpoint ?? MCP_ENDPOINT,
+          body: data,
+        }),
+      );
+
       if (!res.ok) throw new Error(data.error || "Upload failed");
 
       const ref = data.visualReference as VisualReference;
       if (target === "start") setStartFrame(ref);
       else setReferenceImage(ref);
+      setStatusMessage("Uploaded to OpenArt MCP.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
       if (target === "start") {
@@ -182,14 +235,10 @@ export function StudioApp() {
       setError("Upload a Start Frame for Image-to-Video.");
       return;
     }
-    if (account.credits < creditCost) {
-      setError(`Not enough credits. This generation costs ${creditCost} credits.`);
-      return;
-    }
 
     setGenerating(true);
     setError(null);
-    setStatusMessage("Sending request to OpenArt MCP…");
+    setStatusMessage(`Calling live OpenArt MCP at ${MCP_ENDPOINT}…`);
 
     const optimisticId = `local_${Date.now()}`;
     const optimistic: GalleryItem = {
@@ -204,7 +253,6 @@ export function StudioApp() {
       creditsUsed: creditCost,
     };
     setGallery((prev) => [optimistic, ...prev]);
-    setAccount((prev) => ({ ...prev, credits: Math.max(0, prev.credits - creditCost) }));
 
     try {
       const res = await fetch("/api/generate", {
@@ -222,12 +270,22 @@ export function StudioApp() {
       });
       const data = (await res.json()) as GenerateResponse & {
         error?: string;
-        message?: string;
-        demo?: boolean;
+        details?: unknown;
+        raw?: unknown;
       };
 
+      setLiveMcpResponse(
+        formatLivePayload({
+          route: `POST /api/generate → ${data.tool ?? (isVideoMode ? "openart_generate_video" : "openart_generate_image")}`,
+          httpStatus: res.status,
+          mcpEndpoint: data.mcpEndpoint ?? MCP_ENDPOINT,
+          live: data.live,
+          body: data,
+        }),
+      );
+
       if (!res.ok) {
-        throw new Error(data.error || "Generation failed");
+        throw new Error(data.error || formatLivePayload(data));
       }
 
       const url = data.urls?.[0] ?? "";
@@ -255,14 +313,16 @@ export function StudioApp() {
         ),
       );
 
-      if (data.message) setStatusMessage(data.message);
-      else if (status === "completed") setStatusMessage("Generation complete.");
-      else if (status === "failed") setError(data.error || "Generation failed");
-      else setStatusMessage("Still generating on OpenArt — refresh status shortly.");
+      if (status === "completed") {
+        setStatusMessage("Live OpenArt MCP generation complete.");
+      } else if (status === "failed") {
+        setError(data.error || "Generation failed");
+      } else {
+        setStatusMessage("Still generating on OpenArt MCP — raw wait payload shown below.");
+      }
 
       await refreshAccount();
     } catch (err) {
-      setAccount((prev) => ({ ...prev, credits: prev.credits + creditCost }));
       setGallery((prev) =>
         prev.map((item) =>
           item.id === optimisticId
@@ -291,6 +351,9 @@ export function StudioApp() {
         plan={account.plan}
         configured={account.configured}
         email={account.email}
+        live={account.live}
+        mcpEndpoint={account.mcpEndpoint}
+        connectionError={account.error}
       />
 
       <main className="relative z-10 mx-auto w-full max-w-6xl px-4 pb-20 pt-8 sm:px-6">
@@ -302,8 +365,8 @@ export function StudioApp() {
             <BrandLogo size="lg" />
           </h1>
           <p className="mt-3 max-w-xl text-base text-white/55 sm:text-lg">
-            Next-gen AI image &amp; video studio — from a single prompt to motion-ready frames,
-            powered by OpenArt.
+            Direct live OpenArt MCP generation — image and video requests hit{" "}
+            <span className="text-cyan-300/90">{MCP_ENDPOINT}</span> with no demo fallback.
           </p>
         </section>
 
@@ -378,15 +441,29 @@ export function StudioApp() {
               onClick={() => void handleGenerate()}
             />
 
-            {(error || statusMessage) && (
-              <div
-                className={`rounded-2xl border px-4 py-3 text-sm ${
-                  error
-                    ? "border-rose-400/30 bg-rose-400/10 text-rose-100"
-                    : "border-[var(--accent)]/25 bg-[rgba(46,230,166,0.08)] text-[var(--accent)]"
-                }`}
-              >
-                {error ?? statusMessage}
+            {error && (
+              <div className="rounded-2xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
+                {error}
+              </div>
+            )}
+
+            {statusMessage && !error && (
+              <div className="rounded-2xl border border-cyan-400/25 bg-[rgba(34,240,255,0.08)] px-4 py-3 text-sm text-cyan-100">
+                {statusMessage}
+              </div>
+            )}
+
+            {liveMcpResponse && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs uppercase tracking-[0.18em] text-cyan-300/80">
+                    Live OpenArt MCP response
+                  </p>
+                  <p className="text-[10px] text-white/35">{MCP_ENDPOINT}</p>
+                </div>
+                <pre className="max-h-80 overflow-auto rounded-2xl border border-white/10 bg-black/40 p-4 text-xs leading-relaxed text-white/75">
+                  {liveMcpResponse}
+                </pre>
               </div>
             )}
           </div>

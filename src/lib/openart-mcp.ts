@@ -24,6 +24,10 @@ export function isOpenArtConfigured(): boolean {
   return Boolean(process.env.OPENART_ACCESS_TOKEN?.trim());
 }
 
+export function getOpenArtMcpEndpoint(): string {
+  return process.env.OPENART_MCP_URL?.trim() || "https://mcp.openart.ai/mcp";
+}
+
 type ToolContent = {
   type: string;
   text?: string;

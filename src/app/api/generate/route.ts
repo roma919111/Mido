@@ -4,7 +4,6 @@ import {
   callOpenArtTool,
   collectMediaUrls,
   getHistoryId,
-  isOpenArtConfigured,
   OpenArtConfigError,
   parseToolPayload,
 } from "@/lib/openart-mcp";
@@ -13,8 +12,11 @@ import type { GenerateRequest, VideoDuration, VideoQuality } from "@/lib/types";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
+const MCP_ENDPOINT = process.env.OPENART_MCP_URL ?? "https://mcp.openart.ai/mcp";
+
 async function waitForCreation(historyId: string, attempts = 4) {
   let lastPayload: Record<string, unknown> = {};
+  let lastRaw: unknown = null;
 
   for (let i = 0; i < attempts; i += 1) {
     const waitResult = await callOpenArtTool("openart_creation_wait", {
@@ -22,10 +24,11 @@ async function waitForCreation(historyId: string, attempts = 4) {
       timeoutSeconds: 45,
     });
 
+    lastRaw = waitResult;
     lastPayload = parseToolPayload(waitResult);
 
     if (waitResult.isError) {
-      return { status: "FAILED", payload: lastPayload };
+      return { status: "FAILED", payload: lastPayload, raw: lastRaw };
     }
 
     const status = String(
@@ -33,21 +36,20 @@ async function waitForCreation(historyId: string, attempts = 4) {
     ).toUpperCase();
 
     if (["COMPLETED", "FAILED", "CANCELLED"].includes(status)) {
-      return { status, payload: lastPayload };
+      return { status, payload: lastPayload, raw: lastRaw };
     }
 
     if (status === "STILL_RUNNING" || status === "PENDING" || status === "RUNNING") {
       continue;
     }
 
-    // Some payloads omit status but include media URLs when done.
     const urls = collectMediaUrls(lastPayload);
     if (urls.length > 0) {
-      return { status: "COMPLETED", payload: lastPayload };
+      return { status: "COMPLETED", payload: lastPayload, raw: lastRaw };
     }
   }
 
-  return { status: "STILL_RUNNING", payload: lastPayload };
+  return { status: "STILL_RUNNING", payload: lastPayload, raw: lastRaw };
 }
 
 export async function POST(request: Request) {
@@ -72,28 +74,6 @@ export async function POST(request: Request) {
 
     const creditsUsed = estimateCredits(mode, duration, quality);
 
-    if (!isOpenArtConfigured()) {
-      // Demo path so the UI remains usable without credentials.
-      const historyId = `demo_${Date.now()}`;
-      const isVideo = mode !== "text-to-image";
-      return NextResponse.json({
-        historyId,
-        status: "COMPLETED",
-        mediaType: isVideo ? "video" : "image",
-        mode,
-        prompt,
-        creditsUsed,
-        demo: true,
-        urls: [
-          isVideo
-            ? "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4"
-            : "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80",
-        ],
-        message:
-          "Demo generation returned sample media. Set OPENART_ACCESS_TOKEN to generate with OpenArt MCP.",
-      });
-    }
-
     const { model, toolMode, media, params } = buildGenerationParams({
       mode,
       prompt,
@@ -117,7 +97,11 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error: generatePayload.rawText ?? "OpenArt generation failed",
+          live: true,
+          mcpEndpoint: MCP_ENDPOINT,
+          tool: toolName,
           details: generatePayload,
+          raw: generateResult,
         },
         { status: 502 },
       );
@@ -128,7 +112,11 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error: "Generation started but no historyId was returned",
+          live: true,
+          mcpEndpoint: MCP_ENDPOINT,
+          tool: toolName,
           details: generatePayload,
+          raw: generateResult,
         },
         { status: 502 },
       );
@@ -142,6 +130,11 @@ export async function POST(request: Request) {
         mode,
         prompt,
         creditsUsed,
+        live: true,
+        mcpEndpoint: MCP_ENDPOINT,
+        tool: toolName,
+        details: generatePayload,
+        raw: generateResult,
         pollAfterSeconds:
           typeof generatePayload.pollAfterSeconds === "number"
             ? generatePayload.pollAfterSeconds
@@ -160,19 +153,44 @@ export async function POST(request: Request) {
       prompt,
       creditsUsed,
       urls,
+      live: true,
+      mcpEndpoint: MCP_ENDPOINT,
+      tool: toolName,
       error:
         waited.status === "FAILED"
           ? String(waited.payload.error ?? waited.payload.message ?? "Generation failed")
           : undefined,
-      payload: waited.payload,
+      details: {
+        generate: generatePayload,
+        wait: waited.payload,
+      },
+      raw: {
+        generate: generateResult,
+        wait: waited.raw,
+      },
     });
   } catch (error) {
     if (error instanceof OpenArtConfigError) {
-      return NextResponse.json({ error: error.message }, { status: 401 });
+      return NextResponse.json(
+        {
+          error: error.message,
+          live: false,
+          mcpEndpoint: MCP_ENDPOINT,
+        },
+        { status: 401 },
+      );
     }
 
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Generation failed" },
+      {
+        error: error instanceof Error ? error.message : "Generation failed",
+        live: true,
+        mcpEndpoint: MCP_ENDPOINT,
+        details:
+          error instanceof Error
+            ? { name: error.name, message: error.message, stack: error.stack }
+            : { error },
+      },
       { status: 500 },
     );
   }
