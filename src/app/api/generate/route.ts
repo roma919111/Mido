@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/customer-auth";
 import { adjustCredits, createAsset, updateAsset } from "@/lib/db";
 import { quoteOpenArtCredits } from "@/lib/credit-quote";
 import { getCatalogModel, resolveMcpModel } from "@/lib/model-catalog";
+import { audioParamForMcpModel, mapResolutionForMcpModel } from "@/lib/model-params";
 import {
   callOpenArtTool,
   collectMediaUrls,
@@ -147,9 +148,6 @@ export async function POST(request: Request) {
       const mcpModel = catalog ? resolveMcpModel(catalog) : quote.mcpModel;
       const toolName = media === "image" ? "openart_generate_image" : "openart_generate_video";
 
-      const { audioParamForMcpModel, mapResolutionForMcpModel } = await import(
-        "@/lib/model-params"
-      );
       const mappedResolution = mapResolutionForMcpModel(
         mcpModel,
         body.resolution ?? "720p",
