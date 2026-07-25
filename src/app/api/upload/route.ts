@@ -143,9 +143,9 @@ export async function POST(request: Request) {
     if (error instanceof OpenArtConfigError) {
       return NextResponse.json(
         {
-          error:
-            "رفع الصور غير متاح حاليًا لأن حساب المنصة غير متصل. افتح /setup/openart لربط الحساب.",
+          error: "رفع الصور غير متاح مؤقتًا. حاول مرة أخرى بعد قليل.",
           live: false,
+          // Owner-only flag — never shown as a customer action in the UI.
           needsOwnerSetup: error.needsAuth,
           mcpEndpoint: MCP_ENDPOINT,
         },

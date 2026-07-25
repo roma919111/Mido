@@ -46,7 +46,6 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
   const [creditCost, setCreditCost] = useState<number | null>(null);
   const [creditLive, setCreditLive] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
-  const [needsOwnerSetup, setNeedsOwnerSetup] = useState(false);
   const [quoting, setQuoting] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -92,7 +91,6 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
       if (!selectedModelId) return;
       setQuoting(true);
       setQuoteError(null);
-      setNeedsOwnerSetup(false);
       try {
         const mode =
           media === "image"
@@ -108,7 +106,6 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
           synced?: boolean;
           source?: string;
           error?: string;
-          needsOwnerSetup?: boolean;
           quotes?: Array<{ available?: boolean; source?: string; totalCredits?: number }>;
         }>("/api/credits/quote", {
           method: "POST",
@@ -127,7 +124,6 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
         if (!res.ok) {
           setCreditCost(null);
           setCreditLive(false);
-          setNeedsOwnerSetup(Boolean(data.needsOwnerSetup));
           throw new Error(data.error || "تعذر جلب سعر الكريدت");
         }
         setCreditCost(data.totalCredits);
@@ -177,10 +173,8 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
     }>("/api/upload", { method: "POST", body: form });
     if (!res.ok) {
       const msg = data.error || "فشل رفع الصورة";
-      if (/OPENART_ACCESS_TOKEN|Platform OpenArt|not connected/i.test(msg)) {
-        throw new Error(
-          "رفع الصور يحتاج ربط حساب المنصة. افتح /setup/openart ثم أعد المحاولة.",
-        );
+      if (/OPENART_ACCESS_TOKEN|Platform OpenArt|not connected|حساب المنصة/i.test(msg)) {
+        throw new Error("رفع الصور غير متاح مؤقتًا. حاول مرة أخرى بعد قليل.");
       }
       throw new Error(msg);
     }
@@ -560,13 +554,6 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
                 ? quoteError
                 : "تعذر مزامنة التكلفة"}
       </p>
-      {needsOwnerSetup && (
-        <p className="text-center text-[11px]">
-          <a href="/setup/openart" className="text-[#22f0ff] underline-offset-2 hover:underline">
-            ربط حساب المنصة لمزامنة التكاليف
-          </a>
-        </p>
-      )}
 
       <ModelsModal
         open={modelsOpen}

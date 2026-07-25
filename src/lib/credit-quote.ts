@@ -183,7 +183,7 @@ export async function quoteOpenArtCredits(
 
     throw new Error(
       needsOwner
-        ? `تعذر مزامنة التكلفة: حساب المنصة غير متصل. افتح /setup/openart لربط الحساب.`
+        ? `تعذر مزامنة التكلفة مؤقتًا. حاول مرة أخرى.`
         : error instanceof Error
           ? `تعذر مزامنة تكلفة Veronix للموديل ${catalog?.name || mcpModel}: ${error.message}`
           : `تعذر مزامنة تكلفة Veronix للموديل ${catalog?.name || mcpModel}`,
