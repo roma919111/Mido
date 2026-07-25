@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
-import { isGoogleOAuthConfigured } from "@/lib/google-oauth";
+import { getAppBaseUrl } from "@/lib/app-url";
+import { isGoogleOAuthConfigured, getGoogleRedirectUri } from "@/lib/google-oauth";
 
 export const runtime = "nodejs";
 
 export async function GET() {
-  return NextResponse.json({ configured: isGoogleOAuthConfigured() });
+  const configured = await isGoogleOAuthConfigured();
+  return NextResponse.json({
+    configured,
+    appBaseUrl: getAppBaseUrl(),
+    redirectUri: getGoogleRedirectUri(),
+  });
 }

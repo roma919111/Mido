@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import {
   exchangeGoogleCode,
   fetchGoogleUser,
-  getGoogleRedirectUri,
   isGoogleOAuthConfigured,
   parseOAuthState,
 } from "@/lib/google-oauth";
@@ -20,10 +19,8 @@ export async function GET(request: Request) {
   const oauthError = url.searchParams.get("error");
   const { next } = parseOAuthState(state);
 
-  if (!isGoogleOAuthConfigured()) {
-    return NextResponse.redirect(
-      `${base}/login?error=${encodeURIComponent("Google Sign-In is not configured")}`,
-    );
+  if (!(await isGoogleOAuthConfigured())) {
+    return NextResponse.redirect(`${base}/setup/google?needed=1`);
   }
 
   if (oauthError) {
@@ -39,8 +36,6 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Ensure redirect_uri used in exchange matches authorize step
-    void getGoogleRedirectUri();
     const tokens = await exchangeGoogleCode(code);
     const profile = await fetchGoogleUser(tokens.access_token);
     const user = await upsertGoogleUser(profile);

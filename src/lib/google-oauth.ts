@@ -1,26 +1,21 @@
 import { createHash, randomBytes } from "node:crypto";
 import { getAppBaseUrl } from "@/lib/app-url";
+import { loadGoogleCredentials } from "@/lib/google-credentials";
 
 const GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN = "https://oauth2.googleapis.com/token";
 const GOOGLE_USERINFO = "https://openidconnect.googleapis.com/v1/userinfo";
 
-export function isGoogleOAuthConfigured(): boolean {
-  return Boolean(
-    process.env.GOOGLE_CLIENT_ID?.trim() && process.env.GOOGLE_CLIENT_SECRET?.trim(),
-  );
+export async function isGoogleOAuthConfigured(): Promise<boolean> {
+  return Boolean(await loadGoogleCredentials());
 }
 
-export function getGoogleClientId(): string {
-  const id = process.env.GOOGLE_CLIENT_ID?.trim();
-  if (!id) throw new Error("GOOGLE_CLIENT_ID is not configured");
-  return id;
-}
-
-export function getGoogleClientSecret(): string {
-  const secret = process.env.GOOGLE_CLIENT_SECRET?.trim();
-  if (!secret) throw new Error("GOOGLE_CLIENT_SECRET is not configured");
-  return secret;
+async function requireCreds() {
+  const creds = await loadGoogleCredentials();
+  if (!creds) {
+    throw new Error("GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are not configured");
+  }
+  return creds;
 }
 
 export function getGoogleRedirectUri(): string {
@@ -29,10 +24,9 @@ export function getGoogleRedirectUri(): string {
 
 export function createOAuthState(nextPath: string): string {
   const nonce = randomBytes(16).toString("hex");
-  const payload = Buffer.from(
+  return Buffer.from(
     JSON.stringify({ n: nonce, next: nextPath || "/", t: Date.now() }),
   ).toString("base64url");
-  return payload;
 }
 
 export function parseOAuthState(state: string | null): { next: string } {
@@ -47,9 +41,10 @@ export function parseOAuthState(state: string | null): { next: string } {
   }
 }
 
-export function buildGoogleAuthUrl(state: string): string {
+export async function buildGoogleAuthUrl(state: string): Promise<string> {
+  const { clientId } = await requireCreds();
   const params = new URLSearchParams({
-    client_id: getGoogleClientId(),
+    client_id: clientId,
     redirect_uri: getGoogleRedirectUri(),
     response_type: "code",
     scope: "openid email profile",
@@ -64,10 +59,11 @@ export async function exchangeGoogleCode(code: string): Promise<{
   access_token: string;
   id_token?: string;
 }> {
+  const { clientId, clientSecret } = await requireCreds();
   const body = new URLSearchParams({
     code,
-    client_id: getGoogleClientId(),
-    client_secret: getGoogleClientSecret(),
+    client_id: clientId,
+    client_secret: clientSecret,
     redirect_uri: getGoogleRedirectUri(),
     grant_type: "authorization_code",
   });
@@ -120,7 +116,6 @@ export async function fetchGoogleUser(accessToken: string): Promise<{
   };
 }
 
-/** Tiny helper kept for future PKCE if needed */
 export function sha256Base64Url(value: string): string {
   return createHash("sha256").update(value).digest("base64url");
 }

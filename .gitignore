@@ -37,6 +37,7 @@ yarn-error.log*
 # server-side owner OpenArt credentials (never commit)
 .data/
 .data/veronix-db.json
+.data/google-oauth.enc
 
 # vercel
 .vercel
