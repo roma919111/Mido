@@ -4,6 +4,8 @@
  * Owner credentials live server-side (see owner-credentials.ts).
  */
 
+import { loadLockedPublicOrigin } from "@/lib/public-base-url";
+
 export type OpenArtOAuthTokens = {
   access_token: string;
   token_type?: string;
@@ -28,26 +30,14 @@ export type OpenArtAuthSession = {
 };
 
 export function getAppBaseUrl(request?: Request): string {
-  const preview = "https://vyronix-ai.loca.lt";
+  const locked = loadLockedPublicOrigin();
+  if (locked) return locked;
+
   const configured =
     process.env.APP_BASE_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (configured) {
-    try {
-      const host = new URL(configured).hostname;
-      if (/\.trycloudflare\.com$/i.test(host)) {
-        return preview;
-      }
-    } catch {
-      /* keep configured */
-    }
-    return configured.replace(/\/$/, "");
-  }
-  if (process.env.NODE_ENV === "production") return preview;
+  if (configured) return configured.replace(/\/$/, "");
   if (process.env.VERCEL_URL?.trim()) return `https://${process.env.VERCEL_URL.trim()}`;
-  if (request) {
-    const origin = new URL(request.url).origin;
-    if (!/\.trycloudflare\.com$/i.test(new URL(origin).hostname)) return origin;
-  }
+  if (request) return new URL(request.url).origin;
   return "http://localhost:3000";
 }
 

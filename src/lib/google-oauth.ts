@@ -22,31 +22,15 @@ async function requireCreds() {
 
 /**
  * Public site origin for OAuth redirects.
- * Always prefer APP_BASE_URL / canonical veronix.ai — never follow ephemeral tunnel Host headers.
+ * Locked public URL only — never follow request Host headers (prevents Google mismatch).
  */
-export function resolvePublicOrigin(request?: Request): string {
-  const configured = getAppBaseUrl().replace(/\/$/, "");
-  if (configured && !/localhost|127\.0\.0\.1/i.test(configured)) {
-    return configured;
-  }
-  if (request) {
-    const host =
-      request.headers.get("x-forwarded-host") ||
-      request.headers.get("host") ||
-      new URL(request.url).host;
-    // Ignore trycloudflare hosts so Google redirect stays on the brand domain.
-    if (host && !/\.trycloudflare\.com$/i.test(host.split(":")[0] || "")) {
-      const proto =
-        request.headers.get("x-forwarded-proto") ||
-        (host.includes("localhost") ? "http" : "https");
-      return `${proto}://${host}`.replace(/\/$/, "");
-    }
-  }
-  return configured || "http://localhost:3000";
+export function resolvePublicOrigin(_request?: Request): string {
+  return getAppBaseUrl().replace(/\/$/, "") || "http://localhost:3000";
 }
 
-export function getGoogleRedirectUri(request?: Request): string {
-  return `${resolvePublicOrigin(request)}/api/auth/google/callback`;
+/** Always the owner-locked callback. Ignore request host so Google Console stays valid. */
+export function getGoogleRedirectUri(_request?: Request): string {
+  return `${resolvePublicOrigin()}/api/auth/google/callback`;
 }
 
 export async function rememberGoogleRedirectUri(redirectUri: string): Promise<void> {
