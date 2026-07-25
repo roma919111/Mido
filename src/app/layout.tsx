@@ -15,9 +15,9 @@ const outfit = Outfit({
 });
 
 export const metadata: Metadata = {
-  title: "Studio AI — OpenArt Image & Video Generator",
+  title: "VYRONIX.AI — Next-Gen AI Image & Video Studio",
   description:
-    "Modern dark-mode studio for generating AI images and videos powered by OpenArt MCP.",
+    "VYRONIX.AI is a next-gen studio for generating cinematic AI images and videos powered by OpenArt MCP.",
 };
 
 export default function RootLayout({
