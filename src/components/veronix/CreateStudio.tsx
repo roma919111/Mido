@@ -492,7 +492,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   }
 
   return (
-    <div id="create" className="mx-auto w-full max-w-3xl space-y-4 px-4 pb-28 pt-4 sm:px-6" dir="rtl">
+    <div className="mx-auto w-full max-w-3xl space-y-4 px-3 pb-8 pt-4 sm:px-6" dir="rtl">
       {platformReady === false && (
         <div className="rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-50">
           رفع الصور والتوليد يحتاجان ربط حساب المنصة مرة واحدة.{" "}

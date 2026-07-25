@@ -26,8 +26,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${syne.variable} ${outfit.variable} h-full antialiased`}>
-      <body className="min-h-full font-sans">{children}</body>
+    <html lang="ar" className={`${syne.variable} ${outfit.variable} h-full antialiased`}>
+      <body className="min-h-full overflow-x-hidden font-sans">{children}</body>
     </html>
   );
 }

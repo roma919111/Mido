@@ -25,7 +25,7 @@ async function requireCreds() {
  * Locked public URL only — never follow request Host headers (prevents Google mismatch).
  */
 export function resolvePublicOrigin(_request?: Request): string {
-  return getAppBaseUrl().replace(/\/$/, "") || "http://localhost:3000";
+  return getAppBaseUrl().replace(/\/$/, "") || "https://vyronix.app";
 }
 
 /** Always the owner-locked callback. Ignore request host so Google Console stays valid. */

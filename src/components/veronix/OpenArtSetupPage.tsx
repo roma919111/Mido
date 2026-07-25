@@ -11,8 +11,8 @@ export function OpenArtSetupPage() {
   const [connected, setConnected] = useState(false);
   const [accessToken, setAccessToken] = useState("");
   const [setupKey, setSetupKey] = useState("");
-  const [oauthLoginUrl, setOauthLoginUrl] = useState("/api/auth/login");
-  const [callbackUrl, setCallbackUrl] = useState("https://vyronix.app/api/auth/callback");
+  const [oauthLoginUrl, setOauthLoginUrl] = useState("https://vyronix.app/api/auth/login");
+  const callbackUrl = "https://vyronix.app/api/auth/callback";
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -33,13 +33,8 @@ export function OpenArtSetupPage() {
         oauthLoginUrl?: string;
       }>("/api/setup/openart");
       setConnected(Boolean(data.platformConnected));
-      if (data.oauthLoginUrl) setOauthLoginUrl(data.oauthLoginUrl);
-      try {
-        const base = new URL(data.oauthLoginUrl || "https://vyronix.app/api/auth/login");
-        setCallbackUrl(`${base.origin}/api/auth/callback`);
-      } catch {
-        /* keep default */
-      }
+      // Always bind owner OAuth to the permanent domain (never localhost).
+      setOauthLoginUrl("https://vyronix.app/api/auth/login");
     })();
   }, []);
 
@@ -74,12 +69,12 @@ export function OpenArtSetupPage() {
   }
 
   return (
-    <div className="mx-auto min-h-screen max-w-xl px-4 py-10 text-white" dir="rtl">
+    <div className="mx-auto min-h-screen w-full max-w-xl overflow-x-hidden px-4 py-8 text-white sm:px-6 sm:py-10" dir="rtl">
       <BrandLogo size="lg" />
-      <h1 className="mt-6 font-display text-2xl font-bold">ربط حساب المنصة (مرة واحدة)</h1>
-      <p className="mt-2 text-sm text-white/50">
-        هذا ربط دائم على <span dir="ltr">vyronix.app</span>. بعد ما تكمل الدخول، الرسالة تختفي وما
-        ترجع إلا إذا مسحت بيانات السيرفر.
+      <h1 className="mt-6 font-display text-xl font-bold sm:text-2xl">ربط حساب المنصة (مرة واحدة)</h1>
+      <p className="mt-2 text-sm leading-relaxed text-white/50">
+        هذا ربط دائم على <span dir="ltr" className="text-white/70">vyronix.app</span>. بعد ما تكمل
+        الدخول، الرسالة تختفي وما ترجع إلا إذا مسحت بيانات السيرفر.
       </p>
 
       <div
@@ -146,7 +141,7 @@ export function OpenArtSetupPage() {
 
       <p className="mt-8 text-center text-sm text-white/40">
         <Link href="/" className="text-[#22f0ff]">
-          العودة إلى Create
+          العودة للرئيسية
         </Link>
       </p>
     </div>
