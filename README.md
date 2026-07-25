@@ -1,80 +1,30 @@
-# VYRONIX.AI
+# Veronix.ai
 
-A modern Next.js (App Router) studio for generating **AI images** and **AI videos** powered by [OpenArt MCP](https://mcp.openart.ai/mcp).
+OpenArt-powered AI image & video studio with:
 
-## How billing works
+- OpenArt-style Create UI (models modal, visual refs, start/end frames, output settings)
+- Live credit quotes via OpenArt MCP (`openart_model_cost`)
+- Customer accounts (signup / login / logout)
+- Assets history per customer
+- Monthly subscriptions (Mini $10 / Standard $12.50 / Pro $15) via Stripe webhooks
 
-OpenArt runs **behind the scenes on the platform owner account**.
-
-- Customers generate with **no login** and **no token**
-- Every image/video request hits OpenArt MCP from the server
-- Credits are deducted from the **owner OpenArt account** configured on the server
-
-## Features
-
-- Dark **VYRONIX.AI** workbench UI (Tailwind CSS)
-- Mode switcher: Text-to-Image · Text-to-Video · Image-to-Video
-- Prompt editor with **Enhance Prompt with AI**
-- Start Frame + Reference Image dropzones
-- Video duration (5s / 10s) and quality (720p / 1080p)
-- Media gallery with video player, download, and copy-prompt
-- Next.js API routes using `@modelcontextprotocol/sdk` → `https://mcp.openart.ai/mcp`
-
-## Quick start
+## Setup
 
 ```bash
 npm install
 cp .env.example .env.local
-# set OPENART_ACCESS_TOKEN to the OWNER OpenArt account token
+# set AUTH_SECRET, OPENART_ACCESS_TOKEN (or complete owner OAuth once)
+# optional: STRIPE_SECRET_KEY + STRIPE_WEBHOOK_SECRET
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) — customers can generate immediately.
+### Billing notes
 
-## Connect the owner OpenArt account
+- Customer wallet credits are deducted using **exact OpenArt quotes** when available.
+- OpenArt MCP itself is billed to the **platform owner token**.
+- Without Stripe keys, `/api/billing/checkout` activates the selected plan in **demo mode** and grants monthly credits for testing.
+- Stripe webhook endpoint: `POST /api/billing/webhook`
 
-### Option A (recommended): server env token
+### Owner OpenArt connection
 
-```env
-OPENART_ACCESS_TOKEN=owner_bearer_token
-OPENART_MCP_URL=https://mcp.openart.ai/mcp
-AUTH_SECRET=replace-with-a-long-random-string
-```
-
-### Option B: one-time owner OAuth setup
-
-1. Set `AUTH_SECRET` + `APP_BASE_URL`
-2. Optionally set `OWNER_SETUP_KEY`
-3. Visit `/api/auth/login` (or `/api/auth/login?key=...`)
-4. Tokens are stored server-side in `.data/openart-owner.enc` (gitignored)
-
-Customers never see this flow.
-
-## API routes
-
-| Route | Purpose |
-| --- | --- |
-| `GET /api/auth/login` | Owner-only OpenArt connect (optional) |
-| `GET /api/auth/callback` | Owner OAuth callback |
-| `GET/POST /api/auth/logout` | Clear owner credentials (setup key required if set) |
-| `GET /api/auth/session` | Platform connection status |
-| `GET /api/account` | Owner account credits/plan via `openart_account_get` |
-| `POST /api/enhance` | Prompt enhancement |
-| `POST /api/upload` | Sign + PUT reference images via `openart_upload_sign` |
-| `POST /api/generate` | `openart_generate_image` / `openart_generate_video` + wait |
-| `GET /api/status` | Poll `openart_creation_get` |
-| `GET /api/creations` | List history via `openart_creation_list` |
-
-## Models used
-
-- **Image:** `nano-banana-2-lite` (`text2image` / `image2image`)
-- **Video:** `pixverseV6` (`text2video` / `image2video`) with Standard `720p` or Pro `1080p`
-
-## Scripts
-
-```bash
-npm run dev
-npm run build
-npm run start
-npm run lint
-```
+All generations call OpenArt MCP with the platform owner credentials (`OPENART_ACCESS_TOKEN` or `.data/openart-owner.enc`).

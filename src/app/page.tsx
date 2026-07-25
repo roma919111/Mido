@@ -1,5 +1,5 @@
-import { StudioApp } from "@/components/StudioApp";
+import { VeronixApp } from "@/components/veronix/VeronixApp";
 
-export default function Home() {
-  return <StudioApp />;
+export default function HomePage() {
+  return <VeronixApp />;
 }

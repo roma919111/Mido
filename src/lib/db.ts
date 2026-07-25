@@ -1,0 +1,172 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+
+const DATA_DIR = path.join(process.cwd(), ".data");
+const DB_FILE = path.join(DATA_DIR, "veronix-db.json");
+
+export type PlanId = "mini" | "standard" | "pro" | null;
+
+export interface UserRecord {
+  id: string;
+  email: string;
+  name: string;
+  passwordHash: string;
+  credits: number;
+  planId: PlanId;
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AssetRecord {
+  id: string;
+  userId: string;
+  historyId?: string;
+  mediaType: "image" | "video";
+  url: string;
+  prompt: string;
+  mode: string;
+  model: string;
+  creditsUsed: number;
+  status: "running" | "completed" | "failed";
+  error?: string;
+  createdAt: string;
+}
+
+export interface DbShape {
+  users: UserRecord[];
+  assets: AssetRecord[];
+}
+
+async function ensureDb(): Promise<DbShape> {
+  await mkdir(DATA_DIR, { recursive: true });
+  try {
+    const raw = await readFile(DB_FILE, "utf8");
+    const parsed = JSON.parse(raw) as DbShape;
+    return {
+      users: Array.isArray(parsed.users) ? parsed.users : [],
+      assets: Array.isArray(parsed.assets) ? parsed.assets : [],
+    };
+  } catch {
+    const empty: DbShape = { users: [], assets: [] };
+    await writeFile(DB_FILE, JSON.stringify(empty, null, 2), "utf8");
+    return empty;
+  }
+}
+
+async function saveDb(db: DbShape): Promise<void> {
+  await mkdir(DATA_DIR, { recursive: true });
+  await writeFile(DB_FILE, JSON.stringify(db, null, 2), "utf8");
+}
+
+export async function findUserByEmail(email: string): Promise<UserRecord | null> {
+  const db = await ensureDb();
+  return db.users.find((u) => u.email.toLowerCase() === email.toLowerCase()) ?? null;
+}
+
+export async function findUserById(id: string): Promise<UserRecord | null> {
+  const db = await ensureDb();
+  return db.users.find((u) => u.id === id) ?? null;
+}
+
+export async function createUser(input: {
+  email: string;
+  name: string;
+  passwordHash: string;
+}): Promise<UserRecord> {
+  const db = await ensureDb();
+  if (db.users.some((u) => u.email.toLowerCase() === input.email.toLowerCase())) {
+    throw new Error("Email already registered");
+  }
+  const now = new Date().toISOString();
+  const user: UserRecord = {
+    id: randomUUID(),
+    email: input.email.trim().toLowerCase(),
+    name: input.name.trim() || "Creator",
+    passwordHash: input.passwordHash,
+    credits: 0,
+    planId: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  db.users.push(user);
+  await saveDb(db);
+  return user;
+}
+
+export async function updateUser(
+  id: string,
+  patch: Partial<Omit<UserRecord, "id" | "createdAt">>,
+): Promise<UserRecord> {
+  const db = await ensureDb();
+  const idx = db.users.findIndex((u) => u.id === id);
+  if (idx < 0) throw new Error("User not found");
+  db.users[idx] = {
+    ...db.users[idx],
+    ...patch,
+    updatedAt: new Date().toISOString(),
+  };
+  await saveDb(db);
+  return db.users[idx];
+}
+
+export async function adjustCredits(userId: string, delta: number): Promise<UserRecord> {
+  const user = await findUserById(userId);
+  if (!user) throw new Error("User not found");
+  const next = Math.max(0, Math.floor(user.credits + delta));
+  return updateUser(userId, { credits: next });
+}
+
+export async function createAsset(
+  input: Omit<AssetRecord, "id" | "createdAt"> & { id?: string },
+): Promise<AssetRecord> {
+  const db = await ensureDb();
+  const asset: AssetRecord = {
+    id: input.id ?? randomUUID(),
+    userId: input.userId,
+    historyId: input.historyId,
+    mediaType: input.mediaType,
+    url: input.url,
+    prompt: input.prompt,
+    mode: input.mode,
+    model: input.model,
+    creditsUsed: input.creditsUsed,
+    status: input.status,
+    error: input.error,
+    createdAt: new Date().toISOString(),
+  };
+  db.assets.unshift(asset);
+  await saveDb(db);
+  return asset;
+}
+
+export async function updateAsset(
+  id: string,
+  userId: string,
+  patch: Partial<Omit<AssetRecord, "id" | "userId" | "createdAt">>,
+): Promise<AssetRecord | null> {
+  const db = await ensureDb();
+  const idx = db.assets.findIndex((a) => a.id === id && a.userId === userId);
+  if (idx < 0) return null;
+  db.assets[idx] = { ...db.assets[idx], ...patch };
+  await saveDb(db);
+  return db.assets[idx];
+}
+
+export async function listAssetsForUser(userId: string): Promise<AssetRecord[]> {
+  const db = await ensureDb();
+  return db.assets.filter((a) => a.userId === userId);
+}
+
+export function publicUser(user: UserRecord) {
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    credits: user.credits,
+    planId: user.planId,
+    createdAt: user.createdAt,
+  };
+}
