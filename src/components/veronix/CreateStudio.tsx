@@ -194,14 +194,14 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
       if (data.needsOwnerSetup) {
         setPlatformReady(false);
         throw new Error(
-          "رفع الصور يحتاج ربط حساب المنصة مرة واحدة. افتح /setup/openart وسجّل دخول OpenArt ثم أعد المحاولة.",
+          "رفع الصور يحتاج ربط حساب المنصة مرة واحدة. افتح /setup/openart وأكمل الدخول ثم أعد المحاولة.",
         );
       }
       const msg = data.error || "فشل رفع الصورة";
       if (/OPENART_ACCESS_TOKEN|Platform OpenArt|not connected|حساب المنصة/i.test(msg)) {
         setPlatformReady(false);
         throw new Error(
-          "رفع الصور يحتاج ربط حساب المنصة مرة واحدة. افتح /setup/openart وسجّل دخول OpenArt ثم أعد المحاولة.",
+          "رفع الصور يحتاج ربط حساب المنصة مرة واحدة. افتح /setup/openart وأكمل الدخول ثم أعد المحاولة.",
         );
       }
       throw new Error(msg);
