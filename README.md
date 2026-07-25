@@ -1,10 +1,10 @@
-# Studio AI
+# VYRONIX.AI
 
 A modern Next.js (App Router) studio for generating **AI images** and **AI videos** powered by [OpenArt MCP](https://mcp.openart.ai/mcp).
 
 ## Features
 
-- Dark **Studio AI** workbench UI (Tailwind CSS)
+- Dark **VYRONIX.AI** workbench UI (Tailwind CSS)
 - Mode switcher: Text-to-Image · Text-to-Video · Image-to-Video
 - Prompt editor with **Enhance Prompt with AI**
 - Start Frame + Reference Image dropzones
