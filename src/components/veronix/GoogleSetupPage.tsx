@@ -66,7 +66,7 @@ export function GoogleSetupPage() {
       setShowCredentialForm(false);
       setMessage(
         data.message ||
-          "تم الحفظ. رابط التجربة ثابت على vyronix.loca.lt — لا تعيد لصق المفاتيح إلا إذا غيّرتها.",
+          "تم الحفظ. رابط التجربة ثابت على vyronix-ai.loca.lt — لا تعيد لصق المفاتيح إلا إذا غيّرتها.",
       );
       setClientSecret("");
     } catch (err) {
@@ -128,7 +128,7 @@ export function GoogleSetupPage() {
         <div className="mt-6 space-y-3">
           {message && <p className="text-sm text-cyan-200">{message}</p>}
           <Link href="/setup/domain" className="block text-sm text-[#22f0ff]">
-            رابط التجربة الدائم (vyronix.loca.lt) ←
+            رابط التجربة الدائم (vyronix-ai.loca.lt) ←
           </Link>
           <button
             type="button"

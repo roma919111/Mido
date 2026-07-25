@@ -2,7 +2,7 @@
  * Preview / staging public host used until a real purchased domain is attached.
  * Keep this stable (same subdomain) so Google OAuth redirect does not drift.
  */
-export const PREVIEW_HOST = "vyronix.loca.lt";
+export const PREVIEW_HOST = "vyronix-ai.loca.lt";
 export const PREVIEW_ORIGIN = `https://${PREVIEW_HOST}`;
 
 /** @deprecated use getAppBaseUrl() — kept for UI copy defaults */

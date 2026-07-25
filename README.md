@@ -28,19 +28,19 @@ npm run dev
 
 ### Public preview URL (before buying a domain)
 
-Stable free branded link: **https://vyronix.loca.lt**
+Stable free branded link: **https://vyronix-ai.loca.lt**
 
 ```bash
 npm run start -- --hostname 0.0.0.0 --port 3000
-npm run tunnel:vyronix   # keeps the same https://vyronix.loca.lt name
+npm run tunnel:vyronix   # keeps the same https://vyronix-ai.loca.lt name
 ```
 
-Set `APP_BASE_URL=https://vyronix.loca.lt`. When you later buy a real domain, change that one env var and update the Google redirect URI once. See `/setup/domain`.
+Set `APP_BASE_URL=https://vyronix-ai.loca.lt`. When you later buy a real domain, change that one env var and update the Google redirect URI once. See `/setup/domain`.
 
 ### Google Sign-In
 
 1. Google Cloud Console → APIs & Services → Credentials → OAuth client (Web).
-2. Authorized redirect URI (preview): `https://vyronix.loca.lt/api/auth/google/callback`
+2. Authorized redirect URI (preview): `https://vyronix-ai.loca.lt/api/auth/google/callback`
 3. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env.local` (once).
 4. Customers use **Continue with Google** on `/login` and `/signup`.
 

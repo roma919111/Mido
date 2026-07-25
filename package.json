@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "tunnel:vyronix": "npx --yes localtunnel --port 3000 --subdomain vyronix"
+    "tunnel:vyronix": "npx --yes localtunnel --port 3000 --subdomain vyronix-ai"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

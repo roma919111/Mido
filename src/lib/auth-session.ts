@@ -28,7 +28,7 @@ export type OpenArtAuthSession = {
 };
 
 export function getAppBaseUrl(request?: Request): string {
-  const preview = "https://vyronix.loca.lt";
+  const preview = "https://vyronix-ai.loca.lt";
   const configured =
     process.env.APP_BASE_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim();
   if (configured) {

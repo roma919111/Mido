@@ -139,7 +139,7 @@ export function AuthForm({ mode }: AuthFormProps) {
             المتابعة مع Google
           </a>
           <p className="mt-2 text-center text-[11px] text-white/35" dir="ltr">
-            Redirect: {redirectUri || "https://vyronix.loca.lt/api/auth/google/callback"}
+            Redirect: {redirectUri || "https://vyronix-ai.loca.lt/api/auth/google/callback"}
           </p>
         </>
       ) : (
