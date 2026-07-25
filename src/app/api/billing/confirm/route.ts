@@ -36,18 +36,31 @@ export async function POST(request: Request) {
     const stripe = await getStripe();
     const session = await stripe.checkout.sessions.retrieve(sessionId);
     const metaUserId = session.metadata?.userId;
-    if (metaUserId && metaUserId !== customer.id) {
+    const metaEmail = (session.metadata?.email || session.customer_details?.email || "")
+      .trim()
+      .toLowerCase();
+    const ownsSession =
+      !metaUserId ||
+      metaUserId === customer.id ||
+      (metaEmail && metaEmail === customer.email.toLowerCase());
+    if (!ownsSession) {
       return NextResponse.json({ error: "Session does not belong to this account" }, { status: 403 });
     }
 
     const result = await fulfillCheckoutSession({
       id: session.id,
-      metadata: session.metadata,
+      metadata: {
+        ...(session.metadata || {}),
+        userId: customer.id,
+        email: customer.email,
+      },
       customer: typeof session.customer === "string" ? session.customer : null,
       subscription:
         typeof session.subscription === "string" ? session.subscription : null,
       payment_status: session.payment_status,
       status: session.status,
+      customer_email: session.customer_details?.email || customer.email,
+      customer_details: session.customer_details,
     });
 
     const user = await getCurrentUser();
