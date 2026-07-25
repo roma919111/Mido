@@ -39,10 +39,14 @@ export async function createSessionCookie(userId: string): Promise<string> {
 export async function setSessionCookie(userId: string): Promise<void> {
   const token = await createSessionCookie(userId);
   const jar = await cookies();
+  const httpsPublic =
+    (process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_APP_BASE_URL || "").startsWith(
+      "https://",
+    );
   jar.set(COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: process.env.NODE_ENV === "production" || httpsPublic,
     path: "/",
     maxAge: 60 * 60 * 24 * 30,
   });

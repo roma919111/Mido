@@ -8,6 +8,7 @@ import {
 } from "@/lib/google-oauth";
 import { setSessionCookie } from "@/lib/customer-auth";
 import { upsertGoogleUser } from "@/lib/db";
+import { reconcileCustomerWallet } from "@/lib/wallet-reconcile";
 
 export const runtime = "nodejs";
 
@@ -46,6 +47,8 @@ export async function GET(request: Request) {
     const profile = await fetchGoogleUser(tokens.access_token);
     const user = await upsertGoogleUser(profile);
     await setSessionCookie(user.id);
+    // Restore paid wallet from Stripe if local DB was rebuilt.
+    await reconcileCustomerWallet(user);
     return NextResponse.redirect(`${base}${next.startsWith("/") ? next : "/"}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Google sign-in failed";

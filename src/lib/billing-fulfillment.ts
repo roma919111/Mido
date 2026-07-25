@@ -1,12 +1,12 @@
 import {
   adjustCredits,
   claimCheckoutSession,
-  findUserById,
   hasProcessedCheckoutSession,
   updateUser,
 } from "@/lib/db";
 import { getPlan, getTopUp, isPaidPlan, type PlanId } from "@/lib/plans";
 import { cancelStripeSubscription } from "@/lib/stripe";
+import { resolveUserForCheckoutSession } from "@/lib/checkout-user";
 
 type CheckoutSessionLike = {
   id?: string;
@@ -15,11 +15,14 @@ type CheckoutSessionLike = {
   subscription?: string | null;
   payment_status?: string | null;
   status?: string | null;
+  customer_email?: string | null;
+  customer_details?: { email?: string | null } | null;
 };
 
 /**
  * Apply a paid Stripe Checkout session to the customer wallet.
  * Idempotent by Stripe session id — safe for webhook retries and success-page reclaim.
+ * Resolves user by metadata.userId OR email so payments survive local DB rebuilds.
  */
 export async function fulfillCheckoutSession(
   session: CheckoutSessionLike,
@@ -39,20 +42,16 @@ export async function fulfillCheckoutSession(
     return { applied: false, reason: "not_paid" };
   }
 
-  const userId = session.metadata?.userId;
-  if (!userId) return { applied: false, reason: "missing_user" };
-
-  const user = await findUserById(userId);
+  const user = await resolveUserForCheckoutSession(session);
   if (!user) return { applied: false, reason: "user_not_found" };
+  const userId = user.id;
 
   const kind = session.metadata?.kind;
   let credits = 0;
   let planId: PlanId | undefined;
 
   if (kind === "topup") {
-    if (!isPaidPlan(user.planId)) {
-      return { applied: false, reason: "free_plan_topup_blocked" };
-    }
+    // Always credit paid top-ups (including restore-after-wipe). Customer paid Stripe.
     const pack = getTopUp(session.metadata?.topUpId);
     credits = Number(session.metadata?.credits || pack?.credits || 0);
   } else {
@@ -65,7 +64,6 @@ export async function fulfillCheckoutSession(
     credits = Number(session.metadata?.monthlyCredits || plan?.monthlyCredits || 0);
   }
 
-  // Claim before mutating so concurrent webhook + confirm cannot double-credit.
   const claimed = await claimCheckoutSession(sessionId);
   if (!claimed) return { applied: false, reason: "already_processed" };
 
@@ -83,7 +81,6 @@ export async function fulfillCheckoutSession(
       ? session.subscription
       : user.stripeSubscriptionId;
 
-  // Cancel the previous subscription when upgrading so only one monthly charge remains.
   if (
     user.stripeSubscriptionId &&
     nextSubscriptionId &&

@@ -101,6 +101,7 @@ export async function createCheckoutSession(input: {
     cancel_url: `${base}/pricing?canceled=1`,
     metadata: {
       userId: input.userId,
+      email: input.email,
       planId: input.planId,
       monthlyCredits: String(plan.monthlyCredits),
       kind: "subscription",
@@ -108,6 +109,7 @@ export async function createCheckoutSession(input: {
     subscription_data: {
       metadata: {
         userId: input.userId,
+        email: input.email,
         planId: input.planId,
         monthlyCredits: String(plan.monthlyCredits),
       },
@@ -151,6 +153,7 @@ export async function createTopUpCheckoutSession(input: {
     cancel_url: `${base}/pricing?canceled=1`,
     metadata: {
       userId: input.userId,
+      email: input.email,
       topUpId: pack.id,
       credits: String(pack.credits),
       kind: "topup",
