@@ -45,6 +45,7 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
   const [startPreview, setStartPreview] = useState<string | null>(null);
   const [endPreview, setEndPreview] = useState<string | null>(null);
   const [creditCost, setCreditCost] = useState(15);
+  const [creditSource, setCreditSource] = useState<"openart" | "mixed" | "estimate">("estimate");
   const [quoting, setQuoting] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,7 +91,12 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
             : startFrame
               ? "image2video"
               : "text2video";
-        const { data } = await fetchJson<{ totalCredits: number }>("/api/credits/quote", {
+        const { data } = await fetchJson<{
+          totalCredits: number;
+          liveOpenArt?: boolean;
+          source?: "openart" | "mixed";
+          quotes?: Array<{ source?: string; totalCredits?: number }>;
+        }>("/api/credits/quote", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -103,9 +109,15 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
             generateAudio: media === "video" ? generateAudio : undefined,
           }),
         });
-        if (!cancelled) setCreditCost(data.totalCredits);
+        if (!cancelled) {
+          setCreditCost(data.totalCredits);
+          setCreditSource(data.liveOpenArt || data.source === "openart" ? "openart" : "mixed");
+        }
       } catch {
-        if (!cancelled) setCreditCost(media === "image" ? 15 * selectedIds.length : 70);
+        if (!cancelled) {
+          setCreditCost(media === "image" ? 15 * selectedIds.length : 70);
+          setCreditSource("estimate");
+        }
       } finally {
         if (!cancelled) setQuoting(false);
       }
@@ -472,7 +484,7 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
       <button
         type="button"
         onClick={() => void handleGenerate()}
-        disabled={generating}
+        disabled={generating || quoting}
         className="relative z-20 flex w-full items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-5 py-4 text-base font-bold text-white disabled:opacity-70"
       >
         {generating || quoting ? (
@@ -480,9 +492,18 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
         ) : (
           <Sparkles className="h-5 w-5" />
         )}
-        {generating ? "Generating…" : "Generate"}
-        <span className="rounded-full bg-black/20 px-2 py-0.5 text-xs">−{creditCost}</span>
+        {generating ? "Generating…" : quoting ? "Pricing…" : "Generate"}
+        <span className="rounded-full bg-black/20 px-2 py-0.5 text-xs tabular-nums">
+          −{creditCost}
+        </span>
       </button>
+      <p className="text-center text-[11px] text-white/40">
+        {creditSource === "openart"
+          ? "Cost synced live from OpenArt MCP for the selected models & output settings"
+          : creditSource === "mixed"
+            ? "Some selected models are not live on OpenArt MCP yet — cost may be estimated"
+            : "Waiting for OpenArt price sync…"}
+      </p>
 
       <ModelsModal
         open={modelsOpen}

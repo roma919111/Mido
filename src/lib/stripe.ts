@@ -1,5 +1,8 @@
 import Stripe from "stripe";
+import { getAppBaseUrl } from "@/lib/app-url";
 import { getPlan, type PlanId } from "@/lib/plans";
+
+export { getAppBaseUrl };
 
 let stripeSingleton: Stripe | null = null;
 
@@ -16,14 +19,6 @@ export function getStripe(): Stripe {
     stripeSingleton = new Stripe(key);
   }
   return stripeSingleton;
-}
-
-export function getAppBaseUrl(): string {
-  return (
-    process.env.APP_BASE_URL?.trim() ||
-    process.env.NEXT_PUBLIC_APP_BASE_URL?.trim() ||
-    "http://localhost:3000"
-  );
 }
 
 export function getStripePriceId(planId: PlanId): string | undefined {

@@ -13,17 +13,37 @@ OpenArt-powered AI image & video studio with:
 ```bash
 npm install
 cp .env.example .env.local
-# set AUTH_SECRET, OPENART_ACCESS_TOKEN (or complete owner OAuth once)
-# optional: STRIPE_SECRET_KEY + STRIPE_WEBHOOK_SECRET
+# required: AUTH_SECRET, OPENART_ACCESS_TOKEN (or owner OAuth once), APP_BASE_URL
+# for Google login: GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET
+# for real payments: STRIPE_SECRET_KEY + STRIPE_WEBHOOK_SECRET
 npm run dev
 ```
 
-### Billing notes
+### OpenArt credit sync (Generate button)
 
-- Customer wallet credits are deducted using **exact OpenArt quotes** when available.
-- OpenArt MCP itself is billed to the **platform owner token**.
-- Without Stripe keys, `/api/billing/checkout` activates the selected plan in **demo mode** and grants monthly credits for testing.
-- Stripe webhook endpoint: `POST /api/billing/webhook`
+1. UI calls `POST /api/credits/quote` whenever models/output settings change.
+2. Server calls OpenArt MCP tool `openart_model_cost` for each selected live model.
+3. Button shows `−{totalCredits}` from that live quote (sum if multi-select).
+4. On Generate, the same quote path is used again before deducting the customer wallet.
+
+### Google Sign-In
+
+1. Google Cloud Console → APIs & Services → Credentials → OAuth client (Web).
+2. Authorized redirect URI: `{APP_BASE_URL}/api/auth/google/callback`
+3. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env.local`.
+4. Customers use **Continue with Google** on `/login` and `/signup`.
+
+### Billing / Stripe — what you need to provide
+
+| Item | Where | Example |
+|------|--------|---------|
+| `STRIPE_SECRET_KEY` | Stripe Dashboard → Developers → API keys | `sk_test_...` |
+| Webhook URL | Stripe → Developers → Webhooks | `{APP_BASE_URL}/api/billing/webhook` |
+| Events | same webhook | `checkout.session.completed`, `invoice.paid` |
+| `STRIPE_WEBHOOK_SECRET` | webhook signing secret | `whsec_...` |
+| Optional price IDs | Products → Prices | `STRIPE_PRICE_MINI` etc. |
+
+Without Stripe keys the app still runs: checkout uses **demo activation** and grants monthly credits for testing.
 
 ### Owner OpenArt connection
 

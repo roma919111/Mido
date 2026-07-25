@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { BrandLogo } from "@/components/BrandLogo";
@@ -15,11 +15,31 @@ export function AuthForm({ mode }: AuthFormProps) {
   const params = useSearchParams();
   const next = params.get("next") || "/";
   const paywall = params.get("paywall");
+  const urlError = params.get("error");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(urlError);
   const [loading, setLoading] = useState(false);
+  const [googleReady, setGoogleReady] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const { data } = await fetchJson<{ configured?: boolean }>("/api/auth/google/status");
+        setGoogleReady(Boolean(data.configured));
+      } catch {
+        setGoogleReady(false);
+      }
+    })();
+  }, []);
+
+  function googleHref() {
+    const q = new URLSearchParams();
+    if (paywall) q.set("paywall", "1");
+    else q.set("next", next);
+    return `/api/auth/google?${q.toString()}`;
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -56,7 +76,45 @@ export function AuthForm({ mode }: AuthFormProps) {
           : "Access Assets, credits, and Veronix.ai generation history."}
       </p>
 
-      <form onSubmit={onSubmit} className="mt-6 space-y-3">
+      <a
+        href={googleHref()}
+        className={`mt-6 flex w-full items-center justify-center gap-3 rounded-xl border border-white/15 bg-white px-4 py-3 text-sm font-semibold text-black transition ${
+          googleReady ? "hover:bg-white/90" : "opacity-70"
+        }`}
+      >
+        <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden>
+          <path
+            fill="#FFC107"
+            d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.7-5.7C34.2 6.1 29.4 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.3-.4-3.5z"
+          />
+          <path
+            fill="#FF3D00"
+            d="M6.3 14.7l6.6 4.8C14.5 16 18.9 12 24 12c3 0 5.8 1.1 7.9 3l5.7-5.7C34.2 6.1 29.4 4 24 4 16.3 4 9.6 8.3 6.3 14.7z"
+          />
+          <path
+            fill="#4CAF50"
+            d="M24 44c5.2 0 10-2 13.6-5.2l-6.3-5.2C29.3 35.3 26.8 36 24 36c-5.3 0-9.7-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"
+          />
+          <path
+            fill="#1976D2"
+            d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4.1 5.5l6.3 5.2C39.9 36.2 44 31 44 24c0-1.2-.1-2.3-.4-3.5z"
+          />
+        </svg>
+        Continue with Google
+      </a>
+      {!googleReady && (
+        <p className="mt-2 text-xs text-amber-200/80">
+          Google Sign-In needs `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` in `.env.local`.
+        </p>
+      )}
+
+      <div className="my-5 flex items-center gap-3 text-xs text-white/35">
+        <div className="h-px flex-1 bg-white/10" />
+        or use email
+        <div className="h-px flex-1 bg-white/10" />
+      </div>
+
+      <form onSubmit={onSubmit} className="space-y-3">
         {mode === "signup" && (
           <input
             value={name}
@@ -86,9 +144,9 @@ export function AuthForm({ mode }: AuthFormProps) {
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-xl bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] py-3 text-sm font-semibold text-white"
+          className="w-full rounded-xl border border-white/15 bg-white/5 py-3 text-sm font-semibold text-white"
         >
-          {loading ? "Please wait…" : mode === "login" ? "Sign in" : "Sign up"}
+          {loading ? "Please wait…" : mode === "login" ? "Sign in with email" : "Sign up with email"}
         </button>
       </form>
 

@@ -99,18 +99,13 @@ export async function quoteOpenArtCredits(input: QuoteInput): Promise<QuoteResul
       pricingNote: typeof payload.pricingNote === "string" ? payload.pricingNote : undefined,
       source: "openart",
     };
-  } catch {
-    const totalCredits = fallbackEstimate(input);
-    return {
-      modelId: input.modelId,
-      mcpModel,
-      mode,
-      totalCredits,
-      unitCredits: totalCredits,
-      available: true,
-      config: params,
-      source: "estimate",
-    };
+  } catch (error) {
+    // Prefer failing closed for live models so the Generate button never shows a fake OpenArt price.
+    throw new Error(
+      error instanceof Error
+        ? `OpenArt cost sync failed for ${mcpModel}: ${error.message}`
+        : `OpenArt cost sync failed for ${mcpModel}`,
+    );
   }
 }
 

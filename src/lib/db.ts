@@ -11,7 +11,10 @@ export interface UserRecord {
   id: string;
   email: string;
   name: string;
+  /** Empty for Google-only accounts */
   passwordHash: string;
+  googleId?: string;
+  avatarUrl?: string;
   credits: number;
   planId: PlanId;
   stripeCustomerId?: string;
@@ -71,10 +74,17 @@ export async function findUserById(id: string): Promise<UserRecord | null> {
   return db.users.find((u) => u.id === id) ?? null;
 }
 
+export async function findUserByGoogleId(googleId: string): Promise<UserRecord | null> {
+  const db = await ensureDb();
+  return db.users.find((u) => u.googleId === googleId) ?? null;
+}
+
 export async function createUser(input: {
   email: string;
   name: string;
-  passwordHash: string;
+  passwordHash?: string;
+  googleId?: string;
+  avatarUrl?: string;
 }): Promise<UserRecord> {
   const db = await ensureDb();
   if (db.users.some((u) => u.email.toLowerCase() === input.email.toLowerCase())) {
@@ -85,7 +95,9 @@ export async function createUser(input: {
     id: randomUUID(),
     email: input.email.trim().toLowerCase(),
     name: input.name.trim() || "Creator",
-    passwordHash: input.passwordHash,
+    passwordHash: input.passwordHash || "",
+    googleId: input.googleId,
+    avatarUrl: input.avatarUrl,
     credits: 0,
     planId: null,
     createdAt: now,
@@ -94,6 +106,38 @@ export async function createUser(input: {
   db.users.push(user);
   await saveDb(db);
   return user;
+}
+
+export async function upsertGoogleUser(input: {
+  googleId: string;
+  email: string;
+  name: string;
+  avatarUrl?: string;
+}): Promise<UserRecord> {
+  const byGoogle = await findUserByGoogleId(input.googleId);
+  if (byGoogle) {
+    return updateUser(byGoogle.id, {
+      name: input.name || byGoogle.name,
+      avatarUrl: input.avatarUrl || byGoogle.avatarUrl,
+    });
+  }
+
+  const byEmail = await findUserByEmail(input.email);
+  if (byEmail) {
+    return updateUser(byEmail.id, {
+      googleId: input.googleId,
+      name: input.name || byEmail.name,
+      avatarUrl: input.avatarUrl || byEmail.avatarUrl,
+    });
+  }
+
+  return createUser({
+    email: input.email,
+    name: input.name,
+    googleId: input.googleId,
+    avatarUrl: input.avatarUrl,
+    passwordHash: "",
+  });
 }
 
 export async function updateUser(

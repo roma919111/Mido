@@ -94,6 +94,9 @@ export async function registerUser(input: {
 export async function loginUser(input: { email: string; password: string }) {
   const user = await findUserByEmail(input.email.trim().toLowerCase());
   if (!user) throw new Error("Invalid email or password");
+  if (!user.passwordHash) {
+    throw new Error("This account uses Google Sign-In. Continue with Google.");
+  }
   const ok = await verifyPassword(input.password, user.passwordHash);
   if (!ok) throw new Error("Invalid email or password");
   await setSessionCookie(user.id);

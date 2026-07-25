@@ -32,7 +32,12 @@ export async function POST(request: Request) {
       generateAudio: body.generateAudio,
     });
 
-    return NextResponse.json(result);
+    const allLive = result.quotes.every((q) => q.source === "openart" && q.available);
+    return NextResponse.json({
+      ...result,
+      source: allLive ? "openart" : "mixed",
+      liveOpenArt: allLive,
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Quote failed" },
