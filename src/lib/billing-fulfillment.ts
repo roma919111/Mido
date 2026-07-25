@@ -5,7 +5,8 @@ import {
   hasProcessedCheckoutSession,
   updateUser,
 } from "@/lib/db";
-import { getPlan, getTopUp, type PlanId } from "@/lib/plans";
+import { getPlan, getTopUp, isPaidPlan, type PlanId } from "@/lib/plans";
+import { cancelStripeSubscription } from "@/lib/stripe";
 
 type CheckoutSessionLike = {
   id?: string;
@@ -49,11 +50,17 @@ export async function fulfillCheckoutSession(
   let planId: PlanId | undefined;
 
   if (kind === "topup") {
+    if (!isPaidPlan(user.planId)) {
+      return { applied: false, reason: "free_plan_topup_blocked" };
+    }
     const pack = getTopUp(session.metadata?.topUpId);
     credits = Number(session.metadata?.credits || pack?.credits || 0);
   } else {
     planId = session.metadata?.planId as PlanId | undefined;
     if (!planId) return { applied: false, reason: "missing_plan" };
+    if (planId === "free" || !isPaidPlan(planId)) {
+      return { applied: false, reason: "invalid_paid_plan" };
+    }
     const plan = getPlan(planId);
     credits = Number(session.metadata?.monthlyCredits || plan?.monthlyCredits || 0);
   }
@@ -71,14 +78,25 @@ export async function fulfillCheckoutSession(
     return { applied: true, credits, planId: user.planId };
   }
 
+  const nextSubscriptionId =
+    typeof session.subscription === "string"
+      ? session.subscription
+      : user.stripeSubscriptionId;
+
+  // Cancel the previous subscription when upgrading so only one monthly charge remains.
+  if (
+    user.stripeSubscriptionId &&
+    nextSubscriptionId &&
+    user.stripeSubscriptionId !== nextSubscriptionId
+  ) {
+    await cancelStripeSubscription(user.stripeSubscriptionId);
+  }
+
   await updateUser(userId, {
     planId: planId!,
     stripeCustomerId:
       typeof session.customer === "string" ? session.customer : user.stripeCustomerId,
-    stripeSubscriptionId:
-      typeof session.subscription === "string"
-        ? session.subscription
-        : user.stripeSubscriptionId,
+    stripeSubscriptionId: nextSubscriptionId,
   });
   if (credits > 0) await adjustCredits(userId, credits);
   return { applied: true, credits, planId: planId! };

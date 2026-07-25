@@ -1,4 +1,4 @@
-export type PlanId = "mini" | "pro";
+export type PlanId = "free" | "mini" | "pro";
 
 export interface SubscriptionPlan {
   id: PlanId;
@@ -18,6 +18,13 @@ export interface TopUpPack {
 }
 
 export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
+  {
+    id: "free",
+    name: "المجانية",
+    priceUsd: 0,
+    monthlyCredits: 0,
+    description: "بدون اشتراك وبدون كريدت. رقِّ لباقة مدفوعة للتوليد وشحن الرصيد.",
+  },
   {
     id: "mini",
     name: "الأولى",
@@ -67,37 +74,74 @@ export function getTopUp(id: string | null | undefined): TopUpPack | undefined {
   return TOPUP_PACKS.find((p) => p.id === id);
 }
 
-/** Plan rank for upgrade-only rules (higher = better). */
+/** Treat null/unknown as free for product rules. */
+export function normalizePlanId(id: string | null | undefined): PlanId {
+  if (id === "mini" || id === "pro" || id === "free") return id;
+  return "free";
+}
+
+export function isFreePlan(id: string | null | undefined): boolean {
+  return normalizePlanId(id) === "free";
+}
+
+export function isPaidPlan(id: string | null | undefined): boolean {
+  const plan = normalizePlanId(id);
+  return plan === "mini" || plan === "pro";
+}
+
+/** Top-ups only after a paid subscription. */
+export function canTopUp(id: string | null | undefined): boolean {
+  return isPaidPlan(id);
+}
+
+/** Plan rank for upgrade rules (higher = better). */
 export function getPlanRank(id: string | null | undefined): number {
-  if (!id) return -1;
-  const idx = SUBSCRIPTION_PLANS.findIndex((p) => p.id === id);
-  return idx;
+  const normalized = normalizePlanId(id);
+  return SUBSCRIPTION_PLANS.findIndex((p) => p.id === normalized);
 }
 
 export function isHighestPlan(id: string | null | undefined): boolean {
-  if (!id) return false;
-  return getPlanRank(id) === SUBSCRIPTION_PLANS.length - 1;
+  return normalizePlanId(id) === "pro";
 }
 
-/** True only when the user already has a plan and target is strictly higher. */
+/** True only when moving to a strictly higher plan (includes free → paid). */
 export function canUpgradeToPlan(
   currentPlanId: string | null | undefined,
   targetPlanId: string,
 ): boolean {
   const current = getPlanRank(currentPlanId);
   const target = getPlanRank(targetPlanId);
-  if (current < 0 || target < 0) return false;
+  if (target < 0) return false;
   return target > current;
 }
 
-/** New users may pick any plan; existing users may only move strictly upward. */
+/** Switch back to free from any paid plan. */
+export function canSwitchToFree(currentPlanId: string | null | undefined): boolean {
+  return isPaidPlan(currentPlanId);
+}
+
+/**
+ * Purchase rules:
+ * - Free → paid upgrade OK
+ * - Paid → higher paid upgrade OK
+ * - Paid → free switch OK
+ * - Same plan / downgrade between paid plans blocked
+ */
 export function canPurchasePlan(
   currentPlanId: string | null | undefined,
   targetPlanId: string,
 ): boolean {
-  const current = getPlanRank(currentPlanId);
-  const target = getPlanRank(targetPlanId);
-  if (target < 0) return false;
-  if (current < 0) return true;
-  return target > current;
+  if (!getPlan(targetPlanId)) return false;
+  const current = normalizePlanId(currentPlanId);
+  if (current === targetPlanId) return false;
+
+  if (targetPlanId === "free") {
+    return canSwitchToFree(current);
+  }
+
+  if (isFreePlan(current)) {
+    return isPaidPlan(targetPlanId);
+  }
+
+  return canUpgradeToPlan(current, targetPlanId);
 }

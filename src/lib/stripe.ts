@@ -42,6 +42,25 @@ export function getStripePriceId(planId: PlanId): string | undefined {
   return undefined;
 }
 
+/** Cancel a Stripe subscription immediately (used when switching to free or upgrading). */
+export async function cancelStripeSubscription(
+  subscriptionId: string | null | undefined,
+): Promise<void> {
+  const id = subscriptionId?.trim();
+  if (!id) return;
+  if (!(await isStripeConfigured())) return;
+  const stripe = await getStripe();
+  try {
+    await stripe.subscriptions.cancel(id);
+  } catch (error) {
+    // Already canceled / missing — ignore so plan switch still succeeds.
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/no such subscription|already canceled|resource_missing/i.test(message)) {
+      throw error;
+    }
+  }
+}
+
 export async function createCheckoutSession(input: {
   userId: string;
   email: string;
@@ -50,6 +69,9 @@ export async function createCheckoutSession(input: {
 }): Promise<{ url: string; sessionId: string }> {
   const plan = getPlan(input.planId);
   if (!plan) throw new Error("Unknown plan");
+  if (plan.id === "free" || plan.priceUsd <= 0) {
+    throw new Error("Free plan does not use Stripe checkout");
+  }
 
   const stripe = await getStripe();
   const base = getAppBaseUrl();

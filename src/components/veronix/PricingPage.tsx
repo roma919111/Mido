@@ -7,9 +7,13 @@ import { AppHeader, type CustomerUser } from "./AppHeader";
 import { BottomNav } from "./BottomNav";
 import {
   canPurchasePlan,
+  canTopUp,
   canUpgradeToPlan,
   getPlan,
+  isFreePlan,
   isHighestPlan,
+  isPaidPlan,
+  normalizePlanId,
   SUBSCRIPTION_PLANS,
   TOPUP_PACKS,
   type PlanId,
@@ -23,12 +27,14 @@ export function PricingPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  const currentPlanId = (user?.planId as PlanId | null) || null;
+  const currentPlanId = normalizePlanId(user?.planId);
   const currentPlan = getPlan(currentPlanId);
   const onHighest = isHighestPlan(currentPlanId);
+  const onFree = isFreePlan(currentPlanId);
+  const topUpsAllowed = canTopUp(currentPlanId);
 
-  const upgradeTarget = useMemo(
-    () => SUBSCRIPTION_PLANS.find((p) => canUpgradeToPlan(currentPlanId, p.id)),
+  const upgradeTargets = useMemo(
+    () => SUBSCRIPTION_PLANS.filter((p) => canUpgradeToPlan(currentPlanId, p.id)),
     [currentPlanId],
   );
 
@@ -80,6 +86,7 @@ export function PricingPage() {
       const { res, data } = await fetchJson<{
         url?: string;
         demo?: boolean;
+        ok?: boolean;
         message?: string;
         error?: string;
         user?: CustomerUser;
@@ -93,8 +100,8 @@ export function PricingPage() {
         window.location.href = data.url;
         return;
       }
-      if (data.demo) {
-        setMessage(data.message || "تم التفعيل (وضع تجريبي).");
+      if (data.demo || data.ok) {
+        setMessage(data.message || "تم التحديث بنجاح.");
         if (data.user) setUser(data.user);
       }
     } catch (err) {
@@ -115,7 +122,7 @@ export function PricingPage() {
       <main className="mx-auto max-w-5xl px-4 pb-28 pt-8 sm:px-6" dir="rtl">
         <h1 className="font-display text-3xl font-extrabold">الباقات والشحن</h1>
         <p className="mt-2 text-white/50">
-          اختر باقتك مرة واحدة، ثم رقِّ للأعلى عند الحاجة. بعد أعلى باقة يمكنك شحن الكريدت مباشرة.
+          ابدأ بالمجانية، ثم رقِّ للاشتراك الشهري. إضافة الكريدت متاحة بعد باقة مدفوعة فقط.
         </p>
 
         {currentPlan && (
@@ -126,8 +133,10 @@ export function PricingPage() {
             <div>
               <p className="font-semibold text-white">باقتك الحالية: {currentPlan.name}</p>
               <p className="text-white/55">
-                {currentPlan.monthlyCredits.toLocaleString("en-US")} كريدت / شهر · رصيدك الآن{" "}
-                {(user?.credits ?? 0).toLocaleString("en-US")}
+                {currentPlan.monthlyCredits > 0
+                  ? `${currentPlan.monthlyCredits.toLocaleString("en-US")} كريدت / شهر · `
+                  : "0 كريدت · "}
+                رصيدك الآن {(user?.credits ?? 0).toLocaleString("en-US")}
               </p>
             </div>
           </div>
@@ -139,109 +148,122 @@ export function PricingPage() {
           </p>
         )}
 
-        {!onHighest && (
-          <>
-            <h2 className="mt-10 font-display text-2xl font-bold">
-              {currentPlan ? "الترقية" : "الباقات الشهرية"}
-            </h2>
-            <p className="mt-2 text-white/50">
-              {currentPlan
-                ? "لا يمكن إعادة اختيار نفس الباقة — الترقية متاحة للباقة الأعلى فقط."
-                : "باقتان من 10$ إلى 15$. الكريدت يُضاف لمحفظة Veronix."}
-            </p>
-            <div className="mt-6 grid gap-4 md:grid-cols-2">
-              {SUBSCRIPTION_PLANS.map((plan) => {
-                const isCurrent = currentPlanId === plan.id;
-                const canUpgrade = canUpgradeToPlan(currentPlanId, plan.id);
-                const canBuy = canPurchasePlan(currentPlanId, plan.id);
-                const isLower =
-                  Boolean(currentPlan) &&
-                  !isCurrent &&
-                  !canUpgrade &&
-                  SUBSCRIPTION_PLANS.findIndex((p) => p.id === plan.id) <
-                    SUBSCRIPTION_PLANS.findIndex((p) => p.id === currentPlanId);
-                const disabled = Boolean(busy) || !canBuy;
+        <h2 className="mt-10 font-display text-2xl font-bold">الباقات</h2>
+        <p className="mt-2 text-white/50">
+          {onFree
+            ? "أنت على الباقة المجانية. رقِّ لباقة مدفوعة للحصول على كريدت شهري وإمكانية الشحن."
+            : onHighest
+              ? "أنت على أعلى باقة. يمكنك إضافة كريدت أو الرجوع للباقة المجانية لإيقاف الاستقطاع."
+              : "لا يمكن إعادة اختيار نفس الباقة — الترقية للأعلى أو الرجوع للمجانية فقط."}
+        </p>
 
-                return (
-                  <div
-                    key={plan.id}
-                    className={`relative rounded-3xl border p-5 ${
-                      isCurrent
-                        ? "border-[#22f0ff]/60 bg-[rgba(34,240,255,0.08)]"
-                        : canUpgrade || (!currentPlan && plan.highlight)
-                          ? "border-[#22f0ff]/40 bg-[rgba(34,240,255,0.05)]"
-                          : "border-white/10 bg-[#141821]"
-                    } ${isLower || isCurrent ? "opacity-80" : ""}`}
-                  >
-                    {isCurrent && (
-                      <span className="absolute left-4 top-4 rounded-full bg-[#22f0ff]/20 px-2.5 py-1 text-[11px] font-semibold text-[#22f0ff]">
-                        باقتك الحالية
-                      </span>
-                    )}
-                    {canUpgrade && (
-                      <span className="absolute left-4 top-4 inline-flex items-center gap-1 rounded-full bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-2.5 py-1 text-[11px] font-semibold text-white">
-                        <ArrowUpRight className="h-3 w-3" />
-                        ترقية
-                      </span>
-                    )}
-                    <p className="text-sm text-white/50">الباقة {plan.name}</p>
-                    <p className="mt-2 font-display text-3xl font-bold" dir="ltr">
+        <div className="mt-6 grid gap-4 md:grid-cols-3">
+          {SUBSCRIPTION_PLANS.map((plan) => {
+            const isCurrent = currentPlanId === plan.id;
+            const canUpgrade = canUpgradeToPlan(currentPlanId, plan.id);
+            const canBuy = canPurchasePlan(currentPlanId, plan.id);
+            const isLowerPaid =
+              isPaidPlan(currentPlanId) &&
+              isPaidPlan(plan.id) &&
+              !isCurrent &&
+              !canUpgrade;
+            const switchingToFree = plan.id === "free" && canBuy;
+            const disabled = Boolean(busy) || !canBuy;
+
+            return (
+              <div
+                key={plan.id}
+                className={`relative rounded-3xl border p-5 ${
+                  isCurrent
+                    ? "border-[#22f0ff]/60 bg-[rgba(34,240,255,0.08)]"
+                    : canUpgrade || plan.highlight
+                      ? "border-[#22f0ff]/40 bg-[rgba(34,240,255,0.05)]"
+                      : switchingToFree
+                        ? "border-white/20 bg-[#141821]"
+                        : "border-white/10 bg-[#141821]"
+                } ${isLowerPaid || isCurrent ? "opacity-80" : ""}`}
+              >
+                {isCurrent && (
+                  <span className="absolute left-4 top-4 rounded-full bg-[#22f0ff]/20 px-2.5 py-1 text-[11px] font-semibold text-[#22f0ff]">
+                    باقتك الحالية
+                  </span>
+                )}
+                {canUpgrade && (
+                  <span className="absolute left-4 top-4 inline-flex items-center gap-1 rounded-full bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-2.5 py-1 text-[11px] font-semibold text-white">
+                    <ArrowUpRight className="h-3 w-3" />
+                    ترقية
+                  </span>
+                )}
+                {switchingToFree && (
+                  <span className="absolute left-4 top-4 rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/80">
+                    إيقاف الاشتراك
+                  </span>
+                )}
+                <p className="text-sm text-white/50">الباقة {plan.name}</p>
+                <p className="mt-2 font-display text-3xl font-bold" dir="ltr">
+                  {plan.priceUsd === 0 ? (
+                    "Free"
+                  ) : (
+                    <>
                       ${plan.priceUsd.toFixed(2)}
                       <span className="text-sm font-normal text-white/45"> / mo</span>
-                    </p>
-                    <p className="mt-2 text-sm text-white/60">
-                      {plan.monthlyCredits.toLocaleString("en-US")} كريدت / شهر
-                    </p>
-                    <p className="mt-3 text-sm text-white/45">{plan.description}</p>
-                    <button
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => {
-                        if (!canBuy) return;
-                        void checkout({ planId: plan.id }, plan.id);
-                      }}
-                      className={`mt-5 w-full rounded-2xl py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
-                        canUpgrade
-                          ? "bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] text-white"
-                          : isCurrent
-                            ? "border border-white/15 bg-white/5 text-white/70"
-                            : "bg-white text-black"
-                      }`}
-                    >
-                      {busy === plan.id
-                        ? "جارٍ المعالجة…"
+                    </>
+                  )}
+                </p>
+                <p className="mt-2 text-sm text-white/60">
+                  {plan.monthlyCredits > 0
+                    ? `${plan.monthlyCredits.toLocaleString("en-US")} كريدت / شهر`
+                    : "0 كريدت — بدون شحن"}
+                </p>
+                <p className="mt-3 text-sm text-white/45">{plan.description}</p>
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => {
+                    if (!canBuy) return;
+                    void checkout({ planId: plan.id }, plan.id);
+                  }}
+                  className={`mt-5 w-full rounded-2xl py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
+                    canUpgrade
+                      ? "bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] text-white"
+                      : switchingToFree
+                        ? "border border-white/20 bg-white/10 text-white"
                         : isCurrent
-                          ? "باقتك الحالية"
-                          : isLower
-                            ? "باقة أدنى — غير متاحة"
-                            : canUpgrade
-                              ? `رقِّ إلى الباقة ${plan.name}`
-                              : `اختر الباقة ${plan.name}`}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-            {currentPlan && upgradeTarget && (
-              <p className="mt-3 text-center text-xs text-white/40">
-                الخطوة التالية: الترقية إلى الباقة {upgradeTarget.name} فقط.
-              </p>
-            )}
-          </>
-        )}
+                          ? "border border-white/15 bg-white/5 text-white/70"
+                          : "bg-white text-black"
+                  }`}
+                >
+                  {busy === plan.id
+                    ? "جارٍ المعالجة…"
+                    : isCurrent
+                      ? "باقتك الحالية"
+                      : isLowerPaid
+                        ? "باقة أدنى — غير متاحة"
+                        : switchingToFree
+                          ? "الرجوع للباقة المجانية"
+                          : canUpgrade
+                            ? `رقِّ إلى الباقة ${plan.name}`
+                            : `اختر الباقة ${plan.name}`}
+                </button>
+              </div>
+            );
+          })}
+        </div>
 
-        {onHighest && (
-          <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white/55">
-            أنت على أعلى باقة ({currentPlan?.name}). لا يمكن تغيير الباقة — أضف كريدت من الحزم أدناه.
-          </div>
+        {upgradeTargets.length > 0 && (
+          <p className="mt-3 text-center text-xs text-white/40">
+            الترقية المتاحة: {upgradeTargets.map((p) => p.name).join(" · ")}
+          </p>
         )}
 
         <section
           id="topup"
           className={`mt-12 overflow-hidden rounded-[28px] border ${
-            onHighest
-              ? "border-[#22f0ff]/35 bg-[radial-gradient(120%_120%_at_100%_0%,rgba(124,92,255,0.28),transparent_55%),radial-gradient(90%_90%_at_0%_100%,rgba(34,240,255,0.16),transparent_50%),#10141c]"
-              : "border-white/10 bg-[#10141c]"
+            topUpsAllowed
+              ? onHighest
+                ? "border-[#22f0ff]/35 bg-[radial-gradient(120%_120%_at_100%_0%,rgba(124,92,255,0.28),transparent_55%),radial-gradient(90%_90%_at_0%_100%,rgba(34,240,255,0.16),transparent_50%),#10141c]"
+                : "border-white/10 bg-[#10141c]"
+              : "border-white/10 bg-[#10141c]/70 opacity-90"
           }`}
         >
           <div className="border-b border-white/8 px-5 py-5 sm:px-7">
@@ -252,72 +274,104 @@ export function PricingPage() {
                   إضافة كريدت
                 </p>
                 <h2 className="mt-2 font-display text-2xl font-bold sm:text-3xl">
-                  {onHighest ? "أنت على أعلى باقة — اشحن رصيدك الآن" : "حزم الشحن الإضافي"}
+                  {topUpsAllowed
+                    ? onHighest
+                      ? "أنت على أعلى باقة — اشحن رصيدك الآن"
+                      : "حزم الشحن الإضافي"
+                    : "الشحن غير متاح على الباقة المجانية"}
                 </h2>
                 <p className="mt-2 max-w-xl text-sm text-white/55">
-                  {onHighest
-                    ? "لا حاجة لتغيير الباقة. اختر حزمة شحن سريعة تُضاف فوراً إلى محفظتك."
-                    : "اشحن رصيدك فورًا دون انتظار تجديد الباقة."}
+                  {topUpsAllowed
+                    ? "اشحن رصيدك فورًا دون انتظار تجديد الباقة."
+                    : "رقِّ إلى الباقة الأولى أو الثانية لتفعيل إضافة الكريدت."}
                 </p>
               </div>
-              {onHighest && (
+              {topUpsAllowed ? (
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-white/80">
                   <Zap className="h-3.5 w-3.5 text-[#22f0ff]" />
                   الباقة {currentPlan?.name} مفعّلة
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1.5 text-xs text-amber-100">
+                  يتطلب ترقية
                 </span>
               )}
             </div>
           </div>
 
-          <div className="grid gap-4 p-5 sm:grid-cols-3 sm:p-7">
-            {TOPUP_PACKS.map((pack, index) => {
-              const featured = onHighest ? index === 1 : index === 1;
-              const perThousand = ((pack.priceUsd / pack.credits) * 1000).toFixed(2);
-              return (
-                <div
-                  key={pack.id}
-                  className={`relative flex flex-col rounded-3xl border p-5 transition duration-300 hover:-translate-y-0.5 hover:border-[#22f0ff]/35 ${
-                    featured
-                      ? "border-[#22f0ff]/55 bg-[linear-gradient(180deg,rgba(34,240,255,0.14),rgba(20,24,33,0.95))] shadow-[0_0_40px_rgba(34,240,255,0.12)]"
-                      : "border-white/10 bg-[#141821]/90"
-                  }`}
-                >
-                  {featured && (
-                    <span className="absolute left-4 top-4 inline-flex items-center gap-1 rounded-full bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-2.5 py-1 text-[11px] font-semibold text-white">
-                      <Sparkles className="h-3 w-3" />
-                      الأفضل قيمة
-                    </span>
-                  )}
-                  <p className="text-sm text-white/50">{pack.name}</p>
-                  <p className="mt-3 font-display text-4xl font-bold tracking-tight" dir="ltr">
-                    ${pack.priceUsd.toFixed(2)}
-                  </p>
-                  <p className="mt-2 text-lg font-semibold text-[#22f0ff]">
-                    +{pack.credits.toLocaleString("en-US")}
-                    <span className="mr-1 text-sm font-normal text-white/50">كريدت</span>
-                  </p>
-                  <p className="mt-1 text-xs text-white/35" dir="ltr">
-                    ~${perThousand} / 1k credits
-                  </p>
-                  <p className="mt-3 flex-1 text-sm leading-relaxed text-white/45">
-                    {pack.description}
-                  </p>
-                  <button
-                    type="button"
-                    disabled={Boolean(busy)}
-                    onClick={() => void checkout({ topUpId: pack.id }, pack.id)}
-                    className={`mt-5 w-full rounded-2xl py-3.5 text-sm font-semibold transition disabled:opacity-60 ${
-                      featured || onHighest
-                        ? "bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] text-white hover:brightness-110"
-                        : "bg-white text-black hover:bg-white/90"
+          {topUpsAllowed ? (
+            <div className="grid gap-4 p-5 sm:grid-cols-3 sm:p-7">
+              {TOPUP_PACKS.map((pack, index) => {
+                const featured = index === 1;
+                const perThousand = ((pack.priceUsd / pack.credits) * 1000).toFixed(2);
+                return (
+                  <div
+                    key={pack.id}
+                    className={`relative flex flex-col rounded-3xl border p-5 transition duration-300 hover:-translate-y-0.5 hover:border-[#22f0ff]/35 ${
+                      featured
+                        ? "border-[#22f0ff]/55 bg-[linear-gradient(180deg,rgba(34,240,255,0.14),rgba(20,24,33,0.95))] shadow-[0_0_40px_rgba(34,240,255,0.12)]"
+                        : "border-white/10 bg-[#141821]/90"
                     }`}
                   >
-                    {busy === pack.id ? "جارٍ المعالجة…" : "أضف الكريدت الآن"}
-                  </button>
+                    {featured && (
+                      <span className="absolute left-4 top-4 inline-flex items-center gap-1 rounded-full bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-2.5 py-1 text-[11px] font-semibold text-white">
+                        <Sparkles className="h-3 w-3" />
+                        الأفضل قيمة
+                      </span>
+                    )}
+                    <p className="text-sm text-white/50">{pack.name}</p>
+                    <p className="mt-3 font-display text-4xl font-bold tracking-tight" dir="ltr">
+                      ${pack.priceUsd.toFixed(2)}
+                    </p>
+                    <p className="mt-2 text-lg font-semibold text-[#22f0ff]">
+                      +{pack.credits.toLocaleString("en-US")}
+                      <span className="mr-1 text-sm font-normal text-white/50">كريدت</span>
+                    </p>
+                    <p className="mt-1 text-xs text-white/35" dir="ltr">
+                      ~${perThousand} / 1k credits
+                    </p>
+                    <p className="mt-3 flex-1 text-sm leading-relaxed text-white/45">
+                      {pack.description}
+                    </p>
+                    <button
+                      type="button"
+                      disabled={Boolean(busy)}
+                      onClick={() => void checkout({ topUpId: pack.id }, pack.id)}
+                      className={`mt-5 w-full rounded-2xl py-3.5 text-sm font-semibold transition disabled:opacity-60 ${
+                        featured || onHighest
+                          ? "bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] text-white hover:brightness-110"
+                          : "bg-white text-black hover:bg-white/90"
+                      }`}
+                    >
+                      {busy === pack.id ? "جارٍ المعالجة…" : "أضف الكريدت الآن"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="px-5 py-8 sm:px-7">
+              <div className="rounded-3xl border border-dashed border-white/15 bg-white/[0.03] px-5 py-8 text-center">
+                <p className="font-display text-lg font-semibold">الشحن مقفل على الباقة المجانية</p>
+                <p className="mx-auto mt-2 max-w-md text-sm text-white/50">
+                  اختر الباقة الأولى (7,500 كريدت / 10$) أو الثانية (11,500 كريدت / 15$) لتفعيل الشحن الشهري والإضافي.
+                </p>
+                <div className="mt-5 flex flex-wrap justify-center gap-3">
+                  {SUBSCRIPTION_PLANS.filter((p) => isPaidPlan(p.id)).map((plan) => (
+                    <button
+                      key={plan.id}
+                      type="button"
+                      disabled={Boolean(busy)}
+                      onClick={() => void checkout({ planId: plan.id }, plan.id)}
+                      className="rounded-2xl bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+                    >
+                      رقِّ إلى {plan.name} — ${plan.priceUsd}/mo
+                    </button>
+                  ))}
                 </div>
-              );
-            })}
-          </div>
+              </div>
+            </div>
+          )}
         </section>
       </main>
       <BottomNav />
