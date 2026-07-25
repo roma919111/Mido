@@ -113,10 +113,14 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
           setCreditCost(data.totalCredits);
           setCreditSource(data.liveOpenArt || data.source === "openart" ? "openart" : "mixed");
         }
-      } catch {
+      } catch (err) {
         if (!cancelled) {
-          setCreditCost(media === "image" ? 15 * selectedIds.length : 70);
           setCreditSource("estimate");
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Could not sync OpenArt credit cost. Check model selection / owner OpenArt connection.",
+          );
         }
       } finally {
         if (!cancelled) setQuoting(false);
