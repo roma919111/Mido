@@ -1,6 +1,6 @@
 import Stripe from "stripe";
 import { getAppBaseUrl } from "@/lib/app-url";
-import { getPlan, type PlanId } from "@/lib/plans";
+import { getPlan, getTopUp, type PlanId } from "@/lib/plans";
 
 export { getAppBaseUrl };
 
@@ -23,7 +23,6 @@ export function getStripe(): Stripe {
 
 export function getStripePriceId(planId: PlanId): string | undefined {
   if (planId === "mini") return process.env.STRIPE_PRICE_MINI?.trim();
-  if (planId === "standard") return process.env.STRIPE_PRICE_STANDARD?.trim();
   if (planId === "pro") return process.env.STRIPE_PRICE_PRO?.trim();
   return undefined;
 }
@@ -67,6 +66,7 @@ export async function createCheckoutSession(input: {
       userId: input.userId,
       planId: input.planId,
       monthlyCredits: String(plan.monthlyCredits),
+      kind: "subscription",
     },
     subscription_data: {
       metadata: {
@@ -74,6 +74,49 @@ export async function createCheckoutSession(input: {
         planId: input.planId,
         monthlyCredits: String(plan.monthlyCredits),
       },
+    },
+  });
+
+  if (!session.url) throw new Error("Stripe did not return a checkout URL");
+  return { url: session.url, sessionId: session.id };
+}
+
+export async function createTopUpCheckoutSession(input: {
+  userId: string;
+  email: string;
+  topUpId: string;
+  stripeCustomerId?: string;
+}): Promise<{ url: string; sessionId: string }> {
+  const pack = getTopUp(input.topUpId);
+  if (!pack) throw new Error("Unknown top-up pack");
+
+  const stripe = getStripe();
+  const base = getAppBaseUrl();
+
+  const session = await stripe.checkout.sessions.create({
+    mode: "payment",
+    customer: input.stripeCustomerId || undefined,
+    customer_email: input.stripeCustomerId ? undefined : input.email,
+    line_items: [
+      {
+        quantity: 1,
+        price_data: {
+          currency: "usd",
+          unit_amount: Math.round(pack.priceUsd * 100),
+          product_data: {
+            name: `Veronix.ai ${pack.name}`,
+            description: `${pack.credits} credits top-up`,
+          },
+        },
+      },
+    ],
+    success_url: `${base}/pricing?success=1&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${base}/pricing?canceled=1`,
+    metadata: {
+      userId: input.userId,
+      topUpId: pack.id,
+      credits: String(pack.credits),
+      kind: "topup",
     },
   });
 

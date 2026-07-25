@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 const DATA_DIR = path.join(process.cwd(), ".data");
 const DB_FILE = path.join(DATA_DIR, "veronix-db.json");
 
-export type PlanId = "mini" | "standard" | "pro" | null;
+export type PlanId = "mini" | "standard" | "pro" | null; // standard kept for legacy users only
 
 export interface UserRecord {
   id: string;

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getStripe, isStripeConfigured } from "@/lib/stripe";
 import { adjustCredits, findUserById, updateUser } from "@/lib/db";
-import { getPlan, type PlanId } from "@/lib/plans";
+import { getPlan, getTopUp, type PlanId } from "@/lib/plans";
 
 export const runtime = "nodejs";
 
@@ -37,18 +37,28 @@ export async function POST(request: Request) {
         subscription?: string;
       };
       const userId = session.metadata?.userId;
-      const planId = session.metadata?.planId as PlanId | undefined;
-      const monthlyCredits = Number(session.metadata?.monthlyCredits || 0);
-      if (userId && planId) {
-        const plan = getPlan(planId);
-        const credits = monthlyCredits || plan?.monthlyCredits || 0;
+      const kind = session.metadata?.kind;
+      if (userId && kind === "topup") {
+        const pack = getTopUp(session.metadata?.topUpId);
+        const credits = Number(session.metadata?.credits || pack?.credits || 0);
         await updateUser(userId, {
-          planId,
           stripeCustomerId: typeof session.customer === "string" ? session.customer : undefined,
-          stripeSubscriptionId:
-            typeof session.subscription === "string" ? session.subscription : undefined,
         });
         if (credits > 0) await adjustCredits(userId, credits);
+      } else {
+        const planId = session.metadata?.planId as PlanId | undefined;
+        const monthlyCredits = Number(session.metadata?.monthlyCredits || 0);
+        if (userId && planId) {
+          const plan = getPlan(planId);
+          const credits = monthlyCredits || plan?.monthlyCredits || 0;
+          await updateUser(userId, {
+            planId,
+            stripeCustomerId: typeof session.customer === "string" ? session.customer : undefined,
+            stripeSubscriptionId:
+              typeof session.subscription === "string" ? session.subscription : undefined,
+          });
+          if (credits > 0) await adjustCredits(userId, credits);
+        }
       }
     }
 

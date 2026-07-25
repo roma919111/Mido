@@ -9,6 +9,8 @@ export interface CatalogModel {
   /** Modes supported via MCP */
   modes?: string[];
   badge?: string;
+  /** Short customer-facing tagline under the name */
+  tagline?: string;
   available: boolean;
 }
 
@@ -59,7 +61,16 @@ export const IMAGE_MODELS: CatalogModel[] = [
 export const VIDEO_MODELS: CatalogModel[] = [
   { id: "seedance-2", name: "Seedance 2.0", kind: "video", mcpId: "byte-plus-seedance-2", modes: ["text2video", "image2video", "element2video"], available: true },
   { id: "seedance-2-fast", name: "Seedance 2.0 Fast", kind: "video", mcpId: "byte-plus-seedance-2-fast", modes: ["text2video", "image2video", "element2video"], available: true },
-  { id: "seedance-2-mini", name: "Seedance 2.0 Mini", kind: "video", mcpId: "byte-plus-seedance-2-mini", modes: ["text2video", "image2video", "element2video"], available: true },
+  {
+    id: "seedance-2-mini",
+    name: "Veronix",
+    kind: "video",
+    mcpId: "byte-plus-seedance-2-mini",
+    modes: ["text2video", "image2video", "element2video"],
+    badge: "حصري",
+    tagline: "موديل فيديو حصري مدعوم بالذكاء الاصطناعي",
+    available: true,
+  },
   { id: "gemini-omni-flash", name: "Gemini Omni Flash", kind: "video", mcpId: "gemini-omni-flash", modes: ["text2video", "image2video", "element2video"], available: true },
   { id: "kling-3-omni", name: "Kling 3.0 Omni", kind: "video", mcpId: "kling-3-omni", modes: ["text2video", "image2video", "element2video"], available: true },
   { id: "pixverse-c1", name: "PixVerse C1", kind: "video", available: false },

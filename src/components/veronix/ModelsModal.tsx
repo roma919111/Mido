@@ -121,8 +121,9 @@ export function ModelsModal({
                     />
                   </div>
                   <p className="mt-1 text-[11px] text-white/40">
-                    {model.available ? "متاح" : "قريبًا"}
-                    {model.badge ? ` · ${model.badge}` : ""}
+                    {model.tagline
+                      ? `${model.tagline}${model.badge ? ` · ${model.badge}` : ""}`
+                      : `${model.available ? "متاح" : "قريبًا"}${model.badge ? ` · ${model.badge}` : ""}`}
                   </p>
                 </button>
               );

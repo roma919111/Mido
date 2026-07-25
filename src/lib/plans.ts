@@ -1,4 +1,4 @@
-export type PlanId = "mini" | "standard" | "pro";
+export type PlanId = "mini" | "pro";
 
 export interface SubscriptionPlan {
   id: PlanId;
@@ -9,31 +9,60 @@ export interface SubscriptionPlan {
   highlight?: boolean;
 }
 
+export interface TopUpPack {
+  id: string;
+  name: string;
+  priceUsd: number;
+  credits: number;
+  description: string;
+}
+
 export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
   {
     id: "mini",
-    name: "Mini",
+    name: "الأولى",
     priceUsd: 10,
-    monthlyCredits: 1200,
-    description: "Starter monthly credits for light image & short video work.",
-  },
-  {
-    id: "standard",
-    name: "Standard",
-    priceUsd: 12.5,
-    monthlyCredits: 2000,
-    description: "Balanced plan for regular creators.",
-    highlight: true,
+    monthlyCredits: 7500,
+    description: "باقة شهرية مناسبة للبداية والاستخدام الخفيف.",
   },
   {
     id: "pro",
-    name: "Pro",
+    name: "الثانية",
     priceUsd: 15,
-    monthlyCredits: 3500,
-    description: "Highest monthly allowance for power users.",
+    monthlyCredits: 11500,
+    description: "رصيد أعلى لصنّاع المحتوى المنتظمين.",
+    highlight: true,
+  },
+];
+
+export const TOPUP_PACKS: TopUpPack[] = [
+  {
+    id: "topup-2000",
+    name: "شحن 2,000",
+    priceUsd: 4,
+    credits: 2000,
+    description: "حزمة شحن إضافية سريعة.",
+  },
+  {
+    id: "topup-5000",
+    name: "شحن 5,000",
+    priceUsd: 8,
+    credits: 5000,
+    description: "حزمة شحن متوسطة.",
+  },
+  {
+    id: "topup-10000",
+    name: "شحن 10,000",
+    priceUsd: 14,
+    credits: 10000,
+    description: "حزمة شحن كبيرة.",
   },
 ];
 
 export function getPlan(id: string | null | undefined): SubscriptionPlan | undefined {
   return SUBSCRIPTION_PLANS.find((p) => p.id === id);
+}
+
+export function getTopUp(id: string | null | undefined): TopUpPack | undefined {
+  return TOPUP_PACKS.find((p) => p.id === id);
 }

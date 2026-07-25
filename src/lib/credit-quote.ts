@@ -2,6 +2,13 @@ import { callOpenArtTool, OpenArtConfigError, parseToolPayload } from "@/lib/ope
 import { getCatalogModel, resolveMcpModel } from "@/lib/model-catalog";
 import { lookupCachedCost } from "@/lib/openart-cost-cache";
 
+/** Veronix wallet credits = OpenArt credits × this factor. */
+export const VERONIX_CREDIT_MULTIPLIER = 1.8;
+
+export function toVeronixCredits(openArtCredits: number): number {
+  return Math.max(1, Math.round(Number(openArtCredits) * VERONIX_CREDIT_MULTIPLIER));
+}
+
 export interface QuoteInput {
   modelId: string;
   media: "image" | "video";
@@ -75,17 +82,18 @@ async function quoteFromCache(
     aspectRatio: input.aspectRatio,
   });
   if (!cached) return null;
+  const totalCredits = toVeronixCredits(cached.totalCredits);
   return {
     modelId: input.modelId,
     mcpModel,
     mode,
-    totalCredits: cached.totalCredits,
-    unitCredits: cached.unitCredits,
+    totalCredits,
+    unitCredits: totalCredits,
     available: true,
     config: cached.config,
     pricingNote: cached.scaled
-      ? "Synced from OpenArt cost table (duration scaled)."
-      : "Synced from OpenArt cost table.",
+      ? "Synced from OpenArt cost table (duration scaled) × 1.8."
+      : "Synced from OpenArt cost table × 1.8.",
     source: "openart-cache",
     cached: true,
   };
@@ -120,7 +128,7 @@ export async function quoteOpenArtCredits(
         };
 
   if (!available) {
-    const totalCredits = fallbackEstimate(input);
+    const totalCredits = toVeronixCredits(fallbackEstimate(input));
     return {
       modelId: input.modelId,
       mcpModel,
@@ -151,12 +159,13 @@ export async function quoteOpenArtCredits(
       throw new Error("Invalid credit quote from OpenArt");
     }
 
+    const veronixCredits = toVeronixCredits(totalCredits);
     return {
       modelId: input.modelId,
       mcpModel,
       mode,
-      totalCredits,
-      unitCredits: Number(first.unitCredits ?? totalCredits),
+      totalCredits: veronixCredits,
+      unitCredits: toVeronixCredits(Number(first.unitCredits ?? totalCredits)),
       available: true,
       config: (first.config as Record<string, unknown>) ?? params,
       pricingNote: typeof payload.pricingNote === "string" ? payload.pricingNote : undefined,
