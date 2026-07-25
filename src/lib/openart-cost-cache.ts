@@ -85,9 +85,13 @@ function scoreMatch(
     if (dur === wanted.duration) score += 40;
     else score += Math.max(0, 20 - Math.abs(dur - wanted.duration));
   }
-  const audio = Boolean(item.config.generateAudio ?? item.config.generateSound);
-  if (typeof wanted.generateAudio === "boolean") {
-    if (audio === wanted.generateAudio) score += 15;
+  const hasAudioField =
+    item.config.generateAudio !== undefined || item.config.generateSound !== undefined;
+  if (typeof wanted.generateAudio === "boolean" && hasAudioField) {
+    const audio = Boolean(item.config.generateAudio ?? item.config.generateSound);
+    // Audio must match exactly — otherwise price stays stuck when toggling «توليد صوت».
+    if (audio !== wanted.generateAudio) return -1;
+    score += 80;
   }
   const ar = String(item.config.aspectRatio ?? "");
   if (wanted.aspectRatio && ar) {

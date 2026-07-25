@@ -113,7 +113,10 @@ export async function quoteOpenArtCredits(
           duration: input.duration ?? 5,
           resolution: input.resolution ?? "720p",
           aspectRatio: input.aspectRatio ?? "16:9",
-          generateAudio: Boolean(input.generateAudio),
+          // Kling uses generateSound; PixVerse/Seedance use generateAudio.
+          ...(mcpModel.includes("kling")
+            ? { generateSound: Boolean(input.generateAudio) }
+            : { generateAudio: Boolean(input.generateAudio) }),
         };
 
   if (!available) {

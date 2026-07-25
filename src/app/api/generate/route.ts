@@ -164,7 +164,9 @@ export async function POST(request: Request) {
               duration: body.duration ?? 5,
               resolution: body.resolution ?? "720p",
               aspectRatio: body.aspectRatio ?? "16:9",
-              generateAudio: Boolean(body.generateAudio),
+              ...(mcpModel.includes("kling")
+                ? { generateSound: Boolean(body.generateAudio) }
+                : { generateAudio: Boolean(body.generateAudio) }),
               autoEnhancePrompt: false,
               ...(body.startFrame ? { startFrame: body.startFrame } : {}),
               ...(body.endFrame ? { endFrame: body.endFrame } : {}),

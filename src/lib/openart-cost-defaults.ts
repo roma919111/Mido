@@ -31,20 +31,29 @@ export const OPENART_COST_DEFAULTS: CostCacheItem[] = [
   { model: "gpt-image-2", mode: "text2image", totalCredits: 40, unitCredits: 40, config: { imageCount: 1, resolutionTier: "2k", aspectRatio: "4:3", quality: "medium" }, mediaType: "image" },
   { model: "gpt-image-2", mode: "image2image", totalCredits: 42, unitCredits: 42, config: { imageCount: 1, resolutionTier: "2k", aspectRatio: "4:3", quality: "medium" }, mediaType: "image" },
 
-  // Video — PixVerse (linear with duration)
+  // Video — PixVerse (audio changes price; duration scales linearly)
   { model: "pixverseV6", mode: "text2video", totalCredits: 50, unitCredits: 50, config: { videoCount: 1, resolution: "540p", duration: 5, aspectRatio: "16:9", generateAudio: false }, mediaType: "video" },
+  { model: "pixverseV6", mode: "text2video", totalCredits: 70, unitCredits: 70, config: { videoCount: 1, resolution: "540p", duration: 5, aspectRatio: "16:9", generateAudio: true }, mediaType: "video" },
   { model: "pixverseV6", mode: "image2video", totalCredits: 50, unitCredits: 50, config: { videoCount: 1, resolution: "540p", duration: 5, generateAudio: false }, mediaType: "video" },
+  { model: "pixverseV6", mode: "image2video", totalCredits: 70, unitCredits: 70, config: { videoCount: 1, resolution: "540p", duration: 5, generateAudio: true }, mediaType: "video" },
   { model: "pixverseV6", mode: "text2video", totalCredits: 70, unitCredits: 70, config: { videoCount: 1, resolution: "720p", duration: 5, aspectRatio: "16:9", generateAudio: false }, mediaType: "video" },
+  { model: "pixverseV6", mode: "text2video", totalCredits: 90, unitCredits: 90, config: { videoCount: 1, resolution: "720p", duration: 5, aspectRatio: "16:9", generateAudio: true }, mediaType: "video" },
+  { model: "pixverseV6", mode: "image2video", totalCredits: 70, unitCredits: 70, config: { videoCount: 1, resolution: "720p", duration: 5, generateAudio: false }, mediaType: "video" },
+  { model: "pixverseV6", mode: "image2video", totalCredits: 90, unitCredits: 90, config: { videoCount: 1, resolution: "720p", duration: 5, generateAudio: true }, mediaType: "video" },
   { model: "pixverseV6", mode: "text2video", totalCredits: 140, unitCredits: 140, config: { videoCount: 1, resolution: "720p", duration: 10, aspectRatio: "16:9", generateAudio: false }, mediaType: "video" },
+  { model: "pixverseV6", mode: "text2video", totalCredits: 180, unitCredits: 180, config: { videoCount: 1, resolution: "720p", duration: 10, aspectRatio: "16:9", generateAudio: true }, mediaType: "video" },
 
   // Wan
   { model: "wan2-7", mode: "text2video", totalCredits: 125, unitCredits: 125, config: { videoCount: 1, resolution: "720p", duration: 5, aspectRatio: "16:9" }, mediaType: "video" },
   { model: "wan2-7", mode: "image2video", totalCredits: 125, unitCredits: 125, config: { videoCount: 1, resolution: "720p", duration: 5 }, mediaType: "video" },
   { model: "wan2-7", mode: "element2video", totalCredits: 125, unitCredits: 125, config: { videoCount: 1, resolution: "720p", duration: 5, aspectRatio: "16:9" }, mediaType: "video" },
 
-  // Kling video
+  // Kling video (generateSound changes price)
+  { model: "kling-3-omni", mode: "text2video", totalCredits: 125, unitCredits: 125, config: { videoCount: 1, resolution: "std", duration: 5, aspectRatio: "16:9", generateSound: false }, mediaType: "video" },
   { model: "kling-3-omni", mode: "text2video", totalCredits: 175, unitCredits: 175, config: { videoCount: 1, resolution: "std", duration: 5, aspectRatio: "16:9", generateSound: true }, mediaType: "video" },
+  { model: "kling-3-omni", mode: "image2video", totalCredits: 125, unitCredits: 125, config: { videoCount: 1, resolution: "std", duration: 5, generateSound: false }, mediaType: "video" },
   { model: "kling-3-omni", mode: "image2video", totalCredits: 175, unitCredits: 175, config: { videoCount: 1, resolution: "std", duration: 5, generateSound: true }, mediaType: "video" },
+  { model: "kling-3-omni", mode: "element2video", totalCredits: 125, unitCredits: 125, config: { videoCount: 1, resolution: "std", duration: 5, aspectRatio: "16:9", generateSound: false }, mediaType: "video" },
   { model: "kling-3-omni", mode: "element2video", totalCredits: 175, unitCredits: 175, config: { videoCount: 1, resolution: "std", duration: 5, aspectRatio: "16:9", generateSound: true }, mediaType: "video" },
 
   // Seedance family
