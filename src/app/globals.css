@@ -36,6 +36,7 @@ body {
 }
 
 .studio-backdrop {
+  pointer-events: none;
   background:
     radial-gradient(1200px 600px at 12% -10%, rgba(46, 230, 166, 0.16), transparent 55%),
     radial-gradient(900px 500px at 90% 0%, rgba(255, 176, 92, 0.12), transparent 50%),
@@ -45,6 +46,7 @@ body {
 
 .studio-backdrop::before {
   content: "";
+  pointer-events: none;
   position: absolute;
   inset: 0;
   background-image:

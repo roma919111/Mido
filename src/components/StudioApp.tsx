@@ -372,10 +372,13 @@ export function StudioApp() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden pb-28 sm:pb-0">
-      <div className="pointer-events-none absolute inset-0 studio-backdrop" />
-      <div className="pointer-events-none absolute -left-24 top-24 h-72 w-72 rounded-full bg-[rgba(46,230,166,0.12)] blur-3xl animate-float" />
-      <div className="pointer-events-none absolute -right-16 top-48 h-80 w-80 rounded-full bg-[rgba(255,176,92,0.1)] blur-3xl animate-float-delayed" />
+    <div className="relative min-h-screen overflow-x-hidden">
+      {/* Decorative layer must never capture taps (esp. ::before pseudo-elements). */}
+      <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <div className="absolute inset-0 studio-backdrop" />
+        <div className="absolute -left-24 top-24 h-72 w-72 rounded-full bg-[rgba(46,230,166,0.12)] blur-3xl animate-float" />
+        <div className="absolute -right-16 top-48 h-80 w-80 rounded-full bg-[rgba(255,176,92,0.1)] blur-3xl animate-float-delayed" />
+      </div>
 
       <Header
         plan={account.plan}
@@ -398,7 +401,7 @@ export function StudioApp() {
         </div>
       )}
 
-      <main className="relative z-10 mx-auto w-full max-w-6xl px-4 pb-28 pt-8 sm:px-6">
+      <main className="relative z-10 mx-auto w-full max-w-6xl px-4 pb-16 pt-8 sm:px-6">
         <section className="animate-fade-up mb-8 max-w-3xl">
           <p className="mb-3 text-xs uppercase tracking-[0.24em] text-[var(--accent)]/80">
             Creative workbench
@@ -412,8 +415,8 @@ export function StudioApp() {
           </p>
         </section>
 
-        <section className="animate-fade-up animation-delay-1 rounded-[28px] border border-white/10 bg-[rgba(12,14,20,0.72)] p-4 shadow-[0_30px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:p-6">
-          <div className="space-y-5">
+        <section className="animate-fade-up animation-delay-1 relative z-20 isolate rounded-[28px] border border-white/10 bg-[rgba(12,14,20,0.92)] p-4 shadow-[0_30px_80px_rgba(0,0,0,0.35)] sm:p-6">
+          <div className="relative z-20 space-y-5">
             <ModeSwitcher mode={mode} onChange={setMode} />
 
             <PromptInput
@@ -475,18 +478,31 @@ export function StudioApp() {
               />
             )}
 
+            <GenerateButton
+              label={isVideoMode ? "Generate Video" : "Generate Image"}
+              credits={creditCost}
+              loading={generating}
+              hint={
+                !prompt.trim()
+                  ? "اكتب وصفًا فوق ثم اضغط Generate"
+                  : mode === "image-to-video" && !startFrame
+                    ? "ارفع Start Frame أولاً لوضع Image-to-Video"
+                    : "جاهز — اضغط Generate"
+              }
+              onClick={() => {
+                void handleGenerate();
+              }}
+            />
+
             {liveMcpResponse && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs uppercase tracking-[0.18em] text-cyan-300/80">
-                    Live OpenArt MCP response
-                  </p>
-                  <p className="text-[10px] text-white/35">{MCP_ENDPOINT}</p>
-                </div>
-                <pre className="max-h-80 overflow-auto rounded-2xl border border-white/10 bg-black/40 p-4 text-xs leading-relaxed text-white/75">
+              <details className="rounded-2xl border border-white/10 bg-black/30 p-3">
+                <summary className="cursor-pointer text-xs uppercase tracking-[0.18em] text-cyan-300/80">
+                  Live OpenArt MCP response
+                </summary>
+                <pre className="mt-3 max-h-60 overflow-auto text-xs leading-relaxed text-white/70">
                   {liveMcpResponse}
                 </pre>
-              </div>
+              </details>
             )}
           </div>
         </section>
@@ -497,23 +513,6 @@ export function StudioApp() {
       </main>
 
       <Footer />
-
-      {/* Keep outside backdrop-blur sections so fixed positioning works on mobile. */}
-      <GenerateButton
-        label={isVideoMode ? "Generate Video" : "Generate Image"}
-        credits={creditCost}
-        loading={generating}
-        hint={
-          !prompt.trim()
-            ? "Tip: type your prompt above, then tap Generate."
-            : mode === "image-to-video" && !startFrame
-              ? "Tip: upload a Start Frame for Image-to-Video."
-              : "Ready — tap Generate anytime."
-        }
-        onClick={() => {
-          void handleGenerate();
-        }}
-      />
     </div>
   );
 }
