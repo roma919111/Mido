@@ -57,7 +57,7 @@ export async function POST(request: Request) {
       unitCredits: freeTrial ? 0 : q.unitCredits,
       freeTrial,
       pricingNote: freeTrial
-        ? `مجاني لأول مرة (فيديو Veronix ${FREE_VERONIX_DURATION_SECONDS} ثوانٍ). السعر العادي بعد التجربة: ${q.totalCredits} كريدت (OpenArt × 1.8).`
+        ? `مجاني لأول مرة (Veronix ${FREE_VERONIX_DURATION_SECONDS}ث: 4ث وصف + 2ث ختم VYRONIX · 480p). السعر العادي بعد التجربة: ${q.totalCredits} كريدت (OpenArt × 1.8).`
         : q.pricingNote,
     }));
     const totalCredits = quotes.reduce((sum, q) => sum + q.totalCredits, 0);

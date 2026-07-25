@@ -56,7 +56,7 @@ export const OPENART_COST_DEFAULTS: CostCacheItem[] = [
   { model: "kling-3-omni", mode: "element2video", totalCredits: 125, unitCredits: 125, config: { videoCount: 1, resolution: "std", duration: 5, aspectRatio: "16:9", generateSound: false }, mediaType: "video" },
   { model: "kling-3-omni", mode: "element2video", totalCredits: 175, unitCredits: 175, config: { videoCount: 1, resolution: "std", duration: 5, aspectRatio: "16:9", generateSound: true }, mediaType: "video" },
 
-  // Seedance / Veronix — include default free-trial length (9s)
+  // Seedance / Veronix — model clip lengths (free trial uses 4s model + local 2s outro)
   { model: "byte-plus-seedance-2-mini", mode: "text2video", totalCredits: 200, unitCredits: 200, config: { videoCount: 1, resolution: "720p", duration: 5, aspectRatio: "16:9", generateAudio: false }, mediaType: "video" },
   { model: "byte-plus-seedance-2-mini", mode: "text2video", totalCredits: 200, unitCredits: 200, config: { videoCount: 1, resolution: "720p", duration: 5, aspectRatio: "16:9", generateAudio: true }, mediaType: "video" },
   { model: "byte-plus-seedance-2-mini", mode: "text2video", totalCredits: 360, unitCredits: 360, config: { videoCount: 1, resolution: "720p", duration: 9, aspectRatio: "16:9", generateAudio: false }, mediaType: "video" },
