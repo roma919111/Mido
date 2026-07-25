@@ -46,7 +46,7 @@ export async function POST(request: Request) {
           details: payload,
           raw: signResult,
         },
-        { status: 502 },
+        { status: 422 },
       );
     }
 
@@ -75,7 +75,7 @@ export async function POST(request: Request) {
           details: signed,
           raw: signResult,
         },
-        { status: 502 },
+        { status: 422 },
       );
     }
 
@@ -97,7 +97,7 @@ export async function POST(request: Request) {
           live: true,
           mcpEndpoint: MCP_ENDPOINT,
         },
-        { status: 502 },
+        { status: 422 },
       );
     }
 

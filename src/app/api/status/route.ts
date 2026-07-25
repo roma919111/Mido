@@ -32,7 +32,7 @@ export async function GET(request: Request) {
           details: payload,
           raw: result,
         },
-        { status: 502 },
+        { status: 422 },
       );
     }
 

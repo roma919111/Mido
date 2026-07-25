@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { fetchJson } from "@/lib/fetch-json";
 import { estimateCredits } from "@/lib/models";
 import type {
   AccountInfo,
@@ -113,14 +114,15 @@ export function StudioApp() {
 
   async function refreshAccount() {
     try {
-      const res = await fetch("/api/account");
-      const data = (await res.json()) as AccountInfo & {
-        error?: string;
-        details?: unknown;
-        raw?: unknown;
-        mcpEndpoint?: string;
-        live?: boolean;
-      };
+      const { res, data } = await fetchJson<
+        AccountInfo & {
+          error?: string;
+          details?: unknown;
+          raw?: unknown;
+          mcpEndpoint?: string;
+          live?: boolean;
+        }
+      >("/api/account");
 
       setLiveMcpResponse(
         formatLivePayload({
@@ -200,8 +202,11 @@ export function StudioApp() {
       form.append("purpose", purpose);
       form.append("label", file.name || (target === "start" ? "start-frame" : "reference"));
 
-      const res = await fetch("/api/upload", { method: "POST", body: form });
-      const data = await res.json();
+      const { res, data } = await fetchJson<{
+        error?: string;
+        mcpEndpoint?: string;
+        visualReference?: VisualReference;
+      }>("/api/upload", { method: "POST", body: form });
 
       setLiveMcpResponse(
         formatLivePayload({
@@ -238,12 +243,14 @@ export function StudioApp() {
     setEnhancing(true);
     setError(null);
     try {
-      const res = await fetch("/api/enhance", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, mode }),
-      });
-      const data = await res.json();
+      const { res, data } = await fetchJson<{ error?: string; enhanced?: string }>(
+        "/api/enhance",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt, mode }),
+        },
+      );
       if (!res.ok) throw new Error(data.error || "Enhance failed");
       setPrompt(data.enhanced as string);
       setStatusMessage("Prompt enhanced for stronger composition and lighting.");
@@ -254,15 +261,56 @@ export function StudioApp() {
     }
   }
 
+  function extractGenerateError(data: {
+    error?: string;
+    details?: unknown;
+  }): string {
+    if (typeof data.error === "string" && data.error.trim()) {
+      if (data.error.includes("insufficient") || data.error.includes("Not enough OpenArt credits")) {
+        return "رصيد OpenArt للمنصة خلص. اشحن الكريدت من حساب المالك ثم حاول مرة ثانية.";
+      }
+      return data.error;
+    }
+    const details = data.details as { error?: string; failedCode?: string } | undefined;
+    if (typeof details?.error === "string") return details.error;
+    return "Generation failed";
+  }
+
+  async function postGenerate(body: Record<string, unknown>) {
+    const paths = ["/api/create", "/api/generate"] as const;
+    let lastError: Error | null = null;
+
+    for (const path of paths) {
+      try {
+        const { res, data } = await fetchJson<
+          GenerateResponse & {
+            error?: string;
+            details?: unknown;
+            raw?: unknown;
+          }
+        >(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify(body),
+        });
+        return { res, data, path };
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error("Generation request failed");
+      }
+    }
+
+    throw lastError ?? new Error("Generation request failed");
+  }
+
   async function handleGenerate() {
     const currentPrompt = prompt.trim();
     if (!currentPrompt) {
-      setError("Write a prompt before generating.");
+      setError("اكتب وصفًا قبل الضغط على Generate.");
       setStatusMessage(null);
       return;
     }
     if (mode === "image-to-video" && !startFrame) {
-      setError("Upload a Start Frame for Image-to-Video.");
+      setError("ارفع Start Frame لوضع Image-to-Video.");
       setStatusMessage(null);
       return;
     }
@@ -286,28 +334,20 @@ export function StudioApp() {
     setGallery((prev) => [optimistic, ...prev]);
 
     try {
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode,
-          prompt: currentPrompt,
-          duration,
-          quality,
-          startFrame,
-          referenceImage,
-          waitForResult: true,
-        }),
+      // Avoid long waits behind temporary tunnels (they return HTML 502 pages).
+      const { res, data, path } = await postGenerate({
+        mode,
+        prompt: currentPrompt,
+        duration,
+        quality,
+        startFrame,
+        referenceImage,
+        waitForResult: false,
       });
-      const data = (await res.json()) as GenerateResponse & {
-        error?: string;
-        details?: unknown;
-        raw?: unknown;
-      };
 
       setLiveMcpResponse(
         formatLivePayload({
-          route: `POST /api/generate → ${data.tool ?? (isVideoMode ? "openart_generate_video" : "openart_generate_image")}`,
+          route: `POST ${path} → ${data.tool ?? (isVideoMode ? "openart_generate_video" : "openart_generate_image")}`,
           httpStatus: res.status,
           mcpEndpoint: data.mcpEndpoint ?? MCP_ENDPOINT,
           live: data.live,
@@ -316,7 +356,7 @@ export function StudioApp() {
       );
 
       if (!res.ok) {
-        throw new Error(data.error || formatLivePayload(data));
+        throw new Error(extractGenerateError(data));
       }
 
       const url = data.urls?.[0] ?? "";
@@ -347,9 +387,9 @@ export function StudioApp() {
       if (status === "completed") {
         setStatusMessage("Live OpenArt MCP generation complete.");
       } else if (status === "failed") {
-        setError(data.error || "Generation failed");
+        setError(extractGenerateError(data));
       } else {
-        setStatusMessage("Still generating on OpenArt MCP — raw wait payload shown below.");
+        setStatusMessage("طلب التوليد وصل OpenArt — راقب المعرض أو حدّث الصفحة.");
       }
 
       await refreshAccount();

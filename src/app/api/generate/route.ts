@@ -94,16 +94,22 @@ export async function POST(request: Request) {
 
     const generatePayload = parseToolPayload(generateResult);
     if (generateResult.isError) {
+      const nestedError =
+        typeof generatePayload.error === "string"
+          ? generatePayload.error
+          : typeof generatePayload.message === "string"
+            ? generatePayload.message
+            : undefined;
       return NextResponse.json(
         {
-          error: generatePayload.rawText ?? "OpenArt generation failed",
+          error: nestedError || generatePayload.rawText || "OpenArt generation failed",
           live: true,
           mcpEndpoint: MCP_ENDPOINT,
           tool: toolName,
           details: generatePayload,
           raw: generateResult,
         },
-        { status: 502 },
+        { status: 422 },
       );
     }
 
@@ -118,7 +124,7 @@ export async function POST(request: Request) {
           details: generatePayload,
           raw: generateResult,
         },
-        { status: 502 },
+        { status: 422 },
       );
     }
 

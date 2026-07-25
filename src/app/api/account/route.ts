@@ -29,7 +29,7 @@ export async function GET() {
           details: payload,
           raw: result,
         },
-        { status: 502 },
+        { status: 422 },
       );
     }
 
