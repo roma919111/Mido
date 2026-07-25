@@ -16,6 +16,7 @@ import {
 import type { CatalogModel } from "@/lib/model-catalog";
 import {
   FREE_VERONIX_DURATION_SECONDS,
+  FREE_VERONIX_RESOLUTION,
   VERONIX_MODEL_ID,
 } from "@/lib/free-trial";
 import type { VisualReference } from "@/lib/types";
@@ -47,7 +48,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const [modelsOpen, setModelsOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [aspectRatio, setAspectRatio] = useState<string>("16:9");
-  const [resolution, setResolution] = useState<string>("720p");
+  const [resolution, setResolution] = useState<string>(FREE_VERONIX_RESOLUTION);
   const [duration, setDuration] = useState<number>(FREE_VERONIX_DURATION_SECONDS);
   const [generateAudio, setGenerateAudio] = useState(false);
   const [freeTrial, setFreeTrial] = useState(false);
@@ -74,8 +75,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const [shareNote, setShareNote] = useState<string | null>(null);
   const [genStartedAt, setGenStartedAt] = useState<number | null>(null);
   const [elapsedSec, setElapsedSec] = useState(0);
-
   const waitingResult = generating || preview?.status === "running";
+  const freeSettingsLocked =
+    media === "video" &&
+    selectedModelId === VERONIX_MODEL_ID &&
+    !user?.freeVeronixUsed;
 
   const allModels = useMemo(
     () => [...imageModels, ...videoModels],
@@ -86,6 +90,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   useEffect(() => {
     if (lockedMedia) setMedia(lockedMedia);
   }, [lockedMedia]);
+
+  // Free first visit: lock Veronix defaults to 6s / 480p.
+  useEffect(() => {
+    if (!freeSettingsLocked) return;
+    setDuration(FREE_VERONIX_DURATION_SECONDS);
+    setResolution(FREE_VERONIX_RESOLUTION);
+  }, [freeSettingsLocked]);
 
   useEffect(() => {
     if (!waitingResult || genStartedAt == null) {
@@ -319,10 +330,71 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     }
   }
 
+  async function applyBrandOutro(input: {
+    url: string;
+    historyId?: string;
+    assetId?: string;
+    mediaType: "image" | "video";
+  }) {
+    if (input.mediaType !== "video") {
+      setPreview({
+        url: input.url,
+        mediaType: input.mediaType,
+        historyId: input.historyId,
+        status: "completed",
+      });
+      return;
+    }
+    setStatus("جاري إضافة ختم VYRONIX…");
+    setPreview({
+      url: "",
+      mediaType: "video",
+      historyId: input.historyId,
+      status: "running",
+    });
+    try {
+      const { res, data } = await fetchJson<{ url?: string; error?: string }>(
+        "/api/media/brand-outro",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: input.url,
+            historyId: input.historyId,
+            assetId: input.assetId,
+          }),
+        },
+      );
+      if (!res.ok || !data.url) throw new Error(data.error || "تعذر إضافة الختم");
+      setPreview({
+        url: data.url,
+        mediaType: "video",
+        historyId: input.historyId,
+        status: "completed",
+      });
+      setStatus(null);
+    } catch (err) {
+      // Fall back to model clip if branding fails — still show something.
+      setPreview({
+        url: input.url,
+        mediaType: "video",
+        historyId: input.historyId,
+        status: "completed",
+      });
+      setStatus(
+        err instanceof Error
+          ? `اكتمل التوليد (تعذر ختم VYRONIX: ${err.message})`
+          : "اكتمل التوليد",
+      );
+    }
+  }
+
   async function pollPreview(
     historyId: string,
     mediaType: "image" | "video",
     startedAt: number,
+    brandOutro: boolean,
+    assetId?: string,
   ) {
     for (let i = 0; i < PREVIEW_POLL_ATTEMPTS; i += 1) {
       await new Promise((r) => setTimeout(r, PREVIEW_POLL_MS));
@@ -337,8 +409,12 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         const st = String(data.status || "").toUpperCase();
         const url = data.urls?.[0];
         if (url) {
-          setPreview({ url, mediaType, historyId, status: "completed" });
-          setStatus(null);
+          if (brandOutro) {
+            await applyBrandOutro({ url, historyId, assetId, mediaType });
+          } else {
+            setPreview({ url, mediaType, historyId, status: "completed" });
+            setStatus(null);
+          }
           setGenStartedAt(null);
           return;
         }
@@ -465,7 +541,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     setGenStartedAt(startedAt);
     setElapsedSec(0);
     setStatus(
-      freeTrial ? "جاري توليد فيديوك المجاني (9 ثوانٍ)…" : "Generating…",
+      freeTrial
+        ? "جاري توليد فيديوك المجاني (4ث وصف + 2ث VYRONIX)…"
+        : "Generating…",
     );
     try {
       const mode =
@@ -486,7 +564,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           error?: string;
           status?: string;
           historyId?: string;
+          assetId?: string;
           urls?: string[];
+          needsBrandOutro?: boolean;
         }>;
       }>("/api/create", {
         method: "POST",
@@ -528,14 +608,25 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       const ok = data.results?.find((r) => !r.error);
       const firstUrl = ok?.urls?.[0] || "";
       const historyId = ok?.historyId;
+      const assetId = ok?.assetId;
+      const brand = Boolean(data.freeTrial || ok?.needsBrandOutro);
       if (firstUrl) {
-        setPreview({
-          url: firstUrl,
-          mediaType: media,
-          historyId,
-          status: "completed",
-        });
-        setStatus(null);
+        if (brand) {
+          await applyBrandOutro({
+            url: firstUrl,
+            historyId,
+            assetId,
+            mediaType: media,
+          });
+        } else {
+          setPreview({
+            url: firstUrl,
+            mediaType: media,
+            historyId,
+            status: "completed",
+          });
+          setStatus(null);
+        }
         setGenStartedAt(null);
       } else if (historyId) {
         setPreview({
@@ -545,7 +636,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           status: "running",
         });
         setStatus("Generating…");
-        void pollPreview(historyId, media, startedAt);
+        void pollPreview(historyId, media, startedAt, brand, assetId);
       } else {
         setStatus("تم إرسال الطلب — افتح Assets لمتابعة النتيجة");
         setGenStartedAt(null);
@@ -599,8 +690,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         selectedModelId === VERONIX_MODEL_ID &&
         !user?.freeVeronixUsed && (
           <div className="rounded-2xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-50">
-            أول فيديو على <span className="font-semibold">Veronix</span> بطول{" "}
-            <span className="font-semibold tabular-nums">9 ثوانٍ</span> مجاني مرة واحدة.
+            أول فيديو على <span className="font-semibold">Veronix</span> مجاني مرة واحدة:{" "}
+            <span className="font-semibold tabular-nums">6 ثوانٍ · 480p</span>
+            {" — "}
+            4ث من وصفك + ختم سينمائي VYRONIX في آخر ثانيتين.
           </div>
         )}
 
@@ -765,7 +858,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               <select
                 value={resolution}
                 onChange={(e) => setResolution(e.target.value)}
-                className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white"
+                disabled={freeSettingsLocked}
+                className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white disabled:opacity-60"
               >
                 {RESOLUTIONS.map((r) => (
                   <option key={r} value={r}>
@@ -783,11 +877,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               <span className="text-white/70">المدة</span>
               <span className="font-semibold tabular-nums text-[#22f0ff]">
                 {duration}s
-                {selectedModelId === VERONIX_MODEL_ID &&
-                duration === FREE_VERONIX_DURATION_SECONDS &&
-                !user?.freeVeronixUsed
-                  ? " · مجاني أول مرة"
-                  : ""}
+                {freeSettingsLocked ? " · مجاني أول مرة" : ""}
               </span>
             </div>
             <input
@@ -796,12 +886,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               max={15}
               step={1}
               value={duration}
+              disabled={freeSettingsLocked}
               onChange={(e) => setDuration(Number(e.target.value))}
-              className="w-full accent-[#22f0ff]"
+              className="w-full accent-[#22f0ff] disabled:opacity-60"
             />
             <div className="flex justify-between text-[10px] text-white/35">
               <span>4s</span>
-              <span className="text-[#22f0ff]">9s افتراضي</span>
+              <span className="text-[#22f0ff]">6s مجاني</span>
               <span>15s</span>
             </div>
             <label className="mt-2 flex items-center gap-2 text-sm text-white/70">

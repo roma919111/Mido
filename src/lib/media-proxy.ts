@@ -31,6 +31,17 @@ export function veronixDownloadPath(input: {
   const ext = mediaType === "video" ? "mp4" : "png";
   const filename = `veronix-${Date.now()}.${ext}`;
 
+  // Already hosted on Veronix — keep same-origin (no OpenArt).
+  const existing = input.url?.trim();
+  if (existing?.startsWith("/generations/")) {
+    const qs = new URLSearchParams({
+      local: existing,
+      type: mediaType,
+      filename,
+    });
+    return `/api/media/download?${qs.toString()}`;
+  }
+
   if (input.historyId?.trim()) {
     const qs = new URLSearchParams({
       historyId: input.historyId.trim(),

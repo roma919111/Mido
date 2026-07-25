@@ -1,4 +1,8 @@
+import { createReadStream } from "node:fs";
+import { access } from "node:fs/promises";
+import path from "node:path";
 import { NextResponse } from "next/server";
+import { Readable } from "node:stream";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { isAllowedMediaHost } from "@/lib/media-proxy";
 import {
@@ -22,8 +26,21 @@ function safeFilename(name: string | null, mediaType: "image" | "video") {
   return cleaned;
 }
 
-async function resolveSourceUrl(request: Request): Promise<{
-  url: string;
+function resolveLocalGeneration(localPath: string): string | null {
+  if (!localPath.startsWith("/generations/")) return null;
+  const base = path.resolve(process.cwd(), "public", "generations");
+  const file = path.resolve(process.cwd(), "public", localPath.replace(/^\//, ""));
+  if (!file.startsWith(base + path.sep)) return null;
+  if (!file.toLowerCase().endsWith(".mp4") && !file.toLowerCase().endsWith(".webm")) {
+    return null;
+  }
+  return file;
+}
+
+async function resolveSource(request: Request): Promise<{
+  kind: "remote" | "local";
+  url?: string;
+  filePath?: string;
   mediaType: "image" | "video";
   filename: string;
 } | null> {
@@ -31,16 +48,22 @@ async function resolveSourceUrl(request: Request): Promise<{
   const mediaType =
     searchParams.get("type") === "image" ? ("image" as const) : ("video" as const);
   const filename = safeFilename(searchParams.get("filename"), mediaType);
-  const historyId = searchParams.get("historyId")?.trim();
 
+  const local = searchParams.get("local")?.trim();
+  if (local) {
+    const filePath = resolveLocalGeneration(local);
+    if (!filePath) return null;
+    return { kind: "local", filePath, mediaType, filename };
+  }
+
+  const historyId = searchParams.get("historyId")?.trim();
   if (historyId) {
     const result = await callOpenArtTool("openart_creation_get", { historyId });
     const payload = parseToolPayload(result);
     if (result.isError) return null;
-    const urls = collectMediaUrls(payload);
-    const url = urls[0];
+    const url = collectMediaUrls(payload)[0];
     if (!url) return null;
-    return { url, mediaType, filename };
+    return { kind: "remote", url, mediaType, filename };
   }
 
   const encoded = searchParams.get("u")?.trim();
@@ -59,7 +82,7 @@ async function resolveSourceUrl(request: Request): Promise<{
   }
   if (!isAllowedMediaHost(parsed.hostname)) return null;
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
-  return { url: parsed.toString(), mediaType, filename };
+  return { kind: "remote", url: parsed.toString(), mediaType, filename };
 }
 
 export async function GET(request: Request) {
@@ -69,12 +92,27 @@ export async function GET(request: Request) {
   }
 
   try {
-    const source = await resolveSourceUrl(request);
+    const source = await resolveSource(request);
     if (!source) {
       return NextResponse.json({ error: "Media not ready" }, { status: 404 });
     }
 
-    const upstream = await fetch(source.url, {
+    if (source.kind === "local" && source.filePath) {
+      await access(source.filePath);
+      const nodeStream = createReadStream(source.filePath);
+      const webStream = Readable.toWeb(nodeStream) as unknown as ReadableStream;
+      return new NextResponse(webStream, {
+        status: 200,
+        headers: {
+          "Content-Type": "video/mp4",
+          "Content-Disposition": `attachment; filename="${source.filename}"`,
+          "Cache-Control": "private, no-store",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    }
+
+    const upstream = await fetch(source.url!, {
       headers: { Accept: "*/*" },
       redirect: "follow",
     });

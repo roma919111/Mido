@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { adjustCredits, createAsset, updateAsset, updateUser } from "@/lib/db";
 import { quoteOpenArtCredits } from "@/lib/credit-quote";
-import { isFreeVeronixEligible } from "@/lib/free-trial";
+import {
+  FREE_VERONIX_MODEL_DURATION_SECONDS,
+  FREE_VERONIX_RESOLUTION,
+  isFreeVeronixEligible,
+} from "@/lib/free-trial";
 import { getCatalogModel, resolveMcpModel } from "@/lib/model-catalog";
 import { audioParamForMcpModel, mapResolutionForMcpModel } from "@/lib/model-params";
 import {
@@ -113,7 +117,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Free trial only when generating a single Veronix 9s video.
+    // Free trial: single Veronix 6s package (4s model + 2s local VYRONIX outro).
     const freeTrial =
       modelIds.length === 1 &&
       isFreeVeronixEligible(user, {
@@ -182,10 +186,14 @@ export async function POST(request: Request) {
       const mcpModel = catalog ? resolveMcpModel(catalog) : quote.mcpModel;
       const toolName = media === "image" ? "openart_generate_image" : "openart_generate_video";
 
-      const mappedResolution = mapResolutionForMcpModel(
-        mcpModel,
-        body.resolution ?? "720p",
-      );
+      const uiResolution = freeTrial
+        ? FREE_VERONIX_RESOLUTION
+        : body.resolution ?? "720p";
+      const mappedResolution = mapResolutionForMcpModel(mcpModel, uiResolution);
+      // Free trial: model renders prompt for 4s only; 2s VYRONIX outro is added locally later.
+      const modelDuration = freeTrial
+        ? FREE_VERONIX_MODEL_DURATION_SECONDS
+        : (body.duration ?? 6);
       const params: Record<string, unknown> =
         media === "image"
           ? {
@@ -200,7 +208,7 @@ export async function POST(request: Request) {
           : {
               prompt,
               videoCount: 1,
-              duration: body.duration ?? 9,
+              duration: modelDuration,
               ...(mappedResolution ? { resolution: mappedResolution } : {}),
               aspectRatio: body.aspectRatio ?? "16:9",
               ...audioParamForMcpModel(mcpModel, body.generateAudio),
@@ -284,6 +292,7 @@ export async function POST(request: Request) {
           urls,
           creditsUsed: finalStatus === "failed" ? 0 : quote.totalCredits,
           freeTrial,
+          needsBrandOutro: freeTrial && finalStatus !== "failed",
           live: true,
           mcpEndpoint: MCP_ENDPOINT,
           tool: toolName,
