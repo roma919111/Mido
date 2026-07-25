@@ -11,6 +11,8 @@ import type {
   VideoQuality,
   VisualReference,
 } from "@/lib/types";
+import { BrandLogo } from "./BrandLogo";
+import { Footer } from "./Footer";
 import { GenerateButton } from "./GenerateButton";
 import { Header } from "./Header";
 import { ImageDropzone } from "./ImageDropzone";
@@ -19,7 +21,7 @@ import { ModeSwitcher } from "./ModeSwitcher";
 import { PromptInput } from "./PromptInput";
 import { VideoControls } from "./VideoControls";
 
-const GALLERY_KEY = "studio-ai-gallery-v1";
+const GALLERY_KEY = "vyronix-ai-gallery-v1";
 
 function loadGallery(): GalleryItem[] {
   if (typeof window === "undefined") return [];
@@ -281,8 +283,8 @@ export function StudioApp() {
   return (
     <div className="relative min-h-screen overflow-hidden">
       <div className="pointer-events-none absolute inset-0 studio-backdrop" />
-      <div className="pointer-events-none absolute -left-24 top-24 h-72 w-72 rounded-full bg-[rgba(46,230,166,0.12)] blur-3xl animate-float" />
-      <div className="pointer-events-none absolute -right-16 top-48 h-80 w-80 rounded-full bg-[rgba(255,176,92,0.1)] blur-3xl animate-float-delayed" />
+      <div className="pointer-events-none absolute -left-24 top-24 h-72 w-72 rounded-full bg-[rgba(34,240,255,0.12)] blur-3xl animate-float" />
+      <div className="pointer-events-none absolute -right-16 top-48 h-80 w-80 rounded-full bg-[rgba(46,230,166,0.1)] blur-3xl animate-float-delayed" />
 
       <Header
         credits={account.credits}
@@ -293,15 +295,14 @@ export function StudioApp() {
 
       <main className="relative z-10 mx-auto w-full max-w-6xl px-4 pb-20 pt-8 sm:px-6">
         <section className="animate-fade-up mb-8 max-w-3xl">
-          <p className="mb-3 text-xs uppercase tracking-[0.24em] text-[var(--accent)]/80">
-            Creative workbench
+          <p className="mb-3 text-xs uppercase tracking-[0.24em] text-[var(--neon-cyan)]/80">
+            Next-gen creative workbench
           </p>
-          <h1 className="font-[family-name:var(--font-display)] text-4xl leading-[1.05] tracking-tight text-white sm:text-5xl">
-            Studio AI
+          <h1 className="leading-[1.05]">
+            <BrandLogo size="lg" />
           </h1>
           <p className="mt-3 max-w-xl text-base text-white/55 sm:text-lg">
-            Generate cinematic images and videos with OpenArt — from a single prompt to motion-ready
-            frames.
+            Next-gen AI image &amp; video studio — from a single prompt to motion-ready frames.
           </p>
         </section>
 
@@ -394,6 +395,8 @@ export function StudioApp() {
           <MediaGallery items={gallery} />
         </div>
       </main>
+
+      <Footer />
     </div>
   );
 }
