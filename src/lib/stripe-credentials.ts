@@ -22,23 +22,26 @@ async function getEncryptionKey(): Promise<Uint8Array> {
 export async function loadStripeCredentials(): Promise<StripeCredentials | null> {
   const envKey = process.env.STRIPE_SECRET_KEY?.trim();
   const envWebhook = process.env.STRIPE_WEBHOOK_SECRET?.trim();
-  if (envKey) {
-    return {
-      secretKey: envKey,
-      webhookSecret: envWebhook || undefined,
-    };
-  }
 
+  let fileCreds: StripeCredentials | null = null;
   try {
     const raw = await readFile(FILE, "utf8");
     const key = await getEncryptionKey();
     const { plaintext } = await compactDecrypt(raw.trim(), key);
     const parsed = JSON.parse(new TextDecoder().decode(plaintext)) as StripeCredentials;
-    if (parsed?.secretKey) return parsed;
-    return null;
+    if (parsed?.secretKey) fileCreds = parsed;
   } catch {
-    return null;
+    fileCreds = null;
   }
+
+  const secretKey = envKey || fileCreds?.secretKey;
+  if (!secretKey) return null;
+
+  return {
+    secretKey,
+    webhookSecret: envWebhook || fileCreds?.webhookSecret || undefined,
+    updatedAt: fileCreds?.updatedAt,
+  };
 }
 
 export async function saveStripeCredentials(input: {
