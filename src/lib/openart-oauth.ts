@@ -11,19 +11,25 @@ import type {
 import {
   getAppBaseUrl,
   getOAuthCallbackUrl,
-  loadAuthSession,
-  saveAuthSession,
   type OpenArtAuthSession,
 } from "@/lib/auth-session";
+import {
+  loadOwnerAuthSession,
+  saveOwnerAuthSession,
+} from "@/lib/owner-credentials";
 
 function getMcpEndpoint(): string {
   return process.env.OPENART_MCP_URL?.trim() || "https://mcp.openart.ai/mcp";
 }
 
-const CLIENT_NAME = "VYRONIX.AI";
+const CLIENT_NAME = "VYRONIX.AI Owner";
 const OAUTH_SCOPE = "full_access";
 
-export class SessionOAuthClientProvider implements OAuthClientProvider {
+/**
+ * OAuth provider backed by the server-side OWNER credential store.
+ * Used once by the platform owner to connect OpenArt; customers never see this.
+ */
+export class OwnerOAuthClientProvider implements OAuthClientProvider {
   private session: OpenArtAuthSession;
   private readonly redirectUri: string;
   private readonly onRedirect: (url: URL) => void;
@@ -93,7 +99,6 @@ export class SessionOAuthClientProvider implements OAuthClientProvider {
       ...tokens,
       obtained_at: Date.now(),
     };
-    // PKCE verifier / state no longer needed after successful token exchange.
     delete this.session.codeVerifier;
     delete this.session.oauthState;
     await this.persist();
@@ -111,7 +116,7 @@ export class SessionOAuthClientProvider implements OAuthClientProvider {
 
   async codeVerifier(): Promise<string> {
     if (!this.session.codeVerifier) {
-      throw new Error("No PKCE code verifier saved for this OpenArt OAuth session");
+      throw new Error("No PKCE code verifier saved for owner OpenArt OAuth");
     }
     return this.session.codeVerifier;
   }
@@ -137,25 +142,21 @@ export class SessionOAuthClientProvider implements OAuthClientProvider {
   }
 
   async saveDiscoveryState(): Promise<void> {
-    // Intentionally not persisted to keep the session cookie small.
+    // keep owner store small
   }
 
   getAuthorizationUrl(): URL | null {
     return this.pendingAuthorizationUrl;
   }
 
-  getSession(): OpenArtAuthSession {
-    return this.session;
-  }
-
   private async persist(): Promise<void> {
     this.dirty = true;
-    await saveAuthSession(this.session);
+    await saveOwnerAuthSession(this.session);
   }
 
   async flush(): Promise<void> {
     if (this.dirty) {
-      await saveAuthSession(this.session);
+      await saveOwnerAuthSession(this.session);
       this.dirty = false;
     }
   }
@@ -168,25 +169,26 @@ function ensureClientMatchesRedirect(session: OpenArtAuthSession, redirectUri: s
   }
 }
 
-export async function createSessionOAuthProvider(options?: {
+export async function createOwnerOAuthProvider(options?: {
   request?: Request;
   onRedirect?: (url: URL) => void;
-}): Promise<SessionOAuthClientProvider> {
+}): Promise<OwnerOAuthClientProvider> {
   const redirectUri = getOAuthCallbackUrl(options?.request);
-  const session = await loadAuthSession();
+  const session = await loadOwnerAuthSession();
   ensureClientMatchesRedirect(session, redirectUri);
 
-  return new SessionOAuthClientProvider({
+  return new OwnerOAuthClientProvider({
     session,
     redirectUri,
     onRedirect: options?.onRedirect,
   });
 }
 
-export async function beginOpenArtOAuthLogin(request: Request): Promise<URL> {
+/** One-time owner setup — not for end customers. */
+export async function beginOwnerOpenArtConnect(request: Request): Promise<URL> {
   let authorizationUrl: URL | undefined;
 
-  const provider = await createSessionOAuthProvider({
+  const provider = await createOwnerOAuthProvider({
     request,
     onRedirect: (url) => {
       authorizationUrl = url;
@@ -201,7 +203,7 @@ export async function beginOpenArtOAuthLogin(request: Request): Promise<URL> {
   await provider.flush();
 
   if (result === "AUTHORIZED") {
-    return new URL("/", getAppBaseUrl(request));
+    return new URL("/?ownerConnected=1", getAppBaseUrl(request));
   }
 
   const url = authorizationUrl ?? provider.getAuthorizationUrl();
@@ -211,17 +213,17 @@ export async function beginOpenArtOAuthLogin(request: Request): Promise<URL> {
   return url;
 }
 
-export async function completeOpenArtOAuthLogin(
+export async function completeOwnerOpenArtConnect(
   request: Request,
   authorizationCode: string,
   state?: string | null,
 ): Promise<void> {
-  const session = await loadAuthSession();
+  const session = await loadOwnerAuthSession();
   if (state && session.oauthState && state !== session.oauthState) {
-    throw new Error("Invalid OAuth state — restart Sign in with OpenArt");
+    throw new Error("Invalid OAuth state — restart owner OpenArt connect");
   }
 
-  const provider = await createSessionOAuthProvider({ request });
+  const provider = await createOwnerOAuthProvider({ request });
   const result = await auth(provider, {
     serverUrl: getMcpEndpoint(),
     authorizationCode,
@@ -231,7 +233,7 @@ export async function completeOpenArtOAuthLogin(
   await provider.flush();
 
   if (result !== "AUTHORIZED") {
-    throw new Error("OpenArt OAuth completed without issuing tokens");
+    throw new Error("OpenArt OAuth completed without issuing owner tokens");
   }
 }
 

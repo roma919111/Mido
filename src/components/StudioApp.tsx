@@ -65,10 +65,9 @@ export function StudioApp() {
     credits: 0,
     configured: false,
     live: false,
-    needsAuth: true,
+    needsAuth: false,
     mcpEndpoint: MCP_ENDPOINT,
   });
-  const [authMethod, setAuthMethod] = useState<"oauth" | "env" | null>(null);
 
   useEffect(() => {
     setGallery(loadGallery());
@@ -81,18 +80,18 @@ export function StudioApp() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const authError = params.get("authError");
-    const authSuccess = params.get("authSuccess");
+    const ownerConnected = params.get("ownerConnected");
     if (authError) {
       setError(authError);
       setStatusMessage(null);
-    } else if (authSuccess) {
-      setStatusMessage("Signed in with OpenArt OAuth. Live MCP session ready.");
+    } else if (ownerConnected) {
+      setStatusMessage("Platform OpenArt account connected. Customers can generate with no login.");
       setError(null);
     }
-    if (authError || authSuccess) {
+    if (authError || ownerConnected) {
       const url = new URL(window.location.href);
       url.searchParams.delete("authError");
-      url.searchParams.delete("authSuccess");
+      url.searchParams.delete("ownerConnected");
       window.history.replaceState({}, "", url.pathname + url.search);
     }
 
@@ -103,7 +102,7 @@ export function StudioApp() {
     return () => {
       cancelled = true;
     };
-    // Mount-only: load gallery auth + account once on first paint.
+    // Mount-only bootstrap.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -114,25 +113,7 @@ export function StudioApp() {
 
   const isVideoMode = mode !== "text-to-image";
 
-  async function refreshAuthSession() {
-    try {
-      const res = await fetch("/api/auth/session");
-      const data = (await res.json()) as {
-        authenticated?: boolean;
-        authMethod?: "oauth" | "env" | null;
-        needsAuth?: boolean;
-      };
-      setAuthMethod(data.authMethod ?? null);
-      return data;
-    } catch {
-      setAuthMethod(null);
-      return { authenticated: false, needsAuth: true, authMethod: null };
-    }
-  }
-
   async function refreshAccount() {
-    const sessionInfo = await refreshAuthSession();
-
     try {
       const res = await fetch("/api/account");
       const data = (await res.json()) as AccountInfo & {
@@ -141,14 +122,14 @@ export function StudioApp() {
         raw?: unknown;
         mcpEndpoint?: string;
         live?: boolean;
-        needsAuth?: boolean;
       };
 
       setLiveMcpResponse(
         formatLivePayload({
-          route: "GET /api/account → openart_account_get",
+          route: "GET /api/account → openart_account_get (owner platform account)",
           httpStatus: res.status,
           mcpEndpoint: data.mcpEndpoint ?? MCP_ENDPOINT,
+          billing: "owner_account",
           body: data,
         }),
       );
@@ -158,14 +139,13 @@ export function StudioApp() {
           credits: 0,
           configured: false,
           live: Boolean(data.live),
-          needsAuth: Boolean(data.needsAuth ?? sessionInfo.needsAuth),
+          needsAuth: false,
           mcpEndpoint: data.mcpEndpoint ?? MCP_ENDPOINT,
           plan: undefined,
           email: undefined,
           error: data.error,
-          authMethod: sessionInfo.authMethod ?? null,
         });
-        setError(data.error || "Failed to connect to OpenArt MCP account");
+        setError(data.error || "Studio backend is not connected to OpenArt yet");
         return;
       }
 
@@ -177,53 +157,28 @@ export function StudioApp() {
         mcpEndpoint: data.mcpEndpoint ?? MCP_ENDPOINT,
         plan: data.plan,
         email: data.email,
-        authMethod: sessionInfo.authMethod ?? "oauth",
       });
       setError(null);
-      setStatusMessage("Live OpenArt MCP account connected.");
+      setStatusMessage("Studio ready — generate with no login. Billed to the platform OpenArt account.");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Account lookup failed";
       setAccount({
         credits: 0,
         configured: false,
         live: false,
-        needsAuth: true,
+        needsAuth: false,
         mcpEndpoint: MCP_ENDPOINT,
         error: message,
       });
       setError(message);
       setLiveMcpResponse(
         formatLivePayload({
-          route: "GET /api/account → openart_account_get",
+          route: "GET /api/account → openart_account_get (owner platform account)",
           error: message,
           mcpEndpoint: MCP_ENDPOINT,
         }),
       );
     }
-  }
-
-  async function handleLogout() {
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-    } catch {
-      // ignore
-    }
-    setAuthMethod(null);
-    setAccount({
-      credits: 0,
-      configured: false,
-      live: false,
-      needsAuth: true,
-      mcpEndpoint: MCP_ENDPOINT,
-    });
-    setStatusMessage("Signed out of OpenArt OAuth.");
-    setError(null);
-    setLiveMcpResponse(
-      formatLivePayload({
-        route: "POST /api/auth/logout",
-        loggedOut: true,
-      }),
-    );
   }
 
   async function uploadImage(
@@ -422,16 +377,10 @@ export function StudioApp() {
       <div className="pointer-events-none absolute -right-16 top-48 h-80 w-80 rounded-full bg-[rgba(255,176,92,0.1)] blur-3xl animate-float-delayed" />
 
       <Header
-        credits={account.credits}
         plan={account.plan}
         configured={account.configured}
-        email={account.email}
         live={account.live}
-        mcpEndpoint={account.mcpEndpoint}
         connectionError={account.error}
-        needsAuth={account.needsAuth}
-        authMethod={authMethod ?? account.authMethod}
-        onLogout={() => void handleLogout()}
       />
 
       <main className="relative z-10 mx-auto w-full max-w-6xl px-4 pb-20 pt-8 sm:px-6">
@@ -443,18 +392,9 @@ export function StudioApp() {
             <BrandLogo size="lg" />
           </h1>
           <p className="mt-3 max-w-xl text-base text-white/55 sm:text-lg">
-            Sign in with OpenArt OAuth for a live MCP session at{" "}
-            <span className="text-cyan-300/90">{MCP_ENDPOINT}</span> — no static access token
-            required.
+            Generate images and videos instantly — no account, no token, no login. OpenArt MCP runs
+            behind the scenes on the platform account.
           </p>
-          {(account.needsAuth || !account.configured) && (
-            <a
-              href="/api/auth/login"
-              className="mt-5 inline-flex items-center rounded-full bg-cyan-400 px-5 py-2.5 text-sm font-semibold text-[#041018] transition hover:bg-cyan-300"
-            >
-              Sign in with OpenArt
-            </a>
-          )}
         </section>
 
         <section className="animate-fade-up animation-delay-1 rounded-[28px] border border-white/10 bg-[rgba(12,14,20,0.72)] p-4 shadow-[0_30px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:p-6">

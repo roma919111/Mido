@@ -22,8 +22,10 @@ export async function GET() {
           credits: 0,
           live: true,
           needsAuth: false,
+          customerLoginRequired: false,
+          billing: "owner_account",
           mcpEndpoint,
-          error: payload.rawText ?? "Failed to load OpenArt account",
+          error: payload.rawText ?? "Failed to load platform OpenArt account",
           details: payload,
           raw: result,
         },
@@ -43,12 +45,18 @@ export async function GET() {
       configured: true,
       live: true,
       needsAuth: false,
+      customerLoginRequired: false,
+      billing: "owner_account",
       mcpEndpoint,
       credits,
       plan: (payload.plan as string | undefined) ?? (user.plan as string | undefined) ?? "Free",
-      email: (user.email as string | undefined) ?? (payload.email as string | undefined),
-      details: payload,
-      raw: result,
+      // Do not expose owner email to customers — show studio label instead.
+      email: "VYRONIX.AI Studio",
+      details: {
+        plan: (payload.plan as string | undefined) ?? (user.plan as string | undefined),
+        credits,
+      },
+      raw: { status: "ok" },
     });
   } catch (error) {
     if (error instanceof OpenArtConfigError) {
@@ -57,11 +65,14 @@ export async function GET() {
           configured: false,
           credits: 0,
           live: false,
-          needsAuth: error.needsAuth,
+          needsAuth: false,
+          needsOwnerSetup: error.needsAuth,
+          customerLoginRequired: false,
+          billing: "owner_account",
           mcpEndpoint,
           error: error.message,
         },
-        { status: 401 },
+        { status: 503 },
       );
     }
 
@@ -71,6 +82,8 @@ export async function GET() {
         credits: 0,
         live: true,
         needsAuth: false,
+        customerLoginRequired: false,
+        billing: "owner_account",
         mcpEndpoint,
         error: error instanceof Error ? error.message : "Account lookup failed",
         details:
