@@ -355,7 +355,7 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
         <div className="rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-50">
           رفع الصور والتوليد يحتاجان ربط حساب المنصة مرة واحدة.{" "}
           <a href="/setup/openart" className="font-semibold text-[#22f0ff] underline-offset-2 hover:underline">
-            اربط OpenArt الآن
+            اربط حساب المنصة الآن
           </a>
         </div>
       )}
@@ -375,7 +375,7 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
                 href="/setup/openart"
                 className="font-semibold text-[#22f0ff] underline-offset-2 hover:underline"
               >
-                اربط OpenArt الآن
+                اربط حساب المنصة الآن
               </a>
             </>
           ) : (
