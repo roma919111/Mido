@@ -1,31 +1,33 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { hasUsableAccessToken, loadAuthSession } from "@/lib/auth-session";
+import { createSessionOAuthProvider } from "@/lib/openart-oauth";
 
 const OPENART_MCP_URL = process.env.OPENART_MCP_URL ?? "https://mcp.openart.ai/mcp";
 
 export class OpenArtConfigError extends Error {
-  constructor(message: string) {
+  needsAuth: boolean;
+
+  constructor(message: string, options?: { needsAuth?: boolean }) {
     super(message);
     this.name = "OpenArtConfigError";
+    this.needsAuth = Boolean(options?.needsAuth);
   }
-}
-
-function getAccessToken(): string {
-  const token = process.env.OPENART_ACCESS_TOKEN?.trim();
-  if (!token) {
-    throw new OpenArtConfigError(
-      "OPENART_ACCESS_TOKEN is not set. Authenticate with OpenArt MCP (OAuth) and add the bearer token to your environment.",
-    );
-  }
-  return token;
-}
-
-export function isOpenArtConfigured(): boolean {
-  return Boolean(process.env.OPENART_ACCESS_TOKEN?.trim());
 }
 
 export function getOpenArtMcpEndpoint(): string {
   return process.env.OPENART_MCP_URL?.trim() || "https://mcp.openart.ai/mcp";
+}
+
+export function getEnvAccessToken(): string | undefined {
+  return process.env.OPENART_ACCESS_TOKEN?.trim() || undefined;
+}
+
+export async function isOpenArtConfigured(): Promise<boolean> {
+  if (getEnvAccessToken()) return true;
+  const session = await loadAuthSession();
+  return hasUsableAccessToken(session);
 }
 
 type ToolContent = {
@@ -92,11 +94,68 @@ export function parseToolPayload(result: ToolCallResult): Record<string, unknown
 }
 
 export async function withOpenArtClient<T>(fn: (client: Client) => Promise<T>): Promise<T> {
-  const token = getAccessToken();
+  const session = await loadAuthSession();
+  const envToken = getEnvAccessToken();
+  const hasSessionToken = hasUsableAccessToken(session);
+
+  if (!hasSessionToken && !envToken) {
+    throw new OpenArtConfigError(
+      "Not signed in with OpenArt. Use Sign in with OpenArt to authenticate for MCP.",
+      { needsAuth: true },
+    );
+  }
+
+  // Prefer dynamic OAuth session tokens; fall back to optional static env token.
+  if (hasSessionToken) {
+    const provider = await createSessionOAuthProvider({
+      onRedirect: () => {
+        throw new OpenArtConfigError(
+          "OpenArt session expired or requires re-authorization. Sign in with OpenArt again.",
+          { needsAuth: true },
+        );
+      },
+    });
+
+    const transport = new StreamableHTTPClientTransport(new URL(OPENART_MCP_URL), {
+      authProvider: provider,
+      requestInit: {
+        headers: {
+          Accept: "application/json, text/event-stream",
+        },
+      },
+    });
+
+    const client = new Client({ name: "vyronix-ai", version: "1.0.0" });
+
+    try {
+      await client.connect(transport);
+      return await fn(client);
+    } catch (error) {
+      if (error instanceof UnauthorizedError) {
+        throw new OpenArtConfigError(
+          "OpenArt MCP unauthorized. Sign in with OpenArt to continue.",
+          { needsAuth: true },
+        );
+      }
+      throw error;
+    } finally {
+      try {
+        await provider.flush();
+      } catch {
+        // ignore persistence errors
+      }
+      try {
+        await client.close();
+      } catch {
+        // ignore close errors
+      }
+    }
+  }
+
   const transport = new StreamableHTTPClientTransport(new URL(OPENART_MCP_URL), {
     requestInit: {
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${envToken}`,
         Accept: "application/json, text/event-stream",
       },
     },

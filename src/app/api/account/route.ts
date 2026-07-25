@@ -3,13 +3,14 @@ import {
   callOpenArtTool,
   OpenArtConfigError,
   parseToolPayload,
+  getOpenArtMcpEndpoint,
 } from "@/lib/openart-mcp";
 
 export const runtime = "nodejs";
 
-const MCP_ENDPOINT = process.env.OPENART_MCP_URL ?? "https://mcp.openart.ai/mcp";
-
 export async function GET() {
+  const mcpEndpoint = getOpenArtMcpEndpoint();
+
   try {
     const result = await callOpenArtTool("openart_account_get");
     const payload = parseToolPayload(result);
@@ -20,7 +21,8 @@ export async function GET() {
           configured: false,
           credits: 0,
           live: true,
-          mcpEndpoint: MCP_ENDPOINT,
+          needsAuth: false,
+          mcpEndpoint,
           error: payload.rawText ?? "Failed to load OpenArt account",
           details: payload,
           raw: result,
@@ -40,7 +42,8 @@ export async function GET() {
     return NextResponse.json({
       configured: true,
       live: true,
-      mcpEndpoint: MCP_ENDPOINT,
+      needsAuth: false,
+      mcpEndpoint,
       credits,
       plan: (payload.plan as string | undefined) ?? (user.plan as string | undefined) ?? "Free",
       email: (user.email as string | undefined) ?? (payload.email as string | undefined),
@@ -54,7 +57,8 @@ export async function GET() {
           configured: false,
           credits: 0,
           live: false,
-          mcpEndpoint: MCP_ENDPOINT,
+          needsAuth: error.needsAuth,
+          mcpEndpoint,
           error: error.message,
         },
         { status: 401 },
@@ -66,7 +70,8 @@ export async function GET() {
         configured: false,
         credits: 0,
         live: true,
-        mcpEndpoint: MCP_ENDPOINT,
+        needsAuth: false,
+        mcpEndpoint,
         error: error instanceof Error ? error.message : "Account lookup failed",
         details:
           error instanceof Error

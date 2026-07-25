@@ -175,6 +175,7 @@ export async function POST(request: Request) {
         {
           error: error.message,
           live: false,
+          needsAuth: error.needsAuth,
           mcpEndpoint: MCP_ENDPOINT,
         },
         { status: 401 },
