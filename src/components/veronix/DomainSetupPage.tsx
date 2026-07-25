@@ -8,26 +8,21 @@ import { fetchJson } from "@/lib/fetch-json";
 export function DomainSetupPage() {
   const [appBaseUrl, setAppBaseUrl] = useState("");
   const [redirectUri, setRedirectUri] = useState("");
-  const [inputUrl, setInputUrl] = useState("");
-  const [locked, setLocked] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
 
-  async function refresh() {
-    const { data } = await fetchJson<{
-      appBaseUrl?: string;
-      redirectUri?: string;
-    }>("/api/auth/google/status");
-    setAppBaseUrl(data.appBaseUrl || "");
-    setRedirectUri(data.redirectUri || "");
-    setLocked(Boolean(data.appBaseUrl && !/localhost/i.test(data.appBaseUrl)));
-    if (data.appBaseUrl) setInputUrl(data.appBaseUrl);
-  }
-
   useEffect(() => {
-    void refresh().catch(() => undefined);
+    void (async () => {
+      try {
+        const { data } = await fetchJson<{
+          appBaseUrl?: string;
+          redirectUri?: string;
+        }>("/api/auth/google/status");
+        setAppBaseUrl(data.appBaseUrl || "");
+        setRedirectUri(data.redirectUri || "");
+      } catch {
+        /* ignore */
+      }
+    })();
   }, []);
 
   async function copy(value: string, key: string) {
@@ -40,106 +35,87 @@ export function DomainSetupPage() {
     }
   }
 
-  async function lockUrl(e: React.FormEvent) {
-    e.preventDefault();
-    setSaving(true);
-    setError(null);
-    setMessage(null);
-    try {
-      const { res, data } = await fetchJson<{
-        error?: string;
-        message?: string;
-        appBaseUrl?: string;
-        redirectUri?: string;
-      }>("/api/setup/public-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: inputUrl }),
-      });
-      if (!res.ok) throw new Error(data.error || "Save failed");
-      setAppBaseUrl(data.appBaseUrl || inputUrl);
-      setRedirectUri(data.redirectUri || "");
-      setLocked(true);
-      setMessage(data.message || "تم قفل الرابط");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed");
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
     <div className="mx-auto min-h-screen max-w-xl px-4 py-10 text-white" dir="rtl">
       <BrandLogo size="lg" />
-      <h1 className="mt-6 font-display text-2xl font-bold">قفل رابط Google Callback</h1>
+      <h1 className="mt-6 font-display text-2xl font-bold">رابط دائم (مرّة واحدة وخلاص)</h1>
       <p className="mt-2 text-sm text-white/50">
-        المشكلة السابقة: كل تانل يغيّر الرابط فيكسر Google. الحل: نقفل رابط واحد هنا، والتطبيق
-        يرسله دائمًا لـ Google — ما يتغيّر لوحده.
+        روابط <span dir="ltr">*.trycloudflare.com</span> مؤقتة وتموت. عشان ما تعيد Google/Stripe كل
+        مرة، تحتاج رابط ثابت.
       </p>
 
-      {locked && redirectUri ? (
-        <div className="mt-6 rounded-2xl border border-emerald-400/25 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">
-          <p className="font-semibold">مقفل ✓ — حط هذا في Google Console مرة واحدة</p>
-          <code className="mt-2 block break-all rounded-xl bg-black/40 p-3 text-left text-xs text-[#22f0ff]" dir="ltr">
-            {redirectUri}
-          </code>
-          <button
-            type="button"
-            onClick={() => void copy(redirectUri, "google")}
-            className="mt-2 rounded-lg border border-emerald-300/30 px-3 py-1.5 text-xs text-emerald-50"
-          >
-            {copied === "google" ? "تم النسخ ✓" : "نسخ Google Callback"}
-          </button>
-          <p className="mt-2 text-emerald-100/70" dir="ltr">
-            Site: {appBaseUrl}
+      {appBaseUrl ? (
+        <div className="mt-6 rounded-2xl border border-white/10 bg-[#141821] px-4 py-3 text-sm">
+          <p className="text-white/50">الرابط الحالي (مؤقت)</p>
+          <p className="mt-1 break-all text-[#22f0ff]" dir="ltr">
+            {appBaseUrl}
           </p>
+          {redirectUri ? (
+            <>
+              <p className="mt-3 text-white/50">Google Callback الحالي</p>
+              <code className="mt-1 block break-all text-xs text-white/70" dir="ltr">
+                {redirectUri}
+              </code>
+              <button
+                type="button"
+                onClick={() => void copy(redirectUri, "g")}
+                className="mt-2 rounded-lg border border-white/15 px-3 py-1.5 text-xs"
+              >
+                {copied === "g" ? "تم النسخ ✓" : "نسخ"}
+              </button>
+            </>
+          ) : null}
         </div>
       ) : null}
 
-      <form onSubmit={lockUrl} className="mt-6 space-y-3 rounded-2xl border border-white/10 bg-[#141821] p-4 text-sm">
-        <p className="font-semibold">الرابط العام الحالي (يُقفل)</p>
-        <input
-          value={inputUrl}
-          onChange={(e) => setInputUrl(e.target.value)}
-          placeholder="https://...."
-          required
-          className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none"
-          dir="ltr"
-        />
-        <p className="text-xs text-white/45">
-          افتح الموقع من الرابط العام اللي يشتغل عندك الآن، انسخه من شريط المتصفح، الصقه هنا، واضغط
-          قفل. بعدين انسخ Callback إلى Google → Authorized redirect URIs.
-        </p>
-        {error && <p className="text-sm text-rose-300">{error}</p>}
-        {message && <p className="text-sm text-cyan-200">{message}</p>}
-        <button
-          type="submit"
-          disabled={saving}
-          className="w-full rounded-xl bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] py-3 text-sm font-semibold"
-        >
-          {saving ? "…" : "قفل هذا الرابط لـ Google Callback"}
-        </button>
-      </form>
-
-      <div className="mt-6 space-y-2 text-sm text-white/55">
-        <p>بعد القفل:</p>
-        <ol className="list-decimal space-y-1 pr-5">
-          <li>Google Cloud → نفس OAuth Client → أضف الـ Callback المنسوخ أعلاه</li>
-          <li>احفظ في Google</li>
-          <li>جرّب تسجيل الدخول بـ Google من نفس رابط الموقع المقفل</li>
+      <div className="mt-6 space-y-3 rounded-2xl border border-emerald-400/25 bg-emerald-400/10 p-4 text-sm text-emerald-50">
+        <p className="font-semibold text-emerald-100">الخيار الأفضل (دائم)</p>
+        <ol className="list-decimal space-y-2 pr-5 text-emerald-50/90">
+          <li>
+            اشتري دومين رخيص (مثل <span dir="ltr">vyronix.app</span> /{" "}
+            <span dir="ltr">vyronix.store</span>) من Namecheap أو Cloudflare Registrar
+          </li>
+          <li>اربطه على Cloudflare (DNS)</li>
+          <li>
+            سوّ Named Tunnel ثابت في Cloudflare → Hostname = الدومين → Service ={" "}
+            <span dir="ltr">http://localhost:3000</span>
+          </li>
+          <li>
+            حط في التطبيق: <span dir="ltr">APP_BASE_URL=https://your-domain.com</span>
+          </li>
+          <li>
+            Google Callback مرّة واحدة:{" "}
+            <span dir="ltr">https://your-domain.com/api/auth/google/callback</span>
+          </li>
         </ol>
+        <p className="text-xs text-emerald-100/80">
+          Stripe Webhook عندنا يتحدث تلقائيًا لما نقفّل الرابط الجديد — ما تحتاج تعيد Webhook يدويًا.
+        </p>
+      </div>
+
+      <div className="mt-4 space-y-3 rounded-2xl border border-white/10 bg-[#141821] p-4 text-sm">
+        <p className="font-semibold">بديل مجاني (شبه دائم)</p>
+        <p className="text-white/65">
+          انشر على Vercel واحصل على <span dir="ltr">https://vyronix-ai.vercel.app</span> — الاسم
+          ما يتغيّر. بعد النشر نحدّث Google Callback مرّة واحدة فقط.
+        </p>
         <p className="text-xs text-amber-200/80">
-          لما تشتري دومين لاحقًا: غيّر القفل هنا مرة واحدة + حدّث Google مرة واحدة.
+          ملاحظة: التطبيق يستخدم ملفات محلية (`.data`)؛ للنشر الدائم الأفضل دومين + سيرفر/تانل ثابت،
+          مو serverless فقط.
         </p>
       </div>
 
       <div className="mt-6 flex flex-wrap gap-3 text-sm">
-        <Link href="/setup/google" className="text-[#22f0ff]">
-          إعداد Google Keys
+        <Link href="/setup/stripe" className="text-[#22f0ff]">
+          Stripe
         </Link>
         <span className="text-white/30">·</span>
-        <Link href="/login" className="text-[#22f0ff]">
-          تسجيل الدخول
+        <Link href="/setup/google" className="text-[#22f0ff]">
+          Google
+        </Link>
+        <span className="text-white/30">·</span>
+        <Link href="/" className="text-white/45">
+          الواجهة
         </Link>
       </div>
     </div>
