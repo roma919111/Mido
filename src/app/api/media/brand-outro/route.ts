@@ -17,17 +17,20 @@ async function resolveSourceUrl(input: {
   url?: string;
   historyId?: string;
 }): Promise<string | null> {
+  // Prefer historyId lookup so we always get a fresh CDN URL.
   if (input.historyId?.trim()) {
     const result = await callOpenArtTool("openart_creation_get", {
       historyId: input.historyId.trim(),
     });
     const payload = parseToolPayload(result);
-    if (result.isError) return null;
-    return collectMediaUrls(payload)[0] || null;
+    if (!result.isError) {
+      const fromHistory = collectMediaUrls(payload)[0];
+      if (fromHistory) return fromHistory;
+    }
   }
+
   const raw = input.url?.trim();
   if (!raw) return null;
-  // Already branded local file — return as-is (idempotent).
   if (raw.startsWith("/generations/")) return raw;
   try {
     const parsed = new URL(raw);
@@ -59,7 +62,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ url: source, branded: true, reused: true });
     }
 
-    const brandedPath = await appendVyronixOutro(source);
+    let brandedPath: string;
+    try {
+      brandedPath = await appendVyronixOutro(source);
+    } catch (firstErr) {
+      // One retry after short delay (CDN/OpenArt blips).
+      await new Promise((r) => setTimeout(r, 1500));
+      const retrySource = (await resolveSourceUrl(body)) || source;
+      try {
+        brandedPath = await appendVyronixOutro(retrySource);
+      } catch {
+        throw firstErr;
+      }
+    }
 
     if (body.assetId || body.historyId) {
       const assets = await listAssetsForUser(user.id);

@@ -345,48 +345,53 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       });
       return;
     }
-    setStatus("جاري إضافة ختم VYRONIX…");
+    setStatus("Generating…");
     setPreview({
       url: "",
       mediaType: "video",
       historyId: input.historyId,
       status: "running",
     });
-    try {
-      const { res, data } = await fetchJson<{ url?: string; error?: string }>(
-        "/api/media/brand-outro",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            url: input.url,
-            historyId: input.historyId,
-            assetId: input.assetId,
-          }),
-        },
-      );
-      if (!res.ok || !data.url) throw new Error(data.error || "تعذر إضافة الختم");
-      setPreview({
-        url: data.url,
-        mediaType: "video",
-        historyId: input.historyId,
-        status: "completed",
-      });
-      setStatus(null);
-    } catch (err) {
-      // Fall back to model clip if branding fails — still show something.
-      setPreview({
-        url: input.url,
-        mediaType: "video",
-        historyId: input.historyId,
-        status: "completed",
-      });
-      setStatus(
-        err instanceof Error
-          ? `اكتمل التوليد (تعذر ختم VYRONIX: ${err.message})`
-          : "اكتمل التوليد",
-      );
+
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const { res, data } = await fetchJson<{ url?: string; error?: string }>(
+          "/api/media/brand-outro",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              url: input.url,
+              historyId: input.historyId,
+              assetId: input.assetId,
+            }),
+          },
+        );
+        if (!res.ok || !data.url) throw new Error(data.error || "تعذر تجهيز الفيديو");
+        // Local same-origin file — plays without OpenArt CDN / stream proxy.
+        setPreview({
+          url: data.url,
+          mediaType: "video",
+          historyId: input.historyId,
+          status: "completed",
+        });
+        setStatus(null);
+        return;
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error("تعذر تجهيز الفيديو");
+        await new Promise((r) => setTimeout(r, 1200 * (attempt + 1)));
+      }
     }
+
+    setPreview({
+      url: "",
+      mediaType: "video",
+      historyId: input.historyId,
+      status: "failed",
+    });
+    setError(lastError?.message || "تعذر عرض الفيديو بعد التوليد");
+    setStatus(null);
   }
 
   async function pollPreview(
@@ -540,11 +545,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     setGenerating(true);
     setGenStartedAt(startedAt);
     setElapsedSec(0);
-    setStatus(
-      freeTrial
-        ? "جاري توليد فيديوك المجاني (4ث وصف + 2ث VYRONIX)…"
-        : "Generating…",
-    );
+    setStatus(freeTrial ? "جاري توليد فيديوك المجاني…" : "Generating…");
     try {
       const mode =
         media === "image"
@@ -690,10 +691,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         selectedModelId === VERONIX_MODEL_ID &&
         !user?.freeVeronixUsed && (
           <div className="rounded-2xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-50">
-            أول فيديو على <span className="font-semibold">Veronix</span> مجاني مرة واحدة:{" "}
-            <span className="font-semibold tabular-nums">6 ثوانٍ · 480p</span>
-            {" — "}
-            4ث من وصفك + ختم سينمائي VYRONIX في آخر ثانيتين.
+            أول فيديو على <span className="font-semibold">Veronix</span> مجاني مرة واحدة —{" "}
+            <span className="font-semibold tabular-nums">6 ثوانٍ · 480p</span>.
           </div>
         )}
 
@@ -950,12 +949,15 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           <div className="relative aspect-video bg-black/50">
             {preview?.url && preview.mediaType === "video" ? (
               <video
+                key={preview.url}
                 src={
-                  veronixMediaSrc({
-                    historyId: preview.historyId,
-                    url: preview.url,
-                    mediaType: "video",
-                  }) || undefined
+                  preview.url.startsWith("/generations/")
+                    ? preview.url
+                    : veronixMediaSrc({
+                        historyId: preview.historyId,
+                        url: preview.url,
+                        mediaType: "video",
+                      }) || undefined
                 }
                 controls
                 playsInline
