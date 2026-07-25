@@ -6,7 +6,10 @@ import {
   parseToolPayload,
 } from "@/lib/openart-mcp";
 import type { AudioParamKey, CatalogModel, ModelKind } from "@/lib/model-catalog";
-import { VIDEO_FORM_FALLBACKS } from "@/lib/model-catalog";
+import {
+  mergeLiveIntoFullCatalog,
+  VIDEO_FORM_FALLBACKS,
+} from "@/lib/model-catalog";
 import { saveCostCache } from "@/lib/openart-cost-cache";
 import type { CostCacheItem } from "@/lib/openart-cost-defaults";
 import { VERONIX_MODEL_ID } from "@/lib/free-trial";
@@ -128,11 +131,14 @@ function buildCatalogFromOpenArt(models: OpenArtModelRow[]): SyncedCatalogFile {
     return a.name.localeCompare(b.name);
   });
 
+  // Keep coming-soon / full catalog entries alongside live OpenArt models.
+  const merged = mergeLiveIntoFullCatalog({ image, video });
+
   return {
     updatedAt: new Date().toISOString(),
     source: "openart_model_list",
-    image,
-    video,
+    image: merged.image,
+    video: merged.video,
   };
 }
 

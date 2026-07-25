@@ -68,7 +68,7 @@ export function VeronixApp() {
               استوديو الصور والفيديو
             </h2>
             <p className="mt-2 max-w-xl text-sm leading-relaxed text-white/55">
-              اختر صورة أو فيديو، ثم الموديل، واكتب وصفك — كل الموديلات المتزامنة في مكان واحد.
+              اختر صورة أو فيديو، ثم الموديل، واكتب وصفك.
             </p>
           </div>
           <CreateStudio user={user} onUserRefresh={refreshUser} />

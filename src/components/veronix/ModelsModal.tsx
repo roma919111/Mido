@@ -39,11 +39,9 @@ export function ModelsModal({
   const list = useMemo(() => {
     const activeTab = lockedKind || tab;
     const base = activeTab === "image" ? imageModels : videoModels;
-    // Only show live OpenArt-synced models.
-    const live = base.filter((m) => m.available && m.mcpId);
     const q = query.trim().toLowerCase();
-    if (!q) return live;
-    return live.filter(
+    if (!q) return base;
+    return base.filter(
       (m) => m.name.toLowerCase().includes(q) || m.id.toLowerCase().includes(q),
     );
   }, [tab, lockedKind, imageModels, videoModels, query]);
@@ -104,18 +102,23 @@ export function ModelsModal({
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {list.map((model) => {
               const selected = selectedId === model.id;
+              const disabled = !model.available;
               return (
                 <button
                   key={model.id}
                   type="button"
+                  disabled={disabled}
                   onClick={() => {
+                    if (disabled) return;
                     onChange(model.id);
                     onClose();
                   }}
                   className={`rounded-2xl border px-3 py-3 text-left transition ${
                     selected
                       ? "border-[#22f0ff] bg-[rgba(34,240,255,0.08)]"
-                      : "border-white/10 bg-white/[0.03] hover:border-white/25"
+                      : disabled
+                        ? "cursor-not-allowed border-white/5 bg-white/[0.02] opacity-55"
+                        : "border-white/10 bg-white/[0.03] hover:border-white/25"
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
