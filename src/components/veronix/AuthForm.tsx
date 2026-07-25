@@ -22,6 +22,7 @@ export function AuthForm({ mode }: AuthFormProps) {
   const [error, setError] = useState<string | null>(urlError);
   const [loading, setLoading] = useState(false);
   const [googleReady, setGoogleReady] = useState(false);
+  const [showEmail, setShowEmail] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -34,11 +35,12 @@ export function AuthForm({ mode }: AuthFormProps) {
     })();
   }, []);
 
-  function googleHref() {
+  function startGoogle() {
+    // Only navigate to Google when the user explicitly taps the button.
     const q = new URLSearchParams();
     if (paywall) q.set("paywall", "1");
     else q.set("next", next);
-    return `/api/auth/google?${q.toString()}`;
+    window.location.assign(`/api/auth/google?${q.toString()}`);
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -66,21 +68,31 @@ export function AuthForm({ mode }: AuthFormProps) {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4 py-10">
-      <BrandLogo size="lg" />
+      <Link href="/" className="w-fit">
+        <BrandLogo size="lg" />
+      </Link>
+
       <h1 className="mt-6 font-display text-2xl font-bold">
-        {mode === "login" ? "Welcome back" : "Create your account"}
+        {mode === "login" ? "تسجيل الدخول" : "إنشاء حساب"}
       </h1>
       <p className="mt-2 text-sm text-white/50">
-        {paywall
-          ? "Sign in to unlock Generate and choose a monthly plan."
-          : "Access Assets, credits, and Veronix.ai generation history."}
+        {mode === "signup"
+          ? "أنشئ حسابك عبر Google، ثم ترجع تلقائيًا إلى Veronix.ai"
+          : "ادخل لحسابك لإدارة الكريدت والـ Assets"}
       </p>
 
-      <a
-        href={googleHref()}
-        className={`mt-6 flex w-full items-center justify-center gap-3 rounded-xl border border-white/15 bg-white px-4 py-3 text-sm font-semibold text-black transition ${
-          googleReady ? "hover:bg-white/90" : "opacity-70"
-        }`}
+      {paywall && (
+        <p className="mt-3 rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-xs text-cyan-100">
+          لإكمال Generate سجّل حسابك أولاً ثم اختر باقة.
+        </p>
+      )}
+
+      {/* Explicit click only — never auto-redirect to Google */}
+      <button
+        type="button"
+        onClick={() => startGoogle()}
+        disabled={!googleReady}
+        className="mt-6 flex w-full items-center justify-center gap-3 rounded-xl border border-white/15 bg-white px-4 py-3.5 text-sm font-semibold text-black transition enabled:hover:bg-white/90 disabled:opacity-50"
       >
         <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden>
           <path
@@ -100,73 +112,92 @@ export function AuthForm({ mode }: AuthFormProps) {
             d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4.1 5.5l6.3 5.2C39.9 36.2 44 31 44 24c0-1.2-.1-2.3-.4-3.5z"
           />
         </svg>
-        Continue with Google
-      </a>
+        {mode === "signup" ? "إنشاء حساب عبر Google" : "دخول عبر Google"}
+      </button>
+
       {!googleReady && (
         <p className="mt-2 text-xs text-amber-200/80">
-          Google Sign-In needs `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` in `.env.local`.
+          Google غير مفعّل بعد. راجع{" "}
+          <Link href="/setup/google" className="underline">
+            إعداد Google
+          </Link>
         </p>
       )}
 
-      <div className="my-5 flex items-center gap-3 text-xs text-white/35">
-        <div className="h-px flex-1 bg-white/10" />
-        or use email
-        <div className="h-px flex-1 bg-white/10" />
-      </div>
+      <button
+        type="button"
+        onClick={() => setShowEmail((v) => !v)}
+        className="mt-4 text-center text-xs text-white/40 underline-offset-2 hover:text-white/70 hover:underline"
+      >
+        {showEmail ? "إخفاء البريد" : "أو استخدم البريد وكلمة المرور"}
+      </button>
 
-      <form onSubmit={onSubmit} className="space-y-3">
-        {mode === "signup" && (
+      {showEmail && (
+        <form onSubmit={onSubmit} className="mt-4 space-y-3">
+          {mode === "signup" && (
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="الاسم"
+              className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none"
+            />
+          )}
           <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Name"
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="البريد"
             className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none"
           />
-        )}
-        <input
-          type="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="Email"
-          className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none"
-        />
-        <input
-          type="password"
-          required
-          minLength={6}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Password"
-          className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none"
-        />
-        {error && <p className="text-sm text-rose-300">{error}</p>}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full rounded-xl border border-white/15 bg-white/5 py-3 text-sm font-semibold text-white"
-        >
-          {loading ? "Please wait…" : mode === "login" ? "Sign in with email" : "Sign up with email"}
-        </button>
-      </form>
+          <input
+            type="password"
+            required
+            minLength={6}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="كلمة المرور"
+            className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none"
+          />
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full rounded-xl border border-white/15 bg-white/5 py-3 text-sm font-semibold text-white"
+          >
+            {loading ? "…" : mode === "login" ? "دخول بالبريد" : "تسجيل بالبريد"}
+          </button>
+        </form>
+      )}
 
-      <p className="mt-4 text-sm text-white/45">
+      {error && <p className="mt-3 text-sm text-rose-300">{error}</p>}
+
+      <p className="mt-6 text-sm text-white/45">
         {mode === "login" ? (
           <>
-            No account?{" "}
-            <Link href={`/signup?next=${encodeURIComponent(next)}`} className="text-[#22f0ff]">
-              Sign up
+            ما عندك حساب؟{" "}
+            <Link
+              href={`/signup?next=${encodeURIComponent(next)}${paywall ? "&paywall=1" : ""}`}
+              className="text-[#22f0ff]"
+            >
+              إنشاء حساب
             </Link>
           </>
         ) : (
           <>
-            Already have an account?{" "}
-            <Link href={`/login?next=${encodeURIComponent(next)}`} className="text-[#22f0ff]">
-              Sign in
+            عندك حساب؟{" "}
+            <Link
+              href={`/login?next=${encodeURIComponent(next)}${paywall ? "&paywall=1" : ""}`}
+              className="text-[#22f0ff]"
+            >
+              تسجيل الدخول
             </Link>
           </>
         )}
       </p>
+
+      <Link href="/" className="mt-4 text-sm text-white/35 hover:text-white/60">
+        ← الرجوع للواجهة
+      </Link>
     </div>
   );
 }

@@ -57,12 +57,20 @@ export function AppHeader({ user, onLogout }: AppHeaderProps) {
               </button>
             </div>
           ) : (
-            <Link
-              href="/login"
-              className="inline-flex h-9 items-center rounded-full border border-white/15 px-3 text-sm text-white/80"
-            >
-              Sign in
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link
+                href="/login"
+                className="inline-flex h-9 items-center rounded-full border border-white/15 px-3 text-sm text-white/80"
+              >
+                دخول
+              </Link>
+              <Link
+                href="/signup"
+                className="inline-flex h-9 items-center rounded-full bg-white px-3 text-sm font-semibold text-black"
+              >
+                إنشاء حساب
+              </Link>
+            </div>
           )}
         </div>
       </div>

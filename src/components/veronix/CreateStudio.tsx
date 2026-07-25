@@ -214,7 +214,8 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
     setStatus(null);
 
     if (!user) {
-      router.push(`/login?next=${encodeURIComponent("/")}&paywall=1`);
+      // Stay on Veronix signup page first — Google only after user taps the button.
+      router.push(`/signup?next=${encodeURIComponent("/")}&paywall=1`);
       return;
     }
     if (!prompt.trim()) {
@@ -264,7 +265,7 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
       });
 
       if (res.status === 401 || data.needsAuth) {
-        router.push(`/login?next=${encodeURIComponent("/")}&paywall=1`);
+        router.push(`/signup?next=${encodeURIComponent("/")}&paywall=1`);
         return;
       }
       if (res.status === 402 || data.needsPaywall) {

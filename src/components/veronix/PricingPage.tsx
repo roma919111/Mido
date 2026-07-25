@@ -26,7 +26,7 @@ export function PricingPage() {
 
   async function choose(planId: PlanId) {
     if (!user) {
-      router.push(`/login?next=${encodeURIComponent("/pricing")}&paywall=1`);
+      router.push(`/signup?next=${encodeURIComponent("/pricing")}&paywall=1`);
       return;
     }
     setBusy(planId);
