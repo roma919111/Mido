@@ -10,7 +10,7 @@ export async function GET() {
     return NextResponse.json({ user: null, authenticated: false });
   }
 
-  // Recover paid plan/credits from Stripe if local wallet was lost.
+  // Sync plan from Stripe if needed. Never refills spent credits on return.
   const { user: synced, restored, appliedSessions } = await reconcileCustomerWallet(user);
 
   return NextResponse.json({

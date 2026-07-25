@@ -1,11 +1,18 @@
 import { findUserById, updateUser, type UserRecord } from "@/lib/db";
 import { fulfillCheckoutSession } from "@/lib/billing-fulfillment";
-import { getPlan, isFreePlan, isPaidPlan, type PlanId } from "@/lib/plans";
+import { getPlan, isPaidPlan, type PlanId } from "@/lib/plans";
 import { getStripe, isStripeConfigured } from "@/lib/stripe";
 
 /**
- * Recover a customer's paid plan/credits from Stripe after local wallet loss.
- * Idempotent via processedCheckoutSessions — safe to call on every login /me.
+ * Sync paid plan membership from Stripe after local identity/DB issues.
+ *
+ * Important wallet rules:
+ * - Spent credits MUST stay spent when the customer leaves and returns.
+ * - Login /me NEVER refills the monthly package.
+ * - Credits increase only from:
+ *   1) a new paid Checkout session (idempotent by session id)
+ *   2) Stripe invoice.paid monthly renewal (webhook)
+ *   3) paid top-up Checkout
  */
 export async function reconcileCustomerWallet(user: UserRecord): Promise<{
   user: UserRecord;
@@ -34,7 +41,8 @@ export async function reconcileCustomerWallet(user: UserRecord): Promise<{
       current = await updateUser(current.id, { stripeCustomerId: customerId });
     }
 
-    // 1) Replay paid Checkout sessions (subscriptions + top-ups) idempotently.
+    // Replay ONLY checkout sessions not yet applied locally (idempotent).
+    // Already-processed purchases never re-add credits — spending stays deducted.
     const sessions = await stripe.checkout.sessions.list({
       customer: customerId,
       limit: 30,
@@ -63,7 +71,7 @@ export async function reconcileCustomerWallet(user: UserRecord): Promise<{
       if (result.applied) appliedSessions += 1;
     }
 
-    // 2) Sync active subscription plan even if checkout metadata was incomplete.
+    // Sync plan membership only — never refill credits on login.
     const activeSubs = await stripe.subscriptions.list({
       customer: customerId,
       status: "active",
@@ -83,25 +91,18 @@ export async function reconcileCustomerWallet(user: UserRecord): Promise<{
       };
       if (plan && isPaidPlan(plan.id)) {
         patch.planId = plan.id;
-        // If wallet was wiped to free/0, restore at least the plan monthly allotment once.
-        if (isFreePlan(current.planId) || current.credits <= 0) {
-          const refreshed = await findUserById(current.id);
-          if (refreshed && (isFreePlan(refreshed.planId) || refreshed.credits <= 0)) {
-            patch.credits = Math.max(refreshed.credits, plan.monthlyCredits);
-          }
-        }
       }
+      // Do NOT set credits here. Remaining balance after generations must persist.
       current = await updateUser(current.id, patch);
     }
 
     current = (await findUserById(current.id)) || current;
     return {
       user: current,
-      restored: appliedSessions > 0 || isPaidPlan(current.planId),
+      restored: appliedSessions > 0,
       appliedSessions,
     };
   } catch {
-    // Never block login if Stripe is temporarily unavailable.
     const latest = (await findUserById(user.id)) || user;
     return { user: latest, restored: false, appliedSessions };
   }
