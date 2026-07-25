@@ -255,12 +255,15 @@ export function StudioApp() {
   }
 
   async function handleGenerate() {
-    if (!prompt.trim()) {
+    const currentPrompt = prompt.trim();
+    if (!currentPrompt) {
       setError("Write a prompt before generating.");
+      setStatusMessage(null);
       return;
     }
     if (mode === "image-to-video" && !startFrame) {
       setError("Upload a Start Frame for Image-to-Video.");
+      setStatusMessage(null);
       return;
     }
 
@@ -274,7 +277,7 @@ export function StudioApp() {
       historyId: optimisticId,
       mediaType: isVideoMode ? "video" : "image",
       url: "",
-      prompt,
+      prompt: currentPrompt,
       mode,
       createdAt: new Date().toISOString(),
       status: "running",
@@ -288,7 +291,7 @@ export function StudioApp() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           mode,
-          prompt,
+          prompt: currentPrompt,
           duration,
           quality,
           startFrame,
@@ -369,7 +372,7 @@ export function StudioApp() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden">
+    <div className="relative min-h-screen overflow-x-hidden pb-28 sm:pb-0">
       <div className="pointer-events-none absolute inset-0 studio-backdrop" />
       <div className="pointer-events-none absolute -left-24 top-24 h-72 w-72 rounded-full bg-[rgba(46,230,166,0.12)] blur-3xl animate-float" />
       <div className="pointer-events-none absolute -right-16 top-48 h-80 w-80 rounded-full bg-[rgba(255,176,92,0.1)] blur-3xl animate-float-delayed" />
@@ -381,7 +384,21 @@ export function StudioApp() {
         connectionError={account.error}
       />
 
-      <main className="relative z-10 mx-auto w-full max-w-6xl px-4 pb-20 pt-8 sm:px-6">
+      {(error || statusMessage) && (
+        <div className="relative z-40 mx-auto w-full max-w-6xl px-4 pt-3 sm:px-6">
+          <div
+            className={`rounded-2xl border px-4 py-3 text-sm ${
+              error
+                ? "border-rose-400/30 bg-rose-400/10 text-rose-100"
+                : "border-cyan-400/25 bg-[rgba(34,240,255,0.08)] text-cyan-100"
+            }`}
+          >
+            {error ?? statusMessage}
+          </div>
+        </div>
+      )}
+
+      <main className="relative z-10 mx-auto w-full max-w-6xl px-4 pb-28 pt-8 sm:px-6">
         <section className="animate-fade-up mb-8 max-w-3xl">
           <p className="mb-3 text-xs uppercase tracking-[0.24em] text-[var(--accent)]/80">
             Creative workbench
@@ -458,33 +475,6 @@ export function StudioApp() {
               />
             )}
 
-            <GenerateButton
-              label={isVideoMode ? "Generate Video" : "Generate Image"}
-              credits={creditCost}
-              loading={generating}
-              disabled={!prompt.trim() || (mode === "image-to-video" && !startFrame)}
-              disabledReason={
-                !prompt.trim()
-                  ? "Write a prompt above first, then tap Generate."
-                  : mode === "image-to-video" && !startFrame
-                    ? "Upload a Start Frame image to enable Generate Video."
-                    : null
-              }
-              onClick={() => void handleGenerate()}
-            />
-
-            {error && (
-              <div className="rounded-2xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
-                {error}
-              </div>
-            )}
-
-            {statusMessage && !error && (
-              <div className="rounded-2xl border border-cyan-400/25 bg-[rgba(34,240,255,0.08)] px-4 py-3 text-sm text-cyan-100">
-                {statusMessage}
-              </div>
-            )}
-
             {liveMcpResponse && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-3">
@@ -507,6 +497,23 @@ export function StudioApp() {
       </main>
 
       <Footer />
+
+      {/* Keep outside backdrop-blur sections so fixed positioning works on mobile. */}
+      <GenerateButton
+        label={isVideoMode ? "Generate Video" : "Generate Image"}
+        credits={creditCost}
+        loading={generating}
+        hint={
+          !prompt.trim()
+            ? "Tip: type your prompt above, then tap Generate."
+            : mode === "image-to-video" && !startFrame
+              ? "Tip: upload a Start Frame for Image-to-Video."
+              : "Ready — tap Generate anytime."
+        }
+        onClick={() => {
+          void handleGenerate();
+        }}
+      />
     </div>
   );
 }

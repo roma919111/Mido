@@ -6,8 +6,7 @@ interface GenerateButtonProps {
   label: string;
   credits: number;
   loading: boolean;
-  disabled?: boolean;
-  disabledReason?: string | null;
+  hint?: string | null;
   onClick: () => void;
 }
 
@@ -15,22 +14,17 @@ export function GenerateButton({
   label,
   credits,
   loading,
-  disabled,
-  disabledReason,
+  hint,
   onClick,
 }: GenerateButtonProps) {
-  const isDisabled = Boolean(disabled || loading);
-
   return (
-    <div className="sticky bottom-3 z-30 space-y-2">
+    <div className="fixed inset-x-0 bottom-0 z-50 border-t border-white/10 bg-[rgba(7,9,13,0.92)] px-4 py-3 backdrop-blur-xl sm:static sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
       <button
         type="button"
         onClick={onClick}
-        disabled={isDisabled}
-        aria-disabled={isDisabled}
-        className="group relative w-full overflow-hidden rounded-2xl bg-[linear-gradient(135deg,var(--accent),var(--accent-2))] px-5 py-4 text-base font-semibold text-[#06140f] shadow-[0_18px_50px_rgba(46,230,166,0.35)] transition duration-300 hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:scale-100"
+        disabled={loading}
+        className="group relative w-full overflow-hidden rounded-2xl bg-[linear-gradient(135deg,var(--accent),var(--accent-2))] px-5 py-4 text-base font-semibold text-[#06140f] shadow-[0_18px_50px_rgba(46,230,166,0.35)] transition duration-300 active:scale-[0.99] hover:scale-[1.01] disabled:cursor-wait disabled:opacity-80"
       >
-        <span className="pointer-events-none absolute inset-0 -translate-x-full bg-[linear-gradient(110deg,transparent,rgba(255,255,255,0.35),transparent)] transition duration-700 group-hover:translate-x-full" />
         <span className="relative z-10 flex items-center justify-center gap-2">
           {loading ? (
             <Loader2 className="h-5 w-5 animate-spin" />
@@ -43,10 +37,8 @@ export function GenerateButton({
           </span>
         </span>
       </button>
-      {isDisabled && !loading && disabledReason ? (
-        <p className="rounded-xl border border-amber-300/25 bg-amber-300/10 px-3 py-2 text-center text-xs text-amber-100">
-          {disabledReason}
-        </p>
+      {hint ? (
+        <p className="mt-2 text-center text-xs text-white/55 sm:text-white/45">{hint}</p>
       ) : null}
     </div>
   );
