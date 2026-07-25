@@ -119,13 +119,25 @@ function buildParams(
     };
   }
 
-  const resolution = mapResolutionForMcpModel(mcpModel, input.resolution ?? "720p");
+  const catalog = getCatalogModel(input.modelId);
+  const resolution = mapResolutionForMcpModel(
+    mcpModel,
+    input.resolution || catalog?.resolutionDefault || "720p",
+  );
+  // Models without a resolution control (e.g. Gemini) omit the field entirely.
+  const hasResolutionControl = Array.isArray(catalog?.resolutions)
+    ? catalog.resolutions.length > 0
+    : Boolean(resolution);
   return {
     videoCount: input.videoCount ?? 1,
     duration: input.duration ?? 5,
-    ...(resolution ? { resolution } : {}),
+    ...(hasResolutionControl && resolution ? { resolution } : {}),
     aspectRatio: input.aspectRatio ?? "16:9",
-    ...audioParamForMcpModel(mcpModel, input.generateAudio),
+    ...audioParamForMcpModel(
+      mcpModel,
+      input.generateAudio,
+      catalog?.audioParam,
+    ),
   };
 }
 

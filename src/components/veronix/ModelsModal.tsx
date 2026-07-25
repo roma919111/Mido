@@ -56,12 +56,7 @@ export function ModelsModal({
     <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/70 p-0 sm:items-center sm:p-4">
       <div className="flex max-h-[92vh] w-full max-w-2xl flex-col rounded-t-3xl border border-white/10 bg-[#12151c] sm:rounded-3xl">
         <div className="flex items-center justify-between border-b border-white/8 px-4 py-3">
-          <div>
-            <p className="text-sm font-semibold text-white">اختر موديل واحد</p>
-            <p className="text-xs text-white/45">
-              كل موديلات OpenArt المتزامنة — السعر على Generate = OpenArt × 1.8
-            </p>
-          </div>
+          <p className="text-sm font-semibold text-white">اختر موديل واحد</p>
           <button
             type="button"
             onClick={onClose}

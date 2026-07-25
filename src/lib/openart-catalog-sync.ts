@@ -5,8 +5,8 @@ import {
   OpenArtConfigError,
   parseToolPayload,
 } from "@/lib/openart-mcp";
-import type { CatalogModel, ModelKind } from "@/lib/model-catalog";
-import { VIDEO_DURATION_FALLBACKS } from "@/lib/model-catalog";
+import type { AudioParamKey, CatalogModel, ModelKind } from "@/lib/model-catalog";
+import { VIDEO_FORM_FALLBACKS } from "@/lib/model-catalog";
 import { saveCostCache } from "@/lib/openart-cost-cache";
 import type { CostCacheItem } from "@/lib/openart-cost-defaults";
 import { VERONIX_MODEL_ID } from "@/lib/free-trial";
@@ -97,7 +97,7 @@ function buildCatalogFromOpenArt(models: OpenArtModelRow[]): SyncedCatalogFile {
 
     if (videoModes.length) {
       const isVeronix = mcpId === "byte-plus-seedance-2-mini";
-      const fallback = VIDEO_DURATION_FALLBACKS[mcpId];
+      const fallback = VIDEO_FORM_FALLBACKS[mcpId];
       video.push({
         id: catalogIdFor(mcpId, "video"),
         name: displayNameFor(mcpId, name, "video"),
@@ -109,9 +109,14 @@ function buildCatalogFromOpenArt(models: OpenArtModelRow[]): SyncedCatalogFile {
         tagline: isVeronix
           ? "موديل فيديو حصري — أول فيديو 6 ثوانٍ مجاني (480p)"
           : row.description?.slice(0, 120),
-        durationMin: fallback?.min,
-        durationMax: fallback?.max,
-        durationDefault: fallback?.default,
+        durationMin: fallback?.duration.min,
+        durationMax: fallback?.duration.max,
+        durationDefault: fallback?.duration.default,
+        resolutions: fallback?.resolutions,
+        resolutionDefault: fallback?.resolutionDefault,
+        audioSupported: fallback?.audioSupported,
+        audioDefault: fallback?.audioDefault,
+        audioParam: fallback?.audioParam,
       });
     }
   }
@@ -147,38 +152,26 @@ function resolveSchemaNode(
   return obj;
 }
 
-/** Pull duration min/max/default from openart_model_form_get jsonSchema. */
-export function extractDurationBounds(
-  payload: Record<string, unknown>,
-): DurationBounds | null {
-  const schema = payload.jsonSchema as Record<string, unknown> | undefined;
-  if (!schema) return null;
-  const defs = (schema.$defs as Record<string, unknown>) || {};
-  const topDefaults = (payload.defaults as Record<string, unknown>) || {};
+type FormFieldExtraction = {
+  duration: DurationBounds | null;
+  resolutions: string[];
+  resolutionDefault: string;
+  audioSupported: boolean;
+  audioDefault: boolean;
+  audioParam: AudioParamKey | null;
+};
 
-  const visit = (node: unknown, depth = 0): DurationBounds | null => {
+function findPropertySchema(
+  schema: Record<string, unknown>,
+  propName: string,
+): Record<string, unknown> | null {
+  const defs = (schema.$defs as Record<string, unknown>) || {};
+  const visit = (node: unknown, depth = 0): Record<string, unknown> | null => {
     if (!node || typeof node !== "object" || depth > 12) return null;
     const obj = resolveSchemaNode(node, defs) || (node as Record<string, unknown>);
     const props = obj.properties as Record<string, unknown> | undefined;
-    if (props?.duration) {
-      const durationSchema = resolveSchemaNode(props.duration, defs);
-      if (
-        durationSchema &&
-        typeof durationSchema.minimum === "number" &&
-        typeof durationSchema.maximum === "number"
-      ) {
-        const def =
-          typeof durationSchema.default === "number"
-            ? durationSchema.default
-            : typeof topDefaults.duration === "number"
-              ? topDefaults.duration
-              : 5;
-        return {
-          min: durationSchema.minimum,
-          max: durationSchema.maximum,
-          default: def,
-        };
-      }
+    if (props?.[propName]) {
+      return resolveSchemaNode(props[propName], defs);
     }
     for (const key of ["allOf", "oneOf", "anyOf"] as const) {
       const arr = obj[key];
@@ -190,11 +183,92 @@ export function extractDurationBounds(
     }
     return null;
   };
-
   return visit(schema);
 }
 
-async function enrichVideoDurations(catalog: SyncedCatalogFile): Promise<void> {
+/** Pull duration / resolution / audio options from openart_model_form_get. */
+export function extractVideoFormOptions(
+  payload: Record<string, unknown>,
+): FormFieldExtraction {
+  const schema = payload.jsonSchema as Record<string, unknown> | undefined;
+  const topDefaults = (payload.defaults as Record<string, unknown>) || {};
+  const empty: FormFieldExtraction = {
+    duration: null,
+    resolutions: [],
+    resolutionDefault: "",
+    audioSupported: false,
+    audioDefault: false,
+    audioParam: null,
+  };
+  if (!schema) return empty;
+
+  const durationSchema = findPropertySchema(schema, "duration");
+  let duration: DurationBounds | null = null;
+  if (
+    durationSchema &&
+    typeof durationSchema.minimum === "number" &&
+    typeof durationSchema.maximum === "number"
+  ) {
+    duration = {
+      min: durationSchema.minimum,
+      max: durationSchema.maximum,
+      default:
+        typeof durationSchema.default === "number"
+          ? durationSchema.default
+          : typeof topDefaults.duration === "number"
+            ? topDefaults.duration
+            : 5,
+    };
+  }
+
+  const resolutionSchema = findPropertySchema(schema, "resolution");
+  const resolutions =
+    resolutionSchema && Array.isArray(resolutionSchema.enum)
+      ? resolutionSchema.enum.map(String)
+      : [];
+  const resolutionDefault =
+    (typeof resolutionSchema?.default === "string" && resolutionSchema.default) ||
+    (typeof topDefaults.resolution === "string" && topDefaults.resolution) ||
+    resolutions[0] ||
+    "";
+
+  const audioSchema =
+    findPropertySchema(schema, "generateAudio") ||
+    findPropertySchema(schema, "generateSound");
+  const hasGenerateAudio = Boolean(findPropertySchema(schema, "generateAudio"));
+  const hasGenerateSound = Boolean(findPropertySchema(schema, "generateSound"));
+  const audioParam: AudioParamKey | null = hasGenerateAudio
+    ? "generateAudio"
+    : hasGenerateSound
+      ? "generateSound"
+      : null;
+  const audioSupported = Boolean(audioParam && audioSchema);
+  const audioDefault = audioSupported
+    ? Boolean(
+        typeof audioSchema?.default === "boolean"
+          ? audioSchema.default
+          : topDefaults.generateAudio ?? topDefaults.generateSound ?? false,
+      )
+    : false;
+
+  return {
+    duration,
+    resolutions,
+    resolutionDefault,
+    audioSupported,
+    audioDefault,
+    audioParam,
+  };
+}
+
+/** @deprecated use extractVideoFormOptions */
+export function extractDurationBounds(
+  payload: Record<string, unknown>,
+): DurationBounds | null {
+  return extractVideoFormOptions(payload).duration;
+}
+
+async function enrichVideoFormOptions(catalog: SyncedCatalogFile): Promise<void> {
   for (const model of catalog.video) {
     if (!model.mcpId || !model.modes?.length) continue;
     const mode = model.modes.includes("text2video")
@@ -207,13 +281,20 @@ async function enrichVideoDurations(catalog: SyncedCatalogFile): Promise<void> {
       });
       const payload = parseToolPayload(result);
       if (result.isError) continue;
-      const bounds = extractDurationBounds(payload);
-      if (!bounds) continue;
-      model.durationMin = bounds.min;
-      model.durationMax = bounds.max;
-      model.durationDefault = bounds.default;
+      const options = extractVideoFormOptions(payload);
+      if (options.duration) {
+        model.durationMin = options.duration.min;
+        model.durationMax = options.duration.max;
+        model.durationDefault = options.duration.default;
+      }
+      // Empty synced enum means the model has no resolution control (e.g. Gemini).
+      model.resolutions = options.resolutions;
+      model.resolutionDefault = options.resolutionDefault;
+      model.audioSupported = options.audioSupported;
+      model.audioDefault = options.audioDefault;
+      model.audioParam = options.audioParam;
     } catch {
-      // keep fallback bounds
+      // keep fallback options
     }
   }
 }
@@ -259,7 +340,7 @@ export async function syncOpenArtCatalogAndCosts(): Promise<{
   }
 
   const catalog = buildCatalogFromOpenArt(models);
-  await enrichVideoDurations(catalog);
+  await enrichVideoFormOptions(catalog);
   await mkdir(DATA_DIR, { recursive: true });
   await writeFile(CATALOG_FILE, JSON.stringify(catalog, null, 2), "utf8");
 
@@ -267,9 +348,12 @@ export async function syncOpenArtCatalogAndCosts(): Promise<{
   const costPayload = parseToolPayload(costResult);
   let costItems = parseCostItems(costPayload);
 
-  // Targeted enrich for Create UI defaults (keeps Generate button ×1.8 accurate).
-  const enrichTargets: Array<{ model: string; mode: string; params: Record<string, unknown> }> = [
-    // Veronix free default
+  // Enrich costs per synced resolution × audio so Create quotes stay accurate offline.
+  const enrichTargets: Array<{
+    model: string;
+    mode: string;
+    params: Record<string, unknown>;
+  }> = [
     {
       model: "byte-plus-seedance-2-mini",
       mode: "text2video",
@@ -293,28 +377,6 @@ export async function syncOpenArtCatalogAndCosts(): Promise<{
       },
     },
     {
-      model: "byte-plus-seedance-2",
-      mode: "text2video",
-      params: {
-        videoCount: 1,
-        duration: 5,
-        resolution: "720p",
-        aspectRatio: "16:9",
-        generateAudio: false,
-      },
-    },
-    {
-      model: "pixverseV6",
-      mode: "text2video",
-      params: {
-        videoCount: 1,
-        duration: 5,
-        resolution: "720p",
-        aspectRatio: "16:9",
-        generateAudio: false,
-      },
-    },
-    {
       model: "gpt-image-2",
       mode: "text2image",
       params: {
@@ -325,6 +387,35 @@ export async function syncOpenArtCatalogAndCosts(): Promise<{
       },
     },
   ];
+
+  for (const model of catalog.video) {
+    if (!model.mcpId) continue;
+    const mode = model.modes?.includes("text2video")
+      ? "text2video"
+      : model.modes?.[0] || "text2video";
+    const duration = model.durationMax ?? model.durationDefault ?? 5;
+    const resolutions =
+      model.resolutions && model.resolutions.length
+        ? model.resolutions
+        : [undefined];
+    const audioStates = model.audioSupported
+      ? [false, true]
+      : [undefined];
+    for (const resolution of resolutions) {
+      for (const audio of audioStates) {
+        const params: Record<string, unknown> = {
+          videoCount: 1,
+          duration,
+          aspectRatio: "16:9",
+        };
+        if (resolution) params.resolution = resolution;
+        if (typeof audio === "boolean" && model.audioParam) {
+          params[model.audioParam] = audio;
+        }
+        enrichTargets.push({ model: model.mcpId, mode, params });
+      }
+    }
+  }
 
   for (const target of enrichTargets) {
     try {

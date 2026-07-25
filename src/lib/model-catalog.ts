@@ -1,5 +1,7 @@
 export type ModelKind = "image" | "video";
 
+export type AudioParamKey = "generateAudio" | "generateSound";
+
 export interface CatalogModel {
   id: string;
   name: string;
@@ -16,42 +18,164 @@ export interface CatalogModel {
   durationMin?: number;
   durationMax?: number;
   durationDefault?: number;
+  /** OpenArt resolution enum values for this model (empty = no resolution control) */
+  resolutions?: string[];
+  resolutionDefault?: string;
+  /** Whether the model exposes an audio toggle that changes price */
+  audioSupported?: boolean;
+  audioDefault?: boolean;
+  audioParam?: AudioParamKey | null;
 }
 
-/** Fallback OpenArt duration bounds when live form sync is unavailable. */
+export type VideoFormFallback = {
+  duration: { min: number; max: number; default: number };
+  resolutions: string[];
+  resolutionDefault: string;
+  audioSupported: boolean;
+  audioDefault: boolean;
+  audioParam: AudioParamKey | null;
+};
+
+/** Fallback OpenArt form options when live form sync is unavailable. */
+export const VIDEO_FORM_FALLBACKS: Record<string, VideoFormFallback> = {
+  "byte-plus-seedance-2-mini": {
+    duration: { min: 4, max: 15, default: 5 },
+    resolutions: ["480p", "720p"],
+    resolutionDefault: "720p",
+    audioSupported: true,
+    audioDefault: true,
+    audioParam: "generateAudio",
+  },
+  "byte-plus-seedance-2": {
+    duration: { min: 4, max: 15, default: 5 },
+    resolutions: ["480p", "720p", "1080p", "4k"],
+    resolutionDefault: "720p",
+    audioSupported: true,
+    audioDefault: true,
+    audioParam: "generateAudio",
+  },
+  "byte-plus-seedance-2-fast": {
+    duration: { min: 4, max: 15, default: 5 },
+    resolutions: ["480p", "720p", "1080p", "4k"],
+    resolutionDefault: "720p",
+    audioSupported: true,
+    audioDefault: true,
+    audioParam: "generateAudio",
+  },
+  "gemini-omni-flash": {
+    duration: { min: 3, max: 10, default: 5 },
+    resolutions: [],
+    resolutionDefault: "",
+    audioSupported: false,
+    audioDefault: false,
+    audioParam: null,
+  },
+  "kling-3-omni": {
+    duration: { min: 3, max: 15, default: 5 },
+    resolutions: ["std", "pro", "4k"],
+    resolutionDefault: "std",
+    audioSupported: true,
+    audioDefault: true,
+    audioParam: "generateSound",
+  },
+  pixverseV6: {
+    duration: { min: 1, max: 15, default: 5 },
+    resolutions: ["360p", "540p", "720p", "1080p"],
+    resolutionDefault: "540p",
+    audioSupported: true,
+    audioDefault: false,
+    audioParam: "generateAudio",
+  },
+  "wan2-7": {
+    duration: { min: 2, max: 15, default: 5 },
+    resolutions: ["720p", "1080p"],
+    resolutionDefault: "720p",
+    audioSupported: false,
+    audioDefault: false,
+    audioParam: null,
+  },
+  "grok-imagine-1-5": {
+    duration: { min: 1, max: 15, default: 5 },
+    resolutions: ["480p", "720p"],
+    resolutionDefault: "720p",
+    audioSupported: false,
+    audioDefault: false,
+    audioParam: null,
+  },
+};
+
+/** @deprecated use VIDEO_FORM_FALLBACKS */
 export const VIDEO_DURATION_FALLBACKS: Record<
   string,
   { min: number; max: number; default: number }
-> = {
-  "byte-plus-seedance-2-mini": { min: 4, max: 15, default: 5 },
-  "byte-plus-seedance-2": { min: 4, max: 15, default: 5 },
-  "byte-plus-seedance-2-fast": { min: 4, max: 15, default: 5 },
-  "gemini-omni-flash": { min: 3, max: 10, default: 5 },
-  "kling-3-omni": { min: 3, max: 15, default: 5 },
-  pixverseV6: { min: 1, max: 15, default: 5 },
-  "wan2-7": { min: 2, max: 15, default: 5 },
-  "grok-imagine-1-5": { min: 1, max: 15, default: 5 },
-};
+> = Object.fromEntries(
+  Object.entries(VIDEO_FORM_FALLBACKS).map(([id, f]) => [id, f.duration]),
+);
+
+export function formOptionsForModel(model: CatalogModel | null | undefined): {
+  duration: { min: number; max: number; default: number };
+  resolutions: string[];
+  resolutionDefault: string;
+  audioSupported: boolean;
+  audioDefault: boolean;
+  audioParam: AudioParamKey | null;
+} {
+  const fallback: VideoFormFallback = (model?.mcpId &&
+    VIDEO_FORM_FALLBACKS[model.mcpId]) || {
+    duration: { min: 4, max: 15, default: 5 },
+    resolutions: ["480p", "720p", "1080p"],
+    resolutionDefault: "720p",
+    audioSupported: true,
+    audioDefault: false,
+    audioParam: "generateAudio",
+  };
+  if (!model || model.kind !== "video") {
+    return {
+      duration: fallback.duration,
+      resolutions: fallback.resolutions,
+      resolutionDefault: fallback.resolutionDefault,
+      audioSupported: false,
+      audioDefault: false,
+      audioParam: null,
+    };
+  }
+  const resolutions = Array.isArray(model.resolutions)
+    ? model.resolutions
+    : fallback.resolutions;
+  return {
+    duration: {
+      min: model.durationMin ?? fallback.duration.min,
+      max: model.durationMax ?? fallback.duration.max,
+      default: model.durationDefault ?? fallback.duration.default,
+    },
+    resolutions,
+    resolutionDefault:
+      model.resolutionDefault ||
+      fallback.resolutionDefault ||
+      resolutions[0] ||
+      "",
+    audioSupported: model.audioSupported ?? fallback.audioSupported,
+    audioDefault: model.audioDefault ?? fallback.audioDefault,
+    audioParam:
+      model.audioParam !== undefined ? model.audioParam : fallback.audioParam,
+  };
+}
 
 export function durationBoundsForModel(model: CatalogModel | null | undefined): {
   min: number;
   max: number;
   default: number;
 } {
-  if (!model || model.kind !== "video") {
-    return { min: 4, max: 15, default: 5 };
-  }
-  const fallback =
-    (model.mcpId && VIDEO_DURATION_FALLBACKS[model.mcpId]) || {
-      min: 4,
-      max: 15,
-      default: 5,
-    };
-  return {
-    min: model.durationMin ?? fallback.min,
-    max: model.durationMax ?? fallback.max,
-    default: model.durationDefault ?? fallback.default,
-  };
+  return formOptionsForModel(model).duration;
+}
+
+/** Friendly labels for synced OpenArt resolution enums. */
+export function resolutionLabel(value: string): string {
+  const v = value.trim().toLowerCase();
+  if (v === "std") return "قياسي";
+  if (v === "pro") return "Pro";
+  if (v === "4k") return "4K";
+  return value;
 }
 
 /**
@@ -126,14 +250,22 @@ export const IMAGE_MODELS: CatalogModel[] = [
   },
 ];
 
-function withDurationFallback(model: CatalogModel): CatalogModel {
-  const bounds = model.mcpId ? VIDEO_DURATION_FALLBACKS[model.mcpId] : undefined;
-  if (!bounds) return model;
+function withFormFallback(model: CatalogModel): CatalogModel {
+  const fallback = model.mcpId ? VIDEO_FORM_FALLBACKS[model.mcpId] : undefined;
+  if (!fallback) return model;
   return {
     ...model,
-    durationMin: model.durationMin ?? bounds.min,
-    durationMax: model.durationMax ?? bounds.max,
-    durationDefault: model.durationDefault ?? bounds.default,
+    durationMin: model.durationMin ?? fallback.duration.min,
+    durationMax: model.durationMax ?? fallback.duration.max,
+    durationDefault: model.durationDefault ?? fallback.duration.default,
+    resolutions: model.resolutions?.length
+      ? model.resolutions
+      : fallback.resolutions,
+    resolutionDefault: model.resolutionDefault || fallback.resolutionDefault,
+    audioSupported: model.audioSupported ?? fallback.audioSupported,
+    audioDefault: model.audioDefault ?? fallback.audioDefault,
+    audioParam:
+      model.audioParam !== undefined ? model.audioParam : fallback.audioParam,
   };
 }
 
@@ -207,7 +339,7 @@ const VIDEO_MODELS_BASE: CatalogModel[] = [
 ];
 
 export const VIDEO_MODELS: CatalogModel[] =
-  VIDEO_MODELS_BASE.map(withDurationFallback);
+  VIDEO_MODELS_BASE.map(withFormFallback);
 
 export const ALL_MODELS = [...IMAGE_MODELS, ...VIDEO_MODELS];
 

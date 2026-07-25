@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import {
   durationBoundsForModel,
+  formOptionsForModel,
+  resolutionLabel,
   type CatalogModel,
 } from "@/lib/model-catalog";
 import {
@@ -34,7 +36,6 @@ const PREVIEW_POLL_MS = 5000;
 
 const IMAGE_ASPECTS = ["1:1", "16:9", "9:16", "4:3", "3:4"] as const;
 const VIDEO_ASPECT = "16:9";
-const RESOLUTIONS = ["360p", "480p", "720p", "1080p", "1K"] as const;
 
 interface CreateStudioProps {
   user: CustomerUser | null;
@@ -91,19 +92,30 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   );
   const selectedModel = allModels.find((m) => m.id === selectedModelId) ?? null;
   const durationBounds = durationBoundsForModel(selectedModel);
+  const formOptions = formOptionsForModel(selectedModel);
+  const resolutionOptions = formOptions.resolutions;
 
   const applyVideoModelDefaults = (model: CatalogModel | null | undefined) => {
     setAspectRatio(VIDEO_ASPECT);
     if (!model) return;
+    const options = formOptionsForModel(model);
     const freeLocked =
       model.id === VERONIX_MODEL_ID && !user?.freeVeronixUsed;
     if (freeLocked) {
       setDuration(FREE_VERONIX_DURATION_SECONDS);
       setResolution(FREE_VERONIX_RESOLUTION);
+      setGenerateAudio(false);
       return;
     }
-    const bounds = durationBoundsForModel(model);
-    setDuration(bounds.max);
+    setDuration(options.duration.max);
+    if (options.resolutions.length) {
+      const nextRes =
+        options.resolutionDefault ||
+        options.resolutions[options.resolutions.length - 1] ||
+        options.resolutions[0];
+      setResolution(nextRes);
+    }
+    setGenerateAudio(options.audioSupported ? options.audioDefault : false);
   };
 
   useEffect(() => {
@@ -118,13 +130,12 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     setAspectRatio(VIDEO_ASPECT);
   }, [freeSettingsLocked]);
 
-  // Paid / post-trial: select model → duration = synced OpenArt max; aspect locked 16:9.
+  // Paid / post-trial: select model → duration max + synced resolution/audio defaults.
   useEffect(() => {
     if (media !== "video" || !selectedModel || freeSettingsLocked) return;
-    setAspectRatio(VIDEO_ASPECT);
-    const bounds = durationBoundsForModel(selectedModel);
-    setDuration(bounds.max);
-  }, [media, selectedModelId, selectedModel, freeSettingsLocked]);
+    applyVideoModelDefaults(selectedModel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- apply when model identity changes
+  }, [media, selectedModelId, freeSettingsLocked, selectedModel?.mcpId]);
 
   useEffect(() => {
     if (!waitingResult || genStartedAt == null) {
@@ -891,22 +902,29 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               )}
             </select>
           </label>
-          {media === "video" && (
+          {media === "video" && resolutionOptions.length > 0 && (
             <label className="space-y-1 text-xs text-white/50">
-              الدقة
+              الوضوح
               <select
-                value={resolution}
+                value={
+                  resolutionOptions.includes(resolution)
+                    ? resolution
+                    : formOptions.resolutionDefault || resolutionOptions[0]
+                }
                 onChange={(e) => setResolution(e.target.value)}
                 disabled={freeSettingsLocked}
                 className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white disabled:opacity-60"
               >
-                {RESOLUTIONS.map((r) => (
+                {resolutionOptions.map((r) => (
                   <option key={r} value={r}>
-                    {r}
+                    {resolutionLabel(r)}
                   </option>
                 ))}
               </select>
             </label>
+          )}
+          {media === "video" && resolutionOptions.length === 0 && (
+            <p className="text-xs text-white/40">الوضوح: تلقائي لهذا الموديل</p>
           )}
         </div>
 
@@ -941,14 +959,20 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               )}
               <span>{durationBounds.max}s</span>
             </div>
-            <label className="mt-2 flex items-center gap-2 text-sm text-white/70">
-              <input
-                type="checkbox"
-                checked={generateAudio}
-                onChange={(e) => setGenerateAudio(e.target.checked)}
-              />
-              توليد صوت
-            </label>
+            {formOptions.audioSupported ? (
+              <label className="mt-2 flex items-center gap-2 text-sm text-white/70">
+                <input
+                  type="checkbox"
+                  checked={generateAudio}
+                  onChange={(e) => setGenerateAudio(e.target.checked)}
+                />
+                توليد صوت
+              </label>
+            ) : (
+              <p className="mt-2 text-xs text-white/40">
+                الصوت مدمج في هذا الموديل (بدون خيار منفصل)
+              </p>
+            )}
           </div>
         )}
       </div>
