@@ -18,7 +18,7 @@ export function GenerateButton({
   onClick,
 }: GenerateButtonProps) {
   return (
-    <div className="fixed inset-x-0 bottom-0 z-50 border-t border-white/10 bg-[rgba(7,9,13,0.92)] px-4 py-3 backdrop-blur-xl sm:static sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
+    <div className="fixed inset-x-0 bottom-0 z-50 border-t border-white/10 bg-[#0a0d13] px-4 py-3 sm:static sm:border-0 sm:bg-transparent sm:p-0">
       <button
         type="button"
         onClick={onClick}
