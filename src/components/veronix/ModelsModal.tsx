@@ -35,10 +35,11 @@ export function ModelsModal({
 
   const list = useMemo(() => {
     const base = tab === "image" ? imageModels : videoModels;
-    const sorted = [...base].sort((a, b) => Number(b.available) - Number(a.available));
+    // Only show live models — hide "قريبًا" clutter from customers.
+    const live = base.filter((m) => m.available);
     const q = query.trim().toLowerCase();
-    if (!q) return sorted;
-    return sorted.filter(
+    if (!q) return live;
+    return live.filter(
       (m) => m.name.toLowerCase().includes(q) || m.id.toLowerCase().includes(q),
     );
   }, [tab, imageModels, videoModels, query]);

@@ -27,13 +27,13 @@ interface CreateStudioProps {
 
 export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
   const router = useRouter();
-  const [media, setMedia] = useState<"image" | "video">("image");
+  const [media, setMedia] = useState<"image" | "video">("video");
   const [imageModels, setImageModels] = useState<CatalogModel[]>([]);
   const [videoModels, setVideoModels] = useState<CatalogModel[]>([]);
-  const [selectedModelId, setSelectedModelId] = useState("nano-banana-2-lite");
+  const [selectedModelId, setSelectedModelId] = useState("seedance-2-mini");
   const [modelsOpen, setModelsOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
-  const [aspectRatio, setAspectRatio] = useState<string>("1:1");
+  const [aspectRatio, setAspectRatio] = useState<string>("16:9");
   const [resolution, setResolution] = useState<string>("720p");
   const [duration, setDuration] = useState<number>(5);
   const [generateAudio, setGenerateAudio] = useState(false);
@@ -69,17 +69,20 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
 
   useEffect(() => {
     if (media === "image") {
-      const stillValid = imageModels.some((m) => m.id === selectedModelId);
+      const stillValid = imageModels.some((m) => m.id === selectedModelId && m.available);
       if (!stillValid) {
         const firstLive = imageModels.find((m) => m.available)?.id || "nano-banana-2-lite";
         setSelectedModelId(firstLive);
       }
       setAspectRatio("1:1");
     } else {
-      const stillValid = videoModels.some((m) => m.id === selectedModelId);
+      const stillValid = videoModels.some((m) => m.id === selectedModelId && m.available);
       if (!stillValid) {
-        const firstLive = videoModels.find((m) => m.available)?.id || "pixverse-v6";
-        setSelectedModelId(firstLive);
+        const veronix =
+          videoModels.find((m) => m.id === "seedance-2-mini" && m.available)?.id ||
+          videoModels.find((m) => m.available)?.id ||
+          "seedance-2-mini";
+        setSelectedModelId(veronix);
       }
       setAspectRatio("16:9");
     }

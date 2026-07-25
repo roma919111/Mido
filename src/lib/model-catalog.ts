@@ -59,8 +59,7 @@ export const IMAGE_MODELS: CatalogModel[] = [
 ];
 
 export const VIDEO_MODELS: CatalogModel[] = [
-  { id: "seedance-2", name: "Seedance 2.0", kind: "video", mcpId: "byte-plus-seedance-2", modes: ["text2video", "image2video", "element2video"], available: true },
-  { id: "seedance-2-fast", name: "Seedance 2.0 Fast", kind: "video", mcpId: "byte-plus-seedance-2-fast", modes: ["text2video", "image2video", "element2video"], available: true },
+  // Veronix (Seedance Mini) first — default customer choice
   {
     id: "seedance-2-mini",
     name: "Veronix",
@@ -71,17 +70,20 @@ export const VIDEO_MODELS: CatalogModel[] = [
     tagline: "موديل فيديو حصري مدعوم بالذكاء الاصطناعي",
     available: true,
   },
+  { id: "seedance-2", name: "Seedance 2.0", kind: "video", mcpId: "byte-plus-seedance-2", modes: ["text2video", "image2video", "element2video"], available: true },
+  { id: "seedance-2-fast", name: "Seedance 2.0 Fast", kind: "video", mcpId: "byte-plus-seedance-2-fast", modes: ["text2video", "image2video", "element2video"], available: true },
   { id: "gemini-omni-flash", name: "Gemini Omni Flash", kind: "video", mcpId: "gemini-omni-flash", modes: ["text2video", "image2video", "element2video"], available: true },
   { id: "kling-3-omni", name: "Kling 3.0 Omni", kind: "video", mcpId: "kling-3-omni", modes: ["text2video", "image2video", "element2video"], available: true },
-  { id: "pixverse-c1", name: "PixVerse C1", kind: "video", available: false },
   { id: "pixverse-v6", name: "PixVerse V6", kind: "video", mcpId: "pixverseV6", modes: ["text2video", "image2video"], available: true },
+  { id: "wan-2-7", name: "Wan 2.7", kind: "video", mcpId: "wan2-7", modes: ["text2video", "image2video", "element2video"], available: true },
+  { id: "grok-imagine", name: "Grok Imagine", kind: "video", mcpId: "grok-imagine-1-5", modes: ["image2video"], available: true },
+  // Not exposed via MCP yet — kept for future, hidden in UI when unavailable
+  { id: "pixverse-c1", name: "PixVerse C1", kind: "video", available: false },
   { id: "happyhorse-1-1", name: "HappyHorse 1.1", kind: "video", available: false },
   { id: "happyhorse", name: "HappyHorse", kind: "video", available: false },
-  { id: "wan-2-7", name: "Wan 2.7", kind: "video", mcpId: "wan2-7", modes: ["text2video", "image2video", "element2video"], available: true },
   { id: "veo-3-1", name: "Veo 3.1", kind: "video", available: false },
   { id: "kling-3", name: "Kling 3.0", kind: "video", available: false },
   { id: "seedance-1-5-pro", name: "Seedance 1.5 Pro", kind: "video", available: false },
-  { id: "grok-imagine", name: "Grok Imagine", kind: "video", mcpId: "grok-imagine-1-5", modes: ["image2video"], available: true },
   { id: "kling-2-6", name: "Kling 2.6", kind: "video", available: false },
   { id: "wan-2-6", name: "Wan 2.6", kind: "video", available: false },
   { id: "sora-2", name: "Sora 2", kind: "video", available: false },

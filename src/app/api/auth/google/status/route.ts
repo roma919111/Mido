@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { getAppBaseUrl } from "@/lib/app-url";
-import { isGoogleOAuthConfigured, getGoogleRedirectUri } from "@/lib/google-oauth";
+import { getGoogleRedirectUri, isGoogleOAuthConfigured } from "@/lib/google-oauth";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: Request) {
   const configured = await isGoogleOAuthConfigured();
   return NextResponse.json({
     configured,
     appBaseUrl: getAppBaseUrl(),
-    redirectUri: getGoogleRedirectUri(),
+    redirectUri: getGoogleRedirectUri(request),
   });
 }

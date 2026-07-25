@@ -22,14 +22,17 @@ export function AuthForm({ mode }: AuthFormProps) {
   const [error, setError] = useState<string | null>(urlError);
   const [loading, setLoading] = useState(false);
   const [googleReady, setGoogleReady] = useState(false);
-  // Always show email form so customers can register even if Google is offline.
-  const [showEmail, setShowEmail] = useState(true);
+  const [redirectUri, setRedirectUri] = useState("");
 
   useEffect(() => {
     void (async () => {
       try {
-        const { data } = await fetchJson<{ configured?: boolean }>("/api/auth/google/status");
+        const { data } = await fetchJson<{
+          configured?: boolean;
+          redirectUri?: string;
+        }>("/api/auth/google/status");
         setGoogleReady(Boolean(data.configured));
+        setRedirectUri(data.redirectUri || "");
       } catch {
         setGoogleReady(false);
       }
@@ -37,7 +40,6 @@ export function AuthForm({ mode }: AuthFormProps) {
   }, []);
 
   function startGoogle() {
-    // Only navigate to Google when the user explicitly taps the button.
     const q = new URLSearchParams();
     if (paywall) q.set("paywall", "1");
     else q.set("next", next);
@@ -68,7 +70,7 @@ export function AuthForm({ mode }: AuthFormProps) {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4 py-10">
+    <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4 py-10" dir="rtl">
       <Link href="/" className="w-fit">
         <BrandLogo size="lg" />
       </Link>
@@ -78,7 +80,7 @@ export function AuthForm({ mode }: AuthFormProps) {
       </h1>
       <p className="mt-2 text-sm text-white/50">
         {mode === "signup"
-          ? "أنشئ حسابك عبر Google، ثم ترجع تلقائيًا إلى Veronix.ai"
+          ? "أي شخص يقدر ينشئ حساب — بالبريد مباشرة، أو عبر Google."
           : "ادخل لحسابك لإدارة الكريدت والـ Assets"}
       </p>
 
@@ -88,12 +90,55 @@ export function AuthForm({ mode }: AuthFormProps) {
         </p>
       )}
 
-      {/* Explicit click only — never auto-redirect to Google */}
+      {/* Primary path: email — works for every customer without Google Console */}
+      <form onSubmit={onSubmit} className="mt-6 space-y-3">
+        {mode === "signup" && (
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="الاسم"
+            className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none"
+          />
+        )}
+        <input
+          type="email"
+          required
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="البريد"
+          className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none"
+          dir="ltr"
+        />
+        <input
+          type="password"
+          required
+          minLength={6}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="كلمة المرور"
+          className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none"
+          dir="ltr"
+        />
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full rounded-xl bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] py-3.5 text-sm font-semibold text-white disabled:opacity-60"
+        >
+          {loading ? "…" : mode === "login" ? "دخول بالبريد" : "إنشاء حساب بالبريد"}
+        </button>
+      </form>
+
+      <div className="my-5 flex items-center gap-3 text-[11px] text-white/35">
+        <div className="h-px flex-1 bg-white/10" />
+        أو
+        <div className="h-px flex-1 bg-white/10" />
+      </div>
+
       <button
         type="button"
         onClick={() => startGoogle()}
         disabled={!googleReady}
-        className="mt-6 flex w-full items-center justify-center gap-3 rounded-xl border border-white/15 bg-white px-4 py-3.5 text-sm font-semibold text-black transition enabled:hover:bg-white/90 disabled:opacity-50"
+        className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/15 bg-white px-4 py-3.5 text-sm font-semibold text-black transition enabled:hover:bg-white/90 disabled:opacity-50"
       >
         <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden>
           <path
@@ -113,61 +158,13 @@ export function AuthForm({ mode }: AuthFormProps) {
             d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4.1 5.5l6.3 5.2C39.9 36.2 44 31 44 24c0-1.2-.1-2.3-.4-3.5z"
           />
         </svg>
-        {mode === "signup" ? "إنشاء حساب عبر Google" : "دخول عبر Google"}
+        {mode === "signup" ? "متابعة عبر Google" : "دخول عبر Google"}
       </button>
 
-      {!googleReady && (
-        <p className="mt-2 text-xs text-amber-200/80">
-          Google غير مفعّل بعد. راجع{" "}
-          <Link href="/setup/google" className="underline">
-            إعداد Google
-          </Link>
+      {googleReady && redirectUri && (
+        <p className="mt-2 break-all text-[10px] text-white/35" dir="ltr">
+          Google Redirect URI: {redirectUri}
         </p>
-      )}
-
-      <button
-        type="button"
-        onClick={() => setShowEmail((v) => !v)}
-        className="mt-4 text-center text-xs text-white/40 underline-offset-2 hover:text-white/70 hover:underline"
-      >
-        {showEmail ? "إخفاء البريد" : "أو استخدم البريد وكلمة المرور"}
-      </button>
-
-      {showEmail && (
-        <form onSubmit={onSubmit} className="mt-4 space-y-3">
-          {mode === "signup" && (
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="الاسم"
-              className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none"
-            />
-          )}
-          <input
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="البريد"
-            className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none"
-          />
-          <input
-            type="password"
-            required
-            minLength={6}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="كلمة المرور"
-            className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none"
-          />
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-xl border border-white/15 bg-white/5 py-3 text-sm font-semibold text-white"
-          >
-            {loading ? "…" : mode === "login" ? "دخول بالبريد" : "تسجيل بالبريد"}
-          </button>
-        </form>
       )}
 
       {error && <p className="mt-3 text-sm text-rose-300">{error}</p>}

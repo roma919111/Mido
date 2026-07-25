@@ -1,10 +1,12 @@
 import { createHash, randomBytes } from "node:crypto";
+import { cookies } from "next/headers";
 import { getAppBaseUrl } from "@/lib/app-url";
 import { loadGoogleCredentials } from "@/lib/google-credentials";
 
 const GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN = "https://oauth2.googleapis.com/token";
 const GOOGLE_USERINFO = "https://openidconnect.googleapis.com/v1/userinfo";
+const REDIRECT_COOKIE = "veronix_google_redirect";
 
 export async function isGoogleOAuthConfigured(): Promise<boolean> {
   return Boolean(await loadGoogleCredentials());
@@ -18,8 +20,47 @@ async function requireCreds() {
   return creds;
 }
 
-export function getGoogleRedirectUri(): string {
-  return `${getAppBaseUrl().replace(/\/$/, "")}/api/auth/google/callback`;
+/** Public site origin for OAuth redirects (tunnel-safe). */
+export function resolvePublicOrigin(request?: Request): string {
+  const configured = getAppBaseUrl().replace(/\/$/, "");
+  if (configured && !/localhost|127\.0\.0\.1/i.test(configured)) {
+    return configured;
+  }
+  if (request) {
+    const host =
+      request.headers.get("x-forwarded-host") ||
+      request.headers.get("host") ||
+      new URL(request.url).host;
+    const proto =
+      request.headers.get("x-forwarded-proto") ||
+      (host.includes("localhost") ? "http" : "https");
+    if (host) return `${proto}://${host}`.replace(/\/$/, "");
+  }
+  return configured || "http://localhost:3000";
+}
+
+export function getGoogleRedirectUri(request?: Request): string {
+  return `${resolvePublicOrigin(request)}/api/auth/google/callback`;
+}
+
+export async function rememberGoogleRedirectUri(redirectUri: string): Promise<void> {
+  const jar = await cookies();
+  jar.set(REDIRECT_COOKIE, redirectUri, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: redirectUri.startsWith("https://"),
+    path: "/",
+    maxAge: 60 * 10,
+  });
+}
+
+export async function readRememberedGoogleRedirectUri(
+  fallbackRequest?: Request,
+): Promise<string> {
+  const jar = await cookies();
+  const saved = jar.get(REDIRECT_COOKIE)?.value?.trim();
+  if (saved) return saved;
+  return getGoogleRedirectUri(fallbackRequest);
 }
 
 export function createOAuthState(nextPath: string): string {
@@ -41,11 +82,16 @@ export function parseOAuthState(state: string | null): { next: string } {
   }
 }
 
-export async function buildGoogleAuthUrl(state: string): Promise<string> {
+export async function buildGoogleAuthUrl(
+  state: string,
+  request?: Request,
+): Promise<string> {
   const { clientId } = await requireCreds();
+  const redirectUri = getGoogleRedirectUri(request);
+  await rememberGoogleRedirectUri(redirectUri);
   const params = new URLSearchParams({
     client_id: clientId,
-    redirect_uri: getGoogleRedirectUri(),
+    redirect_uri: redirectUri,
     response_type: "code",
     scope: "openid email profile",
     access_type: "online",
@@ -55,16 +101,20 @@ export async function buildGoogleAuthUrl(state: string): Promise<string> {
   return `${GOOGLE_AUTH}?${params.toString()}`;
 }
 
-export async function exchangeGoogleCode(code: string): Promise<{
+export async function exchangeGoogleCode(
+  code: string,
+  request?: Request,
+): Promise<{
   access_token: string;
   id_token?: string;
 }> {
   const { clientId, clientSecret } = await requireCreds();
+  const redirectUri = await readRememberedGoogleRedirectUri(request);
   const body = new URLSearchParams({
     code,
     client_id: clientId,
     client_secret: clientSecret,
-    redirect_uri: getGoogleRedirectUri(),
+    redirect_uri: redirectUri,
     grant_type: "authorization_code",
   });
 
