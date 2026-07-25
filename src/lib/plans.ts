@@ -6,6 +6,8 @@ export interface SubscriptionPlan {
   priceUsd: number;
   monthlyCredits: number;
   description: string;
+  /** Bullet perks shown under the plan (checkmarks). */
+  features: string[];
   highlight?: boolean;
 }
 
@@ -20,24 +22,27 @@ export interface TopUpPack {
 export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
   {
     id: "free",
-    name: "المجانية",
+    name: "الأساسية",
     priceUsd: 0,
     monthlyCredits: 0,
-    description: "بدون اشتراك وبدون كريدت. رقِّ لباقة مدفوعة للتوليد وشحن الرصيد.",
+    description: "ابدأ مجاناً، ثم رقِّ لباقة مدفوعة للتوليد المستمر وشحن الرصيد.",
+    features: ["فيديو واحد مجاني", "صورة واحدة مجانية"],
   },
   {
     id: "mini",
-    name: "الأولى",
+    name: "برو",
     priceUsd: 10,
-    monthlyCredits: 7500,
-    description: "باقة شهرية مناسبة للبداية والاستخدام الخفيف.",
+    monthlyCredits: 7200,
+    description: "باقة شهرية مناسبة للإنتاج المنتظم.",
+    features: ["١٥٠ فيديو ~", "١٢٠٠ صورة ~"],
   },
   {
     id: "pro",
-    name: "الثانية",
+    name: "الترا",
     priceUsd: 15,
-    monthlyCredits: 11500,
-    description: "رصيد أعلى لصنّاع المحتوى المنتظمين.",
+    monthlyCredits: 14400,
+    description: "أعلى باقة لصنّاع المحتوى بكثافة عالية.",
+    features: ["٣٠٠ فيديو ~", "١٢٠٠٠ صورة ~"],
     highlight: true,
   },
 ];

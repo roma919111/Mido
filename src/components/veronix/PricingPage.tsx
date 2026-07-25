@@ -122,7 +122,7 @@ export function PricingPage() {
       <main className="mx-auto max-w-5xl px-4 pb-28 pt-8 sm:px-6" dir="rtl">
         <h1 className="font-display text-3xl font-extrabold">الباقات والشحن</h1>
         <p className="mt-2 text-white/50">
-          ابدأ بالمجانية، ثم رقِّ للاشتراك الشهري. إضافة الكريدت متاحة بعد باقة مدفوعة فقط.
+          ابدأ بالأساسية، ثم رقِّ للاشتراك الشهري. إضافة الكريدت متاحة بعد باقة مدفوعة فقط.
         </p>
 
         {currentPlan && (
@@ -151,10 +151,10 @@ export function PricingPage() {
         <h2 className="mt-10 font-display text-2xl font-bold">الباقات</h2>
         <p className="mt-2 text-white/50">
           {onFree
-            ? "أنت على الباقة المجانية. رقِّ لباقة مدفوعة للحصول على كريدت شهري وإمكانية الشحن."
+            ? "أنت على الباقة الأساسية. رقِّ لباقة مدفوعة للحصول على كريدت شهري وإمكانية الشحن."
             : onHighest
-              ? "أنت على أعلى باقة. يمكنك إضافة كريدت أو الرجوع للباقة المجانية لإيقاف الاستقطاع."
-              : "لا يمكن إعادة اختيار نفس الباقة — الترقية للأعلى أو الرجوع للمجانية فقط."}
+              ? "أنت على أعلى باقة. يمكنك إضافة كريدت أو الرجوع للباقة الأساسية لإيقاف الاستقطاع."
+              : "لا يمكن إعادة اختيار نفس الباقة — الترقية للأعلى أو الرجوع للأساسية فقط."}
         </p>
 
         <div className="mt-6 grid gap-4 md:grid-cols-3">
@@ -210,11 +210,21 @@ export function PricingPage() {
                     </>
                   )}
                 </p>
-                <p className="mt-2 text-sm text-white/60">
-                  {plan.monthlyCredits > 0
-                    ? `${plan.monthlyCredits.toLocaleString("en-US")} كريدت / شهر`
-                    : "0 كريدت — بدون شحن"}
-                </p>
+                {plan.monthlyCredits > 0 && (
+                  <p className="mt-2 text-sm text-white/60">
+                    {plan.monthlyCredits.toLocaleString("en-US")} كريدت / شهر
+                  </p>
+                )}
+                <ul className="mt-3 space-y-2">
+                  {plan.features.map((feature) => (
+                    <li key={feature} className="flex items-start gap-2 text-sm text-white/70">
+                      <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#22f0ff]/15 text-[#22f0ff] ring-1 ring-[#22f0ff]/30">
+                        <Check className="h-3 w-3" strokeWidth={3} />
+                      </span>
+                      <span>{feature}</span>
+                    </li>
+                  ))}
+                </ul>
                 <p className="mt-3 text-sm text-white/45">{plan.description}</p>
                 <button
                   type="button"
@@ -240,7 +250,7 @@ export function PricingPage() {
                       : isLowerPaid
                         ? "باقة أدنى — غير متاحة"
                         : switchingToFree
-                          ? "الرجوع للباقة المجانية"
+                          ? "الرجوع للباقة الأساسية"
                           : canUpgrade
                             ? `رقِّ إلى الباقة ${plan.name}`
                             : `اختر الباقة ${plan.name}`}
@@ -278,12 +288,12 @@ export function PricingPage() {
                     ? onHighest
                       ? "أنت على أعلى باقة — اشحن رصيدك الآن"
                       : "حزم الشحن الإضافي"
-                    : "الشحن غير متاح على الباقة المجانية"}
+                    : "الشحن غير متاح على الباقة الأساسية"}
                 </h2>
                 <p className="mt-2 max-w-xl text-sm text-white/55">
                   {topUpsAllowed
                     ? "اشحن رصيدك فورًا دون انتظار تجديد الباقة."
-                    : "رقِّ إلى الباقة الأولى أو الثانية لتفعيل إضافة الكريدت."}
+                    : "رقِّ إلى باقة برو أو الترا لتفعيل إضافة الكريدت."}
                 </p>
               </div>
               {topUpsAllowed ? (
@@ -352,9 +362,9 @@ export function PricingPage() {
           ) : (
             <div className="px-5 py-8 sm:px-7">
               <div className="rounded-3xl border border-dashed border-white/15 bg-white/[0.03] px-5 py-8 text-center">
-                <p className="font-display text-lg font-semibold">الشحن مقفل على الباقة المجانية</p>
+                <p className="font-display text-lg font-semibold">الشحن مقفل على الباقة الأساسية</p>
                 <p className="mx-auto mt-2 max-w-md text-sm text-white/50">
-                  اختر الباقة الأولى (7,500 كريدت / 10$) أو الثانية (11,500 كريدت / 15$) لتفعيل الشحن الشهري والإضافي.
+                  اختر باقة برو (7,200 كريدت / 10$) أو الترا (14,400 كريدت / 15$) لتفعيل الشحن الشهري والإضافي.
                 </p>
                 <div className="mt-5 flex flex-wrap justify-center gap-3">
                   {SUBSCRIPTION_PLANS.filter((p) => isPaidPlan(p.id)).map((plan) => (

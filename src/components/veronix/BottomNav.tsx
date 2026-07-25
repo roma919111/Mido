@@ -1,8 +1,9 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { FolderOpen, Home, Lightbulb, Sparkles, Wrench } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { Clapperboard, FolderOpen, Home, ImageIcon, Lightbulb, Sparkles, Wrench } from "lucide-react";
 
 const ITEMS: Array<{
   href: string;
@@ -12,37 +13,118 @@ const ITEMS: Array<{
 }> = [
   { href: "/", label: "Home", icon: Home },
   { href: "/inspire", label: "Inspire", icon: Lightbulb },
-  { href: "/", label: "Create", icon: Sparkles, center: true },
+  { href: "/create", label: "إنشاء", icon: Sparkles, center: true },
   { href: "/tools", label: "Tools", icon: Wrench },
   { href: "/assets", label: "Assets", icon: FolderOpen },
 ];
 
 export function BottomNav() {
   const pathname = usePathname();
+  const router = useRouter();
+  const [createOpen, setCreateOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setCreateOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!createOpen) return;
+    function onPointerDown(event: MouseEvent | TouchEvent) {
+      const target = event.target as Node;
+      if (menuRef.current && !menuRef.current.contains(target)) {
+        setCreateOpen(false);
+      }
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setCreateOpen(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [createOpen]);
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-white/10 bg-[#0b0d12]/95 pb-[env(safe-area-inset-bottom)]">
       <div className="mx-auto grid max-w-lg grid-cols-5 items-end px-2 pt-2">
         {ITEMS.map((item) => {
           const Icon = item.icon;
-          const active =
-            item.href === "/"
+          const active = item.center
+            ? pathname.startsWith("/create")
+            : item.href === "/"
               ? pathname === "/"
-              : pathname.startsWith(item.href.replace("/#create", "/"));
+              : pathname.startsWith(item.href);
+
           if (item.center) {
             return (
-              <Link
-                key={item.label}
-                href="/"
-                className="relative -mt-5 flex flex-col items-center justify-center"
-              >
-                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] shadow-[0_10px_30px_rgba(124,92,255,0.45)] ring-4 ring-[#0b0d12]">
-                  <Icon className="h-6 w-6 text-white" />
-                </span>
-                <span className="mt-1 text-[10px] font-semibold text-white/80">{item.label}</span>
-              </Link>
+              <div key={item.label} className="relative -mt-5 flex flex-col items-center justify-center" ref={menuRef}>
+                {createOpen && (
+                  <div
+                    className="absolute bottom-[4.6rem] z-50 w-[min(92vw,22rem)]"
+                    dir="rtl"
+                  >
+                    <div className="overflow-hidden rounded-[22px] border border-white/12 bg-[#12161f]/98 shadow-[0_20px_50px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+                      <div className="border-b border-white/8 px-4 py-3">
+                        <p className="text-xs font-semibold tracking-[0.14em] text-[#22f0ff]/90">إنشاء</p>
+                        <p className="mt-1 text-sm text-white/55">اختر نوع المحتوى للمتابعة</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 p-3">
+                        {/* RTL: first cell is right = video, second cell is left = image */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCreateOpen(false);
+                            router.push("/create/video");
+                          }}
+                          className="group flex flex-col items-center gap-2 rounded-2xl border border-[#22f0ff]/25 bg-[linear-gradient(180deg,rgba(34,240,255,0.12),rgba(20,24,33,0.95))] px-3 py-4 transition hover:border-[#22f0ff]/55 hover:brightness-110"
+                        >
+                          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#22f0ff]/15 text-[#22f0ff] ring-1 ring-[#22f0ff]/25">
+                            <Clapperboard className="h-6 w-6" />
+                          </span>
+                          <span className="text-sm font-bold text-white">فيديو</span>
+                          <span className="text-[11px] text-white/45">كل موديلات الفيديو</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCreateOpen(false);
+                            router.push("/create/image");
+                          }}
+                          className="group flex flex-col items-center gap-2 rounded-2xl border border-white/12 bg-[#141821] px-3 py-4 transition hover:border-white/30 hover:bg-[#1a2030]"
+                        >
+                          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/8 text-white ring-1 ring-white/15">
+                            <ImageIcon className="h-6 w-6" />
+                          </span>
+                          <span className="text-sm font-bold text-white">صورة</span>
+                          <span className="text-[11px] text-white/45">كل موديلات الصور</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  aria-expanded={createOpen}
+                  aria-label="إنشاء"
+                  onClick={() => setCreateOpen((v) => !v)}
+                  className="relative flex flex-col items-center justify-center"
+                >
+                  <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] shadow-[0_10px_30px_rgba(124,92,255,0.45)] ring-4 ring-[#0b0d12]">
+                    <Icon className="h-6 w-6 text-white" />
+                  </span>
+                  <span className={`mt-1 text-[10px] font-semibold ${active || createOpen ? "text-white" : "text-white/80"}`}>
+                    {item.label}
+                  </span>
+                </button>
+              </div>
             );
           }
+
           return (
             <Link
               key={item.label}

@@ -82,7 +82,7 @@ export async function POST(request: Request) {
     if (isHighestPlan(user.planId) && isPaidPlan(planId)) {
       return NextResponse.json(
         {
-          error: "أنت على أعلى باقة. أضف كريدت أو ارجع للباقة المجانية.",
+          error: "أنت على أعلى باقة. أضف كريدت أو ارجع للباقة الأساسية.",
           code: "highest_plan_topup_or_free",
         },
         { status: 409 },
@@ -108,7 +108,7 @@ export async function POST(request: Request) {
       });
       return NextResponse.json({
         ok: true,
-        message: "تم التحويل إلى الباقة المجانية وإيقاف الاستقطاع الشهري.",
+        message: "تم التحويل إلى الباقة الأساسية وإيقاف الاستقطاع الشهري.",
         user: publicUser(updated),
       });
     }

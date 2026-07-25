@@ -29,11 +29,13 @@ const RESOLUTIONS = ["360p", "480p", "720p", "1080p", "1K"] as const;
 interface CreateStudioProps {
   user: CustomerUser | null;
   onUserRefresh: () => Promise<void>;
+  /** Lock studio to one media type (dedicated create pages). */
+  lockedMedia?: "image" | "video";
 }
 
-export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
+export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioProps) {
   const router = useRouter();
-  const [media, setMedia] = useState<"image" | "video">("video");
+  const [media, setMedia] = useState<"image" | "video">(lockedMedia || "video");
   const [imageModels, setImageModels] = useState<CatalogModel[]>([]);
   const [videoModels, setVideoModels] = useState<CatalogModel[]>([]);
   const [selectedModelId, setSelectedModelId] = useState(VERONIX_MODEL_ID);
@@ -71,6 +73,10 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
     [imageModels, videoModels],
   );
   const selectedModel = allModels.find((m) => m.id === selectedModelId) ?? null;
+
+  useEffect(() => {
+    if (lockedMedia) setMedia(lockedMedia);
+  }, [lockedMedia]);
 
   useEffect(() => {
     void (async () => {
@@ -281,8 +287,11 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
         },
       );
       if (!res.ok) throw new Error(data.error || "Enhance failed");
-      setPrompt(data.enhanced || prompt);
-      setStatus("تم تحسين الوصف");
+      const next = (data.enhanced || "").trim();
+      if (!next) throw new Error("لم يتم إنشاء وصف محسّن");
+      // Full replace — never append polish onto the existing field.
+      setPrompt(next);
+      setStatus("تم استبدال الوصف بالنسخة المحسّنة");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Enhance failed");
     }
@@ -526,25 +535,37 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
           </div>
         )}
 
-      <div className="flex gap-2">
-        {(
-          [
-            { id: "image" as const, label: "صورة" },
-            { id: "video" as const, label: "فيديو" },
-          ] as const
-        ).map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => setMedia(item.id)}
-            className={`rounded-full px-4 py-2 text-sm font-semibold ${
-              media === item.id ? "bg-white text-black" : "border border-white/10 text-white/70"
-            }`}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
+      {!lockedMedia && (
+        <div className="flex gap-2">
+          {(
+            [
+              { id: "image" as const, label: "صورة" },
+              { id: "video" as const, label: "فيديو" },
+            ] as const
+          ).map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setMedia(item.id)}
+              className={`rounded-full px-4 py-2 text-sm font-semibold ${
+                media === item.id ? "bg-white text-black" : "border border-white/10 text-white/70"
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {lockedMedia && (
+        <div className="inline-flex items-center gap-2 rounded-full border border-[#22f0ff]/25 bg-[#22f0ff]/10 px-3 py-1.5 text-xs font-semibold text-[#22f0ff]">
+          {lockedMedia === "video" ? "استوديو الفيديو" : "استوديو الصور"}
+          <span className="text-white/40">·</span>
+          <span className="font-normal text-white/55">
+            {lockedMedia === "video" ? "موديلات الفيديو فقط" : "موديلات الصور فقط"}
+          </span>
+        </div>
+      )}
 
       <button
         type="button"
@@ -647,7 +668,7 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
             className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/70"
           >
             <WandSparkles className="h-3.5 w-3.5 text-[#22f0ff]" />
-            Auto Polish
+            تحسين الوصف
           </button>
         </div>
       </div>
@@ -824,6 +845,12 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
         onClose={() => setModelsOpen(false)}
         onChange={(id) => {
           setSelectedModelId(id);
+          if (lockedMedia) {
+            if (lockedMedia === "video" && id === VERONIX_MODEL_ID) {
+              setDuration(FREE_VERONIX_DURATION_SECONDS);
+            }
+            return;
+          }
           if (videoModels.some((m) => m.id === id)) {
             setMedia("video");
             if (id === VERONIX_MODEL_ID) setDuration(FREE_VERONIX_DURATION_SECONDS);
