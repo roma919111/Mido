@@ -52,10 +52,10 @@ export async function POST(request: Request) {
       if (!(await isStripeConfigured())) {
         return NextResponse.json(
           {
-            error:
-              "الدفع غير مفعّل حاليًا. لا يمكن إضافة كريدت بدون دفع عبر Stripe. افتح /setup/stripe وأدخل المفاتيح أولًا.",
+            error: "الدفع غير مفعّل. افتح /setup/stripe وأدخل مفاتيح Stripe أولًا.",
             code: "stripe_required",
             needsStripeSetup: true,
+            setupUrl: "/setup/stripe",
           },
           { status: 503 },
         );
@@ -123,10 +123,10 @@ export async function POST(request: Request) {
     if (!(await isStripeConfigured())) {
       return NextResponse.json(
         {
-          error:
-            "الدفع غير مفعّل حاليًا. لا تتم الترقية ولا يُضاف أي كريدت بدون دفع حقيقي عبر Stripe. افتح /setup/stripe وأدخل المفاتيح أولًا.",
-          code: "stripe_required",
-          needsStripeSetup: true,
+            error: "الدفع غير مفعّل. افتح /setup/stripe وأدخل مفاتيح Stripe أولًا.",
+            code: "stripe_required",
+            needsStripeSetup: true,
+            setupUrl: "/setup/stripe",
         },
         { status: 503 },
       );

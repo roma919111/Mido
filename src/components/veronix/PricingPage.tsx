@@ -26,6 +26,7 @@ export function PricingPage() {
   const [user, setUser] = useState<CustomerUser | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [stripeReady, setStripeReady] = useState<boolean | null>(null);
 
   const currentPlanId = normalizePlanId(user?.planId);
   const currentPlan = getPlan(currentPlanId);
@@ -40,6 +41,13 @@ export function PricingPage() {
 
   useEffect(() => {
     void (async () => {
+      try {
+        const stripe = await fetchJson<{ configured?: boolean }>("/api/setup/stripe");
+        setStripeReady(Boolean(stripe.data.configured));
+      } catch {
+        setStripeReady(false);
+      }
+
       const { data } = await fetchJson<{ user: CustomerUser | null }>("/api/auth/customer/me");
       setUser(data.user);
 
@@ -97,12 +105,12 @@ export function PricingPage() {
         body: JSON.stringify(body),
       });
       if (!res.ok) {
-        throw new Error(
-          data.error ||
-            (data.needsStripeSetup
-              ? "الدفع غير مفعّل — لن تُضاف كريدت بدون Stripe."
-              : "فشل الدفع"),
-        );
+        if (data.needsStripeSetup) {
+          setStripeReady(false);
+          router.push("/setup/stripe");
+          return;
+        }
+        throw new Error(data.error || "فشل الدفع");
       }
       if (data.url) {
         // Real Stripe Checkout only — credits apply after paid webhook/confirm.
@@ -151,6 +159,21 @@ export function PricingPage() {
                 رصيدك الآن {(user?.credits ?? 0).toLocaleString("en-US")}
               </p>
             </div>
+          </div>
+        )}
+
+        {stripeReady === false && (
+          <div className="mt-4 rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-4 text-sm text-amber-50">
+            <p className="font-semibold">الدفع غير مفعّل</p>
+            <p className="mt-1 text-amber-50/80">
+              فعّل Stripe أولًا — بدون مفاتيح لن تتم ترقية ولا إضافة كريدت.
+            </p>
+            <a
+              href="/setup/stripe"
+              className="mt-3 inline-flex rounded-full bg-white px-4 py-2 text-xs font-bold text-black"
+            >
+              تفعيل Stripe الآن
+            </a>
           </div>
         )}
 

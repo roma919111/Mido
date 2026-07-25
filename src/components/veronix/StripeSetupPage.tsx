@@ -88,9 +88,9 @@ export function StripeSetupPage() {
   return (
     <div className="mx-auto min-h-screen max-w-xl px-4 py-10 text-white" dir="rtl">
       <BrandLogo size="lg" />
-      <h1 className="mt-6 font-display text-2xl font-bold">ربط Stripe</h1>
+      <h1 className="mt-6 font-display text-2xl font-bold">تفعيل Stripe</h1>
       <p className="mt-2 text-sm text-white/50">
-        عشان الدفع الحقيقي يشتغل (بدل الوضع التجريبي) نحتاج مفتاحين من حسابك في Stripe.
+        الصق مفاتيح Stripe هنا الآن. بدونها الترقية وشحن الكريدت مقفولة — وما ينضاف أي رصيد إلا بعد دفع حقيقي.
       </p>
 
       <div
