@@ -137,7 +137,7 @@ function withDurationFallback(model: CatalogModel): CatalogModel {
   };
 }
 
-export const VIDEO_MODELS: CatalogModel[] = [
+const VIDEO_MODELS_BASE: CatalogModel[] = [
   {
     id: "seedance-2-mini",
     name: "Veronix",
@@ -204,7 +204,10 @@ export const VIDEO_MODELS: CatalogModel[] = [
     modes: ["image2video"],
     available: true,
   },
-].map(withDurationFallback);
+];
+
+export const VIDEO_MODELS: CatalogModel[] =
+  VIDEO_MODELS_BASE.map(withDurationFallback);
 
 export const ALL_MODELS = [...IMAGE_MODELS, ...VIDEO_MODELS];
 
