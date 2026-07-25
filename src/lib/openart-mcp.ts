@@ -98,7 +98,7 @@ export async function withOpenArtClient<T>(fn: (client: Client) => Promise<T>): 
     },
   });
 
-  const client = new Client({ name: "studio-ai", version: "1.0.0" });
+  const client = new Client({ name: "vyronix-ai", version: "1.0.0" });
   await client.connect(transport);
 
   try {
