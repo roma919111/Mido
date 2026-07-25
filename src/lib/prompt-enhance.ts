@@ -1,21 +1,80 @@
 /**
  * Fully rewrite a user prompt into a polished generation brief.
- * Replaces the original text (does not append suffixes).
+ * Always replaces the field contents (never appends polish onto prior polish).
  */
 
 function isArabic(text: string): boolean {
   return /[\u0600-\u06FF]/.test(text);
 }
 
-/** Strip leftover polish fragments from earlier enhance versions. */
-function stripLegacyPolish(prompt: string): string {
-  return prompt
-    .replace(
-      /\.?\s*(Centered subject|Smooth camera movement|intentional framing|temporally consistent subject|photorealistic|soft volumetric light|clean background separation|premium production aesthetic|cinematic lighting|rich color grading|sharp detail|shallow depth of field|dramatic atmosphere|high dynamic range|filmic contrast|meticulous composition|studio-quality finish|coherent subject focus|natural motion cues|polished texture|Refined for .+? generation with tighter subject clarity and balanced lighting)\.?/gi,
-      " ",
-    )
+const ARABIC_POLISH_MARKERS = [
+  "حركة كاميرا",
+  "دفعة كاميرا",
+  "دوران خفيف",
+  "حركة طبيعية",
+  "إيقاع أكشن",
+  "تدفّق حركة",
+  "إضاءة سينمائية",
+  "أجواء درامية",
+  "جودة إنتاج",
+  "تكوين مركزي",
+  "إطار سينمائي",
+  "عزل نظيف",
+  "إضاءة استوديو",
+  "إضاءة درامية",
+  "إضاءة طبيعية",
+  "جودة فوتورياليستية",
+  "لمسة إنتاج",
+  "تباين متوازن",
+  "مدة المشهد متماسكة",
+];
+
+const ENGLISH_POLISH_MARKERS = [
+  "smooth tracking camera",
+  "cinematic push-in",
+  "subtle orbit move",
+  "natural temporally consistent",
+  "dynamic action pacing",
+  "fluid cinematic motion",
+  "cinematic lighting",
+  "dramatic atmosphere",
+  "premium production",
+  "intentional centered framing",
+  "cinematic composition",
+  "hero framing",
+  "soft studio lighting",
+  "dramatic high-dynamic-range",
+  "premium natural light",
+  "photorealistic sharpness",
+  "luxury finish",
+  "balanced contrast",
+  "cohesive shot",
+  "Centered subject",
+  "Smooth camera movement",
+  "Refined for",
+];
+
+/** Recover the user's core idea before any previous polish layers. */
+export function extractCoreIdea(prompt: string): string {
+  let core = prompt.trim().replace(/\s+/g, " ");
+  if (!core) return "";
+
+  core = core.replace(
+    /\.?\s*(Centered subject|Smooth camera movement|intentional framing|temporally consistent subject|photorealistic|soft volumetric light|clean background separation|premium production aesthetic|cinematic lighting|rich color grading|sharp detail|shallow depth of field|dramatic atmosphere|high dynamic range|filmic contrast|meticulous composition|studio-quality finish|coherent subject focus|natural motion cues|polished texture|Refined for .+? generation with tighter subject clarity and balanced lighting)\.?/gi,
+    " ",
+  );
+
+  const markers = isArabic(core) ? ARABIC_POLISH_MARKERS : ENGLISH_POLISH_MARKERS;
+  for (const marker of markers) {
+    const idx = core.toLowerCase().indexOf(marker.toLowerCase());
+    if (idx > 0) {
+      core = core.slice(0, idx);
+    }
+  }
+
+  return core
     .replace(/\s+/g, " ")
-    .replace(/\s*\.\s*\./g, ".")
+    .replace(/[.\s،,]+$/g, "")
     .trim();
 }
 
@@ -48,7 +107,7 @@ function videoRewriteAr(idea: string, seed: number): string {
     cams[seed % cams.length],
     motions[(seed + 1) % motions.length],
     looks[(seed + 2) % looks.length],
-    "مدة المشهد متماسكة، بدون تشويش أو عناصر عشوائية.",
+    "مدة المشهد متماسكة، بدون تشويش أو عناصر عشوائية",
   ].join(". ");
 }
 
@@ -126,31 +185,30 @@ function imageRewriteEn(idea: string, seed: number): string {
 }
 
 /**
- * Returns a complete replacement prompt (never appends to the original string as a suffix dump).
+ * Returns a complete replacement prompt built from the user's core idea.
  */
 export function enhancePrompt(prompt: string, mode: string): string {
-  const cleaned = stripLegacyPolish(prompt.trim().replace(/\s+/g, " "));
-  if (!cleaned) return "";
+  const idea = extractCoreIdea(prompt);
+  if (!idea) return "";
 
-  const seed = hashSeed(cleaned + mode);
+  const seed = hashSeed(idea + mode);
   const video = mode.includes("video");
-  const arabic = isArabic(cleaned);
+  const arabic = isArabic(idea);
 
   if (arabic) {
-    return video ? videoRewriteAr(cleaned, seed) : imageRewriteAr(cleaned, seed);
+    return video ? videoRewriteAr(idea, seed) : imageRewriteAr(idea, seed);
   }
-  return video ? videoRewriteEn(cleaned, seed) : imageRewriteEn(cleaned, seed);
+  return video ? videoRewriteEn(idea, seed) : imageRewriteEn(idea, seed);
 }
 
 export function enhancePromptVariant(prompt: string, mode: string, emphasis: string): string {
-  const base = stripLegacyPolish(prompt.trim().replace(/\s+/g, " "));
-  if (!base) return "";
-  const arabic = isArabic(base);
+  const idea = extractCoreIdea(prompt);
+  if (!idea) return "";
+  const arabic = isArabic(idea);
   const emphasisLine = arabic
-    ? emphasis.includes("mood")
-      ? "ركّز على المزاج والملمس البصري"
+    ? /mood|texture/i.test(emphasis)
+      ? "مع تركيز أقوى على المزاج والملمس البصري"
       : emphasis
     : emphasis;
-  // Re-run full rewrite with emphasis folded into the idea (still a full replacement).
-  return enhancePrompt(`${base}. ${emphasisLine}`, mode);
+  return enhancePrompt(`${idea}. ${emphasisLine}`, mode);
 }
