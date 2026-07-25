@@ -1,6 +1,7 @@
 "use client";
 
-import { Coins, Sparkles, Zap } from "lucide-react";
+import { Coins, Zap } from "lucide-react";
+import { BrandLogo } from "./BrandLogo";
 
 interface HeaderProps {
   credits: number;
@@ -14,15 +15,9 @@ export function Header({ credits, plan, configured, email }: HeaderProps) {
     <header className="relative z-20 border-b border-white/8 bg-[rgba(10,12,16,0.72)] backdrop-blur-xl">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
         <div className="flex items-center gap-3">
-          <div className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-[var(--accent)] to-[var(--accent-2)] shadow-[0_0_32px_rgba(46,230,166,0.28)]">
-            <Sparkles className="h-5 w-5 text-[#06140f]" strokeWidth={2.25} />
-            <span className="pointer-events-none absolute inset-0 animate-shimmer bg-[linear-gradient(110deg,transparent,rgba(255,255,255,0.35),transparent)] bg-[length:200%_100%]" />
-          </div>
           <div className="leading-tight">
-            <p className="font-[family-name:var(--font-display)] text-xl tracking-tight text-white sm:text-2xl">
-              Studio <span className="text-[var(--accent)]">AI</span>
-            </p>
-            <p className="text-xs text-white/45">
+            <BrandLogo size="md" />
+            <p className="mt-0.5 text-xs text-white/45">
               {configured ? email ?? "OpenArt connected" : "Demo mode · connect OpenArt"}
             </p>
           </div>

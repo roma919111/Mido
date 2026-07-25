@@ -6,6 +6,8 @@
   --accent: #2ee6a6;
   --accent-2: #ffb05c;
   --accent-strong: #57f0ba;
+  --neon-cyan: #22f0ff;
+  --neon-cyan-soft: rgba(34, 240, 255, 0.55);
   --surface-elevated: #171b24;
   --font-display: var(--font-syne), ui-sans-serif, system-ui, sans-serif;
   --font-body: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
@@ -106,6 +108,40 @@ body {
 
 .animate-shimmer {
   animation: shimmer 2.8s linear infinite;
+}
+
+.neon-ai-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.45rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: #041018;
+  background: linear-gradient(135deg, #7af7ff 0%, var(--neon-cyan) 45%, #12c8e8 100%);
+  box-shadow:
+    0 0 10px rgba(34, 240, 255, 0.55),
+    0 0 28px rgba(34, 240, 255, 0.35),
+    0 0 48px rgba(34, 240, 255, 0.18);
+  text-shadow: 0 0 12px rgba(255, 255, 255, 0.35);
+  animation: neon-pulse 2.6s ease-in-out infinite;
+}
+
+@keyframes neon-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 10px rgba(34, 240, 255, 0.5),
+      0 0 26px rgba(34, 240, 255, 0.3),
+      0 0 42px rgba(34, 240, 255, 0.14);
+  }
+  50% {
+    box-shadow:
+      0 0 14px rgba(34, 240, 255, 0.75),
+      0 0 36px rgba(34, 240, 255, 0.45),
+      0 0 60px rgba(34, 240, 255, 0.22);
+  }
 }
 
 select option {
