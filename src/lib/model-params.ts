@@ -19,7 +19,14 @@ export function mapResolutionForMcpModel(
     return "std";
   }
 
-  // Pass through Seedance / PixVerse / Wan / Grok style values (360p…1080p / 1K).
+  // PixVerse defaults are often 540p in OpenArt cost tables.
+  if (mcpModel.toLowerCase().includes("pixverse")) {
+    if (r.includes("1080") || r === "1k") return "1080p";
+    if (r.includes("720")) return "720p";
+    if (r.includes("480") || r.includes("540") || r.includes("360")) return "540p";
+  }
+
+  // Pass through Seedance / Wan / Grok style values (360p…1080p / 1K).
   return uiResolution;
 }
 

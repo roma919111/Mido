@@ -1,5 +1,5 @@
 import { callOpenArtTool, OpenArtConfigError, parseToolPayload } from "@/lib/openart-mcp";
-import { ALL_MODELS, getCatalogModel, resolveMcpModel } from "@/lib/model-catalog";
+import { getActiveCatalog, getCatalogModel, resolveMcpModel } from "@/lib/model-catalog";
 import { audioParamForMcpModel, mapResolutionForMcpModel } from "@/lib/model-params";
 import { lookupCachedCost } from "@/lib/openart-cost-cache";
 
@@ -89,9 +89,33 @@ function buildParams(
   mcpModel: string,
 ): Record<string, unknown> {
   if (input.media === "image") {
+    // GPT Image uses resolutionTier + quality; others accept resolution / aspect only.
+    if (mcpModel.includes("gpt-image")) {
+      return {
+        imageCount: input.imageCount ?? 1,
+        aspectRatio: input.aspectRatio ?? "4:3",
+        resolutionTier: "2k",
+        quality: "medium",
+      };
+    }
+    if (mcpModel.includes("kling")) {
+      return {
+        imageCount: input.imageCount ?? 1,
+        aspectRatio: input.aspectRatio ?? "4:3",
+        resolution: "1k",
+      };
+    }
+    if (mcpModel.includes("seedream")) {
+      return {
+        imageCount: input.imageCount ?? 1,
+        aspectRatio: input.aspectRatio ?? "4:3",
+        resolution: "2K",
+      };
+    }
     return {
       imageCount: input.imageCount ?? 1,
       aspectRatio: input.aspectRatio ?? "1:1",
+      ...(input.resolution ? { resolution: input.resolution } : {}),
     };
   }
 
@@ -248,5 +272,5 @@ export async function quoteMultipleModels(
 
 /** All live catalog models that must always go through ×1.8. */
 export function listPricedCatalogModels() {
-  return ALL_MODELS.filter((m) => m.available && m.mcpId);
+  return getActiveCatalog().all.filter((m) => m.available && m.mcpId);
 }

@@ -113,11 +113,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
   useEffect(() => {
     void (async () => {
-      const { data } = await fetchJson<{ image: CatalogModel[]; video: CatalogModel[] }>(
-        "/api/models",
-      );
-      setImageModels(data.image);
-      setVideoModels(data.video);
+      // Force a fresh OpenArt catalog + cost sync so Generate shows ×1.8 for every model.
+      const { data } = await fetchJson<{
+        image: CatalogModel[];
+        video: CatalogModel[];
+      }>("/api/models?sync=1");
+      setImageModels(data.image || []);
+      setVideoModels(data.video || []);
     })();
   }, []);
 
@@ -1039,6 +1041,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         imageModels={imageModels}
         videoModels={videoModels}
         selectedId={selectedModelId}
+        lockedKind={lockedMedia}
         onClose={() => setModelsOpen(false)}
         onChange={(id) => {
           setSelectedModelId(id);

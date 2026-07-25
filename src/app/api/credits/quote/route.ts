@@ -6,12 +6,17 @@ import {
   isFreeVeronixEligible,
   VERONIX_MODEL_ID,
 } from "@/lib/free-trial";
+import { setLiveCatalogCache } from "@/lib/model-catalog";
+import { loadSyncedCatalog } from "@/lib/openart-catalog-sync";
 import { OpenArtConfigError } from "@/lib/openart-mcp";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
+    const synced = await loadSyncedCatalog();
+    if (synced) setLiveCatalogCache({ image: synced.image, video: synced.video });
+
     const body = (await request.json()) as {
       modelIds?: string[];
       media?: "image" | "video";

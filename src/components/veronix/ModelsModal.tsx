@@ -10,6 +10,8 @@ interface ModelsModalProps {
   imageModels: CatalogModel[];
   videoModels: CatalogModel[];
   selectedId: string | null;
+  /** When set, hide the other media tab. */
+  lockedKind?: "image" | "video";
   onClose: () => void;
   onChange: (id: string) => void;
 }
@@ -20,6 +22,7 @@ export function ModelsModal({
   imageModels,
   videoModels,
   selectedId,
+  lockedKind,
   onClose,
   onChange,
 }: ModelsModalProps) {
@@ -28,23 +31,26 @@ export function ModelsModal({
 
   useEffect(() => {
     if (open) {
-      setTab(kind);
+      setTab(lockedKind || kind);
       setQuery("");
     }
-  }, [open, kind]);
+  }, [open, kind, lockedKind]);
 
   const list = useMemo(() => {
-    const base = tab === "image" ? imageModels : videoModels;
-    // Only show live models — hide "قريبًا" clutter from customers.
-    const live = base.filter((m) => m.available);
+    const activeTab = lockedKind || tab;
+    const base = activeTab === "image" ? imageModels : videoModels;
+    // Only show live OpenArt-synced models.
+    const live = base.filter((m) => m.available && m.mcpId);
     const q = query.trim().toLowerCase();
     if (!q) return live;
     return live.filter(
       (m) => m.name.toLowerCase().includes(q) || m.id.toLowerCase().includes(q),
     );
-  }, [tab, imageModels, videoModels, query]);
+  }, [tab, lockedKind, imageModels, videoModels, query]);
 
   if (!open) return null;
+
+  const activeTab = lockedKind || tab;
 
   return (
     <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/70 p-0 sm:items-center sm:p-4">
@@ -52,7 +58,9 @@ export function ModelsModal({
         <div className="flex items-center justify-between border-b border-white/8 px-4 py-3">
           <div>
             <p className="text-sm font-semibold text-white">اختر موديل واحد</p>
-            <p className="text-xs text-white/45">صورة أو فيديو — اختيار واحد فقط</p>
+            <p className="text-xs text-white/45">
+              كل موديلات OpenArt المتزامنة — السعر على Generate = OpenArt × 1.8
+            </p>
           </div>
           <button
             type="button"
@@ -64,6 +72,7 @@ export function ModelsModal({
         </div>
 
         <div className="space-y-3 px-4 py-3">
+          {!lockedKind && (
           <div className="flex gap-2 text-xs">
             {[
               { id: "image" as const, label: "صور" },
@@ -74,7 +83,7 @@ export function ModelsModal({
                 type="button"
                 onClick={() => setTab(item.id)}
                 className={`rounded-full px-3 py-1.5 ${
-                  tab === item.id
+                  activeTab === item.id
                     ? "bg-white text-black"
                     : "border border-white/10 text-white/70"
                 }`}
@@ -83,6 +92,7 @@ export function ModelsModal({
               </button>
             ))}
           </div>
+          )}
 
           <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-2">
             <Search className="h-4 w-4 text-white/40" />

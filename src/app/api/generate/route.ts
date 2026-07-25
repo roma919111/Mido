@@ -7,7 +7,8 @@ import {
   FREE_VERONIX_RESOLUTION,
   isFreeVeronixEligible,
 } from "@/lib/free-trial";
-import { getCatalogModel, resolveMcpModel } from "@/lib/model-catalog";
+import { getCatalogModel, resolveMcpModel, setLiveCatalogCache } from "@/lib/model-catalog";
+import { loadSyncedCatalog } from "@/lib/openart-catalog-sync";
 import { audioParamForMcpModel, mapResolutionForMcpModel } from "@/lib/model-params";
 import {
   callOpenArtTool,
@@ -73,6 +74,10 @@ function resolveToolMode(media: "image" | "video", hasStart: boolean, hasRefs: b
 
 export async function POST(request: Request) {
   try {
+    // Prefer last OpenArt-synced catalog so every MCP model resolves correctly.
+    const synced = await loadSyncedCatalog();
+    if (synced) setLiveCatalogCache({ image: synced.image, video: synced.video });
+
     const user = await getCurrentUser();
     if (!user) {
       return NextResponse.json(
