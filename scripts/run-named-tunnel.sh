@@ -14,4 +14,18 @@ if [[ ! -f "$TOKEN_FILE" ]]; then
   echo "Missing tunnel token file: $TOKEN_FILE" >&2
   exit 1
 fi
-exec "$CF_BIN" tunnel --no-autoupdate run --token "$(cat "$TOKEN_FILE")"
+
+# Auto-restart on QUIC/network drops so Stripe return URLs don't hit Error 1033.
+backoff=1
+while true; do
+  echo "[tunnel] starting named tunnel…"
+  set +e
+  "$CF_BIN" tunnel --no-autoupdate run --token "$(cat "$TOKEN_FILE")"
+  code=$?
+  set -e
+  echo "[tunnel] exited code=$code — restarting in ${backoff}s"
+  sleep "$backoff"
+  if (( backoff < 30 )); then
+    backoff=$((backoff * 2))
+  fi
+done

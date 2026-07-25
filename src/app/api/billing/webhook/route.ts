@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { getStripe, getStripeWebhookSecret, isStripeConfigured } from "@/lib/stripe";
+import { fulfillCheckoutSession } from "@/lib/billing-fulfillment";
 import { adjustCredits, findUserById, updateUser } from "@/lib/db";
-import { getPlan, getTopUp, type PlanId } from "@/lib/plans";
+import { getPlan, type PlanId } from "@/lib/plans";
+import { getStripe, getStripeWebhookSecret, isStripeConfigured } from "@/lib/stripe";
 
 export const runtime = "nodejs";
 
@@ -31,35 +32,14 @@ export async function POST(request: Request) {
 
   try {
     if (event.type === "checkout.session.completed") {
-      const session = event.data.object as {
+      await fulfillCheckoutSession(event.data.object as {
+        id?: string;
         metadata?: Record<string, string>;
         customer?: string;
         subscription?: string;
-      };
-      const userId = session.metadata?.userId;
-      const kind = session.metadata?.kind;
-      if (userId && kind === "topup") {
-        const pack = getTopUp(session.metadata?.topUpId);
-        const credits = Number(session.metadata?.credits || pack?.credits || 0);
-        await updateUser(userId, {
-          stripeCustomerId: typeof session.customer === "string" ? session.customer : undefined,
-        });
-        if (credits > 0) await adjustCredits(userId, credits);
-      } else {
-        const planId = session.metadata?.planId as PlanId | undefined;
-        const monthlyCredits = Number(session.metadata?.monthlyCredits || 0);
-        if (userId && planId) {
-          const plan = getPlan(planId);
-          const credits = monthlyCredits || plan?.monthlyCredits || 0;
-          await updateUser(userId, {
-            planId,
-            stripeCustomerId: typeof session.customer === "string" ? session.customer : undefined,
-            stripeSubscriptionId:
-              typeof session.subscription === "string" ? session.subscription : undefined,
-          });
-          if (credits > 0) await adjustCredits(userId, credits);
-        }
-      }
+        payment_status?: string;
+        status?: string;
+      });
     }
 
     if (event.type === "invoice.paid") {

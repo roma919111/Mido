@@ -18,10 +18,37 @@ export function PricingPage() {
     void (async () => {
       const { data } = await fetchJson<{ user: CustomerUser | null }>("/api/auth/customer/me");
       setUser(data.user);
+
+      const sessionId = params.get("session_id");
+      if (params.get("success") && sessionId) {
+        setMessage("تم الدفع بنجاح — جارٍ تأكيد الرصيد…");
+        const { res, data: confirm } = await fetchJson<{
+          user?: CustomerUser | null;
+          applied?: boolean;
+          reason?: string;
+          error?: string;
+        }>("/api/billing/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId }),
+        });
+        if (res.ok && confirm.user) {
+          setUser(confirm.user);
+          setMessage(
+            confirm.applied
+              ? `تم تفعيل الباقة وإضافة الرصيد بنجاح (${confirm.user.credits.toLocaleString()} كريدت).`
+              : `الدفع مؤكد. رصيدك الحالي ${confirm.user.credits.toLocaleString()} كريدت.`,
+          );
+          return;
+        }
+        setMessage(confirm.error || "تم الدفع — حدّث الصفحة إن لم يظهر الرصيد فوراً.");
+        return;
+      }
+
+      if (params.get("success")) setMessage("تم الدفع بنجاح — سيظهر الرصيد خلال لحظات.");
+      if (params.get("canceled")) setMessage("تم إلغاء عملية الدفع.");
+      if (params.get("paywall")) setMessage("اشترك للحصول على كريدت قبل التوليد.");
     })();
-    if (params.get("success")) setMessage("تم الدفع بنجاح — سيظهر الرصيد خلال لحظات.");
-    if (params.get("canceled")) setMessage("تم إلغاء عملية الدفع.");
-    if (params.get("paywall")) setMessage("اشترك للحصول على كريدت قبل التوليد.");
   }, [params]);
 
   async function checkout(body: { planId?: PlanId; topUpId?: string }, busyKey: string) {

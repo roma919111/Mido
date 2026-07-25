@@ -41,6 +41,8 @@ export interface AssetRecord {
 export interface DbShape {
   users: UserRecord[];
   assets: AssetRecord[];
+  /** Stripe checkout session ids already fulfilled (idempotency). */
+  processedCheckoutSessions?: string[];
 }
 
 async function ensureDb(): Promise<DbShape> {
@@ -51,9 +53,12 @@ async function ensureDb(): Promise<DbShape> {
     return {
       users: Array.isArray(parsed.users) ? parsed.users : [],
       assets: Array.isArray(parsed.assets) ? parsed.assets : [],
+      processedCheckoutSessions: Array.isArray(parsed.processedCheckoutSessions)
+        ? parsed.processedCheckoutSessions
+        : [],
     };
   } catch {
-    const empty: DbShape = { users: [], assets: [] };
+    const empty: DbShape = { users: [], assets: [], processedCheckoutSessions: [] };
     await writeFile(DB_FILE, JSON.stringify(empty, null, 2), "utf8");
     return empty;
   }
@@ -213,4 +218,21 @@ export function publicUser(user: UserRecord) {
     planId: user.planId,
     createdAt: user.createdAt,
   };
+}
+
+export async function hasProcessedCheckoutSession(sessionId: string): Promise<boolean> {
+  const db = await ensureDb();
+  return (db.processedCheckoutSessions || []).includes(sessionId);
+}
+
+/** Returns true if this process claimed the session (first writer wins). */
+export async function claimCheckoutSession(sessionId: string): Promise<boolean> {
+  const db = await ensureDb();
+  const list = db.processedCheckoutSessions || [];
+  if (list.includes(sessionId)) return false;
+  list.push(sessionId);
+  // Keep the list bounded
+  db.processedCheckoutSessions = list.slice(-500);
+  await saveDb(db);
+  return true;
 }
