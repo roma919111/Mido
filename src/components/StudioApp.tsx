@@ -11,6 +11,8 @@ import type {
   VideoQuality,
   VisualReference,
 } from "@/lib/types";
+import { BrandLogo } from "./BrandLogo";
+import { Footer } from "./Footer";
 import { GenerateButton } from "./GenerateButton";
 import { Header } from "./Header";
 import { ImageDropzone } from "./ImageDropzone";
@@ -401,11 +403,11 @@ export function StudioApp() {
 
       <main className="relative z-10 mx-auto w-full max-w-6xl px-4 pb-20 pt-8 sm:px-6">
         <section className="animate-fade-up mb-8 max-w-3xl">
-          <p className="mb-3 text-xs uppercase tracking-[0.24em] text-[var(--accent)]/80">
-            Creative workbench
+          <p className="mb-3 text-xs uppercase tracking-[0.24em] text-[var(--neon-cyan)]/80">
+            Next-gen creative workbench
           </p>
-          <h1 className="font-[family-name:var(--font-display)] text-4xl leading-[1.05] tracking-tight text-white sm:text-5xl">
-            Studio AI
+          <h1 className="leading-[1.05]">
+            <BrandLogo size="xl" />
           </h1>
           <p className="mt-3 max-w-xl text-base text-white/55 sm:text-lg">
             Generate cinematic images and videos with OpenArt — from a single prompt to motion-ready
@@ -502,6 +504,8 @@ export function StudioApp() {
           <MediaGallery items={gallery} />
         </div>
       </main>
+
+      <Footer />
     </div>
   );
 }

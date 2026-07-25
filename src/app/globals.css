@@ -6,6 +6,8 @@
   --accent: #2ee6a6;
   --accent-2: #ffb05c;
   --accent-strong: #57f0ba;
+  --neon-cyan: #22e8ff;
+  --neon-cyan-strong: #6ff0ff;
   --surface-elevated: #171b24;
   --font-display: var(--font-syne), ui-sans-serif, system-ui, sans-serif;
   --font-body: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
@@ -106,6 +108,38 @@ body {
 
 .animate-shimmer {
   animation: shimmer 2.8s linear infinite;
+}
+
+.ai-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #041016;
+  background: linear-gradient(135deg, var(--neon-cyan), #7af6ff 55%, var(--neon-cyan-strong));
+  box-shadow:
+    0 0 10px rgba(34, 232, 255, 0.55),
+    0 0 28px rgba(34, 232, 255, 0.35),
+    0 0 48px rgba(34, 232, 255, 0.18);
+  animation: neon-pulse 2.8s ease-in-out infinite;
+}
+
+@keyframes neon-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 10px rgba(34, 232, 255, 0.55),
+      0 0 28px rgba(34, 232, 255, 0.35),
+      0 0 48px rgba(34, 232, 255, 0.18);
+  }
+  50% {
+    box-shadow:
+      0 0 14px rgba(34, 232, 255, 0.75),
+      0 0 36px rgba(34, 232, 255, 0.45),
+      0 0 60px rgba(34, 232, 255, 0.28);
+  }
 }
 
 select option {
