@@ -1,20 +1,28 @@
 import { NextResponse } from "next/server";
-import { hasUsableAccessToken, loadAuthSession } from "@/lib/auth-session";
-import { getEnvAccessToken, getOpenArtMcpEndpoint } from "@/lib/openart-mcp";
+import { getOpenArtMcpEndpoint } from "@/lib/openart-mcp";
+import { getEnvAccessToken, hasOwnerCredentials, loadOwnerAuthSession } from "@/lib/owner-credentials";
 
 export const runtime = "nodejs";
 
+/**
+ * Platform connection status (owner account behind the scenes).
+ * Customers are never asked to log in.
+ */
 export async function GET() {
-  const session = await loadAuthSession();
-  const oauthConnected = hasUsableAccessToken(session);
-  const envFallback = Boolean(getEnvAccessToken());
+  const envToken = Boolean(getEnvAccessToken());
+  const ownerSession = await loadOwnerAuthSession();
+  const ownerOAuth = Boolean(ownerSession.tokens?.access_token);
+  const connected = await hasOwnerCredentials();
 
   return NextResponse.json({
-    authenticated: oauthConnected || envFallback,
-    authMethod: oauthConnected ? "oauth" : envFallback ? "env" : null,
-    needsAuth: !oauthConnected && !envFallback,
-    hasRefreshToken: Boolean(session.tokens?.refresh_token),
-    clientId: session.clientInformation?.client_id ?? null,
+    // Customers always "authenticated" from UX perspective when platform is connected.
+    platformConnected: connected,
+    authenticated: connected,
+    authMethod: envToken ? "env" : ownerOAuth ? "owner-oauth" : null,
+    needsAuth: false,
+    needsOwnerSetup: !connected,
+    customerLoginRequired: false,
     mcpEndpoint: getOpenArtMcpEndpoint(),
+    billing: "owner_account",
   });
 }

@@ -1,8 +1,13 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { hasUsableAccessToken, loadAuthSession } from "@/lib/auth-session";
-import { createSessionOAuthProvider } from "@/lib/openart-oauth";
+import {
+  getEnvAccessToken,
+  getOwnerAccessToken,
+  hasOwnerCredentials,
+  loadOwnerAuthSession,
+} from "@/lib/owner-credentials";
+import { createOwnerOAuthProvider } from "@/lib/openart-oauth";
 
 const OPENART_MCP_URL = process.env.OPENART_MCP_URL ?? "https://mcp.openart.ai/mcp";
 
@@ -12,6 +17,7 @@ export class OpenArtConfigError extends Error {
   constructor(message: string, options?: { needsAuth?: boolean }) {
     super(message);
     this.name = "OpenArtConfigError";
+    // needsAuth here means the PLATFORM OWNER must connect OpenArt server-side.
     this.needsAuth = Boolean(options?.needsAuth);
   }
 }
@@ -20,14 +26,10 @@ export function getOpenArtMcpEndpoint(): string {
   return process.env.OPENART_MCP_URL?.trim() || "https://mcp.openart.ai/mcp";
 }
 
-export function getEnvAccessToken(): string | undefined {
-  return process.env.OPENART_ACCESS_TOKEN?.trim() || undefined;
-}
+export { getEnvAccessToken };
 
 export async function isOpenArtConfigured(): Promise<boolean> {
-  if (getEnvAccessToken()) return true;
-  const session = await loadAuthSession();
-  return hasUsableAccessToken(session);
+  return hasOwnerCredentials();
 }
 
 type ToolContent = {
@@ -93,24 +95,28 @@ export function parseToolPayload(result: ToolCallResult): Record<string, unknown
   };
 }
 
+/**
+ * All MCP calls use the platform OWNER OpenArt account.
+ * Customers never authenticate — generations bill the owner.
+ */
 export async function withOpenArtClient<T>(fn: (client: Client) => Promise<T>): Promise<T> {
-  const session = await loadAuthSession();
   const envToken = getEnvAccessToken();
-  const hasSessionToken = hasUsableAccessToken(session);
+  const ownerSession = await loadOwnerAuthSession();
+  const hasOwnerOAuth = Boolean(ownerSession.tokens?.access_token);
 
-  if (!hasSessionToken && !envToken) {
+  if (!envToken && !hasOwnerOAuth) {
     throw new OpenArtConfigError(
-      "Not signed in with OpenArt. Use Sign in with OpenArt to authenticate for MCP.",
+      "Platform OpenArt account is not connected. Set OPENART_ACCESS_TOKEN on the server (owner account).",
       { needsAuth: true },
     );
   }
 
-  // Prefer dynamic OAuth session tokens; fall back to optional static env token.
-  if (hasSessionToken) {
-    const provider = await createSessionOAuthProvider({
+  // Prefer owner OAuth store (supports refresh). Env token is a simple bearer fallback.
+  if (hasOwnerOAuth && !envToken) {
+    const provider = await createOwnerOAuthProvider({
       onRedirect: () => {
         throw new OpenArtConfigError(
-          "OpenArt session expired or requires re-authorization. Sign in with OpenArt again.",
+          "Owner OpenArt session expired. Reconnect the platform account via OPENART_ACCESS_TOKEN or owner setup.",
           { needsAuth: true },
         );
       },
@@ -133,7 +139,7 @@ export async function withOpenArtClient<T>(fn: (client: Client) => Promise<T>): 
     } catch (error) {
       if (error instanceof UnauthorizedError) {
         throw new OpenArtConfigError(
-          "OpenArt MCP unauthorized. Sign in with OpenArt to continue.",
+          "Owner OpenArt MCP unauthorized. Reconnect the platform OpenArt account.",
           { needsAuth: true },
         );
       }
@@ -142,20 +148,28 @@ export async function withOpenArtClient<T>(fn: (client: Client) => Promise<T>): 
       try {
         await provider.flush();
       } catch {
-        // ignore persistence errors
+        // ignore
       }
       try {
         await client.close();
       } catch {
-        // ignore close errors
+        // ignore
       }
     }
+  }
+
+  const token = envToken ?? (await getOwnerAccessToken());
+  if (!token) {
+    throw new OpenArtConfigError(
+      "Platform OpenArt account is not connected. Set OPENART_ACCESS_TOKEN on the server.",
+      { needsAuth: true },
+    );
   }
 
   const transport = new StreamableHTTPClientTransport(new URL(OPENART_MCP_URL), {
     requestInit: {
       headers: {
-        Authorization: `Bearer ${envToken}`,
+        Authorization: `Bearer ${token}`,
         Accept: "application/json, text/event-stream",
       },
     },
@@ -170,7 +184,7 @@ export async function withOpenArtClient<T>(fn: (client: Client) => Promise<T>): 
     try {
       await client.close();
     } catch {
-      // ignore close errors
+      // ignore
     }
   }
 }

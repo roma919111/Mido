@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { getAppBaseUrl } from "@/lib/auth-session";
-import { completeOpenArtOAuthLogin } from "@/lib/openart-oauth";
+import { completeOwnerOpenArtConnect } from "@/lib/openart-oauth";
 
 export const runtime = "nodejs";
 
+/** OWNER-ONLY OAuth callback — stores platform credentials server-side. */
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
@@ -26,13 +27,13 @@ export async function GET(request: Request) {
   }
 
   try {
-    await completeOpenArtOAuthLogin(request, code, state);
-    dest.searchParams.set("authSuccess", "1");
+    await completeOwnerOpenArtConnect(request, code, state);
+    dest.searchParams.set("ownerConnected", "1");
     return NextResponse.redirect(dest);
   } catch (error) {
     dest.searchParams.set(
       "authError",
-      error instanceof Error ? error.message : "OpenArt OAuth callback failed",
+      error instanceof Error ? error.message : "Owner OpenArt OAuth callback failed",
     );
     return NextResponse.redirect(dest);
   }

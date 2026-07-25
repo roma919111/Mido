@@ -2,6 +2,14 @@
 
 A modern Next.js (App Router) studio for generating **AI images** and **AI videos** powered by [OpenArt MCP](https://mcp.openart.ai/mcp).
 
+## How billing works
+
+OpenArt runs **behind the scenes on the platform owner account**.
+
+- Customers generate with **no login** and **no token**
+- Every image/video request hits OpenArt MCP from the server
+- Credits are deducted from the **owner OpenArt account** configured on the server
+
 ## Features
 
 - Dark **VYRONIX.AI** workbench UI (Tailwind CSS)
@@ -9,7 +17,6 @@ A modern Next.js (App Router) studio for generating **AI images** and **AI video
 - Prompt editor with **Enhance Prompt with AI**
 - Start Frame + Reference Image dropzones
 - Video duration (5s / 10s) and quality (720p / 1080p)
-- Credit balance + Upgrade CTA
 - Media gallery with video player, download, and copy-prompt
 - Next.js API routes using `@modelcontextprotocol/sdk` → `https://mcp.openart.ai/mcp`
 
@@ -18,39 +25,40 @@ A modern Next.js (App Router) studio for generating **AI images** and **AI video
 ```bash
 npm install
 cp .env.example .env.local
-# set AUTH_SECRET and APP_BASE_URL
+# set OPENART_ACCESS_TOKEN to the OWNER OpenArt account token
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) and click **Sign in with OpenArt**.
+Open [http://localhost:3000](http://localhost:3000) — customers can generate immediately.
 
-There is no demo mode — Generate Image / Generate Video call live OpenArt MCP (`https://mcp.openart.ai/mcp`) via `@modelcontextprotocol/sdk`, and the UI shows the raw live response or error.
+## Connect the owner OpenArt account
 
-## OpenArt OAuth
-
-VYRONIX.AI runs the MCP OAuth authorization-code + PKCE flow against OpenArt:
-
-1. `GET /api/auth/login` — dynamic client registration + redirect to OpenArt
-2. `GET /api/auth/callback` — exchanges the code for tokens (stored in an encrypted HttpOnly cookie)
-3. API routes use the session access token (with refresh) for `https://mcp.openart.ai/mcp`
+### Option A (recommended): server env token
 
 ```env
-AUTH_SECRET=replace-with-a-long-random-string
-APP_BASE_URL=http://localhost:3000
+OPENART_ACCESS_TOKEN=owner_bearer_token
 OPENART_MCP_URL=https://mcp.openart.ai/mcp
-# Optional headless fallback only:
-# OPENART_ACCESS_TOKEN=
+AUTH_SECRET=replace-with-a-long-random-string
 ```
+
+### Option B: one-time owner OAuth setup
+
+1. Set `AUTH_SECRET` + `APP_BASE_URL`
+2. Optionally set `OWNER_SETUP_KEY`
+3. Visit `/api/auth/login` (or `/api/auth/login?key=...`)
+4. Tokens are stored server-side in `.data/openart-owner.enc` (gitignored)
+
+Customers never see this flow.
 
 ## API routes
 
 | Route | Purpose |
 | --- | --- |
-| `GET /api/auth/login` | Start OpenArt OAuth (DCR + PKCE) |
-| `GET /api/auth/callback` | OAuth redirect handler |
-| `GET/POST /api/auth/logout` | Clear OAuth session cookie |
-| `GET /api/auth/session` | Auth status (`oauth` / `env` / needsAuth) |
-| `GET /api/account` | Credits / plan via `openart_account_get` |
+| `GET /api/auth/login` | Owner-only OpenArt connect (optional) |
+| `GET /api/auth/callback` | Owner OAuth callback |
+| `GET/POST /api/auth/logout` | Clear owner credentials (setup key required if set) |
+| `GET /api/auth/session` | Platform connection status |
+| `GET /api/account` | Owner account credits/plan via `openart_account_get` |
 | `POST /api/enhance` | Prompt enhancement |
 | `POST /api/upload` | Sign + PUT reference images via `openart_upload_sign` |
 | `POST /api/generate` | `openart_generate_image` / `openart_generate_video` + wait |
