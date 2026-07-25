@@ -33,6 +33,9 @@ export interface AccountInfo {
   plan?: string;
   credits: number;
   configured: boolean;
+  live?: boolean;
+  mcpEndpoint?: string;
+  error?: string;
 }
 
 export interface GenerateRequest {
@@ -55,4 +58,9 @@ export interface GenerateResponse {
   urls?: string[];
   error?: string;
   pollAfterSeconds?: number;
+  live?: boolean;
+  mcpEndpoint?: string;
+  tool?: string;
+  details?: unknown;
+  raw?: unknown;
 }

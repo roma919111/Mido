@@ -8,9 +8,22 @@ interface HeaderProps {
   plan?: string;
   configured: boolean;
   email?: string;
+  live?: boolean;
+  mcpEndpoint?: string;
+  connectionError?: string;
 }
 
-export function Header({ credits, plan, configured, email }: HeaderProps) {
+export function Header({
+  credits,
+  plan,
+  configured,
+  email,
+  live,
+  mcpEndpoint,
+  connectionError,
+}: HeaderProps) {
+  const endpoint = mcpEndpoint ?? "https://mcp.openart.ai/mcp";
+
   return (
     <header className="relative z-20 border-b border-white/8 bg-[rgba(10,12,16,0.72)] backdrop-blur-xl">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
@@ -18,7 +31,18 @@ export function Header({ credits, plan, configured, email }: HeaderProps) {
           <div className="leading-tight">
             <BrandLogo size="md" />
             <p className="mt-0.5 text-xs text-white/45">
-              {configured ? email ?? "OpenArt connected" : "Demo mode · connect OpenArt"}
+              {configured
+                ? email ?? "OpenArt MCP connected"
+                : connectionError
+                  ? "OpenArt MCP connection error"
+                  : "Connecting to OpenArt MCP…"}
+            </p>
+            <p
+              className={`mt-0.5 text-[10px] tracking-wide ${
+                live ? "text-cyan-300/80" : "text-rose-300/80"
+              }`}
+            >
+              {live ? "LIVE" : "OFFLINE"} · {endpoint}
             </p>
           </div>
         </div>
@@ -27,7 +51,7 @@ export function Header({ credits, plan, configured, email }: HeaderProps) {
           <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/85">
             <Coins className="h-4 w-4 text-[var(--accent)]" />
             <span className="font-medium tabular-nums">
-              {credits} {plan === "Demo" || !configured ? "Free Credits" : "Credits"}
+              {credits} {plan ? `${plan} Credits` : "Credits"}
             </span>
           </div>
           <a

@@ -24,7 +24,7 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Without `OPENART_ACCESS_TOKEN`, the app runs in **demo mode** (sample media + local credit counter) so the UI stays fully usable.
+`OPENART_ACCESS_TOKEN` is **required**. There is no demo mode — Generate Image / Generate Video call live OpenArt MCP (`https://mcp.openart.ai/mcp`) via `@modelcontextprotocol/sdk`, and the UI shows the raw live response or error.
 
 ## OpenArt auth
 
