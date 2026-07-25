@@ -463,6 +463,13 @@ export function StudioApp() {
               credits={creditCost}
               loading={generating}
               disabled={!prompt.trim() || (mode === "image-to-video" && !startFrame)}
+              disabledReason={
+                !prompt.trim()
+                  ? "Write a prompt above first, then tap Generate."
+                  : mode === "image-to-video" && !startFrame
+                    ? "Upload a Start Frame image to enable Generate Video."
+                    : null
+              }
               onClick={() => void handleGenerate()}
             />
 
