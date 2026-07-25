@@ -19,7 +19,6 @@ import type { CustomerUser } from "./AppHeader";
 
 const ASPECTS = ["9:16", "16:9", "1:1", "4:3", "3:4"] as const;
 const RESOLUTIONS = ["360p", "480p", "720p", "1080p", "1K"] as const;
-const DURATIONS = [4, 5, 6, 8, 10, 12, 15] as const;
 
 interface CreateStudioProps {
   user: CustomerUser | null;
@@ -31,7 +30,7 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
   const [media, setMedia] = useState<"image" | "video">("image");
   const [imageModels, setImageModels] = useState<CatalogModel[]>([]);
   const [videoModels, setVideoModels] = useState<CatalogModel[]>([]);
-  const [selectedIds, setSelectedIds] = useState<string[]>(["nano-banana-2-lite"]);
+  const [selectedModelId, setSelectedModelId] = useState("nano-banana-2-lite");
   const [modelsOpen, setModelsOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [aspectRatio, setAspectRatio] = useState<string>("1:1");
@@ -45,11 +44,17 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
   const [startPreview, setStartPreview] = useState<string | null>(null);
   const [endPreview, setEndPreview] = useState<string | null>(null);
   const [creditCost, setCreditCost] = useState(15);
-  const [creditSource, setCreditSource] = useState<"openart" | "mixed" | "estimate">("estimate");
+  const [creditLive, setCreditLive] = useState(false);
   const [quoting, setQuoting] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+
+  const allModels = useMemo(
+    () => [...imageModels, ...videoModels],
+    [imageModels, videoModels],
+  );
+  const selectedModel = allModels.find((m) => m.id === selectedModelId) ?? null;
 
   useEffect(() => {
     void (async () => {
@@ -63,25 +68,28 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
 
   useEffect(() => {
     if (media === "image") {
-      setSelectedIds((prev) => {
-        const keep = prev.filter((id) => imageModels.some((m) => m.id === id));
-        return keep.length ? keep : ["nano-banana-2-lite"];
-      });
+      const stillValid = imageModels.some((m) => m.id === selectedModelId);
+      if (!stillValid) {
+        const firstLive = imageModels.find((m) => m.available)?.id || "nano-banana-2-lite";
+        setSelectedModelId(firstLive);
+      }
       setAspectRatio("1:1");
     } else {
-      setSelectedIds((prev) => {
-        const keep = prev.filter((id) => videoModels.some((m) => m.id === id));
-        return keep.length ? keep : ["pixverse-v6"];
-      });
+      const stillValid = videoModels.some((m) => m.id === selectedModelId);
+      if (!stillValid) {
+        const firstLive = videoModels.find((m) => m.available)?.id || "pixverse-v6";
+        setSelectedModelId(firstLive);
+      }
       setAspectRatio("16:9");
     }
-  }, [media, imageModels, videoModels]);
+  }, [media, imageModels, videoModels, selectedModelId]);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      if (!selectedIds.length) return;
+      if (!selectedModelId) return;
       setQuoting(true);
+      setError(null);
       try {
         const mode =
           media === "image"
@@ -91,16 +99,17 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
             : startFrame
               ? "image2video"
               : "text2video";
-        const { data } = await fetchJson<{
+        const { res, data } = await fetchJson<{
           totalCredits: number;
           liveOpenArt?: boolean;
-          source?: "openart" | "mixed";
-          quotes?: Array<{ source?: string; totalCredits?: number }>;
+          source?: string;
+          error?: string;
+          quotes?: Array<{ available?: boolean; source?: string; totalCredits?: number }>;
         }>("/api/credits/quote", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            modelIds: selectedIds,
+            modelIds: [selectedModelId],
             media,
             mode,
             aspectRatio,
@@ -109,18 +118,15 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
             generateAudio: media === "video" ? generateAudio : undefined,
           }),
         });
-        if (!cancelled) {
-          setCreditCost(data.totalCredits);
-          setCreditSource(data.liveOpenArt || data.source === "openart" ? "openart" : "mixed");
-        }
+        if (cancelled) return;
+        if (!res.ok) throw new Error(data.error || "تعذر جلب سعر الكريدت");
+        setCreditCost(data.totalCredits);
+        const quote = data.quotes?.[0];
+        setCreditLive(Boolean(quote?.source === "openart" && quote.available));
       } catch (err) {
         if (!cancelled) {
-          setCreditSource("estimate");
-          setError(
-            err instanceof Error
-              ? err.message
-              : "Could not sync OpenArt credit cost. Check model selection / owner OpenArt connection.",
-          );
+          setCreditLive(false);
+          setError(err instanceof Error ? err.message : "تعذر مزامنة تكلفة الكريدت");
         }
       } finally {
         if (!cancelled) setQuoting(false);
@@ -129,12 +135,16 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
     return () => {
       cancelled = true;
     };
-  }, [selectedIds, media, aspectRatio, resolution, duration, generateAudio, refs.length, startFrame]);
-
-  const selectedLabels = useMemo(() => {
-    const all = [...imageModels, ...videoModels];
-    return selectedIds.map((id) => all.find((m) => m.id === id)?.name || id);
-  }, [selectedIds, imageModels, videoModels]);
+  }, [
+    selectedModelId,
+    media,
+    aspectRatio,
+    resolution,
+    duration,
+    generateAudio,
+    refs.length,
+    startFrame,
+  ]);
 
   async function uploadFile(file: File, purpose: "create-image" | "create-video") {
     const form = new FormData();
@@ -167,10 +177,7 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
     }
   }
 
-  async function handleFrame(
-    file: File | undefined,
-    which: "start" | "end",
-  ) {
+  async function handleFrame(file: File | undefined, which: "start" | "end") {
     if (!file) return;
     try {
       const preview = URL.createObjectURL(file);
@@ -203,7 +210,7 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
       );
       if (!res.ok) throw new Error(data.error || "Enhance failed");
       setPrompt(data.enhanced || prompt);
-      setStatus("Prompt polished");
+      setStatus("تم تحسين الوصف");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Enhance failed");
     }
@@ -214,12 +221,15 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
     setStatus(null);
 
     if (!user) {
-      // Stay on Veronix signup page first — Google only after user taps the button.
       router.push(`/signup?next=${encodeURIComponent("/")}&paywall=1`);
       return;
     }
     if (!prompt.trim()) {
-      setError("Write a prompt first.");
+      setError("اكتب وصفًا أولًا.");
+      return;
+    }
+    if (!selectedModel?.available) {
+      setError("هذا الموديل غير متاح للتوليد حاليًا. اختر موديلًا متاحًا.");
       return;
     }
     if (user.credits < creditCost) {
@@ -228,7 +238,7 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
     }
 
     setGenerating(true);
-    setStatus("Generating via OpenArt MCP…");
+    setStatus("جاري التوليد عبر Veronix…");
     try {
       const mode =
         media === "image"
@@ -243,13 +253,12 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
         error?: string;
         needsAuth?: boolean;
         needsPaywall?: boolean;
-        creditsRemaining?: number;
-        results?: Array<{ error?: string; status?: string; urls?: string[] }>;
+        results?: Array<{ error?: string; status?: string }>;
       }>("/api/create", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({
-          modelIds: selectedIds,
+          modelIds: [selectedModelId],
           media,
           mode,
           prompt: prompt.trim(),
@@ -272,15 +281,15 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
         router.push("/pricing?paywall=1");
         return;
       }
-      if (!res.ok) throw new Error(data.error || "Generation failed");
+      if (!res.ok) throw new Error(data.error || "فشل التوليد");
 
       const failed = data.results?.find((r) => r.error);
       if (failed?.error) setError(failed.error);
-      else setStatus("Queued — open Assets to view results.");
+      else setStatus("تم إرسال الطلب — تابع النتيجة من Assets");
 
       await onUserRefresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Generation failed");
+      setError(err instanceof Error ? err.message : "فشل التوليد");
     } finally {
       setGenerating(false);
     }
@@ -301,16 +310,21 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
       )}
 
       <div className="flex gap-2">
-        {(["image", "video"] as const).map((item) => (
+        {(
+          [
+            { id: "image" as const, label: "صورة" },
+            { id: "video" as const, label: "فيديو" },
+          ] as const
+        ).map((item) => (
           <button
-            key={item}
+            key={item.id}
             type="button"
-            onClick={() => setMedia(item)}
-            className={`rounded-full px-4 py-2 text-sm font-semibold capitalize ${
-              media === item ? "bg-white text-black" : "border border-white/10 text-white/70"
+            onClick={() => setMedia(item.id)}
+            className={`rounded-full px-4 py-2 text-sm font-semibold ${
+              media === item.id ? "bg-white text-black" : "border border-white/10 text-white/70"
             }`}
           >
-            {item}
+            {item.label}
           </button>
         ))}
       </div>
@@ -321,18 +335,17 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
         className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-[#141821] px-4 py-3 text-left"
       >
         <div>
-          <p className="text-xs uppercase tracking-[0.16em] text-white/40">Models</p>
+          <p className="text-xs uppercase tracking-[0.16em] text-white/40">الموديل</p>
           <p className="mt-1 text-sm text-white">
-            {selectedLabels.slice(0, 2).join(", ")}
-            {selectedLabels.length > 2 ? ` +${selectedLabels.length - 2}` : ""}
+            {selectedModel?.name || "اختر موديل"}
           </p>
-          <p className="text-xs text-white/45">Select Multiple Up to 4</p>
+          <p className="text-xs text-white/45">اختيار موديل واحد فقط</p>
         </div>
         <ChevronDown className="h-4 w-4 text-white/50" />
       </button>
 
       <div className="rounded-2xl border border-dashed border-white/15 bg-[#141821] p-4">
-        <p className="mb-2 text-sm font-medium text-white/80">Add visual references</p>
+        <p className="mb-2 text-sm font-medium text-white/80">مراجع بصرية (اختياري)</p>
         <div className="flex flex-wrap gap-2">
           {refPreviews.map((src, i) => (
             <div key={src} className="relative h-16 w-16 overflow-hidden rounded-xl">
@@ -399,9 +412,7 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
           onChange={(e) => setPrompt(e.target.value)}
           rows={5}
           placeholder={
-            media === "image"
-              ? "Describe the image you want to create…"
-              : "Describe the video scene, motion, and mood…"
+            media === "image" ? "صف الصورة التي تريدها…" : "صف مشهد الفيديو والحركة…"
           }
           className="w-full resize-y bg-transparent text-[15px] text-white outline-none placeholder:text-white/35"
         />
@@ -426,9 +437,9 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
 
       <div className="rounded-2xl border border-white/10 bg-[#141821] p-4">
         <p className="mb-3 text-sm font-semibold text-white">Output</p>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="space-y-1 text-xs text-white/50">
-            Aspect
+            النسبة
             <select
               value={aspectRatio}
               onChange={(e) => setAspectRatio(e.target.value)}
@@ -442,54 +453,58 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
             </select>
           </label>
           {media === "video" && (
-            <>
-              <label className="space-y-1 text-xs text-white/50">
-                Resolution
-                <select
-                  value={resolution}
-                  onChange={(e) => setResolution(e.target.value)}
-                  className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white"
-                >
-                  {RESOLUTIONS.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="space-y-1 text-xs text-white/50">
-                Duration
-                <select
-                  value={duration}
-                  onChange={(e) => setDuration(Number(e.target.value))}
-                  className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white"
-                >
-                  {DURATIONS.map((d) => (
-                    <option key={d} value={d}>
-                      {d}s
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </>
+            <label className="space-y-1 text-xs text-white/50">
+              الدقة
+              <select
+                value={resolution}
+                onChange={(e) => setResolution(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white"
+              >
+                {RESOLUTIONS.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </label>
           )}
         </div>
+
         {media === "video" && (
-          <label className="mt-3 flex items-center gap-2 text-sm text-white/70">
+          <div className="mt-4 space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-white/70">المدة</span>
+              <span className="font-semibold tabular-nums text-[#22f0ff]">{duration}s</span>
+            </div>
             <input
-              type="checkbox"
-              checked={generateAudio}
-              onChange={(e) => setGenerateAudio(e.target.checked)}
+              type="range"
+              min={4}
+              max={15}
+              step={1}
+              value={duration}
+              onChange={(e) => setDuration(Number(e.target.value))}
+              className="w-full accent-[#22f0ff]"
             />
-            Generate audio
-          </label>
+            <div className="flex justify-between text-[10px] text-white/35">
+              <span>4s</span>
+              <span>15s</span>
+            </div>
+            <label className="mt-2 flex items-center gap-2 text-sm text-white/70">
+              <input
+                type="checkbox"
+                checked={generateAudio}
+                onChange={(e) => setGenerateAudio(e.target.checked)}
+              />
+              توليد صوت
+            </label>
+          </div>
         )}
       </div>
 
       <button
         type="button"
         onClick={() => void handleGenerate()}
-        disabled={generating || quoting}
+        disabled={generating || quoting || !selectedModel?.available}
         className="relative z-20 flex w-full items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-5 py-4 text-base font-bold text-white disabled:opacity-70"
       >
         {generating || quoting ? (
@@ -497,17 +512,19 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
         ) : (
           <Sparkles className="h-5 w-5" />
         )}
-        {generating ? "Generating…" : quoting ? "Pricing…" : "Generate"}
-        <span className="rounded-full bg-black/20 px-2 py-0.5 text-xs tabular-nums">
+        {generating ? "جاري التوليد…" : quoting ? "يحسب السعر…" : "Generate"}
+        <span className="rounded-full bg-black/20 px-2.5 py-0.5 text-xs tabular-nums">
           −{creditCost}
         </span>
       </button>
       <p className="text-center text-[11px] text-white/40">
-        {creditSource === "openart"
-          ? "Cost synced live from OpenArt MCP for the selected models & output settings"
-          : creditSource === "mixed"
-            ? "Some selected models are not live on OpenArt MCP yet — cost may be estimated"
-            : "Waiting for OpenArt price sync…"}
+        {quoting
+          ? "جاري مزامنة التكلفة من Veronix…"
+          : creditLive
+            ? `تكلفة ${selectedModel?.name || "الموديل"} متزامنة مباشرة · −${creditCost} كريدت`
+            : selectedModel && !selectedModel.available
+              ? "هذا الموديل غير متاح للتوليد بعد — اختر موديلًا متاحًا لعرض السعر الحقيقي"
+              : "اختر موديلًا متاحًا لعرض تكلفة الكريدت"}
       </p>
 
       <ModelsModal
@@ -515,9 +532,13 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
         kind={media}
         imageModels={imageModels}
         videoModels={videoModels}
-        selectedIds={selectedIds}
+        selectedId={selectedModelId}
         onClose={() => setModelsOpen(false)}
-        onChange={setSelectedIds}
+        onChange={(id) => {
+          setSelectedModelId(id);
+          if (videoModels.some((m) => m.id === id)) setMedia("video");
+          else if (imageModels.some((m) => m.id === id)) setMedia("image");
+        }}
       />
     </div>
   );

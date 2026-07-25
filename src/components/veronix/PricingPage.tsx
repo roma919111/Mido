@@ -71,7 +71,7 @@ export function PricingPage() {
         <h1 className="font-display text-3xl font-extrabold">Monthly plans</h1>
         <p className="mt-2 text-white/50">
           Economic subscriptions from $10–$15. Credits sync to your Veronix wallet; generation costs
-          match OpenArt exactly.
+          match Veronix pricing exactly.
         </p>
         {message && (
           <p className="mt-4 rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-50">

@@ -17,7 +17,7 @@ const outfit = Outfit({
 export const metadata: Metadata = {
   title: "Veronix.ai — AI Image & Video Studio",
   description:
-    "Veronix.ai is an OpenArt-powered studio for AI images and videos with customer accounts, assets, and subscriptions.",
+    "Veronix.ai studio for AI images and videos with customer accounts, assets, and subscriptions.",
 };
 
 export default function RootLayout({

@@ -33,14 +33,32 @@ function fallbackEstimate(input: QuoteInput): number {
   return Math.round(base * (duration / 5));
 }
 
+function resolveMode(
+  catalog: ReturnType<typeof getCatalogModel>,
+  input: QuoteInput,
+): string {
+  const requested =
+    input.mode || (input.media === "image" ? "text2image" : "text2video");
+  const supported = catalog?.modes ?? [];
+  if (!supported.length) return requested;
+  if (supported.includes(requested)) return requested;
+  // Fall back to a supported mode for this model (e.g. Grok Imagine = image2video only)
+  if (input.media === "video") {
+    return (
+      supported.find((m) => m.includes("video")) ||
+      supported[0] ||
+      requested
+    );
+  }
+  return supported.find((m) => m.includes("image")) || supported[0] || requested;
+}
+
 export async function quoteOpenArtCredits(input: QuoteInput): Promise<QuoteResult> {
   const catalog = getCatalogModel(input.modelId);
   const mcpModel = catalog ? resolveMcpModel(catalog) : input.modelId;
   const available = Boolean(catalog?.available && catalog.mcpId);
 
-  const mode =
-    input.mode ||
-    (input.media === "image" ? "text2image" : "text2video");
+  const mode = resolveMode(catalog, input);
 
   const params: Record<string, unknown> =
     input.media === "image"
@@ -100,11 +118,11 @@ export async function quoteOpenArtCredits(input: QuoteInput): Promise<QuoteResul
       source: "openart",
     };
   } catch (error) {
-    // Prefer failing closed for live models so the Generate button never shows a fake OpenArt price.
+    // Prefer failing closed for live models so the Generate button never shows a fake price.
     throw new Error(
       error instanceof Error
-        ? `OpenArt cost sync failed for ${mcpModel}: ${error.message}`
-        : `OpenArt cost sync failed for ${mcpModel}`,
+        ? `تعذر مزامنة تكلفة Veronix للموديل ${catalog?.name || mcpModel}: ${error.message}`
+        : `تعذر مزامنة تكلفة Veronix للموديل ${catalog?.name || mcpModel}`,
     );
   }
 }

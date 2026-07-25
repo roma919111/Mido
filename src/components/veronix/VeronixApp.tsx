@@ -38,8 +38,7 @@ export function VeronixApp() {
             Veronix.ai Studio
           </h1>
           <p className="mt-2 max-w-xl text-sm text-white/50">
-            OpenArt-powered image & video creation with live credit costs, customer wallets, and
-            monthly plans.
+            توليد صور وفيديو عبر Veronix.ai مع أسعار كريدت حية، حسابات زبائن، وباقات شهرية.
           </p>
         </section>
         <CreateStudio user={user} onUserRefresh={refreshUser} />

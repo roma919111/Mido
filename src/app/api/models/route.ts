@@ -7,6 +7,6 @@ export async function GET() {
   return NextResponse.json({
     image: IMAGE_MODELS,
     video: VIDEO_MODELS,
-    maxSelect: 4,
+    maxSelect: 1,
   });
 }

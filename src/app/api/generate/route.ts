@@ -126,7 +126,7 @@ export async function POST(request: Request) {
     if (unavailable.length) {
       return NextResponse.json(
         {
-          error: `These models are listed but not live on OpenArt MCP yet: ${unavailable
+          error: `هذه الموديلات غير متاحة للتوليد حاليًا على Veronix: ${unavailable
             .map((q) => q.modelId)
             .join(", ")}`,
           quotes,
@@ -190,7 +190,7 @@ export async function POST(request: Request) {
           const nestedError =
             typeof generatePayload.error === "string"
               ? generatePayload.error
-              : "OpenArt generation failed";
+              : "Veronix generation failed";
           await updateAsset(asset.id, user.id, { status: "failed", error: nestedError });
           // refund this model
           await adjustCredits(user.id, quote.totalCredits);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search, X } from "lucide-react";
 import type { CatalogModel } from "@/lib/model-catalog";
 
@@ -9,9 +9,9 @@ interface ModelsModalProps {
   kind: "image" | "video";
   imageModels: CatalogModel[];
   videoModels: CatalogModel[];
-  selectedIds: string[];
+  selectedId: string | null;
   onClose: () => void;
-  onChange: (ids: string[]) => void;
+  onChange: (id: string) => void;
 }
 
 export function ModelsModal({
@@ -19,39 +19,39 @@ export function ModelsModal({
   kind,
   imageModels,
   videoModels,
-  selectedIds,
+  selectedId,
   onClose,
   onChange,
 }: ModelsModalProps) {
-  const [tab, setTab] = useState<"all" | "image" | "video">(kind === "video" ? "video" : "all");
+  const [tab, setTab] = useState<"image" | "video">(kind);
   const [query, setQuery] = useState("");
 
+  useEffect(() => {
+    if (open) {
+      setTab(kind);
+      setQuery("");
+    }
+  }, [open, kind]);
+
   const list = useMemo(() => {
-    const base =
-      tab === "image" ? imageModels : tab === "video" ? videoModels : [...imageModels, ...videoModels];
+    const base = tab === "image" ? imageModels : videoModels;
+    const sorted = [...base].sort((a, b) => Number(b.available) - Number(a.available));
     const q = query.trim().toLowerCase();
-    if (!q) return base;
-    return base.filter((m) => m.name.toLowerCase().includes(q) || m.id.toLowerCase().includes(q));
+    if (!q) return sorted;
+    return sorted.filter(
+      (m) => m.name.toLowerCase().includes(q) || m.id.toLowerCase().includes(q),
+    );
   }, [tab, imageModels, videoModels, query]);
 
   if (!open) return null;
-
-  function toggle(id: string) {
-    if (selectedIds.includes(id)) {
-      onChange(selectedIds.filter((x) => x !== id));
-      return;
-    }
-    if (selectedIds.length >= 4) return;
-    onChange([...selectedIds, id]);
-  }
 
   return (
     <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/70 p-0 sm:items-center sm:p-4">
       <div className="flex max-h-[92vh] w-full max-w-2xl flex-col rounded-t-3xl border border-white/10 bg-[#12151c] sm:rounded-3xl">
         <div className="flex items-center justify-between border-b border-white/8 px-4 py-3">
           <div>
-            <p className="text-sm font-semibold text-white">Models</p>
-            <p className="text-xs text-white/45">Select Multiple Up to 4 · {selectedIds.length}/4</p>
+            <p className="text-sm font-semibold text-white">اختر موديل واحد</p>
+            <p className="text-xs text-white/45">صورة أو فيديو — اختيار واحد فقط</p>
           </div>
           <button
             type="button"
@@ -63,17 +63,16 @@ export function ModelsModal({
         </div>
 
         <div className="space-y-3 px-4 py-3">
-          <div className="flex gap-2 overflow-x-auto text-xs">
+          <div className="flex gap-2 text-xs">
             {[
-              { id: "all", label: "All models" },
-              { id: "image", label: "Image" },
-              { id: "video", label: "Video" },
+              { id: "image" as const, label: "صور" },
+              { id: "video" as const, label: "فيديو" },
             ].map((item) => (
               <button
                 key={item.id}
                 type="button"
-                onClick={() => setTab(item.id as typeof tab)}
-                className={`shrink-0 rounded-full px-3 py-1.5 ${
+                onClick={() => setTab(item.id)}
+                className={`rounded-full px-3 py-1.5 ${
                   tab === item.id
                     ? "bg-white text-black"
                     : "border border-white/10 text-white/70"
@@ -89,7 +88,7 @@ export function ModelsModal({
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search models"
+              placeholder="ابحث عن موديل"
               className="w-full bg-transparent text-sm text-white outline-none placeholder:text-white/35"
             />
           </label>
@@ -98,12 +97,15 @@ export function ModelsModal({
         <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {list.map((model) => {
-              const selected = selectedIds.includes(model.id);
+              const selected = selectedId === model.id;
               return (
                 <button
                   key={model.id}
                   type="button"
-                  onClick={() => toggle(model.id)}
+                  onClick={() => {
+                    onChange(model.id);
+                    onClose();
+                  }}
                   className={`rounded-2xl border px-3 py-3 text-left transition ${
                     selected
                       ? "border-[#22f0ff] bg-[rgba(34,240,255,0.08)]"
@@ -119,23 +121,13 @@ export function ModelsModal({
                     />
                   </div>
                   <p className="mt-1 text-[11px] text-white/40">
-                    {model.kind} · {model.available ? "Live MCP" : "Listed"}
+                    {model.available ? "متاح · Veronix" : "قريبًا"}
                     {model.badge ? ` · ${model.badge}` : ""}
                   </p>
                 </button>
               );
             })}
           </div>
-        </div>
-
-        <div className="border-t border-white/8 p-4">
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-full rounded-2xl bg-white py-3 text-sm font-semibold text-black"
-          >
-            Done · {selectedIds.length} selected
-          </button>
         </div>
       </div>
     </div>
