@@ -72,15 +72,15 @@ export function OpenArtSetupPage() {
         }`}
       >
         {connected
-          ? "الحساب متصل — التكاليف يمكن مزامنتها مباشرة."
-          : "الحساب غير متصل — لهذا تظهر −15 بدل التكلفة الحقيقية."}
+          ? "الحساب متصل — رفع الصور والتكاليف والتوليد جاهزة."
+          : "الحساب غير متصل — لهذا رفع الصور والتوليد الحقيقي متوقفان حتى تربط OpenArt مرة واحدة."}
       </div>
 
       <div className="mt-6 space-y-3 rounded-2xl border border-white/10 bg-[#141821] p-4 text-sm">
         <p className="font-semibold text-white">الطريقة الموصى بها: OAuth</p>
         <p className="text-white/60">
-          سجّل دخول حساب المالك على OpenArt ثم ارجع للتطبيق. بعد النجاح تظهر التكاليف الحية على زر
-          Generate.
+          سجّل دخول حساب المالك على OpenArt ثم ارجع للتطبيق. بعد النجاح يرجع رفع الصور + التكاليف
+          الحية + Generate.
         </p>
         <a
           href={oauthLoginUrl}

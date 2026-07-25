@@ -50,6 +50,7 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [platformReady, setPlatformReady] = useState<boolean | null>(null);
 
   const allModels = useMemo(
     () => [...imageModels, ...videoModels],
@@ -64,6 +65,20 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
       );
       setImageModels(data.image);
       setVideoModels(data.video);
+    })();
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const { data } = await fetchJson<{
+          platformConnected?: boolean;
+          needsOwnerSetup?: boolean;
+        }>("/api/auth/session");
+        setPlatformReady(Boolean(data.platformConnected) && !data.needsOwnerSetup);
+      } catch {
+        setPlatformReady(null);
+      }
     })();
   }, []);
 
@@ -173,11 +188,21 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
     const { res, data } = await fetchJson<{
       error?: string;
       visualReference?: VisualReference;
+      needsOwnerSetup?: boolean;
     }>("/api/upload", { method: "POST", body: form });
     if (!res.ok) {
+      if (data.needsOwnerSetup) {
+        setPlatformReady(false);
+        throw new Error(
+          "رفع الصور يحتاج ربط حساب المنصة مرة واحدة. افتح /setup/openart وسجّل دخول OpenArt ثم أعد المحاولة.",
+        );
+      }
       const msg = data.error || "فشل رفع الصورة";
       if (/OPENART_ACCESS_TOKEN|Platform OpenArt|not connected|حساب المنصة/i.test(msg)) {
-        throw new Error("رفع الصور غير متاح مؤقتًا. حاول مرة أخرى بعد قليل.");
+        setPlatformReady(false);
+        throw new Error(
+          "رفع الصور يحتاج ربط حساب المنصة مرة واحدة. افتح /setup/openart وسجّل دخول OpenArt ثم أعد المحاولة.",
+        );
       }
       throw new Error(msg);
     }
@@ -325,7 +350,16 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
   }
 
   return (
-    <div id="create" className="mx-auto w-full max-w-3xl space-y-4 px-4 pb-28 pt-4 sm:px-6">
+    <div id="create" className="mx-auto w-full max-w-3xl space-y-4 px-4 pb-28 pt-4 sm:px-6" dir="rtl">
+      {platformReady === false && (
+        <div className="rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-50">
+          رفع الصور والتوليد يحتاجان ربط حساب المنصة مرة واحدة.{" "}
+          <a href="/setup/openart" className="font-semibold text-[#22f0ff] underline-offset-2 hover:underline">
+            اربط OpenArt الآن
+          </a>
+        </div>
+      )}
+
       {(error || status) && (
         <div
           className={`rounded-2xl border px-4 py-3 text-sm ${
@@ -334,7 +368,19 @@ export function CreateStudio({ user, onUserRefresh }: CreateStudioProps) {
               : "border-cyan-400/25 bg-cyan-400/10 text-cyan-50"
           }`}
         >
-          {error ?? status}
+          {error?.includes("/setup/openart") ? (
+            <>
+              رفع الصور يحتاج ربط حساب المنصة مرة واحدة.{" "}
+              <a
+                href="/setup/openart"
+                className="font-semibold text-[#22f0ff] underline-offset-2 hover:underline"
+              >
+                اربط OpenArt الآن
+              </a>
+            </>
+          ) : (
+            (error ?? status)
+          )}
         </div>
       )}
 
