@@ -970,7 +970,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               </label>
             ) : (
               <p className="mt-2 text-xs text-white/40">
-                الصوت مدمج في هذا الموديل (بدون خيار منفصل)
+                لا يتوفر خيار صوت منفصل لهذا الموديل
               </p>
             )}
           </div>
