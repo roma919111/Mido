@@ -119,14 +119,14 @@ export function AuthForm({ mode }: AuthFormProps) {
         </button>
       </form>
 
-      {/* Google disabled until Authorized redirect URI is added in Google Cloud Console.
-          Showing it caused Error 400: redirect_uri_mismatch for every customer. */}
+      {/* Google disabled until Authorized redirect URI matches current public URL.
+          Credentials are already saved once; only the tunnel redirect URI drifts. */}
       <p className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] text-white/45">
-        التسجيل عبر Google متوقف مؤقتًا حتى يُضاف Redirect URI في Google Cloud. استخدم البريد أعلاه —
-        يشتغل لأي زبون فورًا.
+        Google متوقف مؤقتًا: مفاتيح Google محفوظة مرة واحدة، لكن رابط الموقع المؤقت تغيّر فيحتاج تحديث
+        Redirect URI في Google Console فقط — مو إعادة إدخال Client ID. استخدم البريد أعلاه الآن.
         {redirectUri ? (
           <span className="mt-1 block break-all text-white/30" dir="ltr">
-            المطلوب إضافته: {redirectUri}
+            أضف هذا في Authorized redirect URIs: {redirectUri}
           </span>
         ) : null}
       </p>
