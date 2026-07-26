@@ -3,11 +3,24 @@
  * in the address bar, download sheet, or video player source.
  */
 
-const ALLOWED_HOST_SUFFIXES = [".openart.ai", ".openart.com"];
+const ALLOWED_HOST_SUFFIXES = [
+  ".openart.ai",
+  ".openart.com",
+  ".bytepluses.com",
+  ".byteplus.com",
+  ".volces.com",
+];
 
 export function isAllowedMediaHost(hostname: string): boolean {
   const host = hostname.toLowerCase();
-  if (host === "openart.ai" || host === "openart.com") return true;
+  if (
+    host === "openart.ai" ||
+    host === "openart.com" ||
+    host === "byteplus.com" ||
+    host === "bytepluses.com"
+  ) {
+    return true;
+  }
   return ALLOWED_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix));
 }
 

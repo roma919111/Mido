@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 import {
+  getBytePlusVideoTask,
+  mapBytePlusStatus,
+  parseBytePlusHistoryId,
+} from "@/lib/byteplus-ark";
+import {
   callOpenArtTool,
   collectMediaUrls,
   OpenArtConfigError,
@@ -18,6 +23,41 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "historyId is required" }, { status: 400 });
   }
 
+  const byteplusId = parseBytePlusHistoryId(historyId);
+  if (byteplusId) {
+    try {
+      const task = await getBytePlusVideoTask(byteplusId);
+      const status = mapBytePlusStatus(task.status);
+      const urls = task.content?.video_url ? [task.content.video_url] : [];
+      const errMsg =
+        typeof task.error === "string"
+          ? task.error
+          : task.error && typeof task.error === "object"
+            ? String(task.error.message || task.error.code || "")
+            : "";
+      return NextResponse.json({
+        historyId,
+        status,
+        urls,
+        live: true,
+        provider: "byteplus",
+        pollAfterSeconds: status === "RUNNING" || status === "PENDING" ? 8 : undefined,
+        error: status === "FAILED" ? errMsg || "BytePlus generation failed" : undefined,
+        details: task.raw,
+      });
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error: error instanceof Error ? error.message : "BytePlus status failed",
+          historyId,
+          live: true,
+          provider: "byteplus",
+        },
+        { status: 502 },
+      );
+    }
+  }
+
   try {
     const result = await callOpenArtTool("openart_creation_get", { historyId });
     const payload = parseToolPayload(result);
@@ -28,6 +68,7 @@ export async function GET(request: Request) {
           error: payload.rawText ?? "Failed to fetch status",
           historyId,
           live: true,
+          provider: "openart",
           mcpEndpoint: MCP_ENDPOINT,
           details: payload,
           raw: result,
@@ -44,6 +85,7 @@ export async function GET(request: Request) {
       status,
       urls,
       live: true,
+      provider: "openart",
       mcpEndpoint: MCP_ENDPOINT,
       pollAfterSeconds:
         typeof payload.pollAfterSeconds === "number" ? payload.pollAfterSeconds : undefined,

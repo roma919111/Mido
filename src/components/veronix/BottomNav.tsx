@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Clapperboard, FolderOpen, Home, ImageIcon, Lightbulb, Sparkles, Wrench } from "lucide-react";
+import { Clapperboard, FolderOpen, Home, Lightbulb, Sparkles, Wrench } from "lucide-react";
 
 const ITEMS: Array<{
   href: string;
@@ -77,8 +77,7 @@ export function BottomNav() {
                         <p className="text-xs font-semibold tracking-[0.14em] text-[#22f0ff]/90">إنشاء</p>
                         <p className="mt-1 text-sm text-white/55">اختر النوع للمتابعة</p>
                       </div>
-                      <div className="grid grid-cols-2 gap-3 p-3">
-                        {/* RTL: first = right = video, second = left = image */}
+                      <div className="grid grid-cols-1 gap-3 p-3">
                         <button
                           type="button"
                           onClick={() => {
@@ -90,23 +89,12 @@ export function BottomNav() {
                           <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#22f0ff]/15 text-[#22f0ff] ring-1 ring-[#22f0ff]/30">
                             <Clapperboard className="h-6 w-6" />
                           </span>
-                          <span className="text-sm font-bold text-white">فيديو</span>
-                          <span className="text-[11px] text-white/45">موديلات الفيديو</span>
+                          <span className="text-sm font-bold text-white">فيديو Veronix</span>
+                          <span className="text-[11px] text-white/45">Seedance Mini · لقطات متعددة</span>
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCreateOpen(false);
-                            router.push("/create/image");
-                          }}
-                          className="flex flex-col items-center gap-2 rounded-2xl border border-white/12 bg-[#141821] px-3 py-4"
-                        >
-                          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/8 text-white ring-1 ring-white/15">
-                            <ImageIcon className="h-6 w-6" />
-                          </span>
-                          <span className="text-sm font-bold text-white">صورة</span>
-                          <span className="text-[11px] text-white/45">موديلات الصور</span>
-                        </button>
+                        <p className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2 text-center text-[11px] text-white/40">
+                          استوديو الصور متوقف مؤقتاً
+                        </p>
                       </div>
                     </div>
                   </div>

@@ -3,9 +3,16 @@ import { getCurrentUser } from "@/lib/customer-auth";
 import { adjustCredits, createAsset, updateAsset, updateUser } from "@/lib/db";
 import { quoteOpenArtCredits } from "@/lib/credit-quote";
 import {
+  createBytePlusVideoTask,
+  isBytePlusConfigured,
+  resolvePublicMediaUrl,
+  toBytePlusHistoryId,
+} from "@/lib/byteplus-ark";
+import {
   FREE_VERONIX_MODEL_DURATION_SECONDS,
   FREE_VERONIX_RESOLUTION,
   isFreeVeronixEligible,
+  VERONIX_MODEL_ID,
 } from "@/lib/free-trial";
 import {
   durationBoundsForModel,
@@ -95,15 +102,32 @@ export async function POST(request: Request) {
 
     const body = (await request.json()) as GenBody;
     const prompt = body.prompt?.trim();
-    const media = body.media ?? "image";
+    const requestedMedia = body.media ?? "video";
     const modelIds = [...new Set(body.modelIds?.filter(Boolean) ?? [])].slice(0, 4);
     const waitForResult = body.waitForResult === true;
 
     if (!prompt) {
       return NextResponse.json({ error: "prompt is required" }, { status: 400 });
     }
+    if (requestedMedia === "image") {
+      return NextResponse.json(
+        {
+          error: "توليد الصور متوقف مؤقتاً — استخدم استوديو الفيديو (Veronix).",
+          imageStudioEnabled: false,
+        },
+        { status: 403 },
+      );
+    }
+    const media = "video" as const;
     if (!modelIds.length) {
       return NextResponse.json({ error: "Select at least one model" }, { status: 400 });
+    }
+    // Product: Veronix video only (other models hidden).
+    if (!modelIds.every((id) => id === VERONIX_MODEL_ID)) {
+      return NextResponse.json(
+        { error: "الموديل المتاح حالياً هو Veronix فقط." },
+        { status: 422 },
+      );
     }
 
     const mode =
@@ -199,7 +223,7 @@ export async function POST(request: Request) {
     for (const quote of billedQuotes) {
       const catalog = getCatalogModel(quote.modelId);
       const mcpModel = catalog ? resolveMcpModel(catalog) : quote.mcpModel;
-      const toolName = media === "image" ? "openart_generate_image" : "openart_generate_video";
+      const toolName = "openart_generate_video";
 
       const hasResolutionControl = Array.isArray(catalog?.resolutions)
         ? catalog.resolutions.length > 0
@@ -216,33 +240,22 @@ export async function POST(request: Request) {
       const modelDuration = freeTrial
         ? FREE_VERONIX_MODEL_DURATION_SECONDS
         : Math.min(bounds.max, Math.max(bounds.min, requestedDuration));
-      const params: Record<string, unknown> =
-        media === "image"
-          ? {
-              prompt,
-              imageCount: 1,
-              aspectRatio: body.aspectRatio ?? "1:1",
-              autoEnhancePrompt: false,
-              ...(body.referenceImages?.length
-                ? { visualReferences: body.referenceImages }
-                : {}),
-            }
-          : {
-              prompt,
-              videoCount: 1,
-              duration: modelDuration,
-              ...(mappedResolution ? { resolution: mappedResolution } : {}),
-              // Product rule: video output is locked to 16:9.
-              aspectRatio: "16:9",
-              ...audioParamForMcpModel(
-                mcpModel,
-                freeTrial ? true : body.generateAudio,
-                catalog?.audioParam,
-              ),
-              autoEnhancePrompt: false,
-              ...(body.startFrame ? { startFrame: body.startFrame } : {}),
-              ...(body.endFrame ? { endFrame: body.endFrame } : {}),
-            };
+      const params: Record<string, unknown> = {
+        prompt,
+        videoCount: 1,
+        duration: modelDuration,
+        ...(mappedResolution ? { resolution: mappedResolution } : {}),
+        // Product rule: video output is locked to 16:9.
+        aspectRatio: "16:9",
+        ...audioParamForMcpModel(
+          mcpModel,
+          freeTrial ? true : body.generateAudio,
+          catalog?.audioParam,
+        ),
+        autoEnhancePrompt: false,
+        ...(body.startFrame ? { startFrame: body.startFrame } : {}),
+        ...(body.endFrame ? { endFrame: body.endFrame } : {}),
+      };
 
       const asset = await createAsset({
         userId: user.id,
@@ -257,6 +270,53 @@ export async function POST(request: Request) {
       });
 
       try {
+        // Primary: BytePlus ModelArk for Veronix video. OpenArt kept as fallback.
+        const useBytePlus =
+          media === "video" &&
+          quote.modelId === VERONIX_MODEL_ID &&
+          isBytePlusConfigured();
+
+        if (useBytePlus) {
+          try {
+            const startUrl = resolvePublicMediaUrl(body.startFrame);
+            const task = await createBytePlusVideoTask({
+              prompt,
+              duration: modelDuration,
+              ratio: "16:9",
+              generateAudio: freeTrial ? true : Boolean(body.generateAudio),
+              watermark: false,
+              startFrameUrl: startUrl,
+              resolution: uiResolution,
+            });
+            const historyId = toBytePlusHistoryId(task.id);
+            await updateAsset(asset.id, user.id, {
+              historyId,
+              url: "",
+              status: "running",
+            });
+            results.push({
+              assetId: asset.id,
+              modelId: quote.modelId,
+              historyId,
+              status: "running",
+              urls: [] as string[],
+              creditsUsed: quote.totalCredits,
+              freeTrial,
+              needsBrandOutro: freeTrial,
+              live: true,
+              provider: "byteplus",
+              tool: "byteplus_contents_generations",
+              quote,
+            });
+            continue;
+          } catch (bpErr) {
+            const bpMsg =
+              bpErr instanceof Error ? bpErr.message : "BytePlus generation failed";
+            // ModelNotOpen / misconfig → fall through to OpenArt backup.
+            console.warn("[veronix] BytePlus primary failed, OpenArt fallback:", bpMsg);
+          }
+        }
+
         const generateResult = await callOpenArtTool(toolName, {
           model: mcpModel,
           mode: quote.mode,
@@ -322,6 +382,7 @@ export async function POST(request: Request) {
           freeTrial,
           needsBrandOutro: freeTrial && finalStatus !== "failed",
           live: true,
+          provider: "openart",
           mcpEndpoint: MCP_ENDPOINT,
           tool: toolName,
           quote,

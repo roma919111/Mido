@@ -39,7 +39,8 @@ export type VideoFormFallback = {
 /** Fallback OpenArt form options when live form sync is unavailable. */
 export const VIDEO_FORM_FALLBACKS: Record<string, VideoFormFallback> = {
   "byte-plus-seedance-2-mini": {
-    duration: { min: 4, max: 15, default: 5 },
+    // BytePlus Dreamina Seedance 2.0 Mini typical window is 4–12s.
+    duration: { min: 4, max: 12, default: 4 },
     resolutions: ["480p", "720p"],
     resolutionDefault: "720p",
     audioSupported: true,
