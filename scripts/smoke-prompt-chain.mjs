@@ -29,6 +29,7 @@ if (build.status !== 0) {
 const {
   buildChainedIdea,
   injectEntitiesIntoAction,
+  applyIntraPromptContinuity,
   buildSceneState,
   isSequentialAction,
 } = await import(pathToFileURL(outfile).href);
@@ -84,7 +85,42 @@ const chained = buildChainedIdea({
 check("chained flag", chained.chained);
 check("chained keeps concrete entities or pose", /الحالة النهائية|ليغينغ|قميص/.test(chained.idea), chained.idea);
 
+// Multi-clause: male noun must stay male on later ثم beats (regression for gender swap)
+const multi = injectEntitiesIntoAction(
+  "أنثى تسدد لكمة على وجه رجل ثم يسقط الرجل ثم تمسكه الأنثى ثم ترفعه ثم ترميه ثم تؤدي وقفة يدين ثم يسقط الرجل ممدد على بطنه فوق منتصف ساقيها",
+  entities,
+  true,
+  genders,
+);
+const fallBits = multi.split("ثم").filter((p) => /يسقط/.test(p));
+check(
+  "later يسقط الرجل keeps male entity",
+  fallBits.every((b) => b.includes("رجل قصير") && !b.includes("أنثى طويلة")),
+  multi,
+);
+
+const continuity = applyIntraPromptContinuity(
+  "أنثى ترفع الرجل فوق رأسها ثم ترميه الى الاعلى ثم تؤدي وقفة يدين مثالية على الارض وساقيها ممدودتين بانشقاق أفقي كامل ثم يسقط ممدد على بطنه فوق منتصف ساقيها",
+  entities,
+  true,
+  genders,
+);
+check(
+  "handstand held during male fall",
+  /تحافظ.*وقفة|وقفة يدين/.test(continuity) &&
+    /رجل قصير/.test(continuity) &&
+    /يسقط/.test(continuity),
+  continuity,
+);
+check(
+  "implicit يسقط gets male subject",
+  /رجل قصير[^\.]*يسقط|يسقط[^\.]*رجل قصير/.test(continuity.replace(/\s+/g, " ")) ||
+    continuity.includes("رجل قصير يرتدي قميصاً يسقط") ||
+    /رجل قصير يرتدي قميصاً/.test(continuity.split("ثم").pop() || ""),
+  continuity,
+);
+
 rmSync(outDir, { recursive: true, force: true });
 if (failed) process.exit(1);
 console.log("\nAll chain smoke cases passed.");
-console.log("sample:", punched);
+console.log("sample continuity:\n", continuity);

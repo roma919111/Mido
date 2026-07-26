@@ -324,8 +324,9 @@ const SETTING_RULES: SettingRule[] = [
   },
   {
     key: "beach",
-    ar: /بحر|شاطئ|موج|ساحل/,
-    en: /\b(beach|ocean|sea|waves?|coast)\b/i,
+    // Avoid matching داخل كلمات مثل «وبحركة» (contains بحر as letters).
+    ar: /(?:^|[^\u0600-\u06FF])(?:ال)?بحر(?:[^\u0600-\u06FF]|$)|شاطئ|أمواج|\bموج\b|ساحل/,
+    en: /\b(beach|ocean|sea|waves?|coastline|seashore)\b/i,
     lineAr: [
       "شاطئ مفتوح مع نسيم ملحي وموج هادئ في الخلفية",
       "ضوء بحر ساطع وانعكاسات لامعة على الماء",
@@ -465,6 +466,10 @@ function secondaryLines(analysis: SceneAnalysis, seed: number): string[] {
 }
 
 function settingLine(analysis: SceneAnalysis, seed: number): string | null {
+  // Vision / explicit place already locked in the idea — don't invent a second location.
+  if (/المكان كما في الصورة|Setting matches the reference image/i.test(analysis.idea)) {
+    return null;
+  }
   const setting = SETTING_RULES.find((r) => r.key === analysis.settingKey);
   if (!setting) {
     if (analysis.arabic) {
