@@ -953,29 +953,46 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     return { res, data };
   }
 
-  /** Parse enhance script lines: "لقطة 1: …" / "Shot 1: …" into generation shots. */
+  /**
+   * Parse enhance script blocks:
+   * لقطة 1:
+   * <AI description…>
+   *
+   * لقطة 2:
+   * …
+   */
   function parseShotScriptLines(
     text: string,
   ): Array<{ prompt: string; action: string }> | null {
-    const lines = text
-      .split(/\n+/)
-      .map((l) => l.trim())
-      .filter(Boolean);
+    const re =
+      /(?:^|\n)\s*(?:لقطة|Shot)\s*(\d+)\s*[:：\-]\s*([\s\S]*?)(?=(?:\n\s*(?:لقطة|Shot)\s*\d+\s*[:：\-])|$)/gi;
     const shots: Array<{ prompt: string; action: string }> = [];
-    for (const line of lines) {
-      const m = line.match(/^(?:لقطة|Shot)\s*\d+\s*[:：\-]\s*(.+)$/i);
-      if (!m?.[1]) continue;
-      const action = m[1].trim();
-      if (action.length < 3) continue;
-      const arabic = /[\u0600-\u06FF]/.test(action);
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(text)) != null) {
+      const body = (match[2] || "").trim();
+      if (body.length < 3) continue;
+      const firstLine = body.split(/\n/)[0]?.trim() || body;
       shots.push({
-        action,
-        prompt: arabic
-          ? `مشهد سينمائي واقعي: ${action}. لقطة واحدة فقط، نفّذ هذا الفعل كما هو مكتوب دون إضافة أحداث أو وضعيات من لقطات أخرى. إضاءة طبيعية سينمائية، تفاصيل حادة، بدون تشويش`
-          : `Cinematic realistic scene: ${action}. one shot only, perform this action as written, do not add events from other shots. natural cinematic light, sharp detail, no flicker`,
+        action: firstLine.slice(0, 120),
+        prompt: body,
       });
     }
     return shots.length >= 2 ? shots.slice(0, MAX_SHOTS) : null;
+  }
+
+  async function gatherEnhanceImageUrls(): Promise<string[]> {
+    const dataCandidates = await Promise.all([
+      previewToDataUrl(startPreview),
+      previewToDataUrl(endPreview),
+      ...refPreviews.slice(0, 2).map((p) => previewToDataUrl(p)),
+    ]);
+    const imageUrls = [
+      ...dataCandidates.filter((u): u is string => Boolean(u)),
+      startFrame?.url,
+      endFrame?.url,
+      ...refs.map((r) => r.url),
+    ].filter((u): u is string => Boolean(u && String(u).trim()));
+    return [...new Set(imageUrls)].slice(0, 2);
   }
 
   async function handleGenerate() {
@@ -1035,7 +1052,50 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         Math.max(durationBounds.min, PRODUCT_PER_SHOT_SECONDS),
       );
       if (canPayMulti) {
-        if (plannedShots && plannedShots.length >= 2) {
+        // Always AI-enhance/split right before generate so every shot has a
+        // polished description — even if the user skipped «تحسين الوصف».
+        setStatus("تحسين وصف كل لقطة بالذكاء الاصطناعي…");
+        const uniqueUrls = await gatherEnhanceImageUrls();
+        const enhanceRes = await fetchJson<{
+          enhanced?: string;
+          error?: string;
+          multiShot?: boolean;
+          shotCount?: number;
+          shots?: Array<{ prompt: string; action: string }>;
+        }>("/api/enhance", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: prompt.trim(),
+            mode: "text-to-video",
+            imageUrls: uniqueUrls,
+            previousState: null,
+          }),
+        });
+        if (
+          enhanceRes.res.ok &&
+          enhanceRes.data.multiShot &&
+          (enhanceRes.data.shots?.length || 0) >= 2
+        ) {
+          useMulti = true;
+          shots = enhanceRes.data.shots!;
+          setPlannedShots(shots);
+          if (enhanceRes.data.enhanced?.trim()) {
+            setPrompt(enhanceRes.data.enhanced.trim());
+          }
+          const count = Math.min(MAX_SHOTS, shots.length);
+          setShotHint({
+            count,
+            totalCredits: null,
+            actions: shots.map((s) => s.action),
+            preferredPerShot: PRODUCT_PER_SHOT_SECONDS,
+            preferredTotalSeconds: count * PRODUCT_PER_SHOT_SECONDS,
+            perShotSeconds: PRODUCT_PER_SHOT_SECONDS,
+            apiPerShotSeconds: apiPerShotSeconds,
+            totalSeconds: count * PRODUCT_PER_SHOT_SECONDS,
+            labelAr: `توصية: ${count} لقطات × ${PRODUCT_PER_SHOT_SECONDS} ثوانٍ = ${count * PRODUCT_PER_SHOT_SECONDS} ثانية`,
+          });
+        } else if (plannedShots && plannedShots.length >= 2) {
           useMulti = true;
           shots = plannedShots;
         } else {
@@ -1044,77 +1104,42 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             useMulti = true;
             shots = fromScript;
             setPlannedShots(fromScript);
-          } else {
-            const planRes = await fetchJson<{
-              error?: string;
-              autoMultiShot?: boolean;
-              perShotSeconds?: number;
-              totalSeconds?: number;
-              timing?: {
-                labelAr?: string;
-                perShotSeconds?: number;
-                totalSeconds?: number;
-                preferredPerShot?: number;
-                preferredTotalSeconds?: number;
-                apiPerShotSeconds?: number;
-              };
-              plan?: { shots?: Array<{ prompt: string; action: string }> };
-              actions?: string[];
-              shotCount?: number;
-              totalCredits?: number | null;
-            }>("/api/shots/plan", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                prompt: prompt.trim(),
-                modelId: selectedModelId,
-                media,
-                // Pass slider total — not 4 — so free-trial heuristics never misfire.
-                duration: Math.max(PRODUCT_PER_SHOT_SECONDS, duration),
-                resolution,
-                generateAudio,
-                aspectRatio: VIDEO_ASPECT,
-                previousState: promptSceneState,
-                multiShot: true,
-              }),
-            });
-            if (
-              planRes.res.ok &&
-              planRes.data.autoMultiShot &&
-              (planRes.data.plan?.shots?.length || 0) >= 2
-            ) {
-              useMulti = true;
-              shots = planRes.data.plan!.shots!;
-              setPlannedShots(shots);
-              const count = Math.min(
-                MAX_SHOTS,
-                planRes.data.shotCount || shots.length,
-              );
-              const preferredPerShot = PRODUCT_PER_SHOT_SECONDS;
-              const preferredTotal = preferredPerShot * count;
-              const apiPer = Math.min(
-                durationBounds.max,
-                Math.max(durationBounds.min, PRODUCT_PER_SHOT_SECONDS),
-              );
-              const total = Math.min(MAX_TOTAL_SECONDS, preferredTotal);
-              setShotHint({
-                count,
-                totalCredits:
-                  typeof planRes.data.totalCredits === "number"
-                    ? planRes.data.totalCredits
-                    : null,
-                actions: planRes.data.actions || shots.map((s) => s.action),
-                preferredPerShot,
-                preferredTotalSeconds: preferredTotal,
-                perShotSeconds: PRODUCT_PER_SHOT_SECONDS,
-                apiPerShotSeconds: apiPer,
-                totalSeconds: total,
-                labelAr:
-                  planRes.data.timing?.labelAr ||
-                  `توصية: ${count} لقطات × ${PRODUCT_PER_SHOT_SECONDS} ثوانٍ = ${total} ثانية`,
-              });
-            }
           }
+        }
+      }
+
+      if (canPayMulti && !useMulti) {
+        // Last resort plan API (no AI polish) — still prefer multi over silent 4s.
+        const planRes = await fetchJson<{
+          autoMultiShot?: boolean;
+          plan?: { shots?: Array<{ prompt: string; action: string }> };
+          shotCount?: number;
+          actions?: string[];
+          totalCredits?: number | null;
+          timing?: { labelAr?: string };
+        }>("/api/shots/plan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: prompt.trim(),
+            modelId: selectedModelId,
+            media,
+            duration: Math.max(PRODUCT_PER_SHOT_SECONDS, duration),
+            resolution,
+            generateAudio,
+            aspectRatio: VIDEO_ASPECT,
+            previousState: null,
+            multiShot: true,
+          }),
+        });
+        if (
+          planRes.res.ok &&
+          planRes.data.autoMultiShot &&
+          (planRes.data.plan?.shots?.length || 0) >= 2
+        ) {
+          useMulti = true;
+          shots = planRes.data.plan!.shots!;
+          setPlannedShots(shots);
         }
       }
 
@@ -1125,7 +1150,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           (shotHint?.count || 0) >= 2)
       ) {
         throw new Error(
-          "تعذر بدء اللقطات المتعددة — اضغط «تحسين الوصف» ثم أعد التوليد",
+          "تعذر تقسيم المشهد إلى لقطات متعددة — أعد صياغة الوصف بأفعال متسلسلة ثم حاول مرة أخرى",
         );
       }
 

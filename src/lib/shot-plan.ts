@@ -343,16 +343,20 @@ export async function planShotSequenceAsync(
   return base;
 }
 
-/** Human-readable shot script for the prompt field after enhance. */
+/**
+ * Human-readable shot script for the prompt field after enhance.
+ * Each shot shows its AI-enhanced generation description (not only the raw verb).
+ */
 export function formatShotScript(plan: ShotPlan, arabic: boolean): string {
   if (!plan.multiShot || plan.shotCount < 2) {
     return plan.shots[0]?.prompt || "";
   }
-  const lines = plan.shots.map((s, i) => {
+  const blocks = plan.shots.map((s, i) => {
     const label = arabic ? `لقطة ${i + 1}` : `Shot ${i + 1}`;
-    return `${label}: ${s.action}`;
+    const body = (s.prompt || s.action || "").trim();
+    return `${label}:\n${body}`;
   });
-  return lines.join("\n");
+  return blocks.join("\n\n");
 }
 
 export function shouldAutoMultiShot(

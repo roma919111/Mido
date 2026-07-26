@@ -66,8 +66,8 @@ export async function POST(request: Request) {
       if (shotPlan.multiShot && shotPlan.shotCount >= 2) {
         const entities = result.finalState?.entities || [];
         const genders = result.finalState?.entityGenders;
-        // Per-shot: keep the user's action beat, inject vision entities, then
-        // AI-polish THAT beat for generation (filter/cinematic quality).
+        // Per-shot: inject vision entities, then AI-enhance the full description
+        // used for generation AND shown in the shot script.
         shots = shotPlan.shots.map((s, index) => {
           const grounded =
             entities.length > 0
@@ -82,11 +82,11 @@ export async function POST(request: Request) {
             : s.prompt;
           return {
             index,
-            // Script line stays the clear beat; generation uses full polish.
             action: grounded,
             prompt: promptOut,
           };
         });
+        // Script displays the AI-enhanced description for every shot.
         enhanced = formatShotScript({ ...shotPlan, shots }, arabic);
         const setting = (result.coreIdea || "").match(
           /المكان كما في الصورة:[^.]+|Setting matches the reference image:[^.]+/i,

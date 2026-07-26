@@ -320,6 +320,10 @@ export async function concatVideos(
   const work = await mkdtemp(path.join(tmpdir(), "vyronix-concat-"));
   const w = 1280;
   const h = 720;
+  // Bake a reliable clarity look into normalize (eq/unsharp always available).
+  const clarityNormVf = wantClarity
+    ? `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,unsharp=5:5:1.0:5:5:0.0,eq=contrast=1.18:saturation=1.3:brightness=0.02:gamma=1.04,format=yuv420p`
+    : `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p`;
 
   try {
     const norms: string[] = [];
@@ -335,7 +339,7 @@ export async function concatVideos(
           raw,
           ...trimArgs,
           "-vf",
-          `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p`,
+          clarityNormVf,
           "-af",
           "aformat=sample_rates=44100:channel_layouts=stereo",
           "-c:v",
@@ -363,7 +367,7 @@ export async function concatVideos(
           "-i",
           "anullsrc=channel_layout=stereo:sample_rate=44100",
           "-vf",
-          `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p`,
+          clarityNormVf,
           "-shortest",
           "-c:v",
           "libx264",
@@ -437,18 +441,8 @@ export async function concatVideos(
       ]);
     }
 
-    if (wantClarity) {
-      const graded = path.join(work, "graded.mp4");
-      try {
-        await applyClarityGrade(finalTmp, graded);
-        await copyFile(graded, outPublic);
-      } catch {
-        // Never lose a successful stitch because grading failed.
-        await copyFile(finalTmp, outPublic);
-      }
-    } else {
-      await copyFile(finalTmp, outPublic);
-    }
+    // Clarity already applied in per-clip normalize (eq/unsharp). Avoid a second pass.
+    await copyFile(finalTmp, outPublic);
     const st = await stat(outPublic);
     if (st.size < 2000) throw new Error("Concat output too small");
     return `/generations/${id}.mp4`;
