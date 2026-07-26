@@ -2,16 +2,9 @@ import { spawn } from "node:child_process";
 import { copyFile, mkdir, mkdtemp, rm, writeFile, stat, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { FREE_VERONIX_OUTRO_SECONDS } from "@/lib/free-trial";
+import { FREE_VERONIX_STOCK_PATH } from "@/lib/free-trial";
 
-const BUNDLED_FONT = path.join(
-  process.cwd(),
-  "assets",
-  "fonts",
-  "DejaVuSans-Bold.ttf",
-);
-const SYSTEM_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
-const STOCK_OUTRO = path.join(process.cwd(), "public", "promo", "veronix-action.mp4");
+const STOCK_INTRO = path.join(process.cwd(), FREE_VERONIX_STOCK_PATH);
 
 /** Persistent generations live on the Railway volume under `.data`. */
 export const GENERATIONS_DIR = path.join(process.cwd(), ".data", "generations");
@@ -31,24 +24,12 @@ function run(cmd: string, args: string[]): Promise<void> {
   });
 }
 
-async function resolveFont(): Promise<string> {
-  for (const candidate of [BUNDLED_FONT, SYSTEM_FONT]) {
-    try {
-      await access(candidate);
-      return candidate;
-    } catch {
-      // try next
-    }
-  }
-  throw new Error("VYRONIX font missing (bundle assets/fonts/DejaVuSans-Bold.ttf)");
-}
-
 async function downloadToFile(url: string, dest: string) {
   const res = await fetch(url, {
     redirect: "follow",
     headers: {
       Accept: "*/*",
-      "User-Agent": "VyronixBrandOutro/1.0",
+      "User-Agent": "VyronixBrandIntro/1.0",
     },
   });
   if (!res.ok) {
@@ -61,19 +42,22 @@ async function downloadToFile(url: string, dest: string) {
   await writeFile(dest, buf);
 }
 
-async function probeSize(file: string): Promise<{ w: number; h: number }> {
+async function probeJson(file: string): Promise<{
+  w: number;
+  h: number;
+  fps: string;
+  hasAudio: boolean;
+}> {
   const out = await new Promise<string>((resolve, reject) => {
     const child = spawn(
       "ffprobe",
       [
         "-v",
         "error",
-        "-select_streams",
-        "v:0",
         "-show_entries",
-        "stream=width,height",
+        "stream=index,codec_type,width,height,r_frame_rate",
         "-of",
-        "csv=p=0:s=x",
+        "json",
         file,
       ],
       { stdio: ["ignore", "pipe", "pipe"] },
@@ -88,17 +72,29 @@ async function probeSize(file: string): Promise<{ w: number; h: number }> {
     });
     child.on("error", reject);
     child.on("close", (code) => {
-      if (code === 0) resolve(stdout.trim());
+      if (code === 0) resolve(stdout);
       else reject(new Error(stderr || "ffprobe failed"));
     });
   });
-  const [ws, hs] = out.split("x");
-  const w = Number(ws);
-  const h = Number(hs);
-  if (!Number.isFinite(w) || !Number.isFinite(h) || w < 16 || h < 16) {
-    return { w: 854, h: 480 };
-  }
-  return { w: w - (w % 2), h: h - (h % 2) };
+
+  const parsed = JSON.parse(out) as {
+    streams?: Array<{
+      codec_type?: string;
+      width?: number;
+      height?: number;
+      r_frame_rate?: string;
+    }>;
+  };
+  const video = parsed.streams?.find((s) => s.codec_type === "video");
+  const hasAudio = Boolean(parsed.streams?.some((s) => s.codec_type === "audio"));
+  const w = Number(video?.width) || 1280;
+  const h = Number(video?.height) || 720;
+  return {
+    w: w - (w % 2),
+    h: h - (h % 2),
+    fps: video?.r_frame_rate && video.r_frame_rate !== "0/0" ? video.r_frame_rate : "24/1",
+    hasAudio,
+  };
 }
 
 export function resolveGenerationFile(localPath: string): string | null {
@@ -110,23 +106,25 @@ export function resolveGenerationFile(localPath: string): string | null {
 }
 
 /**
- * Download a 4s model clip, burn a persistent VYRONIX watermark, append a 2s
- * Netflix-style stock end card, and save under `.data/generations`.
- * Returns a same-origin path like `/generations/<id>.mp4`.
+ * Free-trial branding:
+ * 1) Owner stock intro as-is (no overlays/trimming)
+ * 2) Generated OpenArt clip (keeps its audio)
+ * Saved under `.data/generations` → `/generations/<id>.mp4`
  */
 export async function appendVyronixOutro(sourceUrl: string): Promise<string> {
   const id = `veronix-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   await mkdir(GENERATIONS_DIR, { recursive: true });
   const outPublic = path.join(GENERATIONS_DIR, `${id}.mp4`);
-  const work = await mkdtemp(path.join(tmpdir(), "vyronix-outro-"));
+  const work = await mkdtemp(path.join(tmpdir(), "vyronix-brand-"));
 
   const sourcePath = path.join(work, "source.mp4");
-  const outroPath = path.join(work, "outro.mp4");
-  const normalized = path.join(work, "normalized.mp4");
+  const stockNorm = path.join(work, "stock.mp4");
+  const genNorm = path.join(work, "generated.mp4");
   const finalTmp = path.join(work, "final.mp4");
-  const font = await resolveFont();
 
   try {
+    await access(STOCK_INTRO);
+
     if (sourceUrl.startsWith("/generations/")) {
       const existing = resolveGenerationFile(sourceUrl);
       if (!existing) throw new Error("Invalid local source");
@@ -135,117 +133,108 @@ export async function appendVyronixOutro(sourceUrl: string): Promise<string> {
       await downloadToFile(sourceUrl, sourcePath);
     }
 
-    const { w, h } = await probeSize(sourcePath);
-    const markSize = Math.max(22, Math.round(Math.min(w, h) * 0.055));
-    const endSize = Math.max(40, Math.round(Math.min(w, h) * 0.14));
-    const pad = Math.max(16, Math.round(markSize * 0.9));
+    const stockMeta = await probeJson(STOCK_INTRO);
+    const genMeta = await probeJson(sourcePath);
+    const w = stockMeta.w;
+    const h = stockMeta.h;
 
-    // Main clip: normalize + persistent corner watermark (Netflix-style bug).
+    // Normalize stock for concat only (no creative edits / no trim).
     await run("ffmpeg", [
       "-y",
       "-i",
-      sourcePath,
+      STOCK_INTRO,
       "-vf",
-      [
-        `scale=${w}:${h}:force_original_aspect_ratio=decrease`,
-        `pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2`,
-        "setsar=1",
-        "fps=24",
-        "format=yuv420p",
-        `drawtext=fontfile=${font}:text='VYRONIX':fontsize=${markSize}:fontcolor=white@0.88:borderw=2:bordercolor=black@0.5:x=w-text_w-${pad}:y=${pad}`,
-      ].join(","),
-      "-an",
+      `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p`,
+      "-af",
+      "aformat=sample_rates=44100:channel_layouts=stereo",
       "-c:v",
       "libx264",
       "-preset",
       "veryfast",
       "-pix_fmt",
       "yuv420p",
-      normalized,
+      "-c:a",
+      "aac",
+      "-ar",
+      "44100",
+      "-ac",
+      "2",
+      stockNorm,
     ]);
 
-    // 2s stock end card from promo reel (fallback: solid cinematic card).
-    let usedStock = false;
-    try {
-      await access(STOCK_OUTRO);
+    // Generated clip: match canvas, keep original audio when present.
+    if (genMeta.hasAudio) {
       await run("ffmpeg", [
         "-y",
-        "-ss",
-        "0",
-        "-t",
-        String(FREE_VERONIX_OUTRO_SECONDS),
         "-i",
-        STOCK_OUTRO,
+        sourcePath,
         "-vf",
-        [
-          `scale=${w}:${h}:force_original_aspect_ratio=decrease`,
-          `pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2`,
-          "setsar=1",
-          "fps=24",
-          "format=yuv420p",
-          "eq=brightness=-0.18:saturation=0.8",
-          `drawtext=fontfile=${font}:text='VYRONIX':fontsize=${endSize}:fontcolor=white:borderw=3:bordercolor=0x22f0ff:x=(w-text_w)/2:y=(h-text_h)/2`,
-          "fade=t=in:st=0:d=0.35",
-          "fade=t=out:st=1.45:d=0.5",
-        ].join(","),
-        "-an",
+        `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p`,
+        "-af",
+        "aformat=sample_rates=44100:channel_layouts=stereo",
         "-c:v",
         "libx264",
         "-preset",
         "veryfast",
         "-pix_fmt",
         "yuv420p",
-        "-t",
-        String(FREE_VERONIX_OUTRO_SECONDS),
-        outroPath,
+        "-c:a",
+        "aac",
+        "-ar",
+        "44100",
+        "-ac",
+        "2",
+        genNorm,
       ]);
-      usedStock = true;
-    } catch {
-      usedStock = false;
-    }
-
-    if (!usedStock) {
+    } else {
       await run("ffmpeg", [
         "-y",
+        "-i",
+        sourcePath,
         "-f",
         "lavfi",
         "-i",
-        `color=c=0x07090f:s=${w}x${h}:d=${FREE_VERONIX_OUTRO_SECONDS}:r=24`,
+        "anullsrc=channel_layout=stereo:sample_rate=44100",
         "-vf",
-        [
-          `drawtext=fontfile=${font}:text=VYRONIX:fontsize=${endSize}:fontcolor=white:borderw=3:bordercolor=0x22f0ff:x=(w-text_w)/2:y=(h-text_h)/2`,
-          "fade=t=in:st=0:d=0.4",
-          "fade=t=out:st=1.5:d=0.5",
-        ].join(","),
-        "-an",
+        `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p`,
+        "-shortest",
         "-c:v",
         "libx264",
         "-preset",
         "veryfast",
         "-pix_fmt",
         "yuv420p",
-        "-t",
-        String(FREE_VERONIX_OUTRO_SECONDS),
-        outroPath,
+        "-c:a",
+        "aac",
+        "-ar",
+        "44100",
+        "-ac",
+        "2",
+        genNorm,
       ]);
     }
 
+    // Stock FIRST, then generated model clip (both with audio).
     await run("ffmpeg", [
       "-y",
       "-i",
-      normalized,
+      stockNorm,
       "-i",
-      outroPath,
+      genNorm,
       "-filter_complex",
-      "[0:v][1:v]concat=n=2:v=1:a=0[v]",
+      "[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[v][a]",
       "-map",
       "[v]",
+      "-map",
+      "[a]",
       "-c:v",
       "libx264",
       "-preset",
       "veryfast",
       "-pix_fmt",
       "yuv420p",
+      "-c:a",
+      "aac",
       "-movflags",
       "+faststart",
       finalTmp,

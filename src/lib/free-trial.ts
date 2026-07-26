@@ -1,15 +1,18 @@
-/** First-time free Veronix video: 4s model + 2s branded outro = 6s total. */
+/** First-time free Veronix video: stock intro (as-is) + 4s model clip. */
 
 export const VERONIX_MODEL_ID = "seedance-2-mini";
 
-/** Final customer-facing length (model clip + VYRONIX outro). */
-export const FREE_VERONIX_DURATION_SECONDS = 6;
+/**
+ * Locked duration sent to OpenArt / shown in free-trial controls.
+ * Branding prepends the full stock intro separately.
+ */
+export const FREE_VERONIX_DURATION_SECONDS = 4;
 
 /** Seconds sent to the OpenArt model (prompt content only). */
 export const FREE_VERONIX_MODEL_DURATION_SECONDS = 4;
 
-/** Local cinematic VYRONIX end card length. */
-export const FREE_VERONIX_OUTRO_SECONDS = 2;
+/** Official owner stock intro (do not edit the asset — concat as-is). */
+export const FREE_VERONIX_STOCK_PATH = "public/promo/vyronix-outro-stock.mp4";
 
 /** Locked free-trial resolution. */
 export const FREE_VERONIX_RESOLUTION = "480p";
