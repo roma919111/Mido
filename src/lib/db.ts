@@ -179,13 +179,14 @@ export async function adjustCredits(userId: string, delta: number): Promise<User
 
 /** Ops-only: email/credits/plan for credit grants (no secrets). */
 export async function listUsersForAdmin(): Promise<
-  Array<{ email: string; credits: number; planId: PlanId }>
+  Array<{ email: string; credits: number; planId: PlanId; freeVeronixUsed: boolean }>
 > {
   const db = await ensureDb();
   return db.users.map((u) => ({
     email: u.email,
     credits: u.credits,
     planId: u.planId,
+    freeVeronixUsed: Boolean(u.freeVeronixUsed),
   }));
 }
 

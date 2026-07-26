@@ -3,10 +3,11 @@ import {
   enhancePrompt,
   enhancePromptVariant,
   enhancePromptWithContext,
+  extractCoreIdea,
   type SceneState,
 } from "@/lib/prompt-enhance";
+import { injectEntitiesIntoAction } from "@/lib/prompt-chain";
 import {
-  applyEntitiesToShotPlan,
   formatShotScript,
   planShotSequenceAsync,
   type PlannedShot,
@@ -64,18 +65,30 @@ export async function POST(request: Request) {
         }
       }
       if (shotPlan.multiShot && shotPlan.shotCount >= 2) {
-        // Faithful rule: keep user's beats as-written (with vision entities),
-        // never replace with a rewritten cinematic blob / invented poses.
         const entities = result.finalState?.entities || [];
         const genders = result.finalState?.entityGenders;
-        const withEntities = applyEntitiesToShotPlan(
-          shotPlan,
-          entities,
-          arabic,
-          genders,
-        );
-        shots = withEntities.shots;
-        enhanced = formatShotScript(withEntities, arabic);
+        // Per-shot: keep the user's action beat, inject vision entities, then
+        // AI-polish THAT beat for generation (filter/cinematic quality).
+        shots = shotPlan.shots.map((s, index) => {
+          const grounded =
+            entities.length > 0
+              ? injectEntitiesIntoAction(s.action, entities, arabic, genders)
+              : s.action;
+          const polished = enhancePrompt(grounded, String(mode));
+          const oneShotLock = arabic
+            ? "لقطة واحدة فقط، نفّذ هذا الفعل دون إضافة أحداث من لقطات أخرى"
+            : "one shot only, perform this action without adding events from other shots";
+          const promptOut = polished
+            ? `${polished}. ${oneShotLock}`
+            : s.prompt;
+          return {
+            index,
+            // Script shows the clear action (+ entities), not a dense blob.
+            action: extractCoreIdea(polished) || grounded,
+            prompt: promptOut,
+          };
+        });
+        enhanced = formatShotScript({ ...shotPlan, shots }, arabic);
         const setting = (result.coreIdea || "").match(
           /المكان كما في الصورة:[^.]+|Setting matches the reference image:[^.]+/i,
         );

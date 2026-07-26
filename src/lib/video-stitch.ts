@@ -75,64 +75,82 @@ async function downloadToFile(url: string, dest: string) {
 }
 
 /**
- * OmarFX-style clarity grade: denoise → CAS sharpen → unsharp → color → soft glow.
- * Applied on final output only (not intermediate multi-shot parts).
+ * OmarFX-style clarity grade: denoise → sharpen → color → soft glow.
+ * Never throws — copies input if every filter graph fails.
  */
 export async function applyClarityGrade(inputPath: string, outputPath: string): Promise<void> {
-  const filter =
-    "[0:v]scale=1280:720:flags=lanczos," +
-    "hqdn3d=1.2:1.2:3:3," +
-    "cas=strength=0.55," +
-    "unsharp=5:5:1.2:5:5:0.0," +
-    "eq=contrast=1.18:saturation=1.35:brightness=0.02:gamma=1.05," +
-    "split=2[base][g];" +
-    "[g]eq=brightness=0.08:saturation=1.1,gblur=sigma=10[glow];" +
-    "[base][glow]blend=all_mode=screen:all_opacity=0.18,format=yuv420p[v]";
+  const attempts: Array<{ complex?: string; vf?: string }> = [
+    {
+      complex:
+        "[0:v]scale=1280:720:flags=lanczos," +
+        "hqdn3d=1.2:1.2:3:3," +
+        "cas=strength=0.55," +
+        "unsharp=5:5:1.2:5:5:0.0," +
+        "eq=contrast=1.18:saturation=1.35:brightness=0.02:gamma=1.05," +
+        "split=2[base][g];" +
+        "[g]eq=brightness=0.08:saturation=1.1,gblur=sigma=10[glow];" +
+        "[base][glow]blend=all_mode=screen:all_opacity=0.18,format=yuv420p[v]",
+    },
+    {
+      vf: "scale=1280:720:flags=lanczos,hqdn3d=1.2:1.2:3:3,cas=strength=0.5,unsharp=5:5:1.0:5:5:0.0,eq=contrast=1.15:saturation=1.25:brightness=0.02:gamma=1.04,format=yuv420p",
+    },
+    {
+      // Wide compatibility — no cas/hqdn3d required.
+      vf: "scale=1280:720:flags=lanczos,unsharp=5:5:1.0:5:5:0.0,eq=contrast=1.12:saturation=1.2:brightness=0.01:gamma=1.03,format=yuv420p",
+    },
+  ];
 
-  try {
-    await run("ffmpeg", [
-      "-y",
-      "-i",
-      inputPath,
-      "-filter_complex",
-      filter,
-      "-map",
-      "[v]",
-      "-map",
-      "0:a?",
-      "-c:v",
-      "libx264",
-      "-preset",
-      "veryfast",
-      "-pix_fmt",
-      "yuv420p",
-      "-c:a",
-      "aac",
-      "-movflags",
-      "+faststart",
-      outputPath,
-    ]);
-  } catch {
-    // Fallback without glow blend if filter graph fails on this ffmpeg build.
-    await run("ffmpeg", [
-      "-y",
-      "-i",
-      inputPath,
-      "-vf",
-      "scale=1280:720:flags=lanczos,hqdn3d=1.2:1.2:3:3,cas=strength=0.5,unsharp=5:5:1.0:5:5:0.0,eq=contrast=1.15:saturation=1.25:brightness=0.02:gamma=1.04,format=yuv420p",
-      "-c:v",
-      "libx264",
-      "-preset",
-      "veryfast",
-      "-pix_fmt",
-      "yuv420p",
-      "-c:a",
-      "aac",
-      "-movflags",
-      "+faststart",
-      outputPath,
-    ]);
+  for (const attempt of attempts) {
+    try {
+      if (attempt.complex) {
+        await run("ffmpeg", [
+          "-y",
+          "-i",
+          inputPath,
+          "-filter_complex",
+          attempt.complex,
+          "-map",
+          "[v]",
+          "-map",
+          "0:a?",
+          "-c:v",
+          "libx264",
+          "-preset",
+          "veryfast",
+          "-pix_fmt",
+          "yuv420p",
+          "-c:a",
+          "aac",
+          "-movflags",
+          "+faststart",
+          outputPath,
+        ]);
+      } else {
+        await run("ffmpeg", [
+          "-y",
+          "-i",
+          inputPath,
+          "-vf",
+          attempt.vf!,
+          "-c:v",
+          "libx264",
+          "-preset",
+          "veryfast",
+          "-pix_fmt",
+          "yuv420p",
+          "-c:a",
+          "aac",
+          "-movflags",
+          "+faststart",
+          outputPath,
+        ]);
+      }
+      return;
+    } catch {
+      // try next graph
+    }
   }
+  await copyFile(inputPath, outputPath);
 }
 
 /**

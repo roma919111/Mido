@@ -1010,7 +1010,20 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     setGenerating(true);
     setGenStartedAt(startedAt);
     setElapsedSec(0);
-    setStatus(freeTrial ? "جاري توليد فيديوك المجاني…" : "Generating…");
+    // Paid balance always unlocks multi-shot for this run (ignore stale freeTrial flag).
+    const canPayMulti =
+      media === "video" &&
+      multiShotOn &&
+      ((user.credits ?? 0) > 0 || Boolean(user.freeVeronixUsed));
+    if (canPayMulti) setFreeTrial(false);
+
+    setStatus(
+      canPayMulti
+        ? "تخطيط اللقطات المتعددة…"
+        : freeTrial
+          ? "جاري توليد فيديوك المجاني…"
+          : "Generating…",
+    );
     try {
       // Plan multi-shot from context (no ثم required) — paid video only.
       let useMulti = false;
@@ -1021,13 +1034,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         durationBounds.max,
         Math.max(durationBounds.min, PRODUCT_PER_SHOT_SECONDS),
       );
-      // Free trial stays single. Anyone with credits (or post-trial) can multi-shot.
-      const allowMulti =
-        media === "video" &&
-        multiShotOn &&
-        !freeTrial &&
-        !freeSettingsLocked;
-      if (allowMulti) {
+      if (canPayMulti) {
         if (plannedShots && plannedShots.length >= 2) {
           useMulti = true;
           shots = plannedShots;
@@ -1111,6 +1118,17 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         }
       }
 
+      if (
+        canPayMulti &&
+        !useMulti &&
+        (/ثم|\bthen\b|لقطة\s*\d+|Shot\s*\d+/i.test(prompt) ||
+          (shotHint?.count || 0) >= 2)
+      ) {
+        throw new Error(
+          "تعذر بدء اللقطات المتعددة — اضغط «تحسين الوصف» ثم أعد التوليد",
+        );
+      }
+
       if (useMulti && shots.length >= 2) {
         // Fixed 4s/shot (Seedance min). Slider budget caps how many shots run.
         perShotSeconds = PRODUCT_PER_SHOT_SECONDS;
@@ -1131,6 +1149,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         if (shots.length > shotBudget) {
           shots = shots.slice(0, shotBudget);
         }
+        // Ensure slider/total matches the shots we will actually generate.
+        setDuration(shots.length * PRODUCT_PER_SHOT_SECONDS);
+        setStatus(`توليد ${shots.length} لقطات × ${PRODUCT_PER_SHOT_SECONDS}ث ثم الدمج…`);
         setPreview({ url: "", mediaType: "video", status: "running" });
         const localUrls: string[] = [];
         const partAssetIds: string[] = [];
@@ -1197,8 +1218,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             }
             if (!url && !historyId) throw new Error(`لا يوجد فيديو من ${label}`);
 
-            // Persist part locally so stitch never depends on CDN alone.
-            setStatus(`حفظ ${label} محلياً قبل الدمج…`);
+            // Persist + clarity-grade each beat so the stitch inherits the filter.
+            setStatus(`حفظ وتحسين وضوح ${label}…`);
             const cacheRes = await fetchJson<{ error?: string; url?: string }>(
               "/api/media/cache",
               {
@@ -1208,6 +1229,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                   videoUrl: url || undefined,
                   historyId: historyId || undefined,
                   assetId: assetId || undefined,
+                  clarity: true,
                 }),
               },
             );

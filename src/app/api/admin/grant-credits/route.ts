@@ -13,6 +13,8 @@ type Body = {
   credits?: number;
   /** Set absolute balance instead of adding */
   setTo?: number;
+  /** Mark free Veronix trial as already used (unlock paid multi-shot). */
+  freeVeronixUsed?: boolean;
   /** List users (email/credits/plan only) for ops */
   list?: boolean;
 };
@@ -45,23 +47,37 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+    const patch: { credits?: number; freeVeronixUsed?: boolean } = {};
     let nextCredits = user.credits;
     if (typeof body.setTo === "number" && Number.isFinite(body.setTo)) {
       nextCredits = Math.max(0, Math.min(50_000, Math.floor(body.setTo)));
-      await updateUser(user.id, { credits: nextCredits });
-    } else {
+      patch.credits = nextCredits;
+    } else if (body.credits != null) {
       const delta = Math.max(0, Math.min(20_000, Math.floor(Number(body.credits) || 0)));
-      if (!delta) {
-        return NextResponse.json({ error: "credits or setTo required" }, { status: 400 });
+      if (delta) {
+        const updated = await adjustCredits(user.id, delta);
+        nextCredits = updated.credits;
       }
-      const updated = await adjustCredits(user.id, delta);
-      nextCredits = updated.credits;
+    }
+    if (typeof body.freeVeronixUsed === "boolean") {
+      patch.freeVeronixUsed = body.freeVeronixUsed;
+    }
+    if (Object.keys(patch).length) {
+      await updateUser(user.id, patch);
+      if (typeof patch.credits === "number") nextCredits = patch.credits;
+    } else if (body.credits == null && body.setTo == null && body.freeVeronixUsed == null) {
+      return NextResponse.json(
+        { error: "credits, setTo, or freeVeronixUsed required" },
+        { status: 400 },
+      );
     }
 
+    const refreshed = await findUserByEmail(email);
     return NextResponse.json({
       ok: true,
       email: user.email,
-      credits: nextCredits,
+      credits: refreshed?.credits ?? nextCredits,
+      freeVeronixUsed: Boolean(refreshed?.freeVeronixUsed),
     });
   } catch (error) {
     return NextResponse.json(
