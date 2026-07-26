@@ -83,8 +83,8 @@ export async function POST(request: Request) {
             : s.prompt;
           return {
             index,
-            // Script shows the clear action (+ entities), not a dense blob.
-            action: extractCoreIdea(polished) || grounded,
+            // Script line stays the clear beat; generation uses full polish.
+            action: grounded,
             prompt: promptOut,
           };
         });
