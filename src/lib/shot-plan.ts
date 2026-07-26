@@ -348,10 +348,7 @@ export function formatShotScript(plan: ShotPlan, arabic: boolean): string {
     const label = arabic ? `لقطة ${i + 1}` : `Shot ${i + 1}`;
     return `${label}: ${s.action}`;
   });
-  const note = arabic
-    ? "\n\n(نفس أفعالك كما كتبتها — كل لقطة تُولَّد وحدها ثم تُدمج في فيديو واحد)"
-    : "\n\n(Your actions as written — each shot is generated then stitched into one video.)";
-  return lines.join("\n") + note;
+  return lines.join("\n");
 }
 
 export function shouldAutoMultiShot(

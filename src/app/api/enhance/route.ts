@@ -3,8 +3,10 @@ import {
   enhancePrompt,
   enhancePromptVariant,
   enhancePromptWithContext,
+  extractCoreIdea,
   type SceneState,
 } from "@/lib/prompt-enhance";
+import { injectEntitiesIntoAction } from "@/lib/prompt-chain";
 import {
   formatShotScript,
   planShotSequenceAsync,
@@ -46,10 +48,7 @@ export async function POST(request: Request) {
     const arabic = /[\u0600-\u06FF]/.test(result.coreIdea || prompt);
     const isVideo = String(mode).includes("video");
 
-    // Context-aware shot plan (no ثم required) — general for any action chain.
-    // IMPORTANT: plan from the USER's original prompt, not from the cinematic
-    // rewrite / finalSceneState. finalState is the END of the whole sequence and
-    // would leak late poses (e.g. overhead lift) into shot 1 as "لقطة واحدة".
+    // Plan from the USER's original prompt (not final scene state).
     let shotPlan = null as Awaited<ReturnType<typeof planShotSequenceAsync>> | null;
     let shots: PlannedShot[] = [];
     let enhanced = enhancedFull;
@@ -57,7 +56,6 @@ export async function POST(request: Request) {
       shotPlan = await planShotSequenceAsync(prompt, {
         previousState: null,
       });
-      // Fallback: grounded core idea if original somehow fails to split
       if (!shotPlan.multiShot || shotPlan.shotCount < 2) {
         const fromCore = await planShotSequenceAsync(result.coreIdea || prompt, {
           previousState: null,
@@ -67,9 +65,23 @@ export async function POST(request: Request) {
         }
       }
       if (shotPlan.multiShot && shotPlan.shotCount >= 2) {
-        shots = shotPlan.shots;
-        // Show the user's beats as-written — never replace with a rewritten cinematic blob.
-        enhanced = formatShotScript(shotPlan, arabic);
+        const entities = result.finalState?.entities || [];
+        const genders = result.finalState?.entityGenders;
+        // AI-polish EACH beat independently (same action, richer cinematic wording).
+        shots = shotPlan.shots.map((s, index) => {
+          const grounded =
+            entities.length > 0
+              ? injectEntitiesIntoAction(s.action, entities, arabic, genders)
+              : s.action;
+          const polished = enhancePrompt(grounded, String(mode));
+          const display = extractCoreIdea(polished) || grounded;
+          return {
+            index,
+            action: display,
+            prompt: polished || s.prompt,
+          };
+        });
+        enhanced = formatShotScript({ ...shotPlan, shots }, arabic);
         const setting = (result.coreIdea || "").match(
           /المكان كما في الصورة:[^.]+|Setting matches the reference image:[^.]+/i,
         );

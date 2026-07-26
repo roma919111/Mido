@@ -1024,6 +1024,15 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       }
 
       if (useMulti && shots.length >= 2) {
+        // Force product timing: each beat trims to 2s → N×2s final (not a single 4s clip).
+        perShotSeconds = PRODUCT_PER_SHOT_SECONDS;
+        apiPerShotSeconds = Math.min(
+          durationBounds.max,
+          Math.max(durationBounds.min, apiPerShotSeconds || durationBounds.min),
+        );
+        setDuration(
+          Math.min(MAX_TOTAL_SECONDS, shots.length * PRODUCT_PER_SHOT_SECONDS),
+        );
         setPreview({ url: "", mediaType: "video", status: "running" });
         const localUrls: string[] = [];
         const partAssetIds: string[] = [];
@@ -1159,10 +1168,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 prompt: prompt.trim(),
                 modelId: selectedModelId,
                 shotCount: shots.length,
-                maxSecondsPerClip: Math.min(
-                  PRODUCT_PER_SHOT_SECONDS,
-                  Math.max(1, Math.round(duration / Math.max(1, shots.length))),
-                ),
+                // Always keep each beat at product length (2s) so N shots ≈ N×2s total.
+                maxSecondsPerClip: PRODUCT_PER_SHOT_SECONDS,
               }),
             });
             if (concatRes.res.ok && concatRes.data.url) {
@@ -1583,9 +1590,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               </span>
               <span className="font-semibold tabular-nums text-[#22f0ff]">
                 {Math.min(sliderMax, Math.max(sliderMin, duration))}ث
-                {multiDurationMode && shotHint && shotHint.count >= 2
-                  ? ` · ${shotHint.count}×${shotHint.perShotSeconds}ث`
-                  : ""}
                 {freeSettingsLocked ? " · مجاني أول مرة" : ""}
               </span>
             </div>
@@ -1603,8 +1607,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               <span>{sliderMin}s</span>
               {selectedModelId === VERONIX_MODEL_ID && !user?.freeVeronixUsed ? (
                 <span className="text-[#22f0ff]">تجربة مجانية</span>
-              ) : multiDurationMode ? (
-                <span className="text-[#22f0ff]">فيديو واحد بعد الدمج · أقصى {sliderMax}s</span>
               ) : (
                 <span className="text-[#22f0ff]">أقصى {sliderMax}s</span>
               )}
@@ -1631,34 +1633,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           </div>
         )}
       </div>
-
-      {media === "video" && !freeSettingsLocked && !freeTrial && (
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white/70">
-          <label className="flex cursor-pointer items-start gap-3">
-            <input
-              type="checkbox"
-              checked={multiShotOn}
-              onChange={(e) => setMultiShotOn(e.target.checked)}
-              className="mt-1"
-            />
-            <span className="min-w-0 flex-1">
-              <span className="font-semibold text-white">تقسيم المشهد إلى لقطات تلقائياً</span>
-              {multiShotOn && shotHint && shotHint.count >= 2 ? (
-                <span className="mt-1 block text-xs text-[#22f0ff]">
-                  فيديو والمدة المولدة
-                  <br />
-                  للفيديو
-                  {shotHint.totalCredits != null
-                    ? ` ≈ ${shotHint.totalCredits} كريدت`
-                    : creditLive && creditCost != null
-                      ? ` ≈ ${creditCost} كريدت`
-                      : " …"}
-                </span>
-              ) : null}
-            </span>
-          </label>
-        </div>
-      )}
 
       <button
         type="button"
