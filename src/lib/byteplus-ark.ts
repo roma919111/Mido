@@ -19,11 +19,16 @@ export function getBytePlusApiKey(): string | undefined {
 }
 
 export function getBytePlusBaseUrl(): string {
-  const raw =
+  let raw =
     process.env.BYTEPLUS_ARK_BASE_URL?.trim() ||
     process.env.ARK_BASE_URL?.trim() ||
     DEFAULT_BASE;
-  return raw.replace(/\/+$/, "");
+  raw = raw.replace(/\/+$/, "");
+  // Accept host-only env values and normalize to /api/v3.
+  if (!/\/api\/v\d+$/i.test(raw)) {
+    raw = `${raw}/api/v3`;
+  }
+  return raw;
 }
 
 export function getBytePlusModelId(): string {
