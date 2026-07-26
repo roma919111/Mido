@@ -325,6 +325,111 @@ export async function concatVideos(
     ? `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,unsharp=5:5:1.0:5:5:0.0,eq=contrast=1.18:saturation=1.3:brightness=0.02:gamma=1.04,format=yuv420p`
     : `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p`;
 
+  const plainNormVf = `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p`;
+  const vfCandidates = wantClarity
+    ? [clarityNormVf, plainNormVf]
+    : [plainNormVf];
+
+  async function normalizeOne(
+    raw: string,
+    norm: string,
+    hasAudio: boolean,
+  ): Promise<void> {
+    let lastErr: unknown;
+    for (const vf of vfCandidates) {
+      try {
+        if (hasAudio) {
+          await run("ffmpeg", [
+            "-y",
+            "-i",
+            raw,
+            ...trimArgs,
+            "-vf",
+            vf,
+            "-af",
+            "aformat=sample_rates=44100:channel_layouts=stereo",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-ar",
+            "44100",
+            "-ac",
+            "2",
+            norm,
+          ]);
+        } else {
+          await run("ffmpeg", [
+            "-y",
+            "-i",
+            raw,
+            ...trimArgs,
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=channel_layout=stereo:sample_rate=44100",
+            "-vf",
+            vf,
+            "-shortest",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-ar",
+            "44100",
+            "-ac",
+            "2",
+            norm,
+          ]);
+        }
+        return;
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    // Last resort: scale-only + silent audio track (always mergeable).
+    try {
+      await run("ffmpeg", [
+        "-y",
+        "-i",
+        raw,
+        ...trimArgs,
+        "-f",
+        "lavfi",
+        "-i",
+        "anullsrc=channel_layout=stereo:sample_rate=44100",
+        "-vf",
+        `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p`,
+        "-shortest",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "ultrafast",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-ar",
+        "44100",
+        "-ac",
+        "2",
+        norm,
+      ]);
+    } catch {
+      throw lastErr instanceof Error
+        ? lastErr
+        : new Error("normalize clip failed");
+    }
+  }
+
   try {
     const norms: string[] = [];
     for (let i = 0; i < sourceUrls.length; i += 1) {
@@ -332,58 +437,7 @@ export async function concatVideos(
       const norm = path.join(work, `norm-${i}.mp4`);
       await downloadToFile(sourceUrls[i]!, raw);
       const hasAudio = await probeHasAudio(raw);
-      if (hasAudio) {
-        await run("ffmpeg", [
-          "-y",
-          "-i",
-          raw,
-          ...trimArgs,
-          "-vf",
-          clarityNormVf,
-          "-af",
-          "aformat=sample_rates=44100:channel_layouts=stereo",
-          "-c:v",
-          "libx264",
-          "-preset",
-          "veryfast",
-          "-pix_fmt",
-          "yuv420p",
-          "-c:a",
-          "aac",
-          "-ar",
-          "44100",
-          "-ac",
-          "2",
-          norm,
-        ]);
-      } else {
-        await run("ffmpeg", [
-          "-y",
-          "-i",
-          raw,
-          ...trimArgs,
-          "-f",
-          "lavfi",
-          "-i",
-          "anullsrc=channel_layout=stereo:sample_rate=44100",
-          "-vf",
-          clarityNormVf,
-          "-shortest",
-          "-c:v",
-          "libx264",
-          "-preset",
-          "veryfast",
-          "-pix_fmt",
-          "yuv420p",
-          "-c:a",
-          "aac",
-          "-ar",
-          "44100",
-          "-ac",
-          "2",
-          norm,
-        ]);
-      }
+      await normalizeOne(raw, norm, hasAudio);
       norms.push(norm);
     }
 

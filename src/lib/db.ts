@@ -259,14 +259,19 @@ export async function setAssetsHidden(
   return n;
 }
 
+/** Wait before unhiding parts — multi-shot generate+stitch often takes 10–25+ min. */
+const ORPHAN_RECOVERY_GRACE_MS = 45 * 60 * 1000;
+
 /**
  * Unhide multi-shot parts that never got a stitched final video.
- * Keeps parts hidden only when a sequence-concat asset exists shortly after.
+ * Keeps parts hidden when a sequence-concat exists shortly after, and while
+ * generation/stitch may still be in flight (grace window).
  */
 export async function recoverOrphanedHiddenAssets(
   userId: string,
 ): Promise<number> {
   const db = await ensureDb();
+  const now = Date.now();
   const mine = db.assets.filter((a) => a.userId === userId);
   const concats = mine.filter(
     (a) =>
@@ -281,6 +286,9 @@ export async function recoverOrphanedHiddenAssets(
     if (a.userId !== userId || a.hidden !== true) continue;
     if (a.mediaType !== "video" || a.status !== "completed" || !a.url) continue;
     const partAt = new Date(a.createdAt).getTime();
+    // Do not surface in-progress sequence beats — that left users with 3 clips
+    // before the merge finished (or while Assets refreshed mid-job).
+    if (now - partAt < ORPHAN_RECOVERY_GRACE_MS) continue;
     const covered = concats.some((c) => {
       const dt = new Date(c.createdAt).getTime() - partAt;
       // Concat is created after parts; allow up to 2h window.

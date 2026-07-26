@@ -262,7 +262,8 @@ export async function POST(request: Request) {
         mediaType: media,
         url: "",
         prompt,
-        mode,
+        // Tag intermediate beats so Assets recovery can treat them as stitch parts.
+        mode: body.sequencePart ? "sequence-part" : mode,
         model: quote.modelId,
         creditsUsed: quote.totalCredits,
         status: "running",

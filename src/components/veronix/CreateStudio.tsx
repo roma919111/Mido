@@ -1243,8 +1243,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             }
             if (!url && !historyId) throw new Error(`لا يوجد فيديو من ${label}`);
 
-            // Persist + clarity-grade each beat so the stitch inherits the filter.
-            setStatus(`حفظ وتحسين وضوح ${label}…`);
+            // Persist locally only — clarity runs once on final concat (faster,
+            // fewer timeouts; avoids three graded parts and a failed stitch).
+            setStatus(`حفظ ${label} للدمج…`);
             const cacheRes = await fetchJson<{ error?: string; url?: string }>(
               "/api/media/cache",
               {
@@ -1254,7 +1255,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                   videoUrl: url || undefined,
                   historyId: historyId || undefined,
                   assetId: assetId || undefined,
-                  clarity: true,
+                  clarity: false,
                 }),
               },
             );
@@ -1303,40 +1304,48 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             );
           }
 
-          setStatus(`دمج ${localUrls.length} لقطات + تحسين الوضوح…`);
+          setStatus(`دمج ${localUrls.length} لقطات في فيديو واحد…`);
           let concatUrl: string | null = null;
           let concatError = "";
-          for (let attempt = 0; attempt < 3; attempt += 1) {
-            const concatRes = await fetchJson<{
-              error?: string;
-              url?: string;
-              assetId?: string;
-            }>("/api/media/concat", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                videoUrls: localUrls,
-                saveAsset: true,
-                prompt: prompt.trim(),
-                modelId: selectedModelId,
-                shotCount: shots.length,
-                maxSecondsPerClip: perShotSeconds,
-                // Last attempt: skip clarity grade if stitch+grade is unstable.
-                clarity: attempt < 2,
-              }),
-            });
-            if (concatRes.res.ok && concatRes.data.url) {
-              concatUrl = concatRes.data.url;
-              break;
+          for (let attempt = 0; attempt < 4; attempt += 1) {
+            try {
+              const concatRes = await fetchJson<{
+                error?: string;
+                url?: string;
+                assetId?: string;
+              }>("/api/media/concat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  videoUrls: localUrls,
+                  saveAsset: true,
+                  prompt: prompt.trim(),
+                  modelId: selectedModelId,
+                  shotCount: shots.length,
+                  maxSecondsPerClip: perShotSeconds,
+                  // Attempts 0–1: clarity grade; 2–3: plain stitch fallback.
+                  clarity: attempt < 2,
+                }),
+              });
+              if (concatRes.res.ok && concatRes.data.url) {
+                concatUrl = concatRes.data.url;
+                break;
+              }
+              concatError = concatRes.data.error || "تعذر دمج اللقطات";
+            } catch (stitchErr) {
+              concatError =
+                stitchErr instanceof Error
+                  ? stitchErr.message
+                  : "تعذر دمج اللقطات";
             }
-            concatError = concatRes.data.error || "تعذر دمج اللقطات";
-            await new Promise((r) => setTimeout(r, 1500));
+            await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
           }
 
           if (!concatUrl) {
-            await revealParts();
+            // Keep parts hidden during grace; still surface a clear error.
+            // Orphan recovery will unhide after the grace window if needed.
             setError(
-              `${concatError}. تم توليد ${localUrls.length} لقطات وظهرت في Assets — لم يكتمل الدمج في فيديو واحد.`,
+              `${concatError}. اكتملت ${localUrls.length} لقطات لكن الدمج لم ينجح — أعد المحاولة بعد لحظات.`,
             );
             // Prefer first clip over last so preview is not a random tail beat.
             const fallback = localUrls[0] || "";
