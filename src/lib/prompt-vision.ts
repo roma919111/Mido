@@ -190,7 +190,9 @@ async function analyzeWithGemini(
 ): Promise<VisionSceneBrief | null> {
   const key = geminiKey();
   if (!key) return null;
-  const model = process.env.GEMINI_VISION_MODEL?.trim() || "gemini-2.0-flash";
+  // Prefer lite/latest aliases — free-tier quota on gemini-2.0-flash is often exhausted.
+  const model =
+    process.env.GEMINI_VISION_MODEL?.trim() || "gemini-flash-lite-latest";
 
   const parts: Array<Record<string, unknown>> = [
     { text: `${VISION_INSTRUCTION}\nUser action hint: ${userHint || "(none)"}` },
