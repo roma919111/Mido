@@ -18,6 +18,7 @@ import {
   analyzeReferenceImages,
   entityPhrasesFromBrief,
   formatEntityBrief,
+  hasVisionApiKey,
   type VisionSceneBrief,
 } from "@/lib/prompt-vision";
 
@@ -777,7 +778,10 @@ export async function enhancePromptWithContext(
   }
 
   const visionUsed = Boolean(vision && vision.source !== "none" && entities.length);
-  const needsVisionKey = Boolean(imageUrls.length) && !visionUsed;
+  // Only ask for a key when none is configured. If a key exists but vision
+  // still failed (blocked CDN, bad image bytes), keep the user's nouns intact.
+  const needsVisionKey =
+    Boolean(imageUrls.length) && !visionUsed && !hasVisionApiKey();
 
   const previous = context.previousState || null;
 

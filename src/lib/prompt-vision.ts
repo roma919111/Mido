@@ -57,6 +57,43 @@ function geminiKey(): string | null {
   return env("GEMINI_API_KEY") || env("GOOGLE_AI_API_KEY") || null;
 }
 
+export function hasVisionApiKey(): boolean {
+  return Boolean(visionOpenAiConfig() || geminiKey());
+}
+
+function looksLikeImageBytes(buf: Buffer, mimeHint = ""): boolean {
+  if (buf.length < 24) return false;
+  // Reject HTML/JSON error pages disguised as image downloads.
+  const head = buf.subarray(0, 64).toString("utf8").trimStart().toLowerCase();
+  if (head.startsWith("<!doctype") || head.startsWith("<html") || head.startsWith("{")) {
+    return false;
+  }
+  const isJpeg = buf[0] === 0xff && buf[1] === 0xd8;
+  const isPng =
+    buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
+  const isGif = buf.subarray(0, 3).toString("ascii") === "GIF";
+  const isWebp =
+    buf.subarray(0, 4).toString("ascii") === "RIFF" &&
+    buf.subarray(8, 12).toString("ascii") === "WEBP";
+  if (isJpeg || isPng || isGif || isWebp) return true;
+  return /^image\//i.test(mimeHint);
+}
+
+function decodeDataUrl(url: string): { mime: string; data: string; bytes: Buffer } | null {
+  const m = /^data:([^;]+);base64,([\s\S]+)$/.exec(url);
+  if (!m) return null;
+  const mime = m[1] || "image/jpeg";
+  const data = (m[2] || "").replace(/\s+/g, "");
+  if (data.length < 64 || data.length > 6_000_000) return null;
+  try {
+    const bytes = Buffer.from(data, "base64");
+    if (!looksLikeImageBytes(bytes, mime)) return null;
+    return { mime, data, bytes };
+  } catch {
+    return null;
+  }
+}
+
 const VISION_INSTRUCTION = `You analyze reference image(s) for video prompt writing.
 Return STRICT JSON only (no markdown) with this shape:
 {
@@ -206,22 +243,28 @@ async function analyzeWithGemini(
   for (const url of imageUrls.slice(0, 2)) {
     try {
       if (url.startsWith("data:")) {
-        const m = /^data:([^;]+);base64,([\s\S]+)$/.exec(url);
-        if (!m) continue;
-        const mime = m[1] || "image/jpeg";
-        const data = m[2] || "";
-        if (data.length < 200 || data.length > 6_000_000) continue;
-        parts.push({ inline_data: { mime_type: mime, data } });
+        const decoded = decodeDataUrl(url);
+        if (!decoded) continue;
+        parts.push({
+          inline_data: { mime_type: decoded.mime, data: decoded.data },
+        });
         continue;
       }
       const imgRes = await fetch(url, {
         redirect: "follow",
-        headers: { Accept: "image/*", "User-Agent": "VyronixPromptVision/1.0" },
+        headers: {
+          Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+          "User-Agent":
+            "Mozilla/5.0 (compatible; VyronixPromptVision/1.1; +https://vyronix.app)",
+        },
       });
       if (!imgRes.ok) continue;
       const buf = Buffer.from(await imgRes.arrayBuffer());
       if (buf.length < 200 || buf.length > 4_500_000) continue;
-      const mime = imgRes.headers.get("content-type")?.split(";")[0] || "image/jpeg";
+      const mimeHint =
+        imgRes.headers.get("content-type")?.split(";")[0]?.trim() || "image/jpeg";
+      if (!looksLikeImageBytes(buf, mimeHint)) continue;
+      const mime = mimeHint.startsWith("image/") ? mimeHint : "image/jpeg";
       parts.push({
         inline_data: {
           mime_type: mime,
@@ -232,7 +275,9 @@ async function analyzeWithGemini(
       // skip unreadable url
     }
   }
-  if (parts.length < 2) return null;
+  if (parts.length < 2) {
+    throw new Error("Could not load reference image bytes for Gemini vision");
+  }
 
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`,

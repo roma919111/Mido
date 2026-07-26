@@ -446,6 +446,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         setStatus(
           "التحسين تم بدون قراءة ملابس الصورة — أضف OPENAI_API_KEY أو GEMINI_API_KEY على السيرفر لاستبدال الأنثى/الرجل بالمواصفات",
         );
+      } else if (uniqueUrls.length && !data.visionUsed) {
+        setStatus(
+          "التحسين تم — تعذّر قراءة تفاصيل الصورة الآن؛ أعد رفع الصورة أو جرّب صورة أوضح ثم «تحسين الوصف»",
+        );
       } else {
         const bits = ["تم تحسين الوصف"];
         if (data.visionUsed) bits.push("مع استبدال الشخصيات بمواصفات الصورة");
