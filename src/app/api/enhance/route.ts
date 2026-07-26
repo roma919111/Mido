@@ -3,7 +3,6 @@ import {
   enhancePrompt,
   enhancePromptVariant,
   enhancePromptWithContext,
-  extractCoreIdea,
   type SceneState,
 } from "@/lib/prompt-enhance";
 import { injectEntitiesIntoAction } from "@/lib/prompt-chain";
