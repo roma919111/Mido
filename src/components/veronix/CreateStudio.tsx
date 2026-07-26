@@ -109,10 +109,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     Array<{ prompt: string; action: string }> | null
   >(null);
   const waitingResult = generating || preview?.status === "running";
+  // Lock free-trial defaults only when the customer has no credits yet.
+  // Users with a balance can run paid multi-shot (4s×N) without burning the
+  // single free clip first — otherwise they only ever see one 4s video.
   const freeSettingsLocked =
     media === "video" &&
     selectedModelId === VERONIX_MODEL_ID &&
-    !user?.freeVeronixUsed;
+    !user?.freeVeronixUsed &&
+    (user?.credits ?? 0) <= 0;
 
   const allModels = useMemo(
     () => [...imageModels, ...videoModels],
@@ -134,7 +138,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     if (!model) return;
     const options = formOptionsForModel(model);
     const freeLocked =
-      model.id === VERONIX_MODEL_ID && !user?.freeVeronixUsed;
+      model.id === VERONIX_MODEL_ID &&
+      !user?.freeVeronixUsed &&
+      (user?.credits ?? 0) <= 0;
     if (freeLocked) {
       setDuration(FREE_VERONIX_DURATION_SECONDS);
       setResolution(FREE_VERONIX_RESOLUTION);
@@ -292,6 +298,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             resolution: media === "video" ? resolution : undefined,
             duration: media === "video" ? duration : undefined,
             generateAudio: media === "video" ? generateAudio : undefined,
+            // Multi-shot is paid — never mark as the free 4s trial when unlocked.
+            multiShot:
+              media === "video" &&
+              multiShotOn &&
+              (Boolean(user?.freeVeronixUsed) || (user?.credits ?? 0) > 0),
           }),
         });
         if (cancelled) return;
@@ -430,6 +441,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     refs.length,
     startFrame,
     user?.freeVeronixUsed,
+    user?.credits,
     user?.id,
     prompt,
     multiShotOn,
@@ -941,6 +953,31 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     return { res, data };
   }
 
+  /** Parse enhance script lines: "لقطة 1: …" / "Shot 1: …" into generation shots. */
+  function parseShotScriptLines(
+    text: string,
+  ): Array<{ prompt: string; action: string }> | null {
+    const lines = text
+      .split(/\n+/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    const shots: Array<{ prompt: string; action: string }> = [];
+    for (const line of lines) {
+      const m = line.match(/^(?:لقطة|Shot)\s*\d+\s*[:：\-]\s*(.+)$/i);
+      if (!m?.[1]) continue;
+      const action = m[1].trim();
+      if (action.length < 3) continue;
+      const arabic = /[\u0600-\u06FF]/.test(action);
+      shots.push({
+        action,
+        prompt: arabic
+          ? `مشهد سينمائي واقعي: ${action}. لقطة واحدة فقط، نفّذ هذا الفعل كما هو مكتوب دون إضافة أحداث أو وضعيات من لقطات أخرى. إضاءة طبيعية سينمائية، تفاصيل حادة، بدون تشويش`
+          : `Cinematic realistic scene: ${action}. one shot only, perform this action as written, do not add events from other shots. natural cinematic light, sharp detail, no flicker`,
+      });
+    }
+    return shots.length >= 2 ? shots.slice(0, MAX_SHOTS) : null;
+  }
+
   async function handleGenerate() {
     setError(null);
     setStatus(null);
@@ -984,78 +1021,92 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         durationBounds.max,
         Math.max(durationBounds.min, PRODUCT_PER_SHOT_SECONDS),
       );
-      if (media === "video" && multiShotOn && !freeTrial) {
+      // Free trial stays single. Anyone with credits (or post-trial) can multi-shot.
+      const allowMulti =
+        media === "video" &&
+        multiShotOn &&
+        !freeTrial &&
+        !freeSettingsLocked;
+      if (allowMulti) {
         if (plannedShots && plannedShots.length >= 2) {
           useMulti = true;
           shots = plannedShots;
         } else {
-          const planRes = await fetchJson<{
-            error?: string;
-            autoMultiShot?: boolean;
-            perShotSeconds?: number;
-            totalSeconds?: number;
-            timing?: {
-              labelAr?: string;
+          const fromScript = parseShotScriptLines(prompt.trim());
+          if (fromScript) {
+            useMulti = true;
+            shots = fromScript;
+            setPlannedShots(fromScript);
+          } else {
+            const planRes = await fetchJson<{
+              error?: string;
+              autoMultiShot?: boolean;
               perShotSeconds?: number;
               totalSeconds?: number;
-              preferredPerShot?: number;
-              preferredTotalSeconds?: number;
-              apiPerShotSeconds?: number;
-            };
-            plan?: { shots?: Array<{ prompt: string; action: string }> };
-            actions?: string[];
-            shotCount?: number;
-            totalCredits?: number | null;
-          }>("/api/shots/plan", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              prompt: prompt.trim(),
-              modelId: selectedModelId,
-              media,
-              duration: perShotSeconds,
-              resolution,
-              generateAudio,
-              aspectRatio: VIDEO_ASPECT,
-              previousState: promptSceneState,
-              multiShot: true,
-            }),
-          });
-          if (
-            planRes.res.ok &&
-            planRes.data.autoMultiShot &&
-            (planRes.data.plan?.shots?.length || 0) >= 2
-          ) {
-            useMulti = true;
-            shots = planRes.data.plan!.shots!;
-            setPlannedShots(shots);
-            const count = Math.min(
-              MAX_SHOTS,
-              planRes.data.shotCount || shots.length,
-            );
-            const preferredPerShot = PRODUCT_PER_SHOT_SECONDS;
-            const preferredTotal = preferredPerShot * count;
-            const apiPer = Math.min(
-              durationBounds.max,
-              Math.max(durationBounds.min, PRODUCT_PER_SHOT_SECONDS),
-            );
-            const total = Math.min(MAX_TOTAL_SECONDS, preferredTotal);
-            setShotHint({
-              count,
-              totalCredits:
-                typeof planRes.data.totalCredits === "number"
-                  ? planRes.data.totalCredits
-                  : null,
-              actions: planRes.data.actions || shots.map((s) => s.action),
-              preferredPerShot,
-              preferredTotalSeconds: preferredTotal,
-              perShotSeconds: PRODUCT_PER_SHOT_SECONDS,
-              apiPerShotSeconds: apiPer,
-              totalSeconds: total,
-              labelAr:
-                planRes.data.timing?.labelAr ||
-                `توصية: ${count} لقطات × ${PRODUCT_PER_SHOT_SECONDS} ثوانٍ = ${total} ثانية`,
+              timing?: {
+                labelAr?: string;
+                perShotSeconds?: number;
+                totalSeconds?: number;
+                preferredPerShot?: number;
+                preferredTotalSeconds?: number;
+                apiPerShotSeconds?: number;
+              };
+              plan?: { shots?: Array<{ prompt: string; action: string }> };
+              actions?: string[];
+              shotCount?: number;
+              totalCredits?: number | null;
+            }>("/api/shots/plan", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                prompt: prompt.trim(),
+                modelId: selectedModelId,
+                media,
+                // Pass slider total — not 4 — so free-trial heuristics never misfire.
+                duration: Math.max(PRODUCT_PER_SHOT_SECONDS, duration),
+                resolution,
+                generateAudio,
+                aspectRatio: VIDEO_ASPECT,
+                previousState: promptSceneState,
+                multiShot: true,
+              }),
             });
+            if (
+              planRes.res.ok &&
+              planRes.data.autoMultiShot &&
+              (planRes.data.plan?.shots?.length || 0) >= 2
+            ) {
+              useMulti = true;
+              shots = planRes.data.plan!.shots!;
+              setPlannedShots(shots);
+              const count = Math.min(
+                MAX_SHOTS,
+                planRes.data.shotCount || shots.length,
+              );
+              const preferredPerShot = PRODUCT_PER_SHOT_SECONDS;
+              const preferredTotal = preferredPerShot * count;
+              const apiPer = Math.min(
+                durationBounds.max,
+                Math.max(durationBounds.min, PRODUCT_PER_SHOT_SECONDS),
+              );
+              const total = Math.min(MAX_TOTAL_SECONDS, preferredTotal);
+              setShotHint({
+                count,
+                totalCredits:
+                  typeof planRes.data.totalCredits === "number"
+                    ? planRes.data.totalCredits
+                    : null,
+                actions: planRes.data.actions || shots.map((s) => s.action),
+                preferredPerShot,
+                preferredTotalSeconds: preferredTotal,
+                perShotSeconds: PRODUCT_PER_SHOT_SECONDS,
+                apiPerShotSeconds: apiPer,
+                totalSeconds: total,
+                labelAr:
+                  planRes.data.timing?.labelAr ||
+                  `توصية: ${count} لقطات × ${PRODUCT_PER_SHOT_SECONDS} ثوانٍ = ${total} ثانية`,
+              });
+            }
           }
         }
       }
@@ -1198,10 +1249,17 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             }
           }
 
-          setStatus(`دمج ${shots.length} لقطات + تحسين الوضوح…`);
+          if (localUrls.length < 2) {
+            await revealParts();
+            throw new Error(
+              `اكتملت لقطة واحدة فقط من ${shots.length} — أعد التوليد لإكمال المشهد المدمج`,
+            );
+          }
+
+          setStatus(`دمج ${localUrls.length} لقطات + تحسين الوضوح…`);
           let concatUrl: string | null = null;
           let concatError = "";
-          for (let attempt = 0; attempt < 2; attempt += 1) {
+          for (let attempt = 0; attempt < 3; attempt += 1) {
             const concatRes = await fetchJson<{
               error?: string;
               url?: string;
@@ -1216,6 +1274,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 modelId: selectedModelId,
                 shotCount: shots.length,
                 maxSecondsPerClip: perShotSeconds,
+                // Last attempt: skip clarity grade if stitch+grade is unstable.
+                clarity: attempt < 2,
               }),
             });
             if (concatRes.res.ok && concatRes.data.url) {
@@ -1228,10 +1288,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
           if (!concatUrl) {
             await revealParts();
-            const fallback = localUrls[localUrls.length - 1] || "";
             setError(
-              `${concatError}. اللقطات ظاهرة في Assets — تعذر دمجها في فيديو واحد.`,
+              `${concatError}. تم توليد ${localUrls.length} لقطات وظهرت في Assets — لم يكتمل الدمج في فيديو واحد.`,
             );
+            // Prefer first clip over last so preview is not a random tail beat.
+            const fallback = localUrls[0] || "";
             setPreview({
               url: fallback,
               mediaType: "video",

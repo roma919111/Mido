@@ -19,10 +19,20 @@ export const FREE_VERONIX_RESOLUTION = "480p";
 
 export function isFreeVeronixEligible(
   user: { freeVeronixUsed?: boolean } | null | undefined,
-  input: { modelId: string; media: string; duration?: number },
+  input: {
+    modelId: string;
+    media: string;
+    duration?: number;
+    /** Paid multi-shot / intermediate clips are never free-trial. */
+    multiShot?: boolean;
+    sequencePart?: boolean;
+  },
 ): boolean {
   if (!user || user.freeVeronixUsed) return false;
   if (input.media !== "video") return false;
   if (input.modelId !== VERONIX_MODEL_ID) return false;
+  // Multi-shot sequence parts are always billed (Seedance min is 4s — must not
+  // look like the free single-clip trial).
+  if (input.sequencePart || input.multiShot) return false;
   return Number(input.duration) === FREE_VERONIX_DURATION_SECONDS;
 }

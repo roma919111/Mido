@@ -130,12 +130,15 @@ export async function POST(request: Request) {
     }
 
     // Free trial: stock Veronix intro + 4s Seedance clip (480p), once per account.
+    // Never apply to multi-shot sequence parts (each beat is also 4s).
     const freeTrial =
       modelIds.length === 1 &&
       isFreeVeronixEligible(user, {
         modelId: modelIds[0],
         media,
         duration: body.duration,
+        sequencePart: Boolean(body.sequencePart),
+        multiShot: Boolean(body.sequencePart),
       });
 
     const billedQuotes = quotes.map((q) => ({

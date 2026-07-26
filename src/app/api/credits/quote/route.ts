@@ -25,6 +25,8 @@ export async function POST(request: Request) {
       resolution?: string;
       duration?: number;
       generateAudio?: boolean;
+      /** When true, quote as paid multi-shot (never free trial). */
+      multiShot?: boolean;
     };
 
     const modelIds = body.modelIds?.filter(Boolean) ?? [VERONIX_MODEL_ID];
@@ -52,6 +54,7 @@ export async function POST(request: Request) {
       modelId: modelIds[0],
       media,
       duration,
+      multiShot: Boolean(body.multiShot),
     });
 
     const quotes = result.quotes.map((q) => ({

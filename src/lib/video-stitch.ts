@@ -421,8 +421,13 @@ export async function concatVideos(
 
     if (wantClarity) {
       const graded = path.join(work, "graded.mp4");
-      await applyClarityGrade(finalTmp, graded);
-      await copyFile(graded, outPublic);
+      try {
+        await applyClarityGrade(finalTmp, graded);
+        await copyFile(graded, outPublic);
+      } catch {
+        // Never lose a successful stitch because grading failed.
+        await copyFile(finalTmp, outPublic);
+      }
     } else {
       await copyFile(finalTmp, outPublic);
     }

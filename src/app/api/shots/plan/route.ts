@@ -35,6 +35,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "prompt is required" }, { status: 400 });
     }
 
+    const wantMulti = body.multiShot !== false;
+    // Free trial is single-clip only. Planning with multiShot:true is always paid,
+    // even though each Seedance beat is 4s (same number as the free trial length).
     const freeTrial = Boolean(
       user &&
         body.modelId &&
@@ -42,10 +45,9 @@ export async function POST(request: Request) {
           modelId: body.modelId,
           media,
           duration: body.duration,
+          multiShot: wantMulti,
         }),
     );
-
-    const wantMulti = body.multiShot !== false;
     const catalog = body.modelId ? getCatalogModel(body.modelId) : null;
     const bounds = durationBoundsForModel(catalog);
 
