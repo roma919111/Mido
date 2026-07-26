@@ -248,10 +248,14 @@ function buildPlanFromClauses(
     if (index > 0) {
       const femaleMoving =
         actor === "female" ||
-        /ترفع|ترمي|تقذف|تمسك|تؤدي|تسدد|تضرب|تقفل|تلف|تسقط|تمشي|تجلس|تضحك|تعطي/.test(clause);
+        /ترفع|ترمي|تقذف|تمسك|تؤدي|تسدد|تضرب|تقفل|تلف|تسقط|تمشي|تجلس|تضحك|تعطي|تقفز|تمد|تعض|تستيقظ|تطبخ|تاكل|تأكل|تتمش|تدخل|تذهب|تستلقي|تضع/.test(
+          clause,
+        );
       const maleMoving =
         actor === "male" ||
-        /يرفع|يرمي|يمسك|يسقط|ممدد|تقذفه|ترفعه|ترميه|تمسكه|يمشي|يجلس|يضحك/.test(clause);
+        /يرفع|يرمي|يمسك|يسقط|ممدد|تقذفه|ترفعه|ترميه|تمسكه|يمشي|يجلس|يضحك|يستيقظ|يتمدد|يتقدم/.test(
+          clause,
+        );
 
       if (!femaleMoving && prevFemale) {
         holds.push(livingHeldAside(arabic ? "الأنثى" : "the woman", prevFemale, "female", arabic, index));

@@ -552,8 +552,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       if (!next) throw new Error("لم يتم إنشاء وصف محسّن");
       // Full replace — never append polish onto the existing field.
       setPrompt(next);
-      if (data.finalState) setPromptSceneState(data.finalState);
       if (data.multiShot && (data.shots?.length || 0) >= 2) {
+        // Fresh multi-shot script — do not keep prior end-pose as "previous"
+        // (it was leaking late actions like overhead lift into shot 1).
+        setPromptSceneState(null);
         setPlannedShots(data.shots || null);
         setMultiShotOn(true);
         const count = data.shotCount || data.shots!.length;

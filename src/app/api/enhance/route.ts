@@ -47,13 +47,25 @@ export async function POST(request: Request) {
     const isVideo = String(mode).includes("video");
 
     // Context-aware shot plan (no ثم required) — general for any action chain.
+    // IMPORTANT: plan from the USER's original prompt, not from the cinematic
+    // rewrite / finalSceneState. finalState is the END of the whole sequence and
+    // would leak late poses (e.g. overhead lift) into shot 1 as "لقطة واحدة".
     let shotPlan = null as Awaited<ReturnType<typeof planShotSequenceAsync>> | null;
     let shots: PlannedShot[] = [];
     let enhanced = enhancedFull;
     if (isVideo) {
-      shotPlan = await planShotSequenceAsync(result.coreIdea || enhancedFull, {
-        previousState: result.finalState,
+      shotPlan = await planShotSequenceAsync(prompt, {
+        previousState: null,
       });
+      // Fallback: grounded core idea if original somehow fails to split
+      if (!shotPlan.multiShot || shotPlan.shotCount < 2) {
+        const fromCore = await planShotSequenceAsync(result.coreIdea || prompt, {
+          previousState: null,
+        });
+        if (fromCore.multiShot && fromCore.shotCount >= 2) {
+          shotPlan = fromCore;
+        }
+      }
       if (shotPlan.multiShot && shotPlan.shotCount >= 2) {
         shots = shotPlan.shots;
         // Show a clear shot script instead of one dense paragraph.
