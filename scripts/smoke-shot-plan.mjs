@@ -26,7 +26,9 @@ if (build.status !== 0) {
   process.exit(1);
 }
 
-const { planShotSequence, formatShotScript } = await import(pathToFileURL(outfile).href);
+const { planShotSequence, formatShotScript, recommendShotTiming } = await import(
+  pathToFileURL(outfile).href,
+);
 
 let failed = 0;
 function check(name, cond, detail) {
@@ -62,6 +64,11 @@ check("single stays 1", !single.multiShot && single.shotCount === 1, single);
 const script = formatShotScript(noThum, true);
 check("shot script lists لقطة", /لقطة 1/.test(script) && /لقطة 2/.test(script), script);
 check("shot script not one dense cinematic blob", !/^مشهد سينمائي واقعي:/.test(script), script);
+
+const timing = recommendShotTiming(4, 4, 15);
+check("timing prefers 3s ideal", timing.preferredPerShot === 3 && timing.preferredTotalSeconds === 12, timing);
+check("timing clamps to model min 4", timing.perShotSeconds === 4 && timing.totalSeconds === 16, timing);
+check("timing label mentions 4×3=12", /4 لقطات × 3/.test(timing.labelAr) && /12/.test(timing.labelAr), timing.labelAr);
 
 rmSync(outDir, { recursive: true, force: true });
 if (failed) process.exit(1);

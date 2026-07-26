@@ -42,6 +42,8 @@ type GenBody = {
   endFrame?: VisualReference | null;
   referenceImages?: VisualReference[];
   waitForResult?: boolean;
+  /** Intermediate multi-shot clip — hidden from Assets; final stitch is shown */
+  sequencePart?: boolean;
 };
 
 async function waitForCreation(historyId: string, attempts = 2) {
@@ -248,6 +250,7 @@ export async function POST(request: Request) {
         model: quote.modelId,
         creditsUsed: quote.totalCredits,
         status: "running",
+        hidden: Boolean(body.sequencePart),
       });
 
       try {

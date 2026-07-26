@@ -2,7 +2,12 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { quoteOpenArtCredits } from "@/lib/credit-quote";
 import { isFreeVeronixEligible } from "@/lib/free-trial";
-import { planShotSequenceAsync, shouldAutoMultiShot } from "@/lib/shot-plan";
+import { durationBoundsForModel, getCatalogModel } from "@/lib/model-catalog";
+import {
+  planShotSequenceAsync,
+  recommendShotTiming,
+  shouldAutoMultiShot,
+} from "@/lib/shot-plan";
 import type { SceneState } from "@/lib/prompt-chain";
 
 export const runtime = "nodejs";
@@ -41,10 +46,19 @@ export async function POST(request: Request) {
     );
 
     const wantMulti = body.multiShot !== false;
-    const perShotSeconds = Math.min(5, Math.max(4, Number(body.duration) || 5));
+    const catalog = body.modelId ? getCatalogModel(body.modelId) : null;
+    const bounds = durationBoundsForModel(catalog);
 
+    // Draft plan first to know shot count, then apply timing recommendation.
+    const draft = await planShotSequenceAsync(prompt, {
+      perShotSeconds: bounds.min,
+      forceSingle: !wantMulti || freeTrial || media !== "video",
+      previousState: body.previousState || null,
+    });
+
+    const timing = recommendShotTiming(draft.shotCount, bounds.min, bounds.max);
     const plan = await planShotSequenceAsync(prompt, {
-      perShotSeconds,
+      perShotSeconds: timing.perShotSeconds,
       forceSingle: !wantMulti || freeTrial || media !== "video",
       previousState: body.previousState || null,
     });
@@ -56,7 +70,6 @@ export async function POST(request: Request) {
     let available = true;
 
     if (body.modelId && media === "video") {
-      // Shot 1 may be t2v or i2v; shots 2+ are image2video — quote image2video as baseline for N.
       const mode = "image2video";
       const quote = await quoteOpenArtCredits(
         {
@@ -65,7 +78,7 @@ export async function POST(request: Request) {
           mode,
           aspectRatio: body.aspectRatio || "16:9",
           resolution: body.resolution,
-          duration: plan.perShotSeconds,
+          duration: timing.perShotSeconds,
           generateAudio: body.generateAudio,
         },
         { allowCache: true },
@@ -83,8 +96,10 @@ export async function POST(request: Request) {
       plan,
       autoMultiShot: auto,
       freeTrial,
-      perShotSeconds: plan.perShotSeconds,
+      perShotSeconds: timing.perShotSeconds,
+      totalSeconds: timing.totalSeconds,
       shotCount: plan.shotCount,
+      timing,
       unitCredits,
       totalCredits,
       available,

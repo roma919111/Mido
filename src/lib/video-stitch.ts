@@ -30,14 +30,64 @@ async function downloadToFile(url: string, dest: string) {
     await copyFile(existing, dest);
     return;
   }
-  const res = await fetch(url, {
-    redirect: "follow",
-    headers: { Accept: "*/*", "User-Agent": "VyronixVideoStitch/1.0" },
-  });
-  if (!res.ok) throw new Error(`Failed to download video (${res.status})`);
-  const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.length < 1000) throw new Error("Downloaded video is empty");
-  await writeFile(dest, buf);
+  let lastErr = "";
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const res = await fetch(url, {
+        redirect: "follow",
+        headers: {
+          Accept: "video/mp4,video/*,*/*;q=0.8",
+          "User-Agent":
+            "Mozilla/5.0 (compatible; VyronixVideoStitch/1.1; +https://vyronix.app)",
+          Referer: "https://vyronix.app/",
+        },
+      });
+      if (!res.ok) {
+        lastErr = `HTTP ${res.status}`;
+        await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+        continue;
+      }
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.length < 1000) {
+        lastErr = "empty body";
+        continue;
+      }
+      await writeFile(dest, buf);
+      return;
+    } catch (err) {
+      lastErr = err instanceof Error ? err.message : "download failed";
+      await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+    }
+  }
+  throw new Error(`Failed to download video (${lastErr})`);
+}
+
+/**
+ * Persist a remote (or already-local) clip under `/generations/…`
+ * so concat / frame-extract never depend on a fleeting CDN URL.
+ */
+export async function cacheVideoLocally(sourceUrl: string): Promise<string> {
+  const trimmed = sourceUrl.trim();
+  if (!trimmed) throw new Error("Empty video URL");
+  if (trimmed.startsWith("/generations/")) {
+    const existing = resolveGenerationFile(trimmed);
+    if (!existing) throw new Error("Invalid local generation path");
+    return trimmed;
+  }
+  const id = `part-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  await mkdir(GENERATIONS_DIR, { recursive: true });
+  const outPublic = path.join(GENERATIONS_DIR, `${id}.mp4`);
+  const work = await mkdtemp(path.join(tmpdir(), "vyronix-cache-"));
+  try {
+    const tmp = path.join(work, "in.mp4");
+    await downloadToFile(trimmed, tmp);
+    await copyFile(tmp, outPublic);
+    const st = await stat(outPublic);
+    if (st.size < 1000) throw new Error("Cached video too small");
+    return `/generations/${id}.mp4`;
+  } finally {
+    await rm(work, { recursive: true, force: true }).catch(() => undefined);
+  }
 }
 
 async function probeHasAudio(file: string): Promise<boolean> {
@@ -181,32 +231,59 @@ export async function concatVideos(sourceUrls: string[]): Promise<string> {
       norms.push(norm);
     }
 
+    const finalTmp = path.join(work, "final.mp4");
     const inputs = norms.flatMap((n) => ["-i", n]);
     const labels = norms.map((_, i) => `[${i}:v][${i}:a]`).join("");
     const filter = `${labels}concat=n=${norms.length}:v=1:a=1[v][a]`;
-    const finalTmp = path.join(work, "final.mp4");
 
-    await run("ffmpeg", [
-      "-y",
-      ...inputs,
-      "-filter_complex",
-      filter,
-      "-map",
-      "[v]",
-      "-map",
-      "[a]",
-      "-c:v",
-      "libx264",
-      "-preset",
-      "veryfast",
-      "-pix_fmt",
-      "yuv420p",
-      "-c:a",
-      "aac",
-      "-movflags",
-      "+faststart",
-      finalTmp,
-    ]);
+    try {
+      await run("ffmpeg", [
+        "-y",
+        ...inputs,
+        "-filter_complex",
+        filter,
+        "-map",
+        "[v]",
+        "-map",
+        "[a]",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-movflags",
+        "+faststart",
+        finalTmp,
+      ]);
+    } catch {
+      // Fallback: concat demuxer (re-encode for safety)
+      const listFile = path.join(work, "list.txt");
+      const listBody = norms.map((n) => `file '${n.replace(/'/g, "'\\''")}'`).join("\n");
+      await writeFile(listFile, listBody, "utf8");
+      await run("ffmpeg", [
+        "-y",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        listFile,
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-movflags",
+        "+faststart",
+        finalTmp,
+      ]);
+    }
 
     await copyFile(finalTmp, outPublic);
     const st = await stat(outPublic);

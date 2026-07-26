@@ -91,6 +91,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     count: number;
     totalCredits: number | null;
     actions: string[];
+    preferredPerShot: number;
+    preferredTotalSeconds: number;
+    perShotSeconds: number;
+    totalSeconds: number;
+    labelAr: string;
   } | null>(null);
   /** Structured shots from enhance / plan — used at generate (context split, no ثم required). */
   const [plannedShots, setPlannedShots] = useState<
@@ -296,6 +301,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               shotCount?: number;
               totalCredits?: number | null;
               actions?: string[];
+              perShotSeconds?: number;
+              totalSeconds?: number;
+              timing?: { labelAr?: string; perShotSeconds?: number; totalSeconds?: number };
             }>("/api/shots/plan", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -317,13 +325,33 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               planRes.data.autoMultiShot &&
               (planRes.data.shotCount || 0) >= 2
             ) {
+              const count = planRes.data.shotCount || 0;
+              const preferredPerShot = 3;
+              const preferredTotal = preferredPerShot * count;
+              const per =
+                planRes.data.timing?.perShotSeconds ||
+                planRes.data.perShotSeconds ||
+                Math.max(durationBounds.min, preferredPerShot);
+              const total =
+                planRes.data.timing?.totalSeconds ||
+                planRes.data.totalSeconds ||
+                per * count;
               nextHint = {
-                count: planRes.data.shotCount || 0,
+                count,
                 totalCredits:
                   typeof planRes.data.totalCredits === "number"
                     ? planRes.data.totalCredits
                     : null,
                 actions: planRes.data.actions || [],
+                preferredPerShot,
+                preferredTotalSeconds: preferredTotal,
+                perShotSeconds: per,
+                totalSeconds: total,
+                labelAr:
+                  planRes.data.timing?.labelAr ||
+                  (per > preferredPerShot
+                    ? `توصية: ${count} لقطات × ${preferredPerShot} ثوانٍ = ${preferredTotal} ثانية → للتوليد: ${count}×${per}ث = ${total}ث`
+                    : `توصية: ${count} لقطات × ${per} ثوانٍ = ${total} ثانية`),
               };
               if (typeof planRes.data.totalCredits === "number") {
                 nextCost = planRes.data.totalCredits;
@@ -514,10 +542,23 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       if (data.multiShot && (data.shots?.length || 0) >= 2) {
         setPlannedShots(data.shots || null);
         setMultiShotOn(true);
+        const count = data.shotCount || data.shots!.length;
+        const preferredPerShot = 3;
+        const preferredTotal = preferredPerShot * count;
+        const per = Math.max(durationBounds.min, preferredPerShot);
+        const total = per * count;
         setShotHint({
-          count: data.shotCount || data.shots!.length,
+          count,
           totalCredits: null,
           actions: data.shots!.map((s) => s.action),
+          preferredPerShot,
+          preferredTotalSeconds: preferredTotal,
+          perShotSeconds: per,
+          totalSeconds: total,
+          labelAr:
+            per > preferredPerShot
+              ? `توصية: ${count} لقطات × ${preferredPerShot} ثوانٍ = ${preferredTotal} ثانية → للتوليد: ${count}×${per}ث = ${total}ث`
+              : `توصية: ${count} لقطات × ${per} ثوانٍ = ${total} ثانية إجمالي`,
         });
       } else {
         setPlannedShots(null);
@@ -783,6 +824,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     duration: number;
     startFrame?: VisualReference | null;
     endFrame?: VisualReference | null;
+    /** Hide intermediate multi-shot clips from Assets */
+    sequencePart?: boolean;
   }) {
     const { res, data } = await fetchJson<{
       error?: string;
@@ -813,6 +856,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         endFrame: input.endFrame ?? null,
         referenceImages: refs,
         waitForResult: false,
+        sequencePart: Boolean(input.sequencePart),
       }),
     });
     return { res, data };
@@ -855,18 +899,32 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       // Plan multi-shot from context (no ثم required) — paid video only.
       let useMulti = false;
       let shots: Array<{ prompt: string; action: string }> = [];
-      let perShotSeconds = duration;
+      // Duration slider = seconds per shot (recommendation button applies it).
+      let perShotSeconds = Math.min(
+        durationBounds.max,
+        Math.max(durationBounds.min, duration),
+      );
       if (media === "video" && multiShotOn && !freeTrial) {
         if (plannedShots && plannedShots.length >= 2) {
           useMulti = true;
           shots = plannedShots;
-          perShotSeconds = Math.min(5, Math.max(4, duration));
         } else {
           const planRes = await fetchJson<{
             error?: string;
             autoMultiShot?: boolean;
             perShotSeconds?: number;
+            totalSeconds?: number;
+            timing?: {
+              labelAr?: string;
+              perShotSeconds?: number;
+              totalSeconds?: number;
+              preferredPerShot?: number;
+              preferredTotalSeconds?: number;
+            };
             plan?: { shots?: Array<{ prompt: string; action: string }> };
+            actions?: string[];
+            shotCount?: number;
+            totalCredits?: number | null;
           }>("/api/shots/plan", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -874,7 +932,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               prompt: prompt.trim(),
               modelId: selectedModelId,
               media,
-              duration,
+              duration: perShotSeconds,
               resolution,
               generateAudio,
               aspectRatio: VIDEO_ASPECT,
@@ -889,21 +947,49 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           ) {
             useMulti = true;
             shots = planRes.data.plan!.shots!;
-            perShotSeconds = planRes.data.perShotSeconds || 5;
             setPlannedShots(shots);
+            const count = planRes.data.shotCount || shots.length;
+            const preferredPerShot = planRes.data.timing?.preferredPerShot || 3;
+            const preferredTotal =
+              planRes.data.timing?.preferredTotalSeconds || preferredPerShot * count;
+            const recPer =
+              planRes.data.timing?.perShotSeconds ||
+              planRes.data.perShotSeconds ||
+              Math.max(durationBounds.min, preferredPerShot);
+            const total =
+              planRes.data.timing?.totalSeconds ||
+              planRes.data.totalSeconds ||
+              recPer * count;
+            setShotHint({
+              count,
+              totalCredits:
+                typeof planRes.data.totalCredits === "number"
+                  ? planRes.data.totalCredits
+                  : null,
+              actions: planRes.data.actions || shots.map((s) => s.action),
+              preferredPerShot,
+              preferredTotalSeconds: preferredTotal,
+              perShotSeconds: recPer,
+              totalSeconds: total,
+              labelAr:
+                planRes.data.timing?.labelAr ||
+                `توصية: ${count} لقطات × ${preferredPerShot} ثوانٍ = ${preferredTotal} ثانية`,
+            });
           }
         }
       }
 
-      if (useMulti) {
+      if (useMulti && shots.length >= 2) {
         setPreview({ url: "", mediaType: "video", status: "running" });
-        const urls: string[] = [];
+        const localUrls: string[] = [];
         let frame: VisualReference | null = startFrame;
 
         for (let i = 0; i < shots.length; i += 1) {
           const shot = shots[i]!;
           const label = `لقطة ${i + 1} من ${shots.length}`;
-          setStatus(`${label}: ${shot.action.slice(0, 48)}…`);
+          setStatus(
+            `${label} (${perShotSeconds}ث): ${shot.action.slice(0, 40)}… — ثم تُدمج في فيديو واحد`,
+          );
           const mode = frame ? "image2video" : "text2video";
           const { res, data } = await createOneClip({
             prompt: shot.prompt,
@@ -911,6 +997,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             duration: perShotSeconds,
             startFrame: frame,
             endFrame: i === 0 ? endFrame : null,
+            sequencePart: true,
           });
 
           if (res.status === 401 || data.needsAuth) {
@@ -929,6 +1016,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           const ok = data.results?.find((r) => !r.error);
           let url = ok?.urls?.[0] || "";
           const historyId = ok?.historyId;
+          const assetId = ok?.assetId;
           if (!url && historyId) {
             setPreview({
               url: "",
@@ -938,10 +1026,33 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             });
             url = await waitForHistoryUrl(historyId, startedAt, label);
           }
-          if (!url) throw new Error(`لا يوجد فيديو من ${label}`);
-          urls.push(url);
+          if (!url && !historyId) throw new Error(`لا يوجد فيديو من ${label}`);
+
+          // Persist part locally (hidden in Assets) so stitch never depends on CDN alone.
+          setStatus(`حفظ ${label} محلياً قبل الدمج…`);
+          const cacheRes = await fetchJson<{ error?: string; url?: string }>(
+            "/api/media/cache",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                videoUrl: url || undefined,
+                historyId: historyId || undefined,
+                assetId: assetId || undefined,
+              }),
+            },
+          );
+          const localUrl = cacheRes.res.ok ? cacheRes.data.url : null;
+          if (!localUrl) {
+            throw new Error(
+              cacheRes.data.error || `تعذر حفظ ${label} للدمج في فيديو واحد`,
+            );
+          }
+          localUrls.push(localUrl);
+
+          // Keep preview in "assembling" state — do not treat parts as final videos
           setPreview({
-            url,
+            url: "",
             mediaType: "video",
             historyId,
             status: "running",
@@ -956,7 +1067,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                videoUrl: url,
+                videoUrl: localUrl,
                 label: `bridge-${i + 1}`,
               }),
             });
@@ -967,31 +1078,50 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           }
         }
 
-        setStatus("دمج اللقطات في مقطع واحد…");
-        const concatRes = await fetchJson<{ error?: string; url?: string }>(
-          "/api/media/concat",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ videoUrls: urls }),
-          },
-        );
-        if (!concatRes.res.ok || !concatRes.data.url) {
-          // Fallback: show last shot if concat fails
-          setPreview({
-            url: urls[urls.length - 1] || "",
-            mediaType: "video",
-            status: "completed",
-          });
-          setStatus("تم توليد اللقطات — تعذر الدمج التلقائي، تُعرض آخر لقطة");
-        } else {
-          setPreview({
-            url: concatRes.data.url,
-            mediaType: "video",
-            status: "completed",
-          });
-          setStatus(`تم: ${shots.length} لقطات مترابطة`);
+        setStatus(`دمج ${shots.length} لقطات في فيديو واحد…`);
+        let concatUrl: string | null = null;
+        let concatError = "";
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const concatRes = await fetchJson<{ error?: string; url?: string }>(
+            "/api/media/concat",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                videoUrls: localUrls,
+                saveAsset: true,
+                prompt: prompt.trim(),
+                modelId: selectedModelId,
+                shotCount: shots.length,
+              }),
+            },
+          );
+          if (concatRes.res.ok && concatRes.data.url) {
+            concatUrl = concatRes.data.url;
+            break;
+          }
+          concatError = concatRes.data.error || "تعذر دمج اللقطات";
+          await new Promise((r) => setTimeout(r, 1500));
         }
+
+        if (!concatUrl) {
+          setError(
+            `${concatError}. اللقطات وُلّدت لكن الدمج فشل — أعد المحاولة أو تواصل مع الدعم.`,
+          );
+          setPreview({ url: "", mediaType: "video", status: "failed" });
+          setGenStartedAt(null);
+          await onUserRefresh();
+          return;
+        }
+
+        setPreview({
+          url: concatUrl,
+          mediaType: "video",
+          status: "completed",
+        });
+        setStatus(
+          `فيديو واحد جاهز · ${shots.length} لقطات × ${perShotSeconds}ث = ${shots.length * perShotSeconds}ث`,
+        );
         setGenStartedAt(null);
         await onUserRefresh();
         return;
@@ -1360,9 +1490,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         {media === "video" && (
           <div className="mt-4 space-y-2">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-white/70">المدة</span>
+              <span className="text-white/70">
+                {multiShotOn && !freeTrial ? "مدة كل لقطة" : "المدة"}
+              </span>
               <span className="font-semibold tabular-nums text-[#22f0ff]">
                 {duration}s
+                {multiShotOn && !freeTrial && shotHint && shotHint.count >= 2
+                  ? ` × ${shotHint.count} = ${duration * shotHint.count}s`
+                  : ""}
                 {freeSettingsLocked ? " · مجاني أول مرة" : ""}
               </span>
             </div>
@@ -1383,6 +1518,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               <span>{durationBounds.min}s</span>
               {selectedModelId === VERONIX_MODEL_ID && !user?.freeVeronixUsed ? (
                 <span className="text-[#22f0ff]">تجربة مجانية</span>
+              ) : multiShotOn && !freeTrial ? (
+                <span className="text-[#22f0ff]">لكل لقطة · أقصى {durationBounds.max}s</span>
               ) : (
                 <span className="text-[#22f0ff]">أقصى {durationBounds.max}s</span>
               )}
@@ -1419,15 +1556,44 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               onChange={(e) => setMultiShotOn(e.target.checked)}
               className="mt-1"
             />
-            <span>
+            <span className="min-w-0 flex-1">
               <span className="font-semibold text-white">تقسيم المشهد إلى لقطات تلقائياً</span>
               <span className="mt-0.5 block text-xs text-white/45">
-                يفهم تسلسل الأفعال من السياق تلقائياً (حتى بدون «ثم») ويقسّمها إلى لقطات مترابطة — لأي مشهد
+                يفهم تسلسل الأفعال من السياق ويقسّمها إلى لقطات مترابطة، ثم يدمجها في فيديو واحد
               </span>
               {multiShotOn && shotHint && shotHint.count >= 2 ? (
-                <span className="mt-1 block text-xs text-[#22f0ff]">
-                  سيُولَّد {shotHint.count} لقطات
-                  {shotHint.totalCredits != null ? ` · ≈ ${shotHint.totalCredits} كريدت` : ""}
+                <span className="mt-2 block space-y-2">
+                  <span className="block text-xs text-[#22f0ff]">
+                    {shotHint.count} لقطات → فيديو واحد
+                    {shotHint.totalCredits != null
+                      ? ` · ≈ ${shotHint.totalCredits} كريدت`
+                      : ""}
+                  </span>
+                  <span className="block rounded-xl border border-[#22f0ff]/25 bg-[#22f0ff]/8 px-3 py-2 text-xs leading-relaxed text-cyan-50">
+                    <span className="font-semibold text-white">توصية المدة: </span>
+                    {shotHint.count}×{shotHint.preferredPerShot}ث ={" "}
+                    {shotHint.preferredTotalSeconds}ث
+                    {shotHint.perShotSeconds > shotHint.preferredPerShot ? (
+                      <span className="mt-1 block text-white/55">
+                        حد الموديل الأدنى {shotHint.perShotSeconds}ث لكل لقطة → التوليد:{" "}
+                        {shotHint.count}×{shotHint.perShotSeconds}ث = {shotHint.totalSeconds}ث
+                      </span>
+                    ) : null}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDuration(shotHint.perShotSeconds);
+                      setStatus(
+                        `طُبّقت التوصية: ${shotHint.count} لقطات × ${shotHint.perShotSeconds}ث = ${shotHint.totalSeconds}ث (فيديو واحد)`,
+                      );
+                    }}
+                    className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/15"
+                  >
+                    تطبيق التوصية ({shotHint.perShotSeconds}ث لكل لقطة)
+                  </button>
                 </span>
               ) : null}
             </span>

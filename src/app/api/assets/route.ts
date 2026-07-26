@@ -16,12 +16,15 @@ export const maxDuration = 120;
 function needsLocalBrand(asset: {
   mediaType: string;
   model: string;
+  mode?: string;
   creditsUsed: number;
   url: string;
   status: string;
 }) {
   if (asset.mediaType !== "video") return false;
   if (asset.model !== VERONIX_MODEL_ID) return false;
+  // Stitched multi-shot finals must never get the free-trial intro treatment.
+  if (asset.mode === "sequence-concat") return false;
   if (asset.creditsUsed !== 0) return false;
   if (asset.status !== "completed" && asset.status !== "running") return false;
   if (!asset.url || asset.url.startsWith("/generations/")) return false;
@@ -30,7 +33,7 @@ function needsLocalBrand(asset: {
 
 /** Refresh running assets from OpenArt; brand free Veronix clips locally. */
 async function syncRunningAssets(userId: string) {
-  const assets = await listAssetsForUser(userId);
+  const assets = await listAssetsForUser(userId, { includeHidden: true });
   const running = assets.filter((a) => a.status === "running" && a.historyId).slice(0, 8);
   for (const asset of running) {
     try {
@@ -83,7 +86,7 @@ async function syncRunningAssets(userId: string) {
       // retry next load
     }
   }
-  return listAssetsForUser(userId);
+  return listAssetsForUser(userId, { includeHidden: false });
 }
 
 export async function GET() {

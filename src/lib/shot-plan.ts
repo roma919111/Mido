@@ -374,3 +374,41 @@ export function shouldAutoMultiShot(
   if (opts.freeTrial) return false;
   return plan.multiShot && plan.shotCount >= 2;
 }
+
+/** Preferred beat length is 3s; clamp to the model’s allowed duration. */
+export function recommendShotTiming(
+  shotCount: number,
+  modelMin = 4,
+  modelMax = 15,
+): {
+  preferredPerShot: number;
+  preferredTotalSeconds: number;
+  perShotSeconds: number;
+  totalSeconds: number;
+  clampedToModelMin: boolean;
+  labelAr: string;
+  labelEn: string;
+} {
+  const n = Math.max(1, Math.floor(shotCount));
+  const preferredPerShot = 3;
+  const preferredTotalSeconds = preferredPerShot * n;
+  const perShotSeconds = Math.min(modelMax, Math.max(modelMin, preferredPerShot));
+  const totalSeconds = perShotSeconds * n;
+  const clampedToModelMin = perShotSeconds > preferredPerShot;
+  // Always lead with N×3 = total (what the user expects), then note model clamp.
+  const labelAr = clampedToModelMin
+    ? `توصية: ${n} لقطات × ${preferredPerShot} ثوانٍ = ${preferredTotalSeconds} ثانية → للتوليد: ${n}×${perShotSeconds}ث = ${totalSeconds}ث (حد الموديل الأدنى ${modelMin}ث)`
+    : `توصية: ${n} لقطات × ${perShotSeconds} ثوانٍ = ${totalSeconds} ثانية إجمالي`;
+  const labelEn = clampedToModelMin
+    ? `Recommend: ${n}×${preferredPerShot}s = ${preferredTotalSeconds}s → generate ${n}×${perShotSeconds}s = ${totalSeconds}s (model min ${modelMin}s)`
+    : `Recommend: ${n}×${perShotSeconds}s = ${totalSeconds}s total`;
+  return {
+    preferredPerShot,
+    preferredTotalSeconds,
+    perShotSeconds,
+    totalSeconds,
+    clampedToModelMin,
+    labelAr,
+    labelEn,
+  };
+}

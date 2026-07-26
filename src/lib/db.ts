@@ -37,6 +37,8 @@ export interface AssetRecord {
   creditsUsed: number;
   status: "running" | "completed" | "failed";
   error?: string;
+  /** Hidden intermediate multi-shot parts — final stitched clip stays visible */
+  hidden?: boolean;
   createdAt: string;
 }
 
@@ -191,6 +193,7 @@ export async function createAsset(
     creditsUsed: input.creditsUsed,
     status: input.status,
     error: input.error,
+    hidden: Boolean(input.hidden),
     createdAt: new Date().toISOString(),
   };
   db.assets.unshift(asset);
@@ -211,9 +214,14 @@ export async function updateAsset(
   return db.assets[idx];
 }
 
-export async function listAssetsForUser(userId: string): Promise<AssetRecord[]> {
+export async function listAssetsForUser(
+  userId: string,
+  opts?: { includeHidden?: boolean },
+): Promise<AssetRecord[]> {
   const db = await ensureDb();
-  return db.assets.filter((a) => a.userId === userId);
+  return db.assets.filter(
+    (a) => a.userId === userId && (opts?.includeHidden ? true : !a.hidden),
+  );
 }
 
 export function publicUser(user: UserRecord) {
