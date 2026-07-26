@@ -190,9 +190,17 @@ export function AssetsPage() {
               <div className="space-y-1 p-3">
                 <p className="line-clamp-2 text-sm text-white/80">{item.prompt}</p>
                 <p className="text-[11px] text-white/40">
-                  {item.model === "seedance-2-mini" ? "Veronix" : item.model}
+                  {item.model === "seedance-2-mini"
+                    ? "Veronix"
+                    : item.model === "sequence-concat"
+                      ? "مشهد مدمج"
+                      : item.model}
                   {" · "}
-                  {item.creditsUsed === 0 ? "مجاني" : `−${item.creditsUsed}`}
+                  {item.model === "sequence-concat"
+                    ? "فيديو واحد"
+                    : item.creditsUsed === 0
+                      ? "مجاني"
+                      : `−${item.creditsUsed}`}
                   {" · "}
                   {item.status}
                 </p>

@@ -982,109 +982,131 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       if (useMulti && shots.length >= 2) {
         setPreview({ url: "", mediaType: "video", status: "running" });
         const localUrls: string[] = [];
+        const partAssetIds: string[] = [];
         let frame: VisualReference | null = startFrame;
 
-        for (let i = 0; i < shots.length; i += 1) {
-          const shot = shots[i]!;
-          const label = `لقطة ${i + 1} من ${shots.length}`;
-          setStatus(
-            `${label} (${perShotSeconds}ث): ${shot.action.slice(0, 40)}… — ثم تُدمج في فيديو واحد`,
-          );
-          const mode = frame ? "image2video" : "text2video";
-          const { res, data } = await createOneClip({
-            prompt: shot.prompt,
-            mode,
-            duration: perShotSeconds,
-            startFrame: frame,
-            endFrame: i === 0 ? endFrame : null,
-            sequencePart: true,
-          });
-
-          if (res.status === 401 || data.needsAuth) {
-            router.push(`/signup?next=${encodeURIComponent("/")}&paywall=1`);
-            return;
+        const revealParts = async () => {
+          if (!partAssetIds.length) return;
+          try {
+            await fetchJson("/api/assets/visibility", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ assetIds: partAssetIds, hidden: false }),
+            });
+          } catch {
+            // Assets GET also recovers orphans.
           }
-          if (res.status === 402 || data.needsPaywall) {
-            setError(data.error || "رصيدك غير كافٍ لإكمال اللقطات.");
-            router.push("/pricing?paywall=1");
-            return;
-          }
-          if (!res.ok) throw new Error(data.error || `فشل ${label}`);
-          const failed = data.results?.find((r) => r.error);
-          if (failed?.error) throw new Error(failed.error);
+        };
 
-          const ok = data.results?.find((r) => !r.error);
-          let url = ok?.urls?.[0] || "";
-          const historyId = ok?.historyId;
-          const assetId = ok?.assetId;
-          if (!url && historyId) {
+        try {
+          for (let i = 0; i < shots.length; i += 1) {
+            const shot = shots[i]!;
+            const label = `لقطة ${i + 1} من ${shots.length}`;
+            setStatus(
+              `${label} (${perShotSeconds}ث): ${shot.action.slice(0, 40)}… — ثم تُدمج في فيديو واحد`,
+            );
+            const mode = frame ? "image2video" : "text2video";
+            const { res, data } = await createOneClip({
+              prompt: shot.prompt,
+              mode,
+              duration: perShotSeconds,
+              startFrame: frame,
+              endFrame: i === 0 ? endFrame : null,
+              sequencePart: true,
+            });
+
+            if (res.status === 401 || data.needsAuth) {
+              await revealParts();
+              router.push(`/signup?next=${encodeURIComponent("/")}&paywall=1`);
+              return;
+            }
+            if (res.status === 402 || data.needsPaywall) {
+              await revealParts();
+              setError(data.error || "رصيدك غير كافٍ لإكمال اللقطات.");
+              router.push("/pricing?paywall=1");
+              return;
+            }
+            if (!res.ok) throw new Error(data.error || `فشل ${label}`);
+            const failed = data.results?.find((r) => r.error);
+            if (failed?.error) throw new Error(failed.error);
+
+            const ok = data.results?.find((r) => !r.error);
+            let url = ok?.urls?.[0] || "";
+            const historyId = ok?.historyId;
+            const assetId = ok?.assetId;
+            if (assetId) partAssetIds.push(assetId);
+            if (!url && historyId) {
+              setPreview({
+                url: "",
+                mediaType: "video",
+                historyId,
+                status: "running",
+              });
+              url = await waitForHistoryUrl(historyId, startedAt, label);
+            }
+            if (!url && !historyId) throw new Error(`لا يوجد فيديو من ${label}`);
+
+            // Persist part locally so stitch never depends on CDN alone.
+            setStatus(`حفظ ${label} محلياً قبل الدمج…`);
+            const cacheRes = await fetchJson<{ error?: string; url?: string }>(
+              "/api/media/cache",
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  videoUrl: url || undefined,
+                  historyId: historyId || undefined,
+                  assetId: assetId || undefined,
+                }),
+              },
+            );
+            const localUrl = cacheRes.res.ok ? cacheRes.data.url : null;
+            if (!localUrl) {
+              throw new Error(
+                cacheRes.data.error || `تعذر حفظ ${label} للدمج في فيديو واحد`,
+              );
+            }
+            localUrls.push(localUrl);
+
+            // Assembling — parts stay hidden until final stitch (or reveal on failure).
             setPreview({
               url: "",
               mediaType: "video",
               historyId,
               status: "running",
             });
-            url = await waitForHistoryUrl(historyId, startedAt, label);
-          }
-          if (!url && !historyId) throw new Error(`لا يوجد فيديو من ${label}`);
 
-          // Persist part locally (hidden in Assets) so stitch never depends on CDN alone.
-          setStatus(`حفظ ${label} محلياً قبل الدمج…`);
-          const cacheRes = await fetchJson<{ error?: string; url?: string }>(
-            "/api/media/cache",
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                videoUrl: url || undefined,
-                historyId: historyId || undefined,
-                assetId: assetId || undefined,
-              }),
-            },
-          );
-          const localUrl = cacheRes.res.ok ? cacheRes.data.url : null;
-          if (!localUrl) {
-            throw new Error(
-              cacheRes.data.error || `تعذر حفظ ${label} للدمج في فيديو واحد`,
-            );
-          }
-          localUrls.push(localUrl);
-
-          // Keep preview in "assembling" state — do not treat parts as final videos
-          setPreview({
-            url: "",
-            mediaType: "video",
-            historyId,
-            status: "running",
-          });
-
-          if (i < shots.length - 1) {
-            setStatus(`استخراج إطار الربط بعد ${label}…`);
-            const frameRes = await fetchJson<{
-              error?: string;
-              visualReference?: VisualReference;
-            }>("/api/media/extract-frame", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                videoUrl: localUrl,
-                label: `bridge-${i + 1}`,
-              }),
-            });
-            if (!frameRes.res.ok || !frameRes.data.visualReference) {
-              throw new Error(frameRes.data.error || "تعذر استخراج إطار الربط بين اللقطات");
+            if (i < shots.length - 1) {
+              setStatus(`استخراج إطار الربط بعد ${label}…`);
+              const frameRes = await fetchJson<{
+                error?: string;
+                visualReference?: VisualReference;
+              }>("/api/media/extract-frame", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  videoUrl: localUrl,
+                  label: `bridge-${i + 1}`,
+                }),
+              });
+              if (!frameRes.res.ok || !frameRes.data.visualReference) {
+                throw new Error(
+                  frameRes.data.error || "تعذر استخراج إطار الربط بين اللقطات",
+                );
+              }
+              frame = frameRes.data.visualReference;
             }
-            frame = frameRes.data.visualReference;
           }
-        }
 
-        setStatus(`دمج ${shots.length} لقطات في فيديو واحد…`);
-        let concatUrl: string | null = null;
-        let concatError = "";
-        for (let attempt = 0; attempt < 2; attempt += 1) {
-          const concatRes = await fetchJson<{ error?: string; url?: string }>(
-            "/api/media/concat",
-            {
+          setStatus(`دمج ${shots.length} لقطات في فيديو واحد…`);
+          let concatUrl: string | null = null;
+          let concatError = "";
+          for (let attempt = 0; attempt < 2; attempt += 1) {
+            const concatRes = await fetchJson<{
+              error?: string;
+              url?: string;
+              assetId?: string;
+            }>("/api/media/concat", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -1094,37 +1116,55 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 modelId: selectedModelId,
                 shotCount: shots.length,
               }),
-            },
-          );
-          if (concatRes.res.ok && concatRes.data.url) {
-            concatUrl = concatRes.data.url;
-            break;
+            });
+            if (concatRes.res.ok && concatRes.data.url) {
+              concatUrl = concatRes.data.url;
+              break;
+            }
+            concatError = concatRes.data.error || "تعذر دمج اللقطات";
+            await new Promise((r) => setTimeout(r, 1500));
           }
-          concatError = concatRes.data.error || "تعذر دمج اللقطات";
-          await new Promise((r) => setTimeout(r, 1500));
-        }
 
-        if (!concatUrl) {
-          setError(
-            `${concatError}. اللقطات وُلّدت لكن الدمج فشل — أعد المحاولة أو تواصل مع الدعم.`,
+          if (!concatUrl) {
+            await revealParts();
+            const fallback = localUrls[localUrls.length - 1] || "";
+            setError(
+              `${concatError}. اللقطات ظاهرة في Assets — تعذر دمجها في فيديو واحد.`,
+            );
+            setPreview({
+              url: fallback,
+              mediaType: "video",
+              status: fallback ? "completed" : "failed",
+            });
+            setGenStartedAt(null);
+            await onUserRefresh();
+            return;
+          }
+
+          // Final video is the only visible Assets entry; keep parts hidden.
+          if (partAssetIds.length) {
+            await fetchJson("/api/assets/visibility", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ assetIds: partAssetIds, hidden: true }),
+            }).catch(() => undefined);
+          }
+
+          setPreview({
+            url: concatUrl,
+            mediaType: "video",
+            status: "completed",
+          });
+          setStatus(
+            `فيديو واحد جاهز · ${shots.length} لقطات × ${perShotSeconds}ث = ${shots.length * perShotSeconds}ث`,
           );
-          setPreview({ url: "", mediaType: "video", status: "failed" });
           setGenStartedAt(null);
           await onUserRefresh();
           return;
+        } catch (multiErr) {
+          await revealParts();
+          throw multiErr;
         }
-
-        setPreview({
-          url: concatUrl,
-          mediaType: "video",
-          status: "completed",
-        });
-        setStatus(
-          `فيديو واحد جاهز · ${shots.length} لقطات × ${perShotSeconds}ث = ${shots.length * perShotSeconds}ث`,
-        );
-        setGenStartedAt(null);
-        await onUserRefresh();
-        return;
       }
 
       // Single-clip path (images, free trial, or one action)

@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/customer-auth";
-import { listAssetsForUser, updateAsset } from "@/lib/db";
+import {
+  listAssetsForUser,
+  recoverOrphanedHiddenAssets,
+  updateAsset,
+} from "@/lib/db";
 import { VERONIX_MODEL_ID } from "@/lib/free-trial";
 import {
   callOpenArtTool,
@@ -95,13 +99,17 @@ export async function GET() {
     return NextResponse.json({ error: "Login required", needsAuth: true }, { status: 401 });
   }
   try {
+    // Restore paid multi-shot clips if stitch never produced a visible final.
+    await recoverOrphanedHiddenAssets(user.id);
     const assets = await syncRunningAssets(user.id);
     return NextResponse.json({ assets });
   } catch (error) {
     if (error instanceof OpenArtConfigError) {
+      await recoverOrphanedHiddenAssets(user.id).catch(() => 0);
       const assets = await listAssetsForUser(user.id);
       return NextResponse.json({ assets, syncSkipped: true });
     }
+    await recoverOrphanedHiddenAssets(user.id).catch(() => 0);
     const assets = await listAssetsForUser(user.id);
     return NextResponse.json({ assets });
   }

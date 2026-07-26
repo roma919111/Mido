@@ -220,8 +220,66 @@ export async function listAssetsForUser(
 ): Promise<AssetRecord[]> {
   const db = await ensureDb();
   return db.assets.filter(
-    (a) => a.userId === userId && (opts?.includeHidden ? true : !a.hidden),
+    (a) =>
+      a.userId === userId &&
+      (opts?.includeHidden ? true : a.hidden !== true),
   );
+}
+
+/** Show or hide many assets at once (multi-shot parts). */
+export async function setAssetsHidden(
+  userId: string,
+  assetIds: string[],
+  hidden: boolean,
+): Promise<number> {
+  if (!assetIds.length) return 0;
+  const db = await ensureDb();
+  const want = new Set(assetIds);
+  let n = 0;
+  for (let i = 0; i < db.assets.length; i += 1) {
+    const a = db.assets[i]!;
+    if (a.userId !== userId || !want.has(a.id)) continue;
+    db.assets[i] = { ...a, hidden };
+    n += 1;
+  }
+  if (n) await saveDb(db);
+  return n;
+}
+
+/**
+ * Unhide multi-shot parts that never got a stitched final video.
+ * Keeps parts hidden only when a sequence-concat asset exists shortly after.
+ */
+export async function recoverOrphanedHiddenAssets(
+  userId: string,
+): Promise<number> {
+  const db = await ensureDb();
+  const mine = db.assets.filter((a) => a.userId === userId);
+  const concats = mine.filter(
+    (a) =>
+      a.hidden !== true &&
+      a.mode === "sequence-concat" &&
+      a.status === "completed" &&
+      Boolean(a.url),
+  );
+  let n = 0;
+  for (let i = 0; i < db.assets.length; i += 1) {
+    const a = db.assets[i]!;
+    if (a.userId !== userId || a.hidden !== true) continue;
+    if (a.mediaType !== "video" || a.status !== "completed" || !a.url) continue;
+    const partAt = new Date(a.createdAt).getTime();
+    const covered = concats.some((c) => {
+      const dt = new Date(c.createdAt).getTime() - partAt;
+      // Concat is created after parts; allow up to 2h window.
+      return dt >= -5_000 && dt < 2 * 60 * 60 * 1000;
+    });
+    if (!covered) {
+      db.assets[i] = { ...a, hidden: false };
+      n += 1;
+    }
+  }
+  if (n) await saveDb(db);
+  return n;
 }
 
 export function publicUser(user: UserRecord) {

@@ -38,11 +38,12 @@ export async function POST(request: Request) {
     let assetId: string | undefined;
     if (body.saveAsset !== false) {
       const shotCount = body.shotCount || urls.length;
+      const promptText = (body.prompt || "").trim();
       const asset = await createAsset({
         userId: user.id,
         mediaType: "video",
         url: localUrl,
-        prompt: (body.prompt || "").trim() || `مشهد مدمج · ${shotCount} لقطات`,
+        prompt: promptText || `مشهد مدمج · ${shotCount} لقطات`,
         mode: "sequence-concat",
         // Distinct from seedance free-trial branding path
         model: "sequence-concat",
