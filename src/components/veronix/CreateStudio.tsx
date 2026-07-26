@@ -376,22 +376,53 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     }
   }
 
+  async function previewToDataUrl(preview: string | null | undefined): Promise<string | null> {
+    if (!preview) return null;
+    try {
+      if (preview.startsWith("data:")) return preview;
+      const res = await fetch(preview);
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      if (!blob.type.startsWith("image/") || blob.size > 3_500_000) return null;
+      const buf = await blob.arrayBuffer();
+      let binary = "";
+      const bytes = new Uint8Array(buf);
+      const chunk = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+      }
+      return `data:${blob.type || "image/jpeg"};base64,${btoa(binary)}`;
+    } catch {
+      return null;
+    }
+  }
+
   async function handleEnhance() {
     if (!prompt.trim()) return;
     setEnhancing(true);
     setError(null);
     try {
+      // Prefer data URLs from local previews so vision can read pixels even if CDN blocks server fetch.
+      const dataCandidates = await Promise.all([
+        previewToDataUrl(startPreview),
+        previewToDataUrl(endPreview),
+        ...refPreviews.slice(0, 2).map((p) => previewToDataUrl(p)),
+      ]);
       const imageUrls = [
+        ...dataCandidates.filter((u): u is string => Boolean(u)),
         startFrame?.url,
         endFrame?.url,
         ...refs.map((r) => r.url),
       ].filter((u): u is string => Boolean(u && String(u).trim()));
+      // Dedupe, keep data URLs first, max 2 for vision payload size.
+      const uniqueUrls = [...new Set(imageUrls)].slice(0, 2);
 
       const { res, data } = await fetchJson<{
         enhanced?: string;
         error?: string;
         finalState?: SceneState;
         visionUsed?: boolean;
+        needsVisionKey?: boolean;
         chained?: boolean;
         entityBrief?: string;
       }>("/api/enhance", {
@@ -400,7 +431,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         body: JSON.stringify({
           prompt,
           mode: media === "image" ? "text-to-image" : "text-to-video",
-          imageUrls,
+          imageUrls: uniqueUrls,
           previousState: promptSceneState,
         }),
       });
@@ -411,11 +442,16 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       setPrompt(next);
       if (data.finalState) setPromptSceneState(data.finalState);
 
-      const bits = ["تم تحسين الوصف"];
-      if (data.visionUsed) bits.push("مع مطابقة تفاصيل الصورة");
-      else if (imageUrls.length) bits.push("مع ربط الصورة المرجعية");
-      if (data.chained) bits.push("وتسلسل من الحالة السابقة");
-      setStatus(bits.join(" · "));
+      if (data.needsVisionKey) {
+        setStatus(
+          "التحسين تم بدون قراءة ملابس الصورة — أضف OPENAI_API_KEY أو GEMINI_API_KEY على السيرفر لاستبدال الأنثى/الرجل بالمواصفات",
+        );
+      } else {
+        const bits = ["تم تحسين الوصف"];
+        if (data.visionUsed) bits.push("مع استبدال الشخصيات بمواصفات الصورة");
+        if (data.chained) bits.push("وتسلسل من الحالة السابقة");
+        setStatus(bits.join(" · "));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Enhance failed");
     } finally {

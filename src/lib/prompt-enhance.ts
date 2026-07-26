@@ -16,6 +16,7 @@ import {
 } from "@/lib/prompt-chain";
 import {
   analyzeReferenceImages,
+  entityPhrasesFromBrief,
   formatEntityBrief,
   type VisionSceneBrief,
 } from "@/lib/prompt-vision";
@@ -713,17 +714,12 @@ export type EnhanceWithContextResult = {
   enhanced: string;
   finalState: SceneState;
   visionUsed: boolean;
+  /** True when images were provided but no vision provider returned entities */
+  needsVisionKey: boolean;
   chained: boolean;
   entityBrief: string;
   coreIdea: string;
 };
-
-function entityPhrasesFromVision(brief: VisionSceneBrief | null): string[] {
-  return (brief?.entities || [])
-    .map((e) => e.summary.trim())
-    .filter(Boolean)
-    .slice(0, 4);
-}
 
 /**
  * Full enhance pipeline with optional vision entity injection + state chaining.
@@ -744,6 +740,7 @@ export async function enhancePromptWithContext(
         previous: context.previousState,
       }),
       visionUsed: false,
+      needsVisionKey: false,
       chained: false,
       entityBrief: "",
       coreIdea: "",
@@ -761,45 +758,54 @@ export async function enhancePromptWithContext(
     Boolean(context.previousState?.arabic) ||
     Boolean(vision?.arabicPreferred);
 
-  let entities = entityPhrasesFromVision(vision);
-  if (!entities.length && context.previousState?.entities?.length) {
-    entities = context.previousState.entities;
-  }
+  const fromVision = entityPhrasesFromBrief(vision);
+  let entities = fromVision.phrases;
+  let genders = fromVision.genders;
 
-  // Soft fallback when images exist but vision API is not configured:
-  // keep identity locked to the uploaded reference appearance.
-  if (!entities.length && imageUrls.length) {
-    entities = arabic
-      ? ["الشخصية الظاهرة في الصورة المرجعية بملابسها وألوانها وملامحها"]
-      : ["the exact character from the reference image with their clothing, colors, and features"];
-    if ((rawIdea.match(/رجل|امرأة|man|woman|person/gi) || []).length >= 2) {
-      entities.push(
-        arabic
-          ? "الشخصية الثانية الظاهرة في الصورة المرجعية بملابسها وألوانها"
-          : "the second character from the reference image with their clothing and colors",
-      );
+  // Reuse prior concrete entities for sequential shots (same cast).
+  if (!entities.length && context.previousState?.entities?.length) {
+    const prev = context.previousState.entities;
+    const looksConcrete = prev.every(
+      (p) => p && !/الصورة المرجعية|reference image|الشخصية الظاهرة/i.test(p),
+    );
+    if (looksConcrete) {
+      entities = prev;
+      genders =
+        context.previousState.entityGenders ||
+        prev.map(() => "unknown" as const);
     }
   }
 
+  const visionUsed = Boolean(vision && vision.source !== "none" && entities.length);
+  const needsVisionKey = Boolean(imageUrls.length) && !visionUsed;
+
   const previous = context.previousState || null;
 
+  // Only inject concrete appearance phrases when vision (or prior concrete state) exists.
+  // Never inject vague "الشخصية الظاهرة في الصورة..." placeholders — they corrupt Arabic.
   const chainedBuild = buildChainedIdea({
     action: rawIdea,
     previous,
-    entityPhrases: entities,
+    entityPhrases: visionUsed || entities.length ? entities : [],
+    entityGenders: genders,
     forceChain: context.forceChain,
   });
 
   let groundedIdea = chainedBuild.idea;
-  if (vision?.setting) {
+  if (visionUsed && vision?.setting) {
     groundedIdea = arabic
       ? `${groundedIdea}. المكان كما في الصورة: ${vision.setting}`
       : `${groundedIdea}. Setting matches the reference image: ${vision.setting}`;
   }
-  if (imageUrls.length) {
+  if (visionUsed) {
     groundedIdea = arabic
-      ? `${groundedIdea}. طابق المظهر البصري للصورة/الصور المرفوعة بدقة (ملابس، ألوان، بشرة، ملامح) بدون استبدال الشخصيات.`
-      : `${groundedIdea}. Strictly match the uploaded reference appearance (clothing, colors, skin, features) without swapping characters.`;
+      ? `${groundedIdea}. حافظ على نفس الملابس والألوان والأطوال المستخرجة من الصورة.`
+      : `${groundedIdea}. Keep the exact clothing, colors, and heights extracted from the reference image.`;
+  } else if (needsVisionKey) {
+    // Do not invent clothing. Keep user's nouns; ask ops to enable vision.
+    groundedIdea = arabic
+      ? `${rawIdea}. (مطلوب تحليل الصورة لاستبدال الأنثى/الرجل بمواصفات الملابس والطول من الصورة — أضف OPENAI_API_KEY أو GEMINI_API_KEY)`
+      : `${rawIdea}. (Vision key required to replace man/woman with clothing/height from the image — set OPENAI_API_KEY or GEMINI_API_KEY)`;
   }
 
   const enhanced = enhancePrompt(groundedIdea, mode);
@@ -807,6 +813,7 @@ export async function enhancePromptWithContext(
     action: rawIdea,
     enhanced,
     entityPhrases: entities,
+    entityGenders: genders,
     setting: vision?.setting || previous?.setting,
     previous,
   });
@@ -814,7 +821,8 @@ export async function enhancePromptWithContext(
   return {
     enhanced,
     finalState,
-    visionUsed: Boolean(vision && vision.source !== "none" && vision.entities.length),
+    visionUsed,
+    needsVisionKey,
     chained: chainedBuild.chained,
     entityBrief: formatEntityBrief(vision, arabic),
     coreIdea: groundedIdea,

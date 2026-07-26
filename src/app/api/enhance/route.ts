@@ -44,6 +44,7 @@ export async function POST(request: Request) {
       coreIdea: result.coreIdea,
       finalState: result.finalState,
       visionUsed: result.visionUsed,
+      needsVisionKey: result.needsVisionKey,
       chained: result.chained,
       entityBrief: result.entityBrief,
       variants: [

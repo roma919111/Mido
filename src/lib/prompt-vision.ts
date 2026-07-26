@@ -10,12 +10,15 @@
 export type VisualEntity = {
   role: string;
   gender?: string;
+  /** e.g. tall / short / average — critical for user prompts */
+  heightBuild?: string;
   clothing?: string;
   colors?: string;
   skinTone?: string;
   hair?: string;
   features?: string;
   position?: string;
+  /** Ready-to-inject noun phrase, e.g. "أنثى طويلة ترتدي ليغينغ تايغر" */
   summary: string;
 };
 
@@ -53,25 +56,33 @@ Return STRICT JSON only (no markdown) with this shape:
 {
   "entities": [
     {
-      "role": "person_a|person_b|subject|animal|object",
+      "role": "person_a|person_b|subject",
       "gender": "male|female|unknown",
-      "clothing": "short clothing description",
-      "colors": "main clothing/colors",
+      "heightBuild": "tall|short|average + body note if obvious",
+      "clothing": "exact garments visible (e.g. tiger-print leggings, white t-shirt)",
+      "colors": "main clothing colors/patterns",
       "skinTone": "brief",
       "hair": "brief",
       "features": "distinctive visible traits",
       "position": "left|right|center|foreground|background",
-      "summary": "one Arabic or English noun phrase identifying this entity uniquely"
+      "summary": "ONE injectable noun phrase — MUST include gender word + height/build + clothing"
     }
   ],
   "setting": "short setting description",
   "arabicPreferred": true
 }
 Rules:
-- Identify each distinct person separately (left/right/order of appearance).
-- Prefer concrete clothing colors and garments over vague words.
-- If text in the user locale seems Arabic-heavy from context, set arabicPreferred true.
-- Max 4 entities. Ignore tiny background extras.`;
+- Identify each distinct person separately (left/right, larger/smaller, order).
+- summary examples (Arabic when arabicPreferred):
+  - "أنثى طويلة ترتدي ليغينغ تايغر"
+  - "رجل قصير يرتدي قميصاً"
+- summary examples (English otherwise):
+  - "a tall woman wearing tiger-print leggings"
+  - "a short man wearing a t-shirt"
+- NEVER use vague summaries like "الشخصية الظاهرة في الصورة" or "the person in the image".
+- Prefer concrete garments, patterns, and relative height.
+- Max 4 entities. Ignore tiny background extras.
+- Match user hint language: if the hint is Arabic, arabicPreferred=true and write summary in Arabic.`;
 
 function parseVisionJson(text: string): VisionSceneBrief | null {
   const cleaned = text
@@ -92,17 +103,24 @@ function parseVisionJson(text: string): VisionSceneBrief | null {
       ? parsed.entities
           .filter((e) => e && typeof e.summary === "string" && e.summary.trim())
           .slice(0, 4)
-          .map((e, i) => ({
-            role: String(e.role || `person_${i + 1}`),
-            gender: e.gender ? String(e.gender) : undefined,
-            clothing: e.clothing ? String(e.clothing) : undefined,
-            colors: e.colors ? String(e.colors) : undefined,
-            skinTone: e.skinTone ? String(e.skinTone) : undefined,
-            hair: e.hair ? String(e.hair) : undefined,
-            features: e.features ? String(e.features) : undefined,
-            position: e.position ? String(e.position) : undefined,
-            summary: String(e.summary).trim(),
-          }))
+          .map((e, i) => {
+            const entity: VisualEntity = {
+              role: String(e.role || `person_${i + 1}`),
+              gender: e.gender ? String(e.gender) : undefined,
+              heightBuild: (e as VisualEntity).heightBuild
+                ? String((e as VisualEntity).heightBuild)
+                : undefined,
+              clothing: e.clothing ? String(e.clothing) : undefined,
+              colors: e.colors ? String(e.colors) : undefined,
+              skinTone: e.skinTone ? String(e.skinTone) : undefined,
+              hair: e.hair ? String(e.hair) : undefined,
+              features: e.features ? String(e.features) : undefined,
+              position: e.position ? String(e.position) : undefined,
+              summary: String(e.summary || "").trim(),
+            };
+            entity.summary = buildConcreteEntityPhrase(entity, Boolean(parsed.arabicPreferred));
+            return entity;
+          })
       : [];
     if (!entities.length) return null;
     return {
@@ -128,6 +146,7 @@ async function analyzeWithOpenAi(
     { type: "text", text: `${VISION_INSTRUCTION}\nUser action hint: ${userHint || "(none)"}` },
   ];
   for (const url of imageUrls.slice(0, 2)) {
+    // OpenAI accepts https URLs and data: URLs.
     content.push({
       type: "image_url",
       image_url: { url, detail: "low" },
@@ -178,20 +197,33 @@ async function analyzeWithGemini(
   ];
 
   for (const url of imageUrls.slice(0, 2)) {
-    const imgRes = await fetch(url, {
-      redirect: "follow",
-      headers: { Accept: "image/*", "User-Agent": "VyronixPromptVision/1.0" },
-    });
-    if (!imgRes.ok) continue;
-    const buf = Buffer.from(await imgRes.arrayBuffer());
-    if (buf.length < 200 || buf.length > 4_500_000) continue;
-    const mime = imgRes.headers.get("content-type")?.split(";")[0] || "image/jpeg";
-    parts.push({
-      inline_data: {
-        mime_type: mime,
-        data: buf.toString("base64"),
-      },
-    });
+    try {
+      if (url.startsWith("data:")) {
+        const m = /^data:([^;]+);base64,([\s\S]+)$/.exec(url);
+        if (!m) continue;
+        const mime = m[1] || "image/jpeg";
+        const data = m[2] || "";
+        if (data.length < 200 || data.length > 6_000_000) continue;
+        parts.push({ inline_data: { mime_type: mime, data } });
+        continue;
+      }
+      const imgRes = await fetch(url, {
+        redirect: "follow",
+        headers: { Accept: "image/*", "User-Agent": "VyronixPromptVision/1.0" },
+      });
+      if (!imgRes.ok) continue;
+      const buf = Buffer.from(await imgRes.arrayBuffer());
+      if (buf.length < 200 || buf.length > 4_500_000) continue;
+      const mime = imgRes.headers.get("content-type")?.split(";")[0] || "image/jpeg";
+      parts.push({
+        inline_data: {
+          mime_type: mime,
+          data: buf.toString("base64"),
+        },
+      });
+    } catch {
+      // skip unreadable url
+    }
   }
   if (parts.length < 2) return null;
 
@@ -268,34 +300,88 @@ export async function analyzeReferenceImages(
   return brief;
 }
 
+/** Build an injectable phrase from structured vision fields. */
+export function buildConcreteEntityPhrase(entity: VisualEntity, arabic: boolean): string {
+  const vague =
+    !entity.summary ||
+    /الصورة المرجعية|reference image|الشخصية الظاهرة|the (?:exact )?character|person in the image/i.test(
+      entity.summary,
+    );
+
+  if (!vague && entity.summary.trim().length >= 10) {
+    return entity.summary.trim();
+  }
+
+  const gender = String(entity.gender || "").toLowerCase();
+  const clothing = [entity.clothing, entity.colors].filter(Boolean).join(" ").trim();
+  const height = String(entity.heightBuild || entity.features || "").trim();
+
+  if (arabic) {
+    const female = gender.startsWith("f") || gender === "female";
+    const male = gender.startsWith("m") || gender === "male";
+    const who = female ? "أنثى" : male ? "رجل" : "شخص";
+    const size = /tall|طويل/i.test(height)
+      ? female
+        ? "طويلة"
+        : "طويل"
+      : /short|قصير/i.test(height)
+        ? female
+          ? "قصيرة"
+          : "قصير"
+        : "";
+    let wear = "";
+    if (clothing) {
+      const c = clothing.replace(/^(ترتدي|يرتدي|wearing)\s+/i, "").trim();
+      wear = female ? `ترتدي ${c}` : `يرتدي ${c}`;
+    }
+    return [who, size, wear].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+  }
+
+  const who =
+    gender.startsWith("f") || gender === "female"
+      ? "woman"
+      : gender.startsWith("m") || gender === "male"
+        ? "man"
+        : "person";
+  const size = /tall|طويل/i.test(height)
+    ? "tall"
+    : /short|قصير/i.test(height)
+      ? "short"
+      : "";
+  const wear = clothing ? `wearing ${clothing}` : "";
+  return ["a", size, who, wear].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+}
+
+export function entityPhrasesFromBrief(brief: VisionSceneBrief | null | undefined): {
+  phrases: string[];
+  genders: Array<"female" | "male" | "unknown">;
+} {
+  if (!brief?.entities?.length) return { phrases: [], genders: [] };
+  const arabic = brief.arabicPreferred;
+  const phrases: string[] = [];
+  const genders: Array<"female" | "male" | "unknown"> = [];
+  for (const e of brief.entities.slice(0, 4)) {
+    const phrase = buildConcreteEntityPhrase(e, arabic);
+    if (!phrase) continue;
+    phrases.push(phrase);
+    const g = String(e.gender || "").toLowerCase();
+    genders.push(
+      g.startsWith("f") || g === "female"
+        ? "female"
+        : g.startsWith("m") || g === "male"
+          ? "male"
+          : "unknown",
+    );
+  }
+  return { phrases, genders };
+}
+
 export function formatEntityBrief(brief: VisionSceneBrief | null | undefined, arabic: boolean): string {
   if (!brief?.entities?.length) return "";
-  if (arabic) {
-    return brief.entities
-      .map((e, i) => {
-        const bits = [
-          e.summary,
-          e.clothing,
-          e.colors ? `ألوان: ${e.colors}` : "",
-          e.skinTone ? `بشرة: ${e.skinTone}` : "",
-          e.hair ? `شعر: ${e.hair}` : "",
-          e.position ? `موقع: ${e.position}` : "",
-        ].filter(Boolean);
-        return `الشخصية ${i + 1}: ${bits.join(" · ")}`;
-      })
-      .join("؛ ");
-  }
   return brief.entities
     .map((e, i) => {
-      const bits = [
-        e.summary,
-        e.clothing,
-        e.colors ? `colors: ${e.colors}` : "",
-        e.skinTone ? `skin: ${e.skinTone}` : "",
-        e.hair ? `hair: ${e.hair}` : "",
-        e.position ? `position: ${e.position}` : "",
-      ].filter(Boolean);
-      return `Character ${i + 1}: ${bits.join(" · ")}`;
+      const phrase = buildConcreteEntityPhrase(e, arabic);
+      return arabic ? `الشخصية ${i + 1}: ${phrase}` : `Character ${i + 1}: ${phrase}`;
     })
-    .join("; ");
+    .join(arabic ? "؛ " : "; ");
 }

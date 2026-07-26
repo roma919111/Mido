@@ -1,12 +1,17 @@
 /**
  * State continuity / prompt chaining for sequential action prompts.
  * Builds each new action from the previous final pose instead of resetting.
+ *
+ * Entity injection replaces generic person nouns (الأنثى / الرجل / a man…)
+ * with concrete appearance phrases from vision — never mid-word mangling.
  */
 
 export type SceneState = {
   arabic: boolean;
   /** Concrete entity phrases used in the last prompt */
   entities: string[];
+  /** Optional genders aligned with entities: female | male | unknown */
+  entityGenders?: Array<"female" | "male" | "unknown">;
   /** Final physical arrangement after the last action */
   finalPose: string;
   /** Last user action (core idea) */
@@ -47,32 +52,32 @@ export function inferFinalPose(action: string, arabic: boolean): string {
   }
 
   if (arabic) {
-    if (/يرفع|رفع|حاملاً|يحمل/.test(a) && /فوق|رأس/.test(a)) {
-      return "أحد الشخصيات ما زال يحمل الآخر مرفوعاً فوق رأسه";
+    if (/يرفع|رفع|حاملاً|يحمل/.test(a) && /فوق|رأس|عالي/.test(a)) {
+      return "أحد الشخصيات يحمل الآخر مرفوعاً في الهواء";
     }
     if (/يلكم|لكمة|يضرب|يلكّم/.test(a)) {
       return "الشخصيات في وضعية اشتباك بعد اللكمة مباشرة";
     }
-    if (/يضع|إنزال|ينزل|على الأرض|أرضا/.test(a)) {
-      return "أحد الشخصيات أصبح على الأرض بعد الإنزال";
+    if (/يضع|إنزال|ينزل|على الأرض|أرضا|يسقط|ترمي|يرمي/.test(a)) {
+      return "الشخصيات بعد حركة الرمي/الإنزال على وضعية جديدة";
+    }
+    if (/يرقص|رقص|وقفة|انشقاق/.test(a)) {
+      return "الأنثى/الشخصية في وضعية وقفة أو انشقاق بعد الحركة";
     }
     if (/يركض|يجري|يمشي|يتمش/.test(a)) {
       return "الشخصيات في منتصف الحركة على المسار نفسه";
     }
-    if (/يرقص|رقص/.test(a)) {
-      return "الشخصيات في وضعية رقص مستمرة";
-    }
     return `نهاية الحركة السابقة: ${a}`;
   }
 
-  if (/\b(lift|lifts|lifting|holds?|holding|raise[sd]?)\b/i.test(a) && /\b(over|above|head)\b/i.test(a)) {
-    return "one character is still holding the other raised above their head";
+  if (/\b(lift|lifts|lifting|holds?|holding|raise[sd]?|throw[s]?)\b/i.test(a)) {
+    return "one character is holding or has just thrown the other";
   }
   if (/\b(punch|punches|punching|hit|hits|hitting|strike[sd]?)\b/i.test(a)) {
     return "characters are mid-clash immediately after the punch";
   }
-  if (/\b(put|puts|place[sd]?|lower(?:s|ed|ing)?|set(?:s|ting)? down|on the (?:ground|floor))\b/i.test(a)) {
-    return "one character is on the ground after being lowered";
+  if (/\b(put|puts|place[sd]?|lower(?:s|ed|ing)?|drop(?:s|ped)?|on the (?:ground|floor))\b/i.test(a)) {
+    return "characters after the lower/drop onto a new pose";
   }
   if (/\b(run|running|walk|walking)\b/i.test(a)) {
     return "characters are mid-motion along the same path";
@@ -84,46 +89,40 @@ export function buildChainedIdea(input: {
   action: string;
   previous: SceneState | null | undefined;
   entityPhrases?: string[];
-  /** Chain only when user marks continuation (ثم/then) unless forceChain */
+  entityGenders?: Array<"female" | "male" | "unknown">;
   forceChain?: boolean;
 }): { idea: string; chained: boolean } {
   const arabic = isArabic(input.action) || Boolean(input.previous?.arabic);
-  const sequential =
-    Boolean(input.forceChain) || isSequentialAction(input.action);
+  const sequential = Boolean(input.forceChain) || isSequentialAction(input.action);
   const rawAction = stripSequencePrefix(input.action);
   const entities =
     input.entityPhrases?.filter(Boolean).slice(0, 4) ||
     input.previous?.entities ||
     [];
+  const genders =
+    input.entityGenders ||
+    input.previous?.entityGenders ||
+    entities.map(() => "unknown" as const);
 
   if (!sequential || !input.previous?.finalPose) {
     if (entities.length >= 1) {
       return {
         chained: false,
-        idea: injectEntitiesIntoAction(rawAction, entities, arabic),
+        idea: injectEntitiesIntoAction(rawAction, entities, arabic, genders),
       };
     }
     return { chained: false, idea: rawAction };
   }
 
   const prevPose = input.previous.finalPose;
-  const entityLine = entities.length
-    ? arabic
-      ? `الشخصيات نفسها: ${entities.join(" و ")}.`
-      : `Same characters: ${entities.join(" and ")}.`
-    : "";
-
   if (arabic) {
     return {
       chained: true,
       idea: [
         `بدءاً من الحالة النهائية السابقة (${prevPose})`,
-        entityLine,
-        `ينتقل المشهد بسلاسة إلى: ${injectEntitiesIntoAction(rawAction, entities, true)}`,
+        `ينتقل المشهد بسلاسة إلى: ${injectEntitiesIntoAction(rawAction, entities, true, genders)}`,
         "بدون إعادة تهيئة المشهد من الصفر، مع الحفاظ على هوية الشخصيات والموقع",
-      ]
-        .filter(Boolean)
-        .join(" "),
+      ].join(" "),
     };
   }
 
@@ -131,96 +130,165 @@ export function buildChainedIdea(input: {
     chained: true,
     idea: [
       `Starting from the previous final state (${prevPose})`,
-      entityLine,
-      `the scene transitions smoothly into: ${injectEntitiesIntoAction(rawAction, entities, false)}`,
+      `the scene transitions smoothly into: ${injectEntitiesIntoAction(rawAction, entities, false, genders)}`,
       "without resetting the scene, preserving character identity and location",
-    ]
-      .filter(Boolean)
-      .join(" "),
+    ].join(" "),
   };
 }
 
+type Gender = "female" | "male" | "unknown";
+
+type GenericHit = {
+  start: number;
+  end: number;
+  gender: Gender;
+  /** second person / "another" */
+  secondary: boolean;
+};
+
+function collectArabicGenerics(text: string): GenericHit[] {
+  const patterns: Array<{ re: RegExp; gender: Gender; secondary: boolean }> = [
+    { re: /رجلاً\s+آخر|رجل\s+آخر|شخصاً\s+آخر|شخص\s+آخر|الرجل\s+الآخر/g, gender: "male", secondary: true },
+    { re: /امرأة\s+أخرى|فتاة\s+أخرى|الأنثى\s+الأخرى|الانثى\s+الأخرى/g, gender: "female", secondary: true },
+    { re: /الأنثى|الانثى|أنثى|انثى|المرأة|امرأ[ةه]|فتاة/g, gender: "female", secondary: false },
+    { re: /الرجل|رجلاً|رجل|شاب|ذكر/g, gender: "male", secondary: false },
+    { re: /الشخص|شخصاً|شخص/g, gender: "unknown", secondary: false },
+  ];
+
+  const hits: GenericHit[] = [];
+  const occupied: Array<[number, number]> = [];
+
+  for (const { re, gender, secondary } of patterns) {
+    re.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text))) {
+      const start = m.index;
+      const end = start + m[0].length;
+      if (occupied.some(([a, b]) => start < b && end > a)) continue;
+      occupied.push([start, end]);
+      hits.push({ start, end, gender, secondary });
+    }
+  }
+
+  hits.sort((a, b) => a.start - b.start);
+  return hits;
+}
+
+function collectEnglishGenerics(text: string): GenericHit[] {
+  const patterns: Array<{ re: RegExp; gender: Gender; secondary: boolean }> = [
+    { re: /\banother man\b/gi, gender: "male", secondary: true },
+    { re: /\banother woman\b/gi, gender: "female", secondary: true },
+    { re: /\banother person\b/gi, gender: "unknown", secondary: true },
+    { re: /\b(?:the |a )?woman\b/gi, gender: "female", secondary: false },
+    { re: /\b(?:the |a )?man\b/gi, gender: "male", secondary: false },
+    { re: /\b(?:the |a )?girl\b/gi, gender: "female", secondary: false },
+    { re: /\b(?:the |a )?boy\b/gi, gender: "male", secondary: false },
+    { re: /\b(?:the |a )?person\b/gi, gender: "unknown", secondary: false },
+  ];
+  const hits: GenericHit[] = [];
+  const occupied: Array<[number, number]> = [];
+  for (const { re, gender, secondary } of patterns) {
+    re.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text))) {
+      const start = m.index;
+      const end = start + m[0].length;
+      if (occupied.some(([a, b]) => start < b && end > a)) continue;
+      occupied.push([start, end]);
+      hits.push({ start, end, gender, secondary });
+    }
+  }
+  hits.sort((a, b) => a.start - b.start);
+  return hits;
+}
+
+function pickEntityIndex(
+  hit: GenericHit,
+  genders: Gender[],
+  used: Set<number>,
+): number {
+  // Prefer unused entity matching gender
+  for (let i = 0; i < genders.length; i += 1) {
+    if (used.has(i)) continue;
+    if (hit.gender !== "unknown" && genders[i] === hit.gender) return i;
+  }
+  // Secondary hit prefers index 1 if free
+  if (hit.secondary && genders.length > 1 && !used.has(1)) return 1;
+  for (let i = 0; i < genders.length; i += 1) {
+    if (!used.has(i)) return i;
+  }
+  return Math.min(hit.secondary ? 1 : 0, Math.max(0, genders.length - 1));
+}
+
 /**
- * Replace generic person nouns with concrete entity phrases when possible.
- * Examples AR: رجل ... رجلاً آخر → entity0 ... entity1
+ * Replace generic person nouns with concrete entity phrases.
+ * Uses span replacement (not naive string replace) to avoid corrupting Arabic.
  */
 export function injectEntitiesIntoAction(
   action: string,
   entities: string[],
   arabic: boolean,
+  genders?: Gender[],
 ): string {
-  if (!action.trim()) return action;
-  if (!entities.length) return action;
+  if (!action.trim() || !entities.length) return action;
 
-  let out = action.trim();
+  const text = action.trim();
+  const gens: Gender[] =
+    genders && genders.length === entities.length
+      ? genders
+      : entities.map((e) => inferGenderFromPhrase(e));
 
-  if (arabic) {
-    const e0 = entities[0];
-    const e1 = entities[1];
-    // Order matters: longer multi-word patterns first.
-    out = out
-      .replace(/رجلاً\s+آخر|رجل\s+آخر|شخصاً\s+آخر|شخص\s+آخر/g, e1 || e0 || "الشخصية الثانية")
-      .replace(/امرأة\s+أخرى|فتاة\s+أخرى/g, e1 || e0 || "الشخصية الثانية");
-
-    // First remaining generic subject
-    if (e0) {
-      out = out
-        .replace(/(^|[\s،,])رجل(?=[\s،,]|$)/, `$1${e0}`)
-        .replace(/(^|[\s،,])امرأة(?=[\s،,]|$)/, `$1${e0}`)
-        .replace(/(^|[\s،,])شخص(?=[\s،,]|$)/, `$1${e0}`)
-        .replace(/(^|[\s،,])شاب(?=[\s،,]|$)/, `$1${e0}`)
-        .replace(/(^|[\s،,])فتاة(?=[\s،,]|$)/, `$1${e0}`);
-    }
-    // If still has a second generic and we have e1
-    if (e1 && /رجل|امرأة|شخص/.test(out) && !out.includes(e1)) {
-      out = out
-        .replace(/رجل/, e1)
-        .replace(/امرأة/, e1)
-        .replace(/شخص/, e1);
-    }
-    return out;
+  const hits = arabic ? collectArabicGenerics(text) : collectEnglishGenerics(text);
+  if (!hits.length) {
+    // No generic nouns — prepend primary entity only if action is very short
+    return text;
   }
 
-  const e0 = entities[0];
-  const e1 = entities[1];
-  out = out
-    .replace(/\banother man\b/gi, e1 || e0 || "the second man")
-    .replace(/\banother woman\b/gi, e1 || e0 || "the second woman")
-    .replace(/\banother person\b/gi, e1 || e0 || "the second person");
+  const used = new Set<number>();
+  const replacements: Array<{ start: number; end: number; value: string }> = [];
 
-  if (e0) {
-    out = out
-      .replace(/\ba man\b/i, e0)
-      .replace(/\bthe man\b/i, e0)
-      .replace(/\ba woman\b/i, e0)
-      .replace(/\bthe woman\b/i, e0)
-      .replace(/\ba person\b/i, e0);
+  for (const hit of hits) {
+    const idx = pickEntityIndex(hit, gens, used);
+    used.add(idx);
+    const value = entities[idx] || entities[0]!;
+    replacements.push({ start: hit.start, end: hit.end, value });
   }
-  if (e1) {
-    // second occurrence of man/woman
-    out = out
-      .replace(/\ba man\b/i, e1)
-      .replace(/\bthe man\b/i, e1)
-      .replace(/\ba woman\b/i, e1)
-      .replace(/\bthe woman\b/i, e1);
+
+  // Apply from end to start so indices stay valid
+  let out = text;
+  for (const r of replacements.sort((a, b) => b.start - a.start)) {
+    out = out.slice(0, r.start) + r.value + out.slice(r.end);
   }
-  return out;
+  return out.replace(/\s+/g, " ").trim();
+}
+
+export function inferGenderFromPhrase(phrase: string): Gender {
+  const p = phrase.trim();
+  if (/أنثى|انثى|امرأة|فتاة|woman|girl|female/i.test(p)) return "female";
+  if (/رجل|شاب|ذكر|\bman\b|\bboy\b|male/i.test(p)) return "male";
+  return "unknown";
 }
 
 export function buildSceneState(input: {
   action: string;
   enhanced: string;
   entityPhrases: string[];
+  entityGenders?: Gender[];
   setting?: string;
   previous?: SceneState | null;
 }): SceneState {
   const arabic = isArabic(input.action) || isArabic(input.enhanced);
   const actionCore = stripSequencePrefix(input.action);
+  const entities = input.entityPhrases.length
+    ? input.entityPhrases
+    : input.previous?.entities || [];
   return {
     arabic,
-    entities: input.entityPhrases.length
-      ? input.entityPhrases
-      : input.previous?.entities || [],
+    entities,
+    entityGenders:
+      input.entityGenders ||
+      input.previous?.entityGenders ||
+      entities.map((e) => inferGenderFromPhrase(e)),
     finalPose: inferFinalPose(actionCore, arabic),
     lastAction: actionCore,
     setting: input.setting || input.previous?.setting,
