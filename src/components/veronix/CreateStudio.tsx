@@ -29,7 +29,6 @@ import {
 import type { VisualReference } from "@/lib/types";
 import { fetchJson } from "@/lib/fetch-json";
 import { veronixDownloadPath, veronixMediaSrc } from "@/lib/media-proxy";
-import { ModelsModal } from "./ModelsModal";
 import type { CustomerUser } from "./AppHeader";
 
 /** Poll long enough for slow Seedance/OpenArt jobs (~15 min). */
@@ -52,7 +51,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const [imageModels, setImageModels] = useState<CatalogModel[]>(IMAGE_MODELS);
   const [videoModels, setVideoModels] = useState<CatalogModel[]>(VIDEO_MODELS);
   const [selectedModelId, setSelectedModelId] = useState(VERONIX_MODEL_ID);
-  const [modelsOpen, setModelsOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [aspectRatio, setAspectRatio] = useState<string>("16:9");
   const [resolution, setResolution] = useState<string>(FREE_VERONIX_RESOLUTION);
@@ -795,20 +793,47 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={() => setModelsOpen(true)}
-        className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-[#141821] px-4 py-3 text-left"
-      >
-        <div>
+      <label className="block rounded-2xl border border-white/10 bg-[#141821] px-4 py-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
           <p className="text-xs uppercase tracking-[0.16em] text-white/40">الموديل</p>
-          <p className="mt-1 text-sm text-white">
-            {selectedModel?.name || "اختر موديل"}
-          </p>
-          <p className="text-xs text-white/45">اختيار موديل واحد فقط</p>
+          <ChevronDown className="h-4 w-4 text-white/50" />
         </div>
-        <ChevronDown className="h-4 w-4 text-white/50" />
-      </button>
+        <select
+          value={selectedModelId}
+          onChange={(e) => {
+            const id = e.target.value;
+            setSelectedModelId(id);
+            const videoModel = videoModels.find((m) => m.id === id);
+            if (videoModel) {
+              if (!lockedMedia) setMedia("video");
+              applyVideoModelDefaults(videoModel);
+              return;
+            }
+            if (imageModels.some((m) => m.id === id)) {
+              if (!lockedMedia) setMedia("image");
+              setAspectRatio("1:1");
+            }
+          }}
+          className="w-full appearance-none rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-sm text-white outline-none"
+        >
+          {(media === "image" ? imageModels : videoModels).map((model) => (
+            <option
+              key={model.id}
+              value={model.id}
+              disabled={!model.available}
+            >
+              {model.available
+                ? model.name
+                : `${model.name} · قريبًا`}
+            </option>
+          ))}
+        </select>
+        {selectedModel?.tagline ? (
+          <p className="mt-2 text-xs text-white/45">{selectedModel.tagline}</p>
+        ) : (
+          <p className="mt-2 text-xs text-white/45">اختيار موديل واحد فقط</p>
+        )}
+      </label>
 
       <div className="rounded-2xl border border-dashed border-white/15 bg-[#141821] p-4">
         <p className="mb-2 text-sm font-medium text-white/80">مراجع بصرية (اختياري)</p>
@@ -1128,28 +1153,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         </div>
       )}
 
-      <ModelsModal
-        open={modelsOpen}
-        kind={media}
-        imageModels={imageModels}
-        videoModels={videoModels}
-        selectedId={selectedModelId}
-        lockedKind={lockedMedia}
-        onClose={() => setModelsOpen(false)}
-        onChange={(id) => {
-          setSelectedModelId(id);
-          const videoModel = videoModels.find((m) => m.id === id);
-          if (videoModel) {
-            if (!lockedMedia) setMedia("video");
-            applyVideoModelDefaults(videoModel);
-            return;
-          }
-          if (imageModels.some((m) => m.id === id)) {
-            if (!lockedMedia) setMedia("image");
-            setAspectRatio("1:1");
-          }
-        }}
-      />
     </div>
   );
 }
