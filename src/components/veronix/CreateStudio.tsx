@@ -85,6 +85,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   /** Final pose / entities from last enhance — used for sequential actions (ثم…). */
   const [promptSceneState, setPromptSceneState] = useState<SceneState | null>(null);
   const [enhancing, setEnhancing] = useState(false);
+  /** Auto-split ANY sequential ثم/then prompt into chained clips (paid video only). */
+  const [multiShotOn, setMultiShotOn] = useState(true);
+  const [shotHint, setShotHint] = useState<{
+    count: number;
+    totalCredits: number | null;
+    actions: string[];
+  } | null>(null);
   const waitingResult = generating || preview?.status === "running";
   const freeSettingsLocked =
     media === "video" &&
@@ -272,8 +279,65 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           setFreeTrial(false);
           throw new Error(data.error || "تعذر جلب سعر الكريدت");
         }
-        setCreditCost(data.totalCredits);
-        setFreeTrial(Boolean(data.freeTrial));
+        const isFree = Boolean(data.freeTrial);
+        setFreeTrial(isFree);
+        let nextCost = data.totalCredits;
+        let nextHint: typeof shotHint = null;
+
+        // General multi-shot estimate for sequential prompts (أي أفعال، ليس مشهداً محدداً).
+        if (
+          media === "video" &&
+          multiShotOn &&
+          !isFree &&
+          /(?:ثم|وبعدين|بعدين|then|after that)/i.test(prompt)
+        ) {
+          try {
+            const planRes = await fetchJson<{
+              autoMultiShot?: boolean;
+              shotCount?: number;
+              totalCredits?: number | null;
+              actions?: string[];
+            }>("/api/shots/plan", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                prompt: prompt.trim(),
+                modelId: selectedModelId,
+                media,
+                duration,
+                resolution,
+                generateAudio,
+                aspectRatio: VIDEO_ASPECT,
+                previousState: promptSceneState,
+                multiShot: true,
+              }),
+            });
+            if (
+              !cancelled &&
+              planRes.res.ok &&
+              planRes.data.autoMultiShot &&
+              (planRes.data.shotCount || 0) >= 2
+            ) {
+              nextHint = {
+                count: planRes.data.shotCount || 0,
+                totalCredits:
+                  typeof planRes.data.totalCredits === "number"
+                    ? planRes.data.totalCredits
+                    : null,
+                actions: planRes.data.actions || [],
+              };
+              if (typeof planRes.data.totalCredits === "number") {
+                nextCost = planRes.data.totalCredits;
+              }
+            }
+          } catch {
+            // Keep single-clip quote if plan fails.
+          }
+        }
+
+        if (cancelled) return;
+        setShotHint(nextHint);
+        setCreditCost(nextCost);
         const quote = data.quotes?.[0];
         const live = Boolean(
           data.liveOpenArt ||
@@ -290,6 +354,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           setCreditLive(false);
           setCreditCost(null);
           setFreeTrial(false);
+          setShotHint(null);
           setQuoteError(err instanceof Error ? err.message : "تعذر مزامنة تكلفة الكريدت");
         }
       } finally {
@@ -310,6 +375,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     startFrame,
     user?.freeVeronixUsed,
     user?.id,
+    prompt,
+    multiShotOn,
+    promptSceneState,
   ]);
 
   async function uploadFile(file: File, purpose: "create-image" | "create-video") {
@@ -543,6 +611,37 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     router.push(`/signup?next=${encodeURIComponent("/assets")}`);
   }
 
+  /** Await a single OpenArt history until a media URL is ready (multi-shot). */
+  async function waitForHistoryUrl(
+    historyId: string,
+    startedAt: number,
+    label: string,
+  ): Promise<string> {
+    for (let i = 0; i < PREVIEW_POLL_ATTEMPTS; i += 1) {
+      await new Promise((r) => setTimeout(r, PREVIEW_POLL_MS));
+      const { res, data } = await fetchJson<{
+        status?: string;
+        urls?: string[];
+        error?: string;
+        pollAfterSeconds?: number;
+      }>(`/api/status?historyId=${encodeURIComponent(historyId)}`);
+      if (!res.ok) continue;
+      const st = String(data.status || "").toUpperCase();
+      const url = data.urls?.[0];
+      if (url) return url;
+      if (st === "FAILED" || st === "CANCELLED") {
+        throw new Error(data.error || `فشلت ${label}`);
+      }
+      setStatus(
+        `${label}… ${elapsedLabel(Math.floor((Date.now() - startedAt) / 1000))}`,
+      );
+      if (typeof data.pollAfterSeconds === "number" && data.pollAfterSeconds > 5) {
+        await new Promise((r) => setTimeout(r, Math.min(data.pollAfterSeconds! * 1000, 20000)));
+      }
+    }
+    throw new Error(`انتهت مهلة ${label} — افتح Assets للمتابعة`);
+  }
+
   async function pollPreview(
     historyId: string,
     mediaType: "image" | "video",
@@ -662,6 +761,47 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     }
   }
 
+  async function createOneClip(input: {
+    prompt: string;
+    mode: string;
+    duration: number;
+    startFrame?: VisualReference | null;
+    endFrame?: VisualReference | null;
+  }) {
+    const { res, data } = await fetchJson<{
+      error?: string;
+      needsAuth?: boolean;
+      needsPaywall?: boolean;
+      freeTrial?: boolean;
+      results?: Array<{
+        error?: string;
+        status?: string;
+        historyId?: string;
+        assetId?: string;
+        urls?: string[];
+        needsBrandOutro?: boolean;
+      }>;
+    }>("/api/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        modelIds: [selectedModelId],
+        media,
+        mode: input.mode,
+        prompt: input.prompt,
+        aspectRatio: media === "video" ? VIDEO_ASPECT : aspectRatio,
+        resolution: media === "video" ? resolution : undefined,
+        duration: media === "video" ? input.duration : undefined,
+        generateAudio: media === "video" ? generateAudio : undefined,
+        startFrame: input.startFrame ?? null,
+        endFrame: input.endFrame ?? null,
+        referenceImages: refs,
+        waitForResult: false,
+      }),
+    });
+    return { res, data };
+  }
+
   async function handleGenerate() {
     setError(null);
     setStatus(null);
@@ -696,6 +836,145 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     setElapsedSec(0);
     setStatus(freeTrial ? "جاري توليد فيديوك المجاني…" : "Generating…");
     try {
+      // Plan multi-shot for ANY sequential prompt (ثم/then) — paid video only.
+      let useMulti = false;
+      let shots: Array<{ prompt: string; action: string }> = [];
+      let perShotSeconds = duration;
+      if (media === "video" && multiShotOn && !freeTrial) {
+        const planRes = await fetchJson<{
+          error?: string;
+          autoMultiShot?: boolean;
+          perShotSeconds?: number;
+          plan?: { shots?: Array<{ prompt: string; action: string }> };
+        }>("/api/shots/plan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: prompt.trim(),
+            modelId: selectedModelId,
+            media,
+            duration,
+            resolution,
+            generateAudio,
+            aspectRatio: VIDEO_ASPECT,
+            previousState: promptSceneState,
+            multiShot: true,
+          }),
+        });
+        if (
+          planRes.res.ok &&
+          planRes.data.autoMultiShot &&
+          (planRes.data.plan?.shots?.length || 0) >= 2
+        ) {
+          useMulti = true;
+          shots = planRes.data.plan!.shots!;
+          perShotSeconds = planRes.data.perShotSeconds || 5;
+        }
+      }
+
+      if (useMulti) {
+        setPreview({ url: "", mediaType: "video", status: "running" });
+        const urls: string[] = [];
+        let frame: VisualReference | null = startFrame;
+
+        for (let i = 0; i < shots.length; i += 1) {
+          const shot = shots[i]!;
+          const label = `لقطة ${i + 1} من ${shots.length}`;
+          setStatus(`${label}: ${shot.action.slice(0, 48)}…`);
+          const mode = frame ? "image2video" : "text2video";
+          const { res, data } = await createOneClip({
+            prompt: shot.prompt,
+            mode,
+            duration: perShotSeconds,
+            startFrame: frame,
+            endFrame: i === 0 ? endFrame : null,
+          });
+
+          if (res.status === 401 || data.needsAuth) {
+            router.push(`/signup?next=${encodeURIComponent("/")}&paywall=1`);
+            return;
+          }
+          if (res.status === 402 || data.needsPaywall) {
+            setError(data.error || "رصيدك غير كافٍ لإكمال اللقطات.");
+            router.push("/pricing?paywall=1");
+            return;
+          }
+          if (!res.ok) throw new Error(data.error || `فشل ${label}`);
+          const failed = data.results?.find((r) => r.error);
+          if (failed?.error) throw new Error(failed.error);
+
+          const ok = data.results?.find((r) => !r.error);
+          let url = ok?.urls?.[0] || "";
+          const historyId = ok?.historyId;
+          if (!url && historyId) {
+            setPreview({
+              url: "",
+              mediaType: "video",
+              historyId,
+              status: "running",
+            });
+            url = await waitForHistoryUrl(historyId, startedAt, label);
+          }
+          if (!url) throw new Error(`لا يوجد فيديو من ${label}`);
+          urls.push(url);
+          setPreview({
+            url,
+            mediaType: "video",
+            historyId,
+            status: "running",
+          });
+
+          if (i < shots.length - 1) {
+            setStatus(`استخراج إطار الربط بعد ${label}…`);
+            const frameRes = await fetchJson<{
+              error?: string;
+              visualReference?: VisualReference;
+            }>("/api/media/extract-frame", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                videoUrl: url,
+                label: `bridge-${i + 1}`,
+              }),
+            });
+            if (!frameRes.res.ok || !frameRes.data.visualReference) {
+              throw new Error(frameRes.data.error || "تعذر استخراج إطار الربط بين اللقطات");
+            }
+            frame = frameRes.data.visualReference;
+          }
+        }
+
+        setStatus("دمج اللقطات في مقطع واحد…");
+        const concatRes = await fetchJson<{ error?: string; url?: string }>(
+          "/api/media/concat",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ videoUrls: urls }),
+          },
+        );
+        if (!concatRes.res.ok || !concatRes.data.url) {
+          // Fallback: show last shot if concat fails
+          setPreview({
+            url: urls[urls.length - 1] || "",
+            mediaType: "video",
+            status: "completed",
+          });
+          setStatus("تم توليد اللقطات — تعذر الدمج التلقائي، تُعرض آخر لقطة");
+        } else {
+          setPreview({
+            url: concatRes.data.url,
+            mediaType: "video",
+            status: "completed",
+          });
+          setStatus(`تم: ${shots.length} لقطات مترابطة`);
+        }
+        setGenStartedAt(null);
+        await onUserRefresh();
+        return;
+      }
+
+      // Single-clip path (images, free trial, or one action)
       const mode =
         media === "image"
           ? refs.length
@@ -705,36 +984,12 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             ? "image2video"
             : "text2video";
 
-      const { res, data } = await fetchJson<{
-        error?: string;
-        needsAuth?: boolean;
-        needsPaywall?: boolean;
-        freeTrial?: boolean;
-        results?: Array<{
-          error?: string;
-          status?: string;
-          historyId?: string;
-          assetId?: string;
-          urls?: string[];
-          needsBrandOutro?: boolean;
-        }>;
-      }>("/api/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({
-          modelIds: [selectedModelId],
-          media,
-          mode,
-          prompt: prompt.trim(),
-          aspectRatio: media === "video" ? VIDEO_ASPECT : aspectRatio,
-          resolution: media === "video" ? resolution : undefined,
-          duration: media === "video" ? duration : undefined,
-          generateAudio: media === "video" ? generateAudio : undefined,
-          startFrame,
-          endFrame,
-          referenceImages: refs,
-          waitForResult: false,
-        }),
+      const { res, data } = await createOneClip({
+        prompt: prompt.trim(),
+        mode,
+        duration,
+        startFrame,
+        endFrame,
       });
 
       if (res.status === 401 || data.needsAuth) {
@@ -1131,6 +1386,31 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           </div>
         )}
       </div>
+
+      {media === "video" && !freeSettingsLocked && !freeTrial && (
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white/70">
+          <label className="flex cursor-pointer items-start gap-3">
+            <input
+              type="checkbox"
+              checked={multiShotOn}
+              onChange={(e) => setMultiShotOn(e.target.checked)}
+              className="mt-1"
+            />
+            <span>
+              <span className="font-semibold text-white">تقسيم المشهد إلى لقطات تلقائياً</span>
+              <span className="mt-0.5 block text-xs text-white/45">
+                أي سلسلة أفعال بـ «ثم» تُقسَّم إلى لقطات قصيرة مترابطة (قاعدة عامة لكل المشاهد)
+              </span>
+              {multiShotOn && shotHint && shotHint.count >= 2 ? (
+                <span className="mt-1 block text-xs text-[#22f0ff]">
+                  سيُولَّد {shotHint.count} لقطات
+                  {shotHint.totalCredits != null ? ` · ≈ ${shotHint.totalCredits} كريدت` : ""}
+                </span>
+              ) : null}
+            </span>
+          </label>
+        </div>
+      )}
 
       <button
         type="button"
