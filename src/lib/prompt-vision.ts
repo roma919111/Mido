@@ -30,25 +30,31 @@ export type VisionSceneBrief = {
   rawText?: string;
 };
 
+/** Runtime env read — avoid Next build-time inlining of missing secrets. */
+function env(name: string): string | undefined {
+  try {
+    return process.env[name]?.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function visionOpenAiConfig(): {
   apiKey: string;
   baseUrl: string;
   model: string;
 } | null {
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  const apiKey = env("OPENAI_API_KEY");
   if (!apiKey) return null;
   return {
     apiKey,
-    baseUrl: (process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1").replace(
-      /\/$/,
-      "",
-    ),
-    model: process.env.OPENAI_VISION_MODEL?.trim() || "gpt-4o-mini",
+    baseUrl: (env("OPENAI_BASE_URL") || "https://api.openai.com/v1").replace(/\/$/, ""),
+    model: env("OPENAI_VISION_MODEL") || "gpt-4o-mini",
   };
 }
 
 function geminiKey(): string | null {
-  return process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_AI_API_KEY?.trim() || null;
+  return env("GEMINI_API_KEY") || env("GOOGLE_AI_API_KEY") || null;
 }
 
 const VISION_INSTRUCTION = `You analyze reference image(s) for video prompt writing.
@@ -191,8 +197,7 @@ async function analyzeWithGemini(
   const key = geminiKey();
   if (!key) return null;
   // Prefer lite/latest aliases — free-tier quota on gemini-2.0-flash is often exhausted.
-  const model =
-    process.env.GEMINI_VISION_MODEL?.trim() || "gemini-flash-lite-latest";
+  const model = env("GEMINI_VISION_MODEL") || "gemini-flash-lite-latest";
 
   const parts: Array<Record<string, unknown>> = [
     { text: `${VISION_INSTRUCTION}\nUser action hint: ${userHint || "(none)"}` },
