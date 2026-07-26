@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { createAsset } from "@/lib/db";
-import { PRODUCT_PER_SHOT_SECONDS } from "@/lib/shot-plan";
+import { MAX_SHOTS, PRODUCT_PER_SHOT_SECONDS } from "@/lib/shot-plan";
 import { concatVideos } from "@/lib/video-stitch";
 
 export const runtime = "nodejs";
@@ -14,8 +14,10 @@ type Body = {
   prompt?: string;
   modelId?: string;
   shotCount?: number;
-  /** Trim each beat (default product 2s). */
+  /** Trim each beat (default product 4s). */
   maxSecondsPerClip?: number;
+  /** OmarFX-style clarity grade on final (default true). */
+  clarity?: boolean;
 };
 
 export async function POST(request: Request) {
@@ -32,8 +34,11 @@ export async function POST(request: Request) {
     if (urls.length < 2) {
       return NextResponse.json({ error: "Need at least 2 videoUrls" }, { status: 400 });
     }
-    if (urls.length > 15) {
-      return NextResponse.json({ error: "Too many clips (max 15)" }, { status: 400 });
+    if (urls.length > MAX_SHOTS) {
+      return NextResponse.json(
+        { error: `Too many clips (max ${MAX_SHOTS})` },
+        { status: 400 },
+      );
     }
 
     const maxSecondsPerClip =
@@ -41,7 +46,10 @@ export async function POST(request: Request) {
         ? Math.min(15, body.maxSecondsPerClip)
         : PRODUCT_PER_SHOT_SECONDS;
 
-    const localUrl = await concatVideos(urls, { maxSecondsPerClip });
+    const localUrl = await concatVideos(urls, {
+      maxSecondsPerClip,
+      clarity: body.clarity !== false,
+    });
 
     let assetId: string | undefined;
     if (body.saveAsset !== false) {

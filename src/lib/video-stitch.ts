@@ -30,58 +30,150 @@ async function downloadToFile(url: string, dest: string) {
     await copyFile(existing, dest);
     return;
   }
+  const headerSets: Array<Record<string, string>> = [
+    {
+      Accept: "video/mp4,video/*,*/*;q=0.8",
+      "User-Agent":
+        "Mozilla/5.0 (compatible; VyronixVideoStitch/1.2; +https://vyronix.app)",
+      Referer: "https://vyronix.app/",
+    },
+    {
+      Accept: "*/*",
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      Referer: "https://openart.ai/",
+      Origin: "https://openart.ai",
+    },
+  ];
   let lastErr = "";
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const headers = headerSets[attempt % headerSets.length]!;
     try {
       const res = await fetch(url, {
         redirect: "follow",
-        headers: {
-          Accept: "video/mp4,video/*,*/*;q=0.8",
-          "User-Agent":
-            "Mozilla/5.0 (compatible; VyronixVideoStitch/1.1; +https://vyronix.app)",
-          Referer: "https://vyronix.app/",
-        },
+        headers,
       });
       if (!res.ok) {
         lastErr = `HTTP ${res.status}`;
-        await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+        await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
         continue;
       }
       const buf = Buffer.from(await res.arrayBuffer());
       if (buf.length < 1000) {
         lastErr = "empty body";
+        await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
         continue;
       }
       await writeFile(dest, buf);
       return;
     } catch (err) {
       lastErr = err instanceof Error ? err.message : "download failed";
-      await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+      await new Promise((r) => setTimeout(r, 700 * (attempt + 1)));
     }
   }
-  throw new Error(`Failed to download video (${lastErr})`);
+  throw new Error(`Unable to fetch video (${lastErr})`);
+}
+
+/**
+ * OmarFX-style clarity grade: denoise → CAS sharpen → unsharp → color → soft glow.
+ * Applied on final output only (not intermediate multi-shot parts).
+ */
+export async function applyClarityGrade(inputPath: string, outputPath: string): Promise<void> {
+  const filter =
+    "[0:v]scale=1280:720:flags=lanczos," +
+    "hqdn3d=1.2:1.2:3:3," +
+    "cas=strength=0.55," +
+    "unsharp=5:5:1.2:5:5:0.0," +
+    "eq=contrast=1.18:saturation=1.35:brightness=0.02:gamma=1.05," +
+    "split=2[base][g];" +
+    "[g]eq=brightness=0.08:saturation=1.1,gblur=sigma=10[glow];" +
+    "[base][glow]blend=all_mode=screen:all_opacity=0.18,format=yuv420p[v]";
+
+  try {
+    await run("ffmpeg", [
+      "-y",
+      "-i",
+      inputPath,
+      "-filter_complex",
+      filter,
+      "-map",
+      "[v]",
+      "-map",
+      "0:a?",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-pix_fmt",
+      "yuv420p",
+      "-c:a",
+      "aac",
+      "-movflags",
+      "+faststart",
+      outputPath,
+    ]);
+  } catch {
+    // Fallback without glow blend if filter graph fails on this ffmpeg build.
+    await run("ffmpeg", [
+      "-y",
+      "-i",
+      inputPath,
+      "-vf",
+      "scale=1280:720:flags=lanczos,hqdn3d=1.2:1.2:3:3,cas=strength=0.5,unsharp=5:5:1.0:5:5:0.0,eq=contrast=1.15:saturation=1.25:brightness=0.02:gamma=1.04,format=yuv420p",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-pix_fmt",
+      "yuv420p",
+      "-c:a",
+      "aac",
+      "-movflags",
+      "+faststart",
+      outputPath,
+    ]);
+  }
 }
 
 /**
  * Persist a remote (or already-local) clip under `/generations/…`
  * so concat / frame-extract never depend on a fleeting CDN URL.
+ * When `clarity` is true, apply the OmarFX-style grade on the saved file.
  */
-export async function cacheVideoLocally(sourceUrl: string): Promise<string> {
+export async function cacheVideoLocally(
+  sourceUrl: string,
+  options?: { clarity?: boolean },
+): Promise<string> {
   const trimmed = sourceUrl.trim();
   if (!trimmed) throw new Error("Empty video URL");
-  if (trimmed.startsWith("/generations/")) {
+  const wantClarity = Boolean(options?.clarity);
+
+  if (trimmed.startsWith("/generations/") && !wantClarity) {
     const existing = resolveGenerationFile(trimmed);
     if (!existing) throw new Error("Invalid local generation path");
     return trimmed;
   }
-  const id = `part-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  const id = `${wantClarity ? "grade" : "part"}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   await mkdir(GENERATIONS_DIR, { recursive: true });
   const outPublic = path.join(GENERATIONS_DIR, `${id}.mp4`);
   const work = await mkdtemp(path.join(tmpdir(), "vyronix-cache-"));
   try {
     const tmp = path.join(work, "in.mp4");
-    await downloadToFile(trimmed, tmp);
-    await copyFile(tmp, outPublic);
+    if (trimmed.startsWith("/generations/")) {
+      const existing = resolveGenerationFile(trimmed);
+      if (!existing) throw new Error("Invalid local generation path");
+      await copyFile(existing, tmp);
+    } else {
+      await downloadToFile(trimmed, tmp);
+    }
+    if (wantClarity) {
+      const graded = path.join(work, "graded.mp4");
+      await applyClarityGrade(tmp, graded);
+      await copyFile(graded, outPublic);
+    } else {
+      await copyFile(tmp, outPublic);
+    }
     const st = await stat(outPublic);
     if (st.size < 1000) throw new Error("Cached video too small");
     return `/generations/${id}.mp4`;
@@ -145,11 +237,12 @@ export async function extractLastFrameJpeg(sourceUrl: string): Promise<Buffer> {
 /**
  * Concatenate N video URLs into one MP4 under `/generations/…`.
  * Normalizes canvas to 1280x720 @ 24fps with stereo AAC.
- * When `maxSecondsPerClip` is set (product default 2), each beat is trimmed.
+ * When `maxSecondsPerClip` is set (product default 4), each beat is trimmed.
+ * Final output always gets the clarity grade filter.
  */
 export async function concatVideos(
   sourceUrls: string[],
-  options?: { maxSecondsPerClip?: number },
+  options?: { maxSecondsPerClip?: number; clarity?: boolean },
 ): Promise<string> {
   if (sourceUrls.length < 1) throw new Error("No videos to concat");
   const maxSec =
@@ -157,6 +250,7 @@ export async function concatVideos(
       ? options.maxSecondsPerClip
       : 0;
   const trimArgs = maxSec > 0 ? ["-t", String(maxSec)] : [];
+  const wantClarity = options?.clarity !== false;
 
   if (sourceUrls.length === 1) {
     // Still copy into generations for a stable local URL when remote
@@ -167,6 +261,7 @@ export async function concatVideos(
     try {
       const src = path.join(work, "in.mp4");
       await downloadToFile(sourceUrls[0]!, src);
+      let current = src;
       if (maxSec > 0) {
         const trimmed = path.join(work, "trim.mp4");
         await run("ffmpeg", [
@@ -186,9 +281,14 @@ export async function concatVideos(
           "+faststart",
           trimmed,
         ]);
-        await copyFile(trimmed, outPublic);
+        current = trimmed;
+      }
+      if (wantClarity) {
+        const graded = path.join(work, "graded.mp4");
+        await applyClarityGrade(current, graded);
+        await copyFile(graded, outPublic);
       } else {
-        await copyFile(src, outPublic);
+        await copyFile(current, outPublic);
       }
       return `/generations/${id}.mp4`;
     } finally {
@@ -319,7 +419,13 @@ export async function concatVideos(
       ]);
     }
 
-    await copyFile(finalTmp, outPublic);
+    if (wantClarity) {
+      const graded = path.join(work, "graded.mp4");
+      await applyClarityGrade(finalTmp, graded);
+      await copyFile(graded, outPublic);
+    } else {
+      await copyFile(finalTmp, outPublic);
+    }
     const st = await stat(outPublic);
     if (st.size < 2000) throw new Error("Concat output too small");
     return `/generations/${id}.mp4`;
