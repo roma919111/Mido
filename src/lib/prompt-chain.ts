@@ -1,12 +1,12 @@
 /**
  * State continuity / prompt chaining for sequential action prompts.
- * Builds each new action from the previous final pose instead of resetting.
  *
- * Entity injection replaces generic person nouns (الأنثى / الرجل / a man…)
- * with concrete appearance phrases from vision — never mid-word mangling.
+ * GENERAL RULE (not tied to any specific move like handstand/body-lock):
+ * After each beat, every character ends in a state. The next beat builds on
+ * those states. Anyone whose action is not explicitly changed MUST keep their
+ * previous state; the new action is physically relative to that held state.
  *
- * Intra-prompt "ثم / then" clauses keep each character's locked pose so later
- * actions (e.g. man falls onto her legs) build on earlier states (handstand).
+ * Entity injection replaces generic person nouns with concrete vision phrases.
  */
 
 export type SceneState = {
@@ -221,8 +221,11 @@ export function detectClauseActor(clause: string, arabic: boolean): Gender {
 }
 
 /**
- * Ensure later clauses keep prior character poses (especially when one character
- * acts while the other must hold still — e.g. handstand held during his fall).
+ * GENERAL continuity across ثم/then beats:
+ * - Each beat updates only the characters it explicitly moves.
+ * - Everyone else keeps their previous state.
+ * - The new beat is framed as building on those held states (any action, not
+ *   only handstand / body-lock / etc.).
  */
 export function applyIntraPromptContinuity(
   action: string,
@@ -252,79 +255,102 @@ export function applyIntraPromptContinuity(
   const outClauses: string[] = [];
 
   for (let i = 0; i < clauses.length; i += 1) {
-    let clause = resolveImplicitSubject(clauses[i]!, arabic, femalePhrase, malePhrase);
+    const raw = clauses[i]!;
+    let clause = resolveImplicitSubject(raw, arabic, femalePhrase, malePhrase);
     clause = injectEntitiesIntoAction(clause, entities, arabic, gens);
 
+    const actor = detectClauseActor(raw, arabic);
+    const touched = charactersTouchedByClause(raw, arabic, actor);
+
+    // Snapshot prior states BEFORE updating — others must hold these.
+    const prevFemale = lockedFemale;
+    const prevMale = lockedMale;
+
     const poses = inferCharacterPoses(clause, arabic);
-    // Merge — never drop a stronger held pose (handstand) when a later clause
-    // only adds a secondary action like body-lock.
-    lockedFemale = mergePose(lockedFemale, poses.female, arabic);
-    lockedMale = mergePose(lockedMale, poses.male, arabic);
-
-    // Also lock from raw clause keywords before injection noise
-    if (/وقفة\s*يدين|handstand|انشقاق/.test(clauses[i]!)) {
-      lockedFemale = arabic
-        ? "وقفة يدين على الأرض مع انشقاق أفقي كامل للساقين"
-        : "handstand with a full horizontal split";
+    const generic = genericPoseFromClause(raw, actor, arabic);
+    if (touched.female) {
+      lockedFemale = poses.female || generic.female || lockedFemale;
+      if (/وقفة\s*يدين|handstand|انشقاق/.test(raw)) {
+        lockedFemale = arabic
+          ? "وقفة يدين على الأرض مع انشقاق أفقي كامل للساقين"
+          : "handstand with a full horizontal split";
+      }
     }
-    if (/ممدد على بطن|منتصف\s*ساق/.test(clauses[i]!)) {
-      lockedMale = arabic
-        ? "ممدد على بطنه فوق منتصف ساقي الأنثى"
-        : "lying belly-down across the middle of her legs";
+    if (touched.male) {
+      lockedMale = poses.male || generic.male || lockedMale;
+      if (/ممدد على بطن|منتصف\s*ساق/.test(raw)) {
+        lockedMale = arabic
+          ? "ممدد على بطنه فوق منتصف ساقي الأنثى"
+          : "lying belly-down across the middle of her legs";
+      }
     }
 
-    const actor = detectClauseActor(clauses[i]!, arabic);
     const continuity: string[] = [];
-    const femaleHoldingHandstand =
-      Boolean(lockedFemale) && /وقفة|انشقاق|handstand|split/i.test(lockedFemale || "");
-    const maleOnHerLegs =
-      Boolean(lockedMale) && /منتصف\s*ساق|فوق\s*ساق|across.*legs|belly|ممدد/i.test(lockedMale || "");
-
     if (i > 0) {
-      if (actor === "male" && lockedFemale) {
+      // Rule: anyone not moved by this beat keeps prior state.
+      if (!touched.female && prevFemale) {
         continuity.push(
           arabic
-            ? `بينما ${femalePhrase || "الأنثى"} تحافظ تماماً على وضعيتها السابقة (${lockedFemale}) دون تغيير`
-            : `while ${femalePhrase || "the woman"} fully maintains her previous pose (${lockedFemale})`,
+            ? `بينما ${femalePhrase || "الأنثى"} تحافظ تماماً على حالتها السابقة (${prevFemale}) دون تغيير`
+            : `while ${femalePhrase || "the woman"} fully maintains her previous state (${prevFemale})`,
         );
-      } else if (actor === "female" && lockedMale && /هواء|رمي|سقوط|fall|air/i.test(lockedMale)) {
-        // Don't claim he's still airborne if this clause is the handstand after a throw
-        // in the same beat — the fall clause will resolve landing.
-        if (!/وقفة\s*يدين|handstand|انشقاق/.test(clauses[i]!)) {
-          continuity.push(
-            arabic
-              ? `بينما ${malePhrase || "الرجل"} ما يزال في مساره من الحالة السابقة (${lockedMale})`
-              : `while ${malePhrase || "the man"} continues from the previous state (${lockedMale})`,
-          );
-        }
+      }
+      if (!touched.male && prevMale) {
+        continuity.push(
+          arabic
+            ? `بينما ${malePhrase || "الرجل"} يحافظ تماماً على حالته السابقة (${prevMale}) دون تغيير`
+            : `while ${malePhrase || "the man"} fully maintains his previous state (${prevMale})`,
+        );
       }
 
-      // Landing on her legs after handstand — force the causal link
+      // Even when the actor moves, the OTHER's held state is the base of the new action.
+      if (touched.female && !touched.male && prevMale) {
+        continuity.push(
+          arabic
+            ? `وهذا الفعل مبني مباشرة على حالة ${malePhrase || "الرجل"} السابقة (${prevMale})`
+            : `and this action builds directly on ${malePhrase || "the man"}'s previous state (${prevMale})`,
+        );
+      }
+      if (touched.male && !touched.female && prevFemale) {
+        continuity.push(
+          arabic
+            ? `وهذا الفعل مبني مباشرة على حالة ${femalePhrase || "الأنثى"} السابقة (${prevFemale})`
+            : `and this action builds directly on ${femalePhrase || "the woman"}'s previous state (${prevFemale})`,
+        );
+      }
+
+      // If the actor also still holds an earlier pose component (e.g. adds a move
+      // while remaining in a stance), say so when prior pose exists and clause
+      // doesn't clearly replace the whole body stance.
       if (
-        actor === "male" &&
-        /يسقط|تسقط|ممدد|fall|land/i.test(clauses[i]!) &&
-        femaleHoldingHandstand
+        touched.female &&
+        prevFemale &&
+        lockedFemale &&
+        prevFemale !== lockedFemale &&
+        /وقفة|انشقاق|handstand|جلوس|وقوف|stance|pose/i.test(prevFemale) &&
+        !/وقفة|انشقاق|handstand|جلوس/.test(raw)
       ) {
         continuity.push(
           arabic
-            ? "سقوطه نتيجة مباشرة لرميه السابق ويستقر ممدداً على بطنه فوق منتصف ساقيها وهي ثابتة في وقفة اليدين"
-            : "his fall continues from the prior throw and he lands belly-down across mid-legs while she holds the handstand",
+            ? `مع بقائها في ${prevFemale}`
+            : `while remaining in ${prevFemale}`,
         );
+        lockedFemale = mergePose(prevFemale, lockedFemale, arabic);
       }
-
-      // Later female actions (body lock, etc.) must keep the handstand + his landed pose
-      if (actor === "female" && femaleHoldingHandstand) {
+      if (
+        touched.male &&
+        prevMale &&
+        lockedMale &&
+        prevMale !== lockedMale &&
+        /ممدد|هواء|رفع|stance|pose|lying|air/i.test(prevMale) &&
+        !/يسقط|ممدد|fall|land/.test(raw)
+      ) {
         continuity.push(
           arabic
-            ? `مع بقائها في ${lockedFemale}` +
-              (maleOnHerLegs
-                ? ` و${malePhrase || "الرجل"} ما يزال ممدداً على منتصف ساقيها`
-                : "")
-            : `while remaining in ${lockedFemale}` +
-              (maleOnHerLegs
-                ? ` and ${malePhrase || "the man"} still lying across mid-legs`
-                : ""),
+            ? `مع بقائه في ${prevMale}`
+            : `while remaining in ${prevMale}`,
         );
+        lockedMale = mergePose(prevMale, lockedMale, arabic);
       }
     }
 
@@ -338,16 +364,82 @@ export function applyIntraPromptContinuity(
   const joiner = arabic ? " ثم " : " then ";
   let idea = outClauses.join(joiner);
 
-  // Closing lock: final frame must state both poses when a hold exists
-  if (lockedFemale && /وقفة|handstand|انشقاق|split/i.test(lockedFemale)) {
-    idea += arabic
-      ? `. الحالة النهائية الثابتة: ${femalePhrase || "الأنثى"} تبقى في ${lockedFemale}` +
-        (lockedMale ? `، و${malePhrase || "الرجل"} ${lockedMale.replace(/^الرجل\s*/, "")}` : "")
-      : `. Final held state: ${femalePhrase || "the woman"} remains in ${lockedFemale}` +
-        (lockedMale ? `, and ${malePhrase || "the man"} ${lockedMale}` : "");
+  // Always close with the held final states of everyone we tracked.
+  if (lockedFemale || lockedMale) {
+    if (arabic) {
+      const bits = [
+        lockedFemale
+          ? `${femalePhrase || "الأنثى"} تبقى في حالتها النهائية (${lockedFemale})`
+          : "",
+        lockedMale
+          ? `${malePhrase || "الرجل"} يبقى في حالته النهائية (${lockedMale})`
+          : "",
+      ].filter(Boolean);
+      idea += `. الحالة النهائية الثابتة: ${bits.join("، ")}`;
+    } else {
+      const bits = [
+        lockedFemale
+          ? `${femalePhrase || "the woman"} remains in final state (${lockedFemale})`
+          : "",
+        lockedMale
+          ? `${malePhrase || "the man"} remains in final state (${lockedMale})`
+          : "",
+      ].filter(Boolean);
+      idea += `. Final held state: ${bits.join("; ")}`;
+    }
   }
 
   return idea.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Who this clause actively moves. Possessive body references as a surface
+ * (ساقيها / على رأسها) do NOT count as moving that person — they hold still.
+ */
+function charactersTouchedByClause(
+  clause: string,
+  arabic: boolean,
+  actor: Gender,
+): { female: boolean; male: boolean } {
+  // Object pronouns: ترفعه / ترميه → male is moved even if actor is female
+  if (arabic && /(?:ترفعه|ترميه|تمسكه|تضعه|تحمله|تلقّاه|تتلقاه)/.test(clause)) {
+    return { female: actor === "female" || /(?:تؤدي|ترفع|ترمي|تمسك|تسدد)/.test(clause), male: true };
+  }
+  if (!arabic && /\b(?:lifts?|throws?|holds?|catches?)\s+him\b/i.test(clause)) {
+    return { female: true, male: true };
+  }
+
+  const femaleActive = arabic
+    ? /(?:^|[\s،,])(?:الأنثى|الانثى|أنثى|انثى|المرأة|فتاة)|(?:تسقط|ترفع|ترمي|تمسك|تؤدي|تسدد|تضرب|تقفل|تقوم|تحافظ)/.test(
+        clause,
+      )
+    : /\b(?:woman|she)\b/i.test(clause);
+  const maleActive = arabic
+    ? /(?:^|[\s،,])(?:الرجل|رجلاً|رجل|شاب)|(?:يسقط|يرفع|يرمي|يمسك|يضرب|يقع|يهوي|ممدد على بطن)/.test(
+        clause,
+      )
+    : /\b(?:man|he)\b/i.test(clause);
+
+  if (actor === "female") return { female: true, male: maleActive };
+  if (actor === "male") return { female: femaleActive, male: true };
+  return { female: femaleActive, male: maleActive };
+}
+
+function genericPoseFromClause(
+  clause: string,
+  actor: Gender,
+  arabic: boolean,
+): Partial<Record<Gender, string>> {
+  const short = clause.replace(/\s+/g, " ").trim().slice(0, 120);
+  if (!short) return {};
+  if (arabic) {
+    if (actor === "female") return { female: `بعد: ${short}` };
+    if (actor === "male") return { male: `بعد: ${short}` };
+    return { female: `بعد: ${short}`, male: `بعد: ${short}` };
+  }
+  if (actor === "female") return { female: `after: ${short}` };
+  if (actor === "male") return { male: `after: ${short}` };
+  return { female: `after: ${short}`, male: `after: ${short}` };
 }
 
 /** If a clause has a gendered verb but no person noun, insert the matching entity. */

@@ -107,7 +107,7 @@ const continuity = applyIntraPromptContinuity(
 );
 check(
   "handstand held during male fall",
-  /تحافظ.*وقفة|وقفة يدين/.test(continuity) &&
+  /تحافظ.*وقفة|وقفة يدين|حالتها السابقة/.test(continuity) &&
     /رجل قصير/.test(continuity) &&
     /يسقط/.test(continuity),
   continuity,
@@ -118,6 +118,24 @@ check(
     continuity.includes("رجل قصير يرتدي قميصاً يسقط") ||
     /رجل قصير يرتدي قميصاً/.test(continuity.split("ثم").pop() || ""),
   continuity,
+);
+
+// GENERAL RULE (not handstand-specific): later beat keeps earlier state of the other person
+const general = applyIntraPromptContinuity(
+  "رجل يجلس على كرسي ثم أنثى تعطيه كوباً ثم يضحك الرجل",
+  entities,
+  true,
+  genders,
+);
+check(
+  "general rule: she acts while he keeps sitting",
+  /تحافظ|حالته السابقة|يجلس/.test(general) && /تعطيه/.test(general),
+  general,
+);
+check(
+  "general rule: final states for both",
+  /الحالة النهائية الثابتة/.test(general),
+  general,
 );
 
 rmSync(outDir, { recursive: true, force: true });
