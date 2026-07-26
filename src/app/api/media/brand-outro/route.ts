@@ -1,4 +1,8 @@
 import { NextResponse } from "next/server";
+import {
+  getBytePlusVideoTask,
+  parseBytePlusHistoryId,
+} from "@/lib/byteplus-ark";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { listAssetsForUser, updateAsset } from "@/lib/db";
 import { isAllowedMediaHost } from "@/lib/media-proxy";
@@ -19,13 +23,18 @@ async function resolveSourceUrl(input: {
 }): Promise<string | null> {
   // Prefer historyId lookup so we always get a fresh CDN URL.
   if (input.historyId?.trim()) {
-    const result = await callOpenArtTool("openart_creation_get", {
-      historyId: input.historyId.trim(),
-    });
-    const payload = parseToolPayload(result);
-    if (!result.isError) {
-      const fromHistory = collectMediaUrls(payload)[0];
-      if (fromHistory) return fromHistory;
+    const historyId = input.historyId.trim();
+    const bpId = parseBytePlusHistoryId(historyId);
+    if (bpId) {
+      const task = await getBytePlusVideoTask(bpId);
+      if (task.content?.video_url) return task.content.video_url;
+    } else {
+      const result = await callOpenArtTool("openart_creation_get", { historyId });
+      const payload = parseToolPayload(result);
+      if (!result.isError) {
+        const fromHistory = collectMediaUrls(payload)[0];
+        if (fromHistory) return fromHistory;
+      }
     }
   }
 
