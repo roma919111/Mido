@@ -3,6 +3,7 @@ import { BrandLogo } from "@/components/BrandLogo";
 
 const LINKS = [
   { href: "/about", label: "عن Veronix" },
+  { href: "/faq", label: "الأسئلة الشائعة" },
   { href: "/contact", label: "تواصل معنا" },
   { href: "/privacy", label: "الخصوصية" },
   { href: "/terms", label: "الشروط" },

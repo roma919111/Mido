@@ -4,20 +4,25 @@ const BASE = "https://vyronix.app";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date();
-  const paths = [
-    "/",
-    "/about",
-    "/contact",
-    "/privacy",
-    "/terms",
-    "/pricing",
-    "/login",
-    "/signup",
+  const entries: Array<{
+    path: string;
+    changeFrequency: "daily" | "weekly" | "monthly";
+    priority: number;
+  }> = [
+    { path: "/", changeFrequency: "daily", priority: 1 },
+    { path: "/pricing", changeFrequency: "weekly", priority: 0.9 },
+    { path: "/about", changeFrequency: "monthly", priority: 0.8 },
+    { path: "/faq", changeFrequency: "weekly", priority: 0.8 },
+    { path: "/contact", changeFrequency: "monthly", priority: 0.7 },
+    { path: "/privacy", changeFrequency: "monthly", priority: 0.6 },
+    { path: "/terms", changeFrequency: "monthly", priority: 0.6 },
+    { path: "/login", changeFrequency: "monthly", priority: 0.5 },
+    { path: "/signup", changeFrequency: "monthly", priority: 0.5 },
   ];
-  return paths.map((path, i) => ({
-    url: `${BASE}${path === "/" ? "" : path}`,
+  return entries.map((entry) => ({
+    url: `${BASE}${entry.path === "/" ? "" : entry.path}`,
     lastModified: now,
-    changeFrequency: path === "/" ? "daily" : "weekly",
-    priority: path === "/" ? 1 : Math.max(0.5, 0.9 - i * 0.05),
+    changeFrequency: entry.changeFrequency,
+    priority: entry.priority,
   }));
 }

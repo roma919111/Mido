@@ -65,30 +65,54 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const orgJsonLd = {
-    "@context": "https://schema.org",
-    "@type": "Organization",
-    name: "Veronix.ai",
-    url: "https://vyronix.app",
-    logo: "https://vyronix.app/promo/poster.jpg",
-    email: "support@vyronix.app",
-    sameAs: ["https://vyronix.app"],
-    contactPoint: [
-      {
-        "@type": "ContactPoint",
-        email: "support@vyronix.app",
-        contactType: "customer support",
-        availableLanguage: ["Arabic", "English"],
+  const jsonLd = [
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      name: "Veronix.ai",
+      url: "https://vyronix.app",
+      logo: "https://vyronix.app/promo/poster.jpg",
+      email: "support@vyronix.app",
+      sameAs: ["https://vyronix.app"],
+      contactPoint: [
+        {
+          "@type": "ContactPoint",
+          email: "support@vyronix.app",
+          contactType: "customer support",
+          availableLanguage: ["Arabic", "English"],
+        },
+      ],
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      name: "Veronix.ai",
+      url: "https://vyronix.app",
+      inLanguage: ["ar", "en"],
+      publisher: { "@type": "Organization", name: "Veronix.ai" },
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      name: "Veronix.ai",
+      applicationCategory: "MultimediaApplication",
+      operatingSystem: "Web",
+      url: "https://vyronix.app",
+      offers: {
+        "@type": "Offer",
+        price: "0",
+        priceCurrency: "USD",
+        description: "Free Veronix starter trial available; paid plans via Stripe",
       },
-    ],
-  };
+    },
+  ];
 
   return (
     <html lang="ar" className={`${syne.variable} ${outfit.variable} h-full antialiased`}>
       <body className="min-h-full overflow-x-hidden font-sans">
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(orgJsonLd) }}
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
         {children}
       </body>
