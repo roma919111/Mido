@@ -1071,13 +1071,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               <video
                 key={preview.url}
                 src={
-                  preview.url.startsWith("/generations/")
-                    ? preview.url
-                    : veronixMediaSrc({
-                        historyId: preview.historyId,
-                        url: preview.url,
-                        mediaType: "video",
-                      }) || undefined
+                  veronixMediaSrc({
+                    historyId: preview.historyId,
+                    url: preview.url,
+                    mediaType: "video",
+                  }) || undefined
                 }
                 controls
                 playsInline

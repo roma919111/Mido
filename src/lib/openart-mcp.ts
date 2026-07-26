@@ -138,23 +138,20 @@ export async function withOpenArtClient<T>(fn: (client: Client) => Promise<T>): 
 
     const client = new Client({ name: "vyronix-ai", version: "1.0.0" });
 
-    let oauthOk = false;
     try {
       await client.connect(transport);
-      const value = await fn(client);
-      oauthOk = true;
-      return value;
+      return await fn(client);
     } catch (error) {
-      if (error instanceof UnauthorizedError && envToken) {
-        // Fall through to static env bearer if OAuth refresh failed.
-      } else if (error instanceof UnauthorizedError) {
-        throw new OpenArtConfigError(
-          "Owner OpenArt MCP unauthorized. Reconnect the platform OpenArt account.",
-          { needsAuth: true },
-        );
-      } else {
+      if (!(error instanceof UnauthorizedError) || !envToken) {
+        if (error instanceof UnauthorizedError) {
+          throw new OpenArtConfigError(
+            "Owner OpenArt MCP unauthorized. Reconnect the platform OpenArt account.",
+            { needsAuth: true },
+          );
+        }
         throw error;
       }
+      // Fall through to static env bearer if OAuth refresh failed.
     } finally {
       try {
         await provider.flush();
@@ -166,9 +163,6 @@ export async function withOpenArtClient<T>(fn: (client: Client) => Promise<T>): 
       } catch {
         // ignore
       }
-    }
-    if (oauthOk) {
-      // unreachable — kept for clarity
     }
   }
 

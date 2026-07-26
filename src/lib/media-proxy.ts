@@ -38,8 +38,8 @@ function buildMediaApiPath(
     mode === "download" ? "/api/media/download" : "/api/media/stream";
 
   const existing = input.url?.trim();
+  // Branded files live under `.data/generations` — always proxy (never raw /generations).
   if (existing?.startsWith("/generations/")) {
-    if (mode === "stream") return existing;
     const qs = new URLSearchParams({
       local: existing,
       type: mediaType,
@@ -98,7 +98,5 @@ export function veronixMediaSrc(input: {
   url?: string | null;
   mediaType?: "image" | "video";
 }): string | null {
-  const existing = input.url?.trim();
-  if (existing?.startsWith("/generations/")) return existing;
-  return buildMediaApiPath(input, "stream") || existing || null;
+  return buildMediaApiPath(input, "stream") || input.url?.trim() || null;
 }

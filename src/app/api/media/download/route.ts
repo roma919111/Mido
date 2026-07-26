@@ -1,6 +1,5 @@
 import { createReadStream } from "node:fs";
 import { access } from "node:fs/promises";
-import path from "node:path";
 import { NextResponse } from "next/server";
 import { Readable } from "node:stream";
 import { getCurrentUser } from "@/lib/customer-auth";
@@ -11,6 +10,7 @@ import {
   OpenArtConfigError,
   parseToolPayload,
 } from "@/lib/openart-mcp";
+import { resolveGenerationFile } from "@/lib/veronix-outro";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -27,14 +27,7 @@ function safeFilename(name: string | null, mediaType: "image" | "video") {
 }
 
 function resolveLocalGeneration(localPath: string): string | null {
-  if (!localPath.startsWith("/generations/")) return null;
-  const base = path.resolve(process.cwd(), "public", "generations");
-  const file = path.resolve(process.cwd(), "public", localPath.replace(/^\//, ""));
-  if (!file.startsWith(base + path.sep)) return null;
-  if (!file.toLowerCase().endsWith(".mp4") && !file.toLowerCase().endsWith(".webm")) {
-    return null;
-  }
-  return file;
+  return resolveGenerationFile(localPath);
 }
 
 async function resolveSource(request: Request): Promise<{
