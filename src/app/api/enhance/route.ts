@@ -21,7 +21,7 @@ export async function POST(request: Request) {
       variants: [
         enhanced,
         enhancePromptVariant(prompt, mode, "Emphasize mood and texture"),
-        prompt,
+        enhancePromptVariant(prompt, mode, "Emphasize motion and action"),
       ],
     });
   } catch (error) {

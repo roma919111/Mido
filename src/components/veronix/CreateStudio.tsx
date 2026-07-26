@@ -391,7 +391,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       if (!next) throw new Error("لم يتم إنشاء وصف محسّن");
       // Full replace — never append polish onto the existing field.
       setPrompt(next);
-      setStatus("تم استبدال الوصف بالنسخة المحسّنة");
+      setStatus("تم تحسين الوصف حسب سياق المشهد والحركة");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Enhance failed");
     }
