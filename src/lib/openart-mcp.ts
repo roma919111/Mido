@@ -111,8 +111,13 @@ export async function withOpenArtClient<T>(fn: (client: Client) => Promise<T>): 
     );
   }
 
-  // Prefer owner OAuth store (supports refresh). Env token is a simple bearer fallback.
-  if (hasOwnerOAuth && !envToken) {
+  const hasRefreshableOAuth = Boolean(
+    ownerSession.tokens?.refresh_token || ownerSession.tokens?.access_token,
+  );
+
+  // Prefer owner OAuth store whenever present — MCP SDK can refresh expired tokens.
+  // A stale OPENART_ACCESS_TOKEN env must not block refreshable OAuth.
+  if (hasRefreshableOAuth) {
     const provider = await createOwnerOAuthProvider({
       onRedirect: () => {
         throw new OpenArtConfigError(
@@ -133,17 +138,23 @@ export async function withOpenArtClient<T>(fn: (client: Client) => Promise<T>): 
 
     const client = new Client({ name: "vyronix-ai", version: "1.0.0" });
 
+    let oauthOk = false;
     try {
       await client.connect(transport);
-      return await fn(client);
+      const value = await fn(client);
+      oauthOk = true;
+      return value;
     } catch (error) {
-      if (error instanceof UnauthorizedError) {
+      if (error instanceof UnauthorizedError && envToken) {
+        // Fall through to static env bearer if OAuth refresh failed.
+      } else if (error instanceof UnauthorizedError) {
         throw new OpenArtConfigError(
           "Owner OpenArt MCP unauthorized. Reconnect the platform OpenArt account.",
           { needsAuth: true },
         );
+      } else {
+        throw error;
       }
-      throw error;
     } finally {
       try {
         await provider.flush();
@@ -155,6 +166,9 @@ export async function withOpenArtClient<T>(fn: (client: Client) => Promise<T>): 
       } catch {
         // ignore
       }
+    }
+    if (oauthOk) {
+      // unreachable — kept for clarity
     }
   }
 
