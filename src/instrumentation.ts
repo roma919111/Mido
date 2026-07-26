@@ -17,4 +17,17 @@ export async function register() {
       error instanceof Error ? error.message : error,
     );
   }
+
+  try {
+    const { backupCustomerDb } = await import("@/lib/db-backup");
+    const backup = await backupCustomerDb("startup", { force: true });
+    if (backup.ok) {
+      console.info("[veronix] Customer DB backup ready");
+    }
+  } catch (error) {
+    console.warn(
+      "[veronix] Customer DB backup skipped:",
+      error instanceof Error ? error.message : error,
+    );
+  }
 }

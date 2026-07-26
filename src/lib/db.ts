@@ -69,6 +69,10 @@ async function ensureDb(): Promise<DbShape> {
 async function saveDb(db: DbShape): Promise<void> {
   await mkdir(DATA_DIR, { recursive: true });
   await writeFile(DB_FILE, JSON.stringify(db, null, 2), "utf8");
+  // Best-effort rotating snapshots — never block the write path on backup errors.
+  void import("@/lib/db-backup")
+    .then(({ backupCustomerDb }) => backupCustomerDb("save"))
+    .catch(() => undefined);
 }
 
 export async function findUserByEmail(email: string): Promise<UserRecord | null> {

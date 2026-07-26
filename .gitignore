@@ -39,6 +39,9 @@ yarn-error.log*
 .data/veronix-db.json
 .data/google-oauth.enc
 
+# Railway local link/config (may contain project ids; keep out of git)
+.railway/
+
 # vercel
 .vercel
 

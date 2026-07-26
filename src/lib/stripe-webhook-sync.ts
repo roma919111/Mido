@@ -56,7 +56,17 @@ export async function syncStripeWebhookToPublicUrl(
     (ep) => ep.url === webhookUrl,
   );
 
-  if (current) {
+  const hasSecret = Boolean(creds.webhookSecret?.trim());
+
+  // Stripe only returns the signing secret at create-time. If the endpoint
+  // already exists but we have no secret stored, recreate it once.
+  if (current && !hasSecret) {
+    try {
+      await stripe.webhookEndpoints.del(current.id);
+    } catch {
+      // ignore delete races
+    }
+  } else if (current) {
     await stripe.webhookEndpoints.update(current.id, {
       enabled_events: EVENTS,
       disabled: false,
