@@ -167,6 +167,23 @@ export function splitActionClauses(action: string, arabic: boolean): string[] {
   return parts.length ? parts : [text];
 }
 
+/** Prefer keeping handstand / landed locks when merging pose updates. */
+function mergePose(
+  prev: string | undefined,
+  next: string | undefined,
+  arabic: boolean,
+): string | undefined {
+  if (!next) return prev;
+  if (!prev) return next;
+  const prevHold = /وقفة|انشقاق|handstand|split|ممدد|منتصف|legs/i.test(prev);
+  const nextHold = /وقفة|انشقاق|handstand|split|ممدد|منتصف|legs/i.test(next);
+  if (prevHold && !nextHold) {
+    return arabic ? `${prev}؛ ${next}` : `${prev}; ${next}`;
+  }
+  if (prevHold && nextHold) return next.length >= prev.length ? next : prev;
+  return next;
+}
+
 /** Who is the grammatical/primary actor of this clause? */
 export function detectClauseActor(clause: string, arabic: boolean): Gender {
   if (arabic) {
@@ -239,8 +256,10 @@ export function applyIntraPromptContinuity(
     clause = injectEntitiesIntoAction(clause, entities, arabic, gens);
 
     const poses = inferCharacterPoses(clause, arabic);
-    if (poses.female) lockedFemale = poses.female;
-    if (poses.male) lockedMale = poses.male;
+    // Merge — never drop a stronger held pose (handstand) when a later clause
+    // only adds a secondary action like body-lock.
+    lockedFemale = mergePose(lockedFemale, poses.female, arabic);
+    lockedMale = mergePose(lockedMale, poses.male, arabic);
 
     // Also lock from raw clause keywords before injection noise
     if (/وقفة\s*يدين|handstand|انشقاق/.test(clauses[i]!)) {
@@ -248,13 +267,18 @@ export function applyIntraPromptContinuity(
         ? "وقفة يدين على الأرض مع انشقاق أفقي كامل للساقين"
         : "handstand with a full horizontal split";
     }
+    if (/ممدد على بطن|منتصف\s*ساق/.test(clauses[i]!)) {
+      lockedMale = arabic
+        ? "ممدد على بطنه فوق منتصف ساقي الأنثى"
+        : "lying belly-down across the middle of her legs";
+    }
 
     const actor = detectClauseActor(clauses[i]!, arabic);
     const continuity: string[] = [];
     const femaleHoldingHandstand =
       Boolean(lockedFemale) && /وقفة|انشقاق|handstand|split/i.test(lockedFemale || "");
     const maleOnHerLegs =
-      Boolean(lockedMale) && /منتصف\s*ساق|فوق\s*ساق|across.*legs|belly/i.test(lockedMale || "");
+      Boolean(lockedMale) && /منتصف\s*ساق|فوق\s*ساق|across.*legs|belly|ممدد/i.test(lockedMale || "");
 
     if (i > 0) {
       if (actor === "male" && lockedFemale) {
