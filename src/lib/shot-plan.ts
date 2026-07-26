@@ -9,9 +9,6 @@
 
 import {
   countActionVerbs,
-  detectClauseActor,
-  inferCharacterPoses,
-  livingHeldAside,
   splitActionClauses,
   splitByActionVerbs,
   type SceneState,
@@ -165,16 +162,51 @@ Do not merge two strong actions into one beat. Max 15 beats.`;
 function collectClauses(body: string, arabic: boolean): string[] {
   const byMarkers = splitActionClauses(body, arabic).filter((c) => c.length >= 3);
   if (byMarkers.length >= 2) {
-    // Further split any marker-chunk that still packs multiple verbs
+    // User already marked beats with ثم/then — keep their wording.
+    // Only sub-split a chunk when it still packs many verbs in one long beat.
     const expanded: string[] = [];
     for (const chunk of byMarkers) {
-      const sub = splitByActionVerbs(chunk, arabic);
-      if (sub.length >= 2) expanded.push(...sub);
-      else expanded.push(chunk);
+      const verbCount = countActionVerbs(chunk, arabic);
+      if (verbCount >= 3 && chunk.length > 70) {
+        const sub = splitByActionVerbs(chunk, arabic);
+        if (sub.length >= 2) expanded.push(...sub);
+        else expanded.push(chunk);
+      } else {
+        expanded.push(chunk);
+      }
     }
     return expanded.filter((c) => c.length >= 3);
   }
   return splitByActionVerbs(body, arabic).filter((c) => c.length >= 3);
+}
+
+/** Wrap one user action for generation — do not invent extra story events. */
+function faithfulShotPrompt(
+  clause: string,
+  prefix: string,
+  suffix: string,
+  arabic: boolean,
+): string {
+  const settingLock = suffix
+    ? suffix
+        .split(/(?<=\.)\s+/)
+        .filter((line) =>
+          /المكان كما في الصورة|Setting matches|حافظ على نفس|Keep the exact/.test(line),
+        )
+        .slice(0, 2)
+        .join(" ")
+    : "";
+  const parts = [
+    `${prefix}: ${clause.trim()}`,
+    arabic
+      ? "لقطة واحدة فقط، نفّذ هذا الفعل كما هو مكتوب دون إضافة أحداث أو وضعيات من لقطات أخرى"
+      : "one shot only, perform this action as written, do not add events from other shots",
+    settingLock,
+    arabic
+      ? "إضاءة طبيعية سينمائية، تفاصيل حادة، بدون تشويش"
+      : "natural cinematic light, sharp detail, no flicker",
+  ].filter(Boolean);
+  return parts.join(". ").replace(/\s+/g, " ").trim();
 }
 
 function buildPlanFromClauses(
@@ -196,7 +228,6 @@ function buildPlanFromClauses(
     prefix,
     suffix,
     arabic,
-    previousState,
     reason,
     originalPrompt,
   } = options;
@@ -213,87 +244,19 @@ function buildPlanFromClauses(
 
   const heads = clauses.slice(0, maxShots - 1);
   const tail = clauses.slice(maxShots - 1);
+  // Preserve every remaining user clause in the last packed beat (exact wording).
   const normalized =
     tail.length > 1
       ? [...heads, tail.join(arabic ? " ثم " : " then ")]
       : [...heads, ...tail];
 
-  let lockedFemale: string | undefined = previousState?.characterPoses?.female;
-  let lockedMale: string | undefined = previousState?.characterPoses?.male;
-
-  const shots: PlannedShot[] = normalized.map((clause, index) => {
-    const actor = detectClauseActor(clause, arabic);
-    const poses = inferCharacterPoses(clause, arabic);
-    const prevFemale = lockedFemale;
-    const prevMale = lockedMale;
-
-    if (poses.female || actor === "female") {
-      lockedFemale = poses.female || lockedFemale || (arabic ? `بعد: ${clause}` : `after: ${clause}`);
-    }
-    if (poses.male || actor === "male") {
-      lockedMale = poses.male || lockedMale || (arabic ? `بعد: ${clause}` : `after: ${clause}`);
-    }
-    if (/وقفة\s*يدين|handstand|انشقاق/.test(clause)) {
-      lockedFemale = arabic
-        ? "وقفة يدين على الأرض مع انشقاق أفقي كامل للساقين"
-        : "handstand with a full horizontal split";
-    }
-    if (/ممدد على بطن|منتصف\s*ساق/.test(clause)) {
-      lockedMale = arabic
-        ? "ممدد على بطنه فوق منتصف ساقي الأنثى"
-        : "lying belly-down across the middle of her legs";
-    }
-
-    const holds: string[] = [];
-    if (index > 0) {
-      const femaleMoving =
-        actor === "female" ||
-        /ترفع|ترمي|تقذف|تمسك|تؤدي|تسدد|تضرب|تقفل|تلف|تسقط|تمشي|تجلس|تضحك|تعطي|تقفز|تمد|تعض|تستيقظ|تطبخ|تاكل|تأكل|تتمش|تدخل|تذهب|تستلقي|تضع/.test(
-          clause,
-        );
-      const maleMoving =
-        actor === "male" ||
-        /يرفع|يرمي|يمسك|يسقط|ممدد|تقذفه|ترفعه|ترميه|تمسكه|يمشي|يجلس|يضحك|يستيقظ|يتمدد|يتقدم/.test(
-          clause,
-        );
-
-      if (!femaleMoving && prevFemale) {
-        holds.push(livingHeldAside(arabic ? "الأنثى" : "the woman", prevFemale, "female", arabic, index));
-      }
-      if (!maleMoving && prevMale) {
-        holds.push(livingHeldAside(arabic ? "الرجل" : "the man", prevMale, "male", arabic, index + 7));
-      }
-    }
-
-    // Keep each shot prompt lean — one action + living holds + setting lock only
-    const actionLine = [clause, ...holds].filter(Boolean).join(arabic ? "، " : ", ");
-    const settingLock = suffix
-      ? suffix
-          .split(/(?<=\.)\s+/)
-          .filter((line) =>
-            /المكان كما في الصورة|Setting matches|حافظ على نفس|Keep the exact/.test(line),
-          )
-          .slice(0, 2)
-          .join(" ")
-      : "";
-
-    const parts = [
-      `${prefix}: ${actionLine}`,
-      arabic
-        ? "لقطة واحدة فقط، فعل أساسي واحد واضح، بدون سرد باقي المشهد"
-        : "one shot only, a single clear primary action, do not narrate the rest of the scene",
-      settingLock,
-      arabic
-        ? "إضاءة طبيعية سينمائية، تفاصيل حادة، بدون تشويش"
-        : "natural cinematic light, sharp detail, no flicker",
-    ].filter(Boolean);
-
-    return {
-      index,
-      action: clause,
-      prompt: parts.join(". ").replace(/\s+/g, " ").trim(),
-    };
-  });
+  const shots: PlannedShot[] = normalized.map((clause, index) => ({
+    index,
+    // Exact user wording — shown in the enhance script and used as the story beat.
+    action: clause.trim(),
+    // Generation prompt stays faithful to that beat (visual bridge = last frame, not invented text).
+    prompt: faithfulShotPrompt(clause, prefix, suffix, arabic),
+  }));
 
   return {
     multiShot: true,
@@ -386,8 +349,8 @@ export function formatShotScript(plan: ShotPlan, arabic: boolean): string {
     return `${label}: ${s.action}`;
   });
   const note = arabic
-    ? "\n\n(سيتم توليد كل لقطة على حدة ثم دمجها تلقائياً)"
-    : "\n\n(Each shot will be generated separately then stitched.)";
+    ? "\n\n(نفس أفعالك كما كتبتها — كل لقطة تُولَّد وحدها ثم تُدمج في فيديو واحد)"
+    : "\n\n(Your actions as written — each shot is generated then stitched into one video.)";
   return lines.join("\n") + note;
 }
 

@@ -68,9 +68,8 @@ export async function POST(request: Request) {
       }
       if (shotPlan.multiShot && shotPlan.shotCount >= 2) {
         shots = shotPlan.shots;
-        // Show a clear shot script instead of one dense paragraph.
+        // Show the user's beats as-written — never replace with a rewritten cinematic blob.
         enhanced = formatShotScript(shotPlan, arabic);
-        // Keep setting lock readable under the shots
         const setting = (result.coreIdea || "").match(
           /المكان كما في الصورة:[^.]+|Setting matches the reference image:[^.]+/i,
         );
