@@ -28,19 +28,36 @@ export type SceneState = {
 };
 
 const SEQUENCE_AR =
-  /^(ثم|وبعدين|بعدين|بعد ذلك|بعدها|بعدما|بعد\s+أن|وبعد\s+ذلك|و\s*بعدها|وبعدها)\s+/i;
+  /^(ثم|وبعدين|بعدين|بعد ذلك|بعدها|بعدما|بعد\s+أن|قبل\s+أن|قبل\s+ان|وبعد\s+ذلك|و\s*بعدها|وبعدها)\s+/i;
 const SEQUENCE_EN =
-  /^(then|and then|after that|afterwards|afterward|next|and next|subsequently)\s+/i;
+  /^(then|and then|after that|afterwards|afterward|next|and next|subsequently|before|after)\s+/i;
 
-/** Split a compound action into ordered beats (ثم / then). */
+/**
+ * Temporal / causal beat boundaries — NOT only ثم.
+ * Lookahead keeps the marker with the NEXT clause (قبل ان يسقط تمسكه…).
+ */
 const CLAUSE_SPLIT_AR =
-  /\s*(?:ثم|وبعدين|بعدين|بعد ذلك|بعدها|وبعدها|و\s*بعدها)\s+/i;
+  /\s+(?=(?:ثم|وبعدين|بعدين|بعد ذلك|بعدها|وبعدها|و\s*بعدها|بعدما|بعد\s*أن|قبل\s*أن|قبل\s*ان)\s+)/i;
 const CLAUSE_SPLIT_EN =
-  /\s*(?:and then|then|after that|afterwards|afterward|next|subsequently)\s+/i;
+  /\s+(?=(?:and then|then|after that|afterwards|afterward|next|subsequently|before|after which)\s+)/i;
 
 export function isSequentialAction(prompt: string): boolean {
   const t = prompt.trim();
-  return SEQUENCE_AR.test(t) || SEQUENCE_EN.test(t);
+  if (SEQUENCE_AR.test(t) || SEQUENCE_EN.test(t)) return true;
+  // Context: multiple action verbs even without an explicit "ثم"
+  return countActionVerbs(t, isArabic(t)) >= 2;
+}
+
+/** Rough count of distinct action-verb beats (general — any actions). */
+export function countActionVerbs(text: string, arabic: boolean): number {
+  if (arabic) {
+    const re =
+      /(?:^|[\s،,])((?:تسدد|ترفع|ترمي|تقذف|تمسك|تؤدي|تضرب|تقفل|تلف|تسقط|تمشي|تجلس|تضحك|تركض|تجري|تعطي|تأخذ|تفتح|تغلق|تقول|تنظر|ترقص|تضع|تحمل|تقفز|تدفع|تسحب|تركل|تعانق|تقبّل|تقبل|يرفع|يرمي|يقذف|يمسك|يسقط|يمشي|يجلس|يضحك|يركض|يجري|يعطي|يأخذ|يفتح|يغلق|يقول|ينظر|يرقص|يضع|يحمل|يقفز|يدفع|يسحب|يركل|يلكم|يضرب)(?:ه|ها|هم|هن)?)/g;
+    return [...text.matchAll(re)].length;
+  }
+  const re =
+    /\b(punche?s?|lifts?|throws?|catches?|holds?|falls?|walks?|sits?|laughs?|runs?|gives?|takes?|opens?|closes?|kicks?|hugs?|kisses?|jumps?|drops?|grabs?)\b/gi;
+  return [...text.matchAll(re)].length;
 }
 
 export function stripSequencePrefix(prompt: string): string {
@@ -89,9 +106,9 @@ export function inferCharacterPoses(
         female = "الأنثى تحمل الرجل مرفوعاً فوق رأسها";
         male = "الرجل مرفوع في الهواء فوق رأس الأنثى";
       }
-      if (/ترم[يى]|يرم[يى]|قذف/.test(c)) {
+      if (/ترم[يى]|يرم[يى]|تقذف|يقذف|قذف/.test(c)) {
         if (!/وقفة\s*يدين|انشقاق/.test(c)) {
-          female = "الأنثى بعد حركة الرمي مباشرة";
+          female = "الأنثى بعد حركة الرمي/القذف مباشرة";
         }
         male = "الرجل في الهواء بعد الرمي وقبل السقوط";
       }
@@ -164,8 +181,57 @@ export function splitActionClauses(action: string, arabic: boolean): string[] {
   const parts = text
     .split(arabic ? CLAUSE_SPLIT_AR : CLAUSE_SPLIT_EN)
     .map((p) => p.trim())
+    .filter(Boolean)
+    // Lookahead keeps markers on the next clause — strip pure sequence words
+    // like leading «ثم» so joiners don't become «ثم ثم». Keep «قبل أن…».
+    .map((p) =>
+      p
+        .replace(/^(?:ثم|وبعدين|بعدين|بعد ذلك|بعدها|وبعدها)\s+/i, "")
+        .replace(/^(?:then|and then|after that|afterwards|next)\s+/i, "")
+        .trim(),
+    )
     .filter(Boolean);
-  return parts.length ? parts : [text];
+  if (parts.length >= 2) return parts;
+  // No explicit ثم/before — split by successive action verbs (context).
+  return splitByActionVerbs(text, arabic);
+}
+
+/**
+ * Split a single paragraph into beats at each new primary action verb.
+ * GENERAL for any actions (walk/sit/punch/lift/…); does not require ثم.
+ */
+export function splitByActionVerbs(text: string, arabic: boolean): string[] {
+  const t = text.trim();
+  if (!t) return [];
+  const re = arabic
+    ? /(?:^|[\s،,])((?:تسدد|ترفع|ترمي|تقذف|تمسك|تؤدي|تضرب|تقفل|تلف|تسقط|تمشي|تجلس|تضحك|تركض|تجري|تعطي|تأخذ|تفتح|تغلق|تقول|تنظر|ترقص|تضع|تحمل|تقفز|تدفع|تسحب|تركل|تعانق|يقفز|يرفع|يرمي|يقذف|يمسك|يسقط|يمشي|يجلس|يضحك|يركض|يجري|يعطي|يأخذ|يفتح|يغلق|يقول|ينظر|يرقص|يضع|يحمل|يدفع|يسحب|يركل|يلكم|يضرب)(?:ه|ها|هم|هن)?)/g
+    : /\b(punche?s?|lifts?|throws?|catches?|holds?|falls?|walks?|sits?|laughs?|runs?|gives?|takes?|opens?|closes?|kicks?|hugs?|jumps?|drops?|grabs?)\b/gi;
+
+  const hits: number[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(t))) {
+    // Start of the verb token (skip leading whitespace capture)
+    const verbStart = m.index + (m[0].length - m[1]!.length);
+    // Skip very early duplicates / tiny gaps (same beat)
+    if (hits.length && verbStart - hits[hits.length - 1]! < 10) continue;
+    // "قبل ان يسقط تمسكه" — keep يسقط with following catch; don't split on يسقط after قبل ان
+    const before = t.slice(Math.max(0, verbStart - 12), verbStart);
+    if (arabic && /قبل\s*ان?\s*$/i.test(before) && /^يسقط|^تسقط/.test(t.slice(verbStart))) {
+      continue;
+    }
+    hits.push(verbStart);
+  }
+
+  if (hits.length < 2) return [t];
+
+  const clauses: string[] = [];
+  for (let i = 0; i < hits.length; i += 1) {
+    const start = i === 0 ? 0 : hits[i]!;
+    const end = i + 1 < hits.length ? hits[i + 1]! : t.length;
+    const chunk = t.slice(start, end).trim();
+    if (chunk.length >= 3) clauses.push(chunk);
+  }
+  return clauses.length >= 2 ? clauses : [t];
 }
 
 /** Prefer keeping handstand / landed locks when merging pose updates. */
@@ -196,7 +262,7 @@ export function detectClauseActor(clause: string, arabic: boolean): Gender {
     }
     // Verb gender: تـ = feminine imperfect, يـ = masculine imperfect (common video prompts)
     if (
-      /(?:^|[\s،,])(?:تسقط|ترفع|ترمي|تمسك|تؤدي|تسدد|تضرب|تقفل|تحافظ|تقوم)/.test(
+      /(?:^|[\s،,])(?:تسقط|ترفع|ترمي|تقذف|تمسك|تؤدي|تسدد|تضرب|تقفل|تحافظ|تقوم|تلف)/.test(
         clause,
       )
     ) {
@@ -555,7 +621,15 @@ function livingTableau(
     if (mood === "airborne") {
       return `${who} ما يزال في الهواء، شعره يتطاير، ووجهه متفاجئ`;
     }
-    return `${who} في ${poseCore(pose)}، بتفاصيل حيّة في التعبير والجسد`;
+    if (mood === "overhead_lift") {
+      return gender === "female"
+        ? `${who} ترفعه فوق رأسها بعضلات مشدودة ونظر واثق`
+        : `${who} مرفوع فوق رأسها، منهك وشعره يتدلّى مع الجاذبية`;
+    }
+    const core = poseCore(pose)
+      .replace(/^(?:الأنثى|الانثى|أنثى|الرجل|رجل)\s*/i, "")
+      .trim();
+    return `${who} ${core || "في وضعية واضحة"}، بتفاصيل حيّة في التعبير والجسد`;
   }
   return `${who} in ${poseCore(pose)}, with vivid expression and body detail`;
 }

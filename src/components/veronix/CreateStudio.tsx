@@ -92,6 +92,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     totalCredits: number | null;
     actions: string[];
   } | null>(null);
+  /** Structured shots from enhance / plan — used at generate (context split, no ثم required). */
+  const [plannedShots, setPlannedShots] = useState<
+    Array<{ prompt: string; action: string }> | null
+  >(null);
   const waitingResult = generating || preview?.status === "running";
   const freeSettingsLocked =
     media === "video" &&
@@ -284,13 +288,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         let nextCost = data.totalCredits;
         let nextHint: typeof shotHint = null;
 
-        // General multi-shot estimate for sequential prompts (أي أفعال، ليس مشهداً محدداً).
-        if (
-          media === "video" &&
-          multiShotOn &&
-          !isFree &&
-          /(?:ثم|وبعدين|بعدين|then|after that)/i.test(prompt)
-        ) {
+        // General multi-shot estimate — context-aware (لا يشترط ثم).
+        if (media === "video" && multiShotOn && !isFree && prompt.trim().length >= 12) {
           try {
             const planRes = await fetchJson<{
               autoMultiShot?: boolean;
@@ -493,6 +492,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         needsVisionKey?: boolean;
         chained?: boolean;
         entityBrief?: string;
+        multiShot?: boolean;
+        shotCount?: number;
+        shots?: Array<{ prompt: string; action: string }>;
       }>("/api/enhance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -509,6 +511,17 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       // Full replace — never append polish onto the existing field.
       setPrompt(next);
       if (data.finalState) setPromptSceneState(data.finalState);
+      if (data.multiShot && (data.shots?.length || 0) >= 2) {
+        setPlannedShots(data.shots || null);
+        setMultiShotOn(true);
+        setShotHint({
+          count: data.shotCount || data.shots!.length,
+          totalCredits: null,
+          actions: data.shots!.map((s) => s.action),
+        });
+      } else {
+        setPlannedShots(null);
+      }
 
       if (data.needsVisionKey) {
         setStatus(
@@ -522,6 +535,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         const bits = ["تم تحسين الوصف"];
         if (data.visionUsed) bits.push("مع استبدال الشخصيات بمواصفات الصورة");
         if (data.chained) bits.push("وتسلسل من الحالة السابقة");
+        if (data.multiShot && (data.shotCount || 0) >= 2) {
+          bits.push(`وتقسيم إلى ${data.shotCount} لقطات من السياق`);
+        }
         setStatus(bits.join(" · "));
       }
     } catch (err) {
@@ -836,39 +852,46 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     setElapsedSec(0);
     setStatus(freeTrial ? "جاري توليد فيديوك المجاني…" : "Generating…");
     try {
-      // Plan multi-shot for ANY sequential prompt (ثم/then) — paid video only.
+      // Plan multi-shot from context (no ثم required) — paid video only.
       let useMulti = false;
       let shots: Array<{ prompt: string; action: string }> = [];
       let perShotSeconds = duration;
       if (media === "video" && multiShotOn && !freeTrial) {
-        const planRes = await fetchJson<{
-          error?: string;
-          autoMultiShot?: boolean;
-          perShotSeconds?: number;
-          plan?: { shots?: Array<{ prompt: string; action: string }> };
-        }>("/api/shots/plan", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prompt: prompt.trim(),
-            modelId: selectedModelId,
-            media,
-            duration,
-            resolution,
-            generateAudio,
-            aspectRatio: VIDEO_ASPECT,
-            previousState: promptSceneState,
-            multiShot: true,
-          }),
-        });
-        if (
-          planRes.res.ok &&
-          planRes.data.autoMultiShot &&
-          (planRes.data.plan?.shots?.length || 0) >= 2
-        ) {
+        if (plannedShots && plannedShots.length >= 2) {
           useMulti = true;
-          shots = planRes.data.plan!.shots!;
-          perShotSeconds = planRes.data.perShotSeconds || 5;
+          shots = plannedShots;
+          perShotSeconds = Math.min(5, Math.max(4, duration));
+        } else {
+          const planRes = await fetchJson<{
+            error?: string;
+            autoMultiShot?: boolean;
+            perShotSeconds?: number;
+            plan?: { shots?: Array<{ prompt: string; action: string }> };
+          }>("/api/shots/plan", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              prompt: prompt.trim(),
+              modelId: selectedModelId,
+              media,
+              duration,
+              resolution,
+              generateAudio,
+              aspectRatio: VIDEO_ASPECT,
+              previousState: promptSceneState,
+              multiShot: true,
+            }),
+          });
+          if (
+            planRes.res.ok &&
+            planRes.data.autoMultiShot &&
+            (planRes.data.plan?.shots?.length || 0) >= 2
+          ) {
+            useMulti = true;
+            shots = planRes.data.plan!.shots!;
+            perShotSeconds = planRes.data.perShotSeconds || 5;
+            setPlannedShots(shots);
+          }
         }
       }
 
@@ -1399,7 +1422,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             <span>
               <span className="font-semibold text-white">تقسيم المشهد إلى لقطات تلقائياً</span>
               <span className="mt-0.5 block text-xs text-white/45">
-                أي سلسلة أفعال بـ «ثم» تُقسَّم إلى لقطات قصيرة مترابطة (قاعدة عامة لكل المشاهد)
+                يفهم تسلسل الأفعال من السياق تلقائياً (حتى بدون «ثم») ويقسّمها إلى لقطات مترابطة — لأي مشهد
               </span>
               {multiShotOn && shotHint && shotHint.count >= 2 ? (
                 <span className="mt-1 block text-xs text-[#22f0ff]">

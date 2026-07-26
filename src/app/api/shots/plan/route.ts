@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { quoteOpenArtCredits } from "@/lib/credit-quote";
 import { isFreeVeronixEligible } from "@/lib/free-trial";
-import { planShotSequence, shouldAutoMultiShot } from "@/lib/shot-plan";
+import { planShotSequenceAsync, shouldAutoMultiShot } from "@/lib/shot-plan";
 import type { SceneState } from "@/lib/prompt-chain";
 
 export const runtime = "nodejs";
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     const wantMulti = body.multiShot !== false;
     const perShotSeconds = Math.min(5, Math.max(4, Number(body.duration) || 5));
 
-    const plan = planShotSequence(prompt, {
+    const plan = await planShotSequenceAsync(prompt, {
       perShotSeconds,
       forceSingle: !wantMulti || freeTrial || media !== "video",
       previousState: body.previousState || null,

@@ -5,9 +5,15 @@ import {
   enhancePromptWithContext,
   type SceneState,
 } from "@/lib/prompt-enhance";
+import {
+  formatShotScript,
+  planShotSequenceAsync,
+  type PlannedShot,
+} from "@/lib/shot-plan";
 import type { GenerationMode } from "@/lib/types";
 
 export const runtime = "nodejs";
+export const maxDuration = 120;
 
 type EnhanceBody = {
   prompt?: string;
@@ -36,17 +42,46 @@ export async function POST(request: Request) {
       forceChain: Boolean(body.forceChain),
     });
 
-    const enhanced = result.enhanced || enhancePrompt(prompt, String(mode));
+    const enhancedFull = result.enhanced || enhancePrompt(prompt, String(mode));
+    const arabic = /[\u0600-\u06FF]/.test(result.coreIdea || prompt);
+    const isVideo = String(mode).includes("video");
+
+    // Context-aware shot plan (no ثم required) — general for any action chain.
+    let shotPlan = null as Awaited<ReturnType<typeof planShotSequenceAsync>> | null;
+    let shots: PlannedShot[] = [];
+    let enhanced = enhancedFull;
+    if (isVideo) {
+      shotPlan = await planShotSequenceAsync(result.coreIdea || enhancedFull, {
+        previousState: result.finalState,
+      });
+      if (shotPlan.multiShot && shotPlan.shotCount >= 2) {
+        shots = shotPlan.shots;
+        // Show a clear shot script instead of one dense paragraph.
+        enhanced = formatShotScript(shotPlan, arabic);
+        // Keep setting lock readable under the shots
+        const setting = (result.coreIdea || "").match(
+          /المكان كما في الصورة:[^.]+|Setting matches the reference image:[^.]+/i,
+        );
+        if (setting) {
+          enhanced = `${enhanced}\n\n${setting[0].trim()}.`;
+        }
+      }
+    }
 
     return NextResponse.json({
       original: prompt,
       enhanced,
+      enhancedFull,
       coreIdea: result.coreIdea,
       finalState: result.finalState,
       visionUsed: result.visionUsed,
       needsVisionKey: result.needsVisionKey,
       chained: result.chained,
       entityBrief: result.entityBrief,
+      multiShot: Boolean(shotPlan?.multiShot && (shotPlan?.shotCount || 0) >= 2),
+      shotCount: shotPlan?.shotCount || 1,
+      shotReason: shotPlan?.reason || null,
+      shots,
       variants: [
         enhanced,
         enhancePromptVariant(result.coreIdea || prompt, String(mode), "Emphasize mood and texture"),
