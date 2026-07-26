@@ -537,18 +537,6 @@ export function livingHeldAside(
   }
 }
 
-/** The new action happens against another character's living presence. */
-function livingRelativeTo(
-  who: string,
-  pose: string,
-  gender: Gender,
-  arabic: boolean,
-  salt: number,
-): string {
-  // Same vivid held atmosphere — continuity is shown by description, not meta links.
-  return livingHeldAside(who, pose, gender, arabic, salt);
-}
-
 function livingTableau(
   who: string,
   pose: string,
@@ -581,16 +569,21 @@ function charactersTouchedByClause(
   arabic: boolean,
   actor: Gender,
 ): { female: boolean; male: boolean } {
-  // Object pronouns: ترفعه / ترميه → male is moved even if actor is female
-  if (arabic && /(?:ترفعه|ترميه|تمسكه|تضعه|تحمله|تلقّاه|تتلقاه)/.test(clause)) {
-    return { female: actor === "female" || /(?:تؤدي|ترفع|ترمي|تمسك|تسدد)/.test(clause), male: true };
+  // Object pronouns: ترفعه / ترميه / تقذفه → male is moved even if actor is female
+  if (arabic && /(?:ترفعه|ترميه|تقذفه|تمسكه|تضعه|تحمله|تلف|تلقّاه|تتلقاه)/.test(clause)) {
+    return {
+      female:
+        actor === "female" ||
+        /(?:تؤدي|ترفع|ترمي|تقذف|تمسك|تسدد|تلف)/.test(clause),
+      male: true,
+    };
   }
   if (!arabic && /\b(?:lifts?|throws?|holds?|catches?)\s+him\b/i.test(clause)) {
     return { female: true, male: true };
   }
 
   const femaleActive = arabic
-    ? /(?:^|[\s،,])(?:الأنثى|الانثى|أنثى|انثى|المرأة|فتاة)|(?:تسقط|ترفع|ترمي|تمسك|تؤدي|تسدد|تضرب|تقفل|تقوم|تحافظ)/.test(
+    ? /(?:^|[\s،,])(?:الأنثى|الانثى|أنثى|انثى|المرأة|فتاة)|(?:تسقط|ترفع|ترمي|تقذف|تمسك|تؤدي|تسدد|تضرب|تقفل|تقوم|تحافظ|تلف)/.test(
         clause,
       )
     : /\b(?:woman|she)\b/i.test(clause);
