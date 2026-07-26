@@ -74,7 +74,7 @@ export async function POST(request: Request) {
         "Content-Type": "image/jpeg",
         "Content-Length": String(jpeg.byteLength),
       },
-      body: jpeg,
+      body: new Uint8Array(jpeg),
     });
     if (!putResponse.ok) {
       const detail = await putResponse.text().catch(() => "");
