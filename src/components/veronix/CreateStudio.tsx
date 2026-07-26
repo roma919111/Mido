@@ -28,6 +28,10 @@ import {
 } from "@/lib/free-trial";
 import type { VisualReference } from "@/lib/types";
 import type { SceneState } from "@/lib/prompt-enhance";
+import {
+  MAX_TOTAL_SECONDS,
+  PRODUCT_PER_SHOT_SECONDS,
+} from "@/lib/shot-plan";
 import { fetchJson } from "@/lib/fetch-json";
 import { veronixDownloadPath, veronixMediaSrc } from "@/lib/media-proxy";
 import type { CustomerUser } from "./AppHeader";
@@ -117,6 +121,12 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const durationBounds = durationBoundsForModel(selectedModel);
   const formOptions = formOptionsForModel(selectedModel);
   const resolutionOptions = formOptions.resolutions;
+  /** Multi-shot: slider = final stitched length (up to 30s). Single: model bounds. */
+  const multiDurationMode = Boolean(
+    media === "video" && multiShotOn && !freeTrial && !freeSettingsLocked,
+  );
+  const sliderMin = multiDurationMode ? PRODUCT_PER_SHOT_SECONDS : durationBounds.min;
+  const sliderMax = multiDurationMode ? MAX_TOTAL_SECONDS : durationBounds.max;
 
   const applyVideoModelDefaults = (model: CatalogModel | null | undefined) => {
     setAspectRatio(VIDEO_ASPECT);
@@ -347,10 +357,12 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               const apiPer =
                 planRes.data.timing?.apiPerShotSeconds ||
                 Math.max(durationBounds.min, per);
-              const total =
+              const total = Math.min(
+                MAX_TOTAL_SECONDS,
                 planRes.data.timing?.totalSeconds ||
-                planRes.data.totalSeconds ||
-                per * count;
+                  planRes.data.totalSeconds ||
+                  per * count,
+              );
               nextHint = {
                 count,
                 totalCredits:
@@ -370,6 +382,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               if (typeof planRes.data.totalCredits === "number") {
                 nextCost = planRes.data.totalCredits;
               }
+              // Slider shows final stitched length (up to 30s).
+              setDuration(total);
             }
           } catch {
             // Keep single-clip quote if plan fails.
@@ -563,7 +577,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         const preferredTotal = preferredPerShot * count;
         const per = preferredPerShot;
         const apiPer = Math.max(durationBounds.min, preferredPerShot);
-        const total = per * count;
+        const total = Math.min(MAX_TOTAL_SECONDS, per * count);
         setShotHint({
           count,
           totalCredits: null,
@@ -575,9 +589,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           totalSeconds: total,
           labelAr: `توصية: ${count} لقطات × ${per} ثوانٍ = ${total} ثانية`,
         });
-        setDuration(apiPer);
+        setDuration(total);
       } else {
         setPlannedShots(null);
+        if (data.finalState) setPromptSceneState(data.finalState);
       }
 
       if (data.needsVisionKey) {
@@ -915,11 +930,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       // Plan multi-shot from context (no ثم required) — paid video only.
       let useMulti = false;
       let shots: Array<{ prompt: string; action: string }> = [];
-      // Product: each beat ends at 2s (trimmed). OpenArt may need model min to render.
-      let perShotSeconds = shotHint?.perShotSeconds || 2;
+      // Product: each beat ends at ≤2s (trimmed). Slider in multi mode = total length.
+      let perShotSeconds = shotHint?.perShotSeconds || PRODUCT_PER_SHOT_SECONDS;
       let apiPerShotSeconds =
         shotHint?.apiPerShotSeconds ||
-        Math.min(durationBounds.max, Math.max(durationBounds.min, duration));
+        Math.min(
+          durationBounds.max,
+          Math.max(durationBounds.min, PRODUCT_PER_SHOT_SECONDS),
+        );
       if (media === "video" && multiShotOn && !freeTrial) {
         if (plannedShots && plannedShots.length >= 2) {
           useMulti = true;
@@ -976,12 +994,15 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             const apiPer =
               planRes.data.timing?.apiPerShotSeconds ||
               Math.max(durationBounds.min, recPer);
-            const total =
+            const total = Math.min(
+              MAX_TOTAL_SECONDS,
               planRes.data.timing?.totalSeconds ||
-              planRes.data.totalSeconds ||
-              recPer * count;
+                planRes.data.totalSeconds ||
+                recPer * count,
+            );
             perShotSeconds = recPer;
             apiPerShotSeconds = apiPer;
+            setDuration(total);
             setShotHint({
               count,
               totalCredits:
@@ -1138,7 +1159,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 prompt: prompt.trim(),
                 modelId: selectedModelId,
                 shotCount: shots.length,
-                maxSecondsPerClip: perShotSeconds,
+                maxSecondsPerClip: Math.min(
+                  PRODUCT_PER_SHOT_SECONDS,
+                  Math.max(1, Math.round(duration / Math.max(1, shots.length))),
+                ),
               }),
             });
             if (concatRes.res.ok && concatRes.data.url) {
@@ -1555,39 +1579,36 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           <div className="mt-4 space-y-2">
             <div className="flex items-center justify-between text-sm">
               <span className="text-white/70">
-                {multiShotOn && !freeTrial ? "مدة كل لقطة" : "المدة"}
+                {multiDurationMode ? "مدة الفيديو" : "المدة"}
               </span>
               <span className="font-semibold tabular-nums text-[#22f0ff]">
-                {duration}s
-                {multiShotOn && !freeTrial && shotHint && shotHint.count >= 2
-                  ? ` → ${shotHint.count}×${shotHint.perShotSeconds}ث = ${shotHint.totalSeconds}ث`
+                {Math.min(sliderMax, Math.max(sliderMin, duration))}ث
+                {multiDurationMode && shotHint && shotHint.count >= 2
+                  ? ` · ${shotHint.count}×${shotHint.perShotSeconds}ث`
                   : ""}
                 {freeSettingsLocked ? " · مجاني أول مرة" : ""}
               </span>
             </div>
             <input
               type="range"
-              min={durationBounds.min}
-              max={durationBounds.max}
+              min={sliderMin}
+              max={sliderMax}
               step={1}
-              value={Math.min(
-                durationBounds.max,
-                Math.max(durationBounds.min, duration),
-              )}
+              value={Math.min(sliderMax, Math.max(sliderMin, duration))}
               disabled={freeSettingsLocked}
               onChange={(e) => setDuration(Number(e.target.value))}
               className="w-full accent-[#22f0ff] disabled:opacity-60"
             />
             <div className="flex justify-between text-[10px] text-white/35">
-              <span>{durationBounds.min}s</span>
+              <span>{sliderMin}s</span>
               {selectedModelId === VERONIX_MODEL_ID && !user?.freeVeronixUsed ? (
                 <span className="text-[#22f0ff]">تجربة مجانية</span>
-              ) : multiShotOn && !freeTrial ? (
-                <span className="text-[#22f0ff]">لكل لقطة · أقصى {durationBounds.max}s</span>
+              ) : multiDurationMode ? (
+                <span className="text-[#22f0ff]">فيديو واحد بعد الدمج · أقصى {sliderMax}s</span>
               ) : (
-                <span className="text-[#22f0ff]">أقصى {durationBounds.max}s</span>
+                <span className="text-[#22f0ff]">أقصى {sliderMax}s</span>
               )}
-              <span>{durationBounds.max}s</span>
+              <span>{sliderMax}s</span>
             </div>
             {formOptions.audioSupported ? (
               <label className="mt-2 flex items-center gap-2 text-sm text-white/70">
@@ -1622,45 +1643,16 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             />
             <span className="min-w-0 flex-1">
               <span className="font-semibold text-white">تقسيم المشهد إلى لقطات تلقائياً</span>
-              <span className="mt-0.5 block text-xs text-white/45">
-                يفهم تسلسل الأفعال من السياق ويقسّمها إلى لقطات مترابطة، ثم يدمجها في فيديو واحد
-              </span>
               {multiShotOn && shotHint && shotHint.count >= 2 ? (
-                <span className="mt-2 block space-y-2">
-                  <span className="block text-xs text-[#22f0ff]">
-                    {shotHint.count} لقطات → فيديو واحد
-                    {shotHint.totalCredits != null
-                      ? ` · ≈ ${shotHint.totalCredits} كريدت`
-                      : ""}
-                  </span>
-                  <span className="block rounded-xl border border-[#22f0ff]/25 bg-[#22f0ff]/8 px-3 py-2 text-xs leading-relaxed text-cyan-50">
-                    <span className="font-semibold text-white">توصية المدة: </span>
-                    {shotHint.count}×{shotHint.preferredPerShot}ث ={" "}
-                    {shotHint.preferredTotalSeconds}ث
-                    {shotHint.apiPerShotSeconds > shotHint.perShotSeconds ? (
-                      <span className="mt-1 block text-white/55">
-                        كل لقطة تُقصّ إلى {shotHint.perShotSeconds}ث في الفيديو النهائي (حتى ١٥ لقطة ≈ ٣٠ث)
-                      </span>
-                    ) : (
-                      <span className="mt-1 block text-white/55">
-                        حتى ١٥ لقطة × {shotHint.perShotSeconds}ث = ٣٠ث كحد أقصى
-                      </span>
-                    )}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setDuration(shotHint.apiPerShotSeconds);
-                      setStatus(
-                        `طُبّقت التوصية: ${shotHint.count} لقطات × ${shotHint.perShotSeconds}ث = ${shotHint.totalSeconds}ث (فيديو واحد بعد القصّ)`,
-                      );
-                    }}
-                    className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/15"
-                  >
-                    تطبيق التوصية ({shotHint.count}×{shotHint.perShotSeconds}ث = {shotHint.totalSeconds}ث)
-                  </button>
+                <span className="mt-1 block text-xs text-[#22f0ff]">
+                  فيديو والمدة المولدة
+                  <br />
+                  للفيديو
+                  {shotHint.totalCredits != null
+                    ? ` ≈ ${shotHint.totalCredits} كريدت`
+                    : creditLive && creditCost != null
+                      ? ` ≈ ${creditCost} كريدت`
+                      : " …"}
                 </span>
               ) : null}
             </span>
