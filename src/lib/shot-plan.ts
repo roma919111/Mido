@@ -9,6 +9,7 @@
 
 import {
   countActionVerbs,
+  injectEntitiesIntoAction,
   splitActionClauses,
   splitByActionVerbs,
   type SceneState,
@@ -31,11 +32,14 @@ export type ShotPlan = {
   reason: string;
 };
 
-/** Product cap: up to 15 beats × 2s = 30s stitched video. */
-export const MAX_SHOTS = 15;
-/** Final length of each beat after trim (OpenArt may render longer if model min > 2). */
-export const PRODUCT_PER_SHOT_SECONDS = 2;
-export const MAX_TOTAL_SECONDS = MAX_SHOTS * PRODUCT_PER_SHOT_SECONDS;
+/**
+ * Product cap: Seedance / Veronix min render is 4s per clip.
+ * Up to 8 beats × 4s = 32s stitched video.
+ */
+export const MAX_SHOTS = 8;
+/** Final length of each beat (matches Seedance mini minimum). */
+export const PRODUCT_PER_SHOT_SECONDS = 4;
+export const MAX_TOTAL_SECONDS = MAX_SHOTS * PRODUCT_PER_SHOT_SECONDS; // 32
 const DEFAULT_PER_SHOT_SECONDS = PRODUCT_PER_SHOT_SECONDS;
 
 /** Strip cinematic wrapper / trailing polish so splitting sees the action chain. */
@@ -113,12 +117,12 @@ export async function inferBeatsWithGemini(text: string, arabic: boolean): Promi
 قاعدة عامة لأي نوع أفعال (مشي، جلوس، قتال، رقص، …) — ليس مشهداً محدداً.
 لا تشترط وجود كلمة «ثم». افهم التسلسل من السياق (قبل أن، بعد، ثم فعل جديد، …).
 أعد JSON فقط بهذا الشكل: {"beats":["...","..."]}
-بدون دمج فعلين قويين في لقطة واحدة. حد أقصى 15 لقطة. كل لقطة فعل واحد (تقدم، تمدد، لف، اختناق، …).`
+بدون دمج فعلين قويين في لقطة واحدة. حد أقصى ${MAX_SHOTS} لقطات. كل لقطة فعل واحد (تقدم، تمدد، لف، اختناق، …).`
     : `Split the following narration into ordered video beats. Each beat = one clear primary action.
 GENERAL for any actions (walk, sit, fight, dance, approach, wrap, choke, …) — not a specific scene type.
 Do NOT require the word "then". Infer sequence from context (before, after, new verb, …).
 Return JSON only: {"beats":["...","..."]}
-Do not merge two strong actions into one beat. Max 15 beats.`;
+Do not merge two strong actions into one beat. Max ${MAX_SHOTS} beats.`;
 
   try {
     const res = await fetch(
@@ -361,8 +365,8 @@ export function shouldAutoMultiShot(
 }
 
 /**
- * Product timing: each beat ends at 2s (trimmed), up to 15 beats = 30s.
- * If the model cannot render under 2s, we still request its minimum then trim.
+ * Product timing: each beat = 4s (Seedance mini min), up to 8 beats = 32s.
+ * API duration matches product length when model min ≤ 4.
  */
 export function recommendShotTiming(
   shotCount: number,
@@ -371,10 +375,10 @@ export function recommendShotTiming(
 ): {
   preferredPerShot: number;
   preferredTotalSeconds: number;
-  /** Final seconds per shot after trim (always product 2s). */
+  /** Final seconds per shot (product length, Seedance min = 4). */
   perShotSeconds: number;
   totalSeconds: number;
-  /** Duration sent to the video model (may be > 2 when model min is higher). */
+  /** Duration sent to the video model. */
   apiPerShotSeconds: number;
   clampedToModelMin: boolean;
   labelAr: string;
@@ -391,10 +395,10 @@ export function recommendShotTiming(
   );
   const clampedToModelMin = apiPerShotSeconds > PRODUCT_PER_SHOT_SECONDS;
   const labelAr = clampedToModelMin
-    ? `توصية: ${n} لقطات × ${preferredPerShot} ثوانٍ = ${totalSeconds} ثانية (قصّ كل لقطة إلى ${preferredPerShot}ث؛ الموديل يولّد ${apiPerShotSeconds}ث كحد أدنى)`
+    ? `توصية: ${n} لقطات × ${preferredPerShot} ثوانٍ = ${totalSeconds} ثانية (الموديل يولّد ${apiPerShotSeconds}ث كحد أدنى)`
     : `توصية: ${n} لقطات × ${perShotSeconds} ثوانٍ = ${totalSeconds} ثانية إجمالي`;
   const labelEn = clampedToModelMin
-    ? `Recommend: ${n}×${preferredPerShot}s = ${totalSeconds}s (trim each beat to ${preferredPerShot}s; model min render ${apiPerShotSeconds}s)`
+    ? `Recommend: ${n}×${preferredPerShot}s = ${totalSeconds}s (model min render ${apiPerShotSeconds}s)`
     : `Recommend: ${n}×${perShotSeconds}s = ${totalSeconds}s total`;
   return {
     preferredPerShot,
@@ -406,4 +410,41 @@ export function recommendShotTiming(
     labelAr,
     labelEn,
   };
+}
+
+/**
+ * Inject vision entities into planned shots while keeping faithful action wording
+ * (no cinematic rewrite / invented poses).
+ */
+export function applyEntitiesToShotPlan(
+  plan: ShotPlan,
+  entities: string[],
+  arabic: boolean,
+  genders?: Array<"female" | "male" | "unknown">,
+): ShotPlan {
+  if (!plan.multiShot || plan.shotCount < 2) return plan;
+  const firstPrompt = plan.shots[0]?.prompt || "";
+  const prefixMatch = firstPrompt.match(/^([^:]+):/);
+  const usePrefix =
+    prefixMatch?.[1]?.trim() ||
+    (arabic ? "مشهد سينمائي واقعي" : "Photoreal cinematic scene");
+  const settingLock = firstPrompt
+    .split(/(?<=\.)\s+/)
+    .filter((line) =>
+      /المكان كما في الصورة|Setting matches|حافظ على نفس|Keep the exact/.test(line),
+    )
+    .slice(0, 2)
+    .join(" ");
+  const shots = plan.shots.map((s, index) => {
+    const grounded =
+      entities.length > 0
+        ? injectEntitiesIntoAction(s.action, entities, arabic, genders)
+        : s.action;
+    return {
+      index,
+      action: grounded,
+      prompt: faithfulShotPrompt(grounded, usePrefix, settingLock, arabic),
+    };
+  });
+  return { ...plan, shots };
 }

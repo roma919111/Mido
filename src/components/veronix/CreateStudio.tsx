@@ -29,6 +29,7 @@ import {
 import type { VisualReference } from "@/lib/types";
 import type { SceneState } from "@/lib/prompt-enhance";
 import {
+  MAX_SHOTS,
   MAX_TOTAL_SECONDS,
   PRODUCT_PER_SHOT_SECONDS,
 } from "@/lib/shot-plan";
@@ -346,7 +347,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             ) {
               const count = planRes.data.shotCount || 0;
               const preferredPerShot =
-                planRes.data.timing?.preferredPerShot || 2;
+                planRes.data.timing?.preferredPerShot || PRODUCT_PER_SHOT_SECONDS;
               const preferredTotal =
                 planRes.data.timing?.preferredTotalSeconds ||
                 preferredPerShot * count;
@@ -572,8 +573,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         setPromptSceneState(null);
         setPlannedShots(data.shots || null);
         setMultiShotOn(true);
-        const count = data.shotCount || data.shots!.length;
-        const preferredPerShot = 2;
+        const count = Math.min(
+          MAX_SHOTS,
+          data.shotCount || data.shots!.length,
+        );
+        const preferredPerShot = PRODUCT_PER_SHOT_SECONDS;
         const preferredTotal = preferredPerShot * count;
         const per = preferredPerShot;
         const apiPer = Math.max(durationBounds.min, preferredPerShot);
@@ -622,6 +626,31 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     } finally {
       setEnhancing(false);
     }
+  }
+
+  /** Cache remotely + apply clarity grade for a stable local preview URL. */
+  async function finalizePaidVideo(input: {
+    url: string;
+    historyId?: string;
+    assetId?: string;
+  }): Promise<string> {
+    const { res, data } = await fetchJson<{ error?: string; url?: string }>(
+      "/api/media/cache",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          videoUrl: input.url || undefined,
+          historyId: input.historyId || undefined,
+          assetId: input.assetId || undefined,
+          clarity: true,
+        }),
+      },
+    );
+    if (!res.ok || !data.url) {
+      throw new Error(data.error || "Unable to fetch video for clarity grade");
+    }
+    return data.url;
   }
 
   async function applyBrandOutro(input: {
@@ -757,6 +786,20 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         if (url) {
           if (brandOutro) {
             await applyBrandOutro({ url, historyId, assetId, mediaType });
+          } else if (mediaType === "video") {
+            setStatus("تحسين الوضوح والفلتر…");
+            try {
+              const graded = await finalizePaidVideo({ url, historyId, assetId });
+              setPreview({
+                url: graded,
+                mediaType,
+                historyId,
+                status: "completed",
+              });
+            } catch {
+              setPreview({ url, mediaType, historyId, status: "completed" });
+            }
+            setStatus(null);
           } else {
             setPreview({ url, mediaType, historyId, status: "completed" });
             setStatus(null);
@@ -935,14 +978,12 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       // Plan multi-shot from context (no ثم required) — paid video only.
       let useMulti = false;
       let shots: Array<{ prompt: string; action: string }> = [];
-      // Product: each beat ends at ≤2s (trimmed). Slider in multi mode = total length.
-      let perShotSeconds = shotHint?.perShotSeconds || PRODUCT_PER_SHOT_SECONDS;
-      let apiPerShotSeconds =
-        shotHint?.apiPerShotSeconds ||
-        Math.min(
-          durationBounds.max,
-          Math.max(durationBounds.min, PRODUCT_PER_SHOT_SECONDS),
-        );
+      // Seedance/Veronix: each beat = 4s. Slider = total budget (up to 32s).
+      let perShotSeconds = PRODUCT_PER_SHOT_SECONDS;
+      let apiPerShotSeconds = Math.min(
+        durationBounds.max,
+        Math.max(durationBounds.min, PRODUCT_PER_SHOT_SECONDS),
+      );
       if (media === "video" && multiShotOn && !freeTrial) {
         if (plannedShots && plannedShots.length >= 2) {
           useMulti = true;
@@ -988,25 +1029,17 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             useMulti = true;
             shots = planRes.data.plan!.shots!;
             setPlannedShots(shots);
-            const count = planRes.data.shotCount || shots.length;
-            const preferredPerShot = planRes.data.timing?.preferredPerShot || 2;
-            const preferredTotal =
-              planRes.data.timing?.preferredTotalSeconds || preferredPerShot * count;
-            const recPer =
-              planRes.data.timing?.perShotSeconds ||
-              planRes.data.perShotSeconds ||
-              preferredPerShot;
-            const apiPer =
-              planRes.data.timing?.apiPerShotSeconds ||
-              Math.max(durationBounds.min, recPer);
-            const total = Math.min(
-              MAX_TOTAL_SECONDS,
-              planRes.data.timing?.totalSeconds ||
-                planRes.data.totalSeconds ||
-                recPer * count,
+            const count = Math.min(
+              MAX_SHOTS,
+              planRes.data.shotCount || shots.length,
             );
-            perShotSeconds = recPer;
-            apiPerShotSeconds = apiPer;
+            const preferredPerShot = PRODUCT_PER_SHOT_SECONDS;
+            const preferredTotal = preferredPerShot * count;
+            const apiPer = Math.min(
+              durationBounds.max,
+              Math.max(durationBounds.min, PRODUCT_PER_SHOT_SECONDS),
+            );
+            const total = Math.min(MAX_TOTAL_SECONDS, preferredTotal);
             setShotHint({
               count,
               totalCredits:
@@ -1016,34 +1049,37 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               actions: planRes.data.actions || shots.map((s) => s.action),
               preferredPerShot,
               preferredTotalSeconds: preferredTotal,
-              perShotSeconds: recPer,
+              perShotSeconds: PRODUCT_PER_SHOT_SECONDS,
               apiPerShotSeconds: apiPer,
               totalSeconds: total,
               labelAr:
                 planRes.data.timing?.labelAr ||
-                `توصية: ${count} لقطات × ${preferredPerShot} ثوانٍ = ${preferredTotal} ثانية`,
+                `توصية: ${count} لقطات × ${PRODUCT_PER_SHOT_SECONDS} ثوانٍ = ${total} ثانية`,
             });
           }
         }
       }
 
       if (useMulti && shots.length >= 2) {
-        // Final length follows the slider (up to 30s); split evenly across beats.
-        const totalWanted = Math.min(
-          MAX_TOTAL_SECONDS,
-          Math.max(PRODUCT_PER_SHOT_SECONDS, duration),
-        );
-        perShotSeconds = Math.max(
-          1,
-          Math.min(
-            durationBounds.max,
-            Math.round(totalWanted / shots.length) || PRODUCT_PER_SHOT_SECONDS,
-          ),
-        );
+        // Fixed 4s/shot (Seedance min). Slider budget caps how many shots run.
+        perShotSeconds = PRODUCT_PER_SHOT_SECONDS;
         apiPerShotSeconds = Math.min(
           durationBounds.max,
-          Math.max(durationBounds.min, perShotSeconds),
+          Math.max(durationBounds.min, PRODUCT_PER_SHOT_SECONDS),
         );
+        const shotBudget = Math.max(
+          2,
+          Math.min(
+            MAX_SHOTS,
+            Math.floor(
+              Math.min(MAX_TOTAL_SECONDS, Math.max(PRODUCT_PER_SHOT_SECONDS, duration)) /
+                PRODUCT_PER_SHOT_SECONDS,
+            ),
+          ),
+        );
+        if (shots.length > shotBudget) {
+          shots = shots.slice(0, shotBudget);
+        }
         setPreview({ url: "", mediaType: "video", status: "running" });
         const localUrls: string[] = [];
         const partAssetIds: string[] = [];
@@ -1162,7 +1198,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             }
           }
 
-          setStatus(`دمج ${shots.length} لقطات في فيديو واحد…`);
+          setStatus(`دمج ${shots.length} لقطات + تحسين الوضوح…`);
           let concatUrl: string | null = null;
           let concatError = "";
           for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -1281,6 +1317,34 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             assetId,
             mediaType: media,
           });
+        } else if (media === "video") {
+          setStatus("تحسين الوضوح والفلتر…");
+          try {
+            const graded = await finalizePaidVideo({
+              url: firstUrl,
+              historyId,
+              assetId,
+            });
+            setPreview({
+              url: graded,
+              mediaType: media,
+              historyId,
+              status: "completed",
+            });
+          } catch (gradeErr) {
+            setPreview({
+              url: firstUrl,
+              mediaType: media,
+              historyId,
+              status: "completed",
+            });
+            setError(
+              gradeErr instanceof Error
+                ? gradeErr.message
+                : "تعذر تطبيق فلتر الوضوح — عُرض الفيديو الأصلي",
+            );
+          }
+          setStatus(null);
         } else {
           setPreview({
             url: firstUrl,
@@ -1607,10 +1671,26 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               type="range"
               min={sliderMin}
               max={sliderMax}
-              step={1}
+              step={multiDurationMode ? PRODUCT_PER_SHOT_SECONDS : 1}
               value={Math.min(sliderMax, Math.max(sliderMin, duration))}
               disabled={freeSettingsLocked}
-              onChange={(e) => setDuration(Number(e.target.value))}
+              onChange={(e) => {
+                const raw = Number(e.target.value);
+                if (!multiDurationMode) {
+                  setDuration(raw);
+                  return;
+                }
+                // Snap to 4s steps (Seedance min per shot).
+                const stepped =
+                  Math.round(raw / PRODUCT_PER_SHOT_SECONDS) *
+                  PRODUCT_PER_SHOT_SECONDS;
+                setDuration(
+                  Math.min(
+                    MAX_TOTAL_SECONDS,
+                    Math.max(PRODUCT_PER_SHOT_SECONDS, stepped),
+                  ),
+                );
+              }}
               className="w-full accent-[#22f0ff] disabled:opacity-60"
             />
             <div className="flex justify-between text-[10px] text-white/35">

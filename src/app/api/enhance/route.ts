@@ -3,11 +3,10 @@ import {
   enhancePrompt,
   enhancePromptVariant,
   enhancePromptWithContext,
-  extractCoreIdea,
   type SceneState,
 } from "@/lib/prompt-enhance";
-import { injectEntitiesIntoAction } from "@/lib/prompt-chain";
 import {
+  applyEntitiesToShotPlan,
   formatShotScript,
   planShotSequenceAsync,
   type PlannedShot,
@@ -65,23 +64,18 @@ export async function POST(request: Request) {
         }
       }
       if (shotPlan.multiShot && shotPlan.shotCount >= 2) {
+        // Faithful rule: keep user's beats as-written (with vision entities),
+        // never replace with a rewritten cinematic blob / invented poses.
         const entities = result.finalState?.entities || [];
         const genders = result.finalState?.entityGenders;
-        // AI-polish EACH beat independently (same action, richer cinematic wording).
-        shots = shotPlan.shots.map((s, index) => {
-          const grounded =
-            entities.length > 0
-              ? injectEntitiesIntoAction(s.action, entities, arabic, genders)
-              : s.action;
-          const polished = enhancePrompt(grounded, String(mode));
-          const display = extractCoreIdea(polished) || grounded;
-          return {
-            index,
-            action: display,
-            prompt: polished || s.prompt,
-          };
-        });
-        enhanced = formatShotScript({ ...shotPlan, shots }, arabic);
+        const withEntities = applyEntitiesToShotPlan(
+          shotPlan,
+          entities,
+          arabic,
+          genders,
+        );
+        shots = withEntities.shots;
+        enhanced = formatShotScript(withEntities, arabic);
         const setting = (result.coreIdea || "").match(
           /المكان كما في الصورة:[^.]+|Setting matches the reference image:[^.]+/i,
         );
