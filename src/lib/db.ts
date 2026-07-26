@@ -177,6 +177,18 @@ export async function adjustCredits(userId: string, delta: number): Promise<User
   return updateUser(userId, { credits: next });
 }
 
+/** Ops-only: email/credits/plan for credit grants (no secrets). */
+export async function listUsersForAdmin(): Promise<
+  Array<{ email: string; credits: number; planId: PlanId }>
+> {
+  const db = await ensureDb();
+  return db.users.map((u) => ({
+    email: u.email,
+    credits: u.credits,
+    planId: u.planId,
+  }));
+}
+
 export async function createAsset(
   input: Omit<AssetRecord, "id" | "createdAt"> & { id?: string },
 ): Promise<AssetRecord> {

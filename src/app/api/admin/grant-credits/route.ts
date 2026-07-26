@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { adjustCredits, findUserByEmail, updateUser } from "@/lib/db";
+import {
+  adjustCredits,
+  findUserByEmail,
+  listUsersForAdmin,
+  updateUser,
+} from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -8,6 +13,8 @@ type Body = {
   credits?: number;
   /** Set absolute balance instead of adding */
   setTo?: number;
+  /** List users (email/credits/plan only) for ops */
+  list?: boolean;
 };
 
 /**
@@ -23,6 +30,11 @@ export async function POST(request: Request) {
     }
 
     const body = (await request.json()) as Body;
+    if (body.list) {
+      const users = await listUsersForAdmin();
+      return NextResponse.json({ users });
+    }
+
     const email = body.email?.trim().toLowerCase();
     if (!email) {
       return NextResponse.json({ error: "email required" }, { status: 400 });
