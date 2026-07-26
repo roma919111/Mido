@@ -382,8 +382,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               if (typeof planRes.data.totalCredits === "number") {
                 nextCost = planRes.data.totalCredits;
               }
-              // Slider shows final stitched length (up to 30s).
-              setDuration(total);
+              // Do NOT setDuration here — overwriting snaps the slider back
+              // (e.g. user picks 30s, quote returns 2×2s=4s).
             }
           } catch {
             // Keep single-clip quote if plan fails.
@@ -589,7 +589,12 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           totalSeconds: total,
           labelAr: `توصية: ${count} لقطات × ${per} ثوانٍ = ${total} ثانية`,
         });
-        setDuration(total);
+        // Suggest total only if slider is still on a low default (≤4s).
+        setDuration((prev) =>
+          prev <= FREE_VERONIX_DURATION_SECONDS
+            ? total
+            : Math.min(MAX_TOTAL_SECONDS, Math.max(prev, total)),
+        );
       } else {
         setPlannedShots(null);
         if (data.finalState) setPromptSceneState(data.finalState);
@@ -1002,7 +1007,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             );
             perShotSeconds = recPer;
             apiPerShotSeconds = apiPer;
-            setDuration(total);
             setShotHint({
               count,
               totalCredits:
@@ -1024,14 +1028,21 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       }
 
       if (useMulti && shots.length >= 2) {
-        // Force product timing: each beat trims to 2s → N×2s final (not a single 4s clip).
-        perShotSeconds = PRODUCT_PER_SHOT_SECONDS;
+        // Final length follows the slider (up to 30s); split evenly across beats.
+        const totalWanted = Math.min(
+          MAX_TOTAL_SECONDS,
+          Math.max(PRODUCT_PER_SHOT_SECONDS, duration),
+        );
+        perShotSeconds = Math.max(
+          1,
+          Math.min(
+            durationBounds.max,
+            Math.round(totalWanted / shots.length) || PRODUCT_PER_SHOT_SECONDS,
+          ),
+        );
         apiPerShotSeconds = Math.min(
           durationBounds.max,
-          Math.max(durationBounds.min, apiPerShotSeconds || durationBounds.min),
-        );
-        setDuration(
-          Math.min(MAX_TOTAL_SECONDS, shots.length * PRODUCT_PER_SHOT_SECONDS),
+          Math.max(durationBounds.min, perShotSeconds),
         );
         setPreview({ url: "", mediaType: "video", status: "running" });
         const localUrls: string[] = [];
@@ -1168,8 +1179,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 prompt: prompt.trim(),
                 modelId: selectedModelId,
                 shotCount: shots.length,
-                // Always keep each beat at product length (2s) so N shots ≈ N×2s total.
-                maxSecondsPerClip: PRODUCT_PER_SHOT_SECONDS,
+                maxSecondsPerClip: perShotSeconds,
               }),
             });
             if (concatRes.res.ok && concatRes.data.url) {
