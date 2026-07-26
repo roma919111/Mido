@@ -78,7 +78,8 @@ export async function POST(request: Request) {
           mode,
           aspectRatio: body.aspectRatio || "16:9",
           resolution: body.resolution,
-          duration: timing.perShotSeconds,
+          // Bill for what OpenArt actually renders (model min may be > product 2s).
+          duration: timing.apiPerShotSeconds,
           generateAudio: body.generateAudio,
         },
         { allowCache: true },

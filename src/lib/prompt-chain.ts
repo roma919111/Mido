@@ -48,15 +48,24 @@ export function isSequentialAction(prompt: string): boolean {
   return countActionVerbs(t, isArabic(t)) >= 2;
 }
 
+/**
+ * Arabic imperfect / common action stems used to detect beats.
+ * Includes approach / lie-down / choke / wrap — not only fight verbs.
+ */
+export const ARABIC_ACTION_VERBS =
+  "تسدد|ترفع|ترمي|تقذف|تمسك|تؤدي|تضرب|تقفل|تلف|تسقط|تمشي|تجلس|تضحك|تركض|تجري|تعطي|تأخذ|تفتح|تغلق|تقول|تنظر|ترقص|تضع|تحمل|تقفز|تدفع|تسحب|تركل|تعانق|تقبّل|تقبل|تتقدم|تتمدد|تستلقي|تنحني|تضغط|تلتف|تقترب|تختنق|تخنق|تقف|تركع|تنام|يرفع|يرمي|يقذف|يمسك|يسقط|يمشي|يجلس|يضحك|يركض|يجري|يعطي|يأخذ|يفتح|يغلق|يقول|ينظر|يرقص|يضع|يحمل|يقفز|يدفع|يسحب|يركل|يلكم|يضرب|يتقدم|يتمدد|يستلقي|ينحني|يضغط|يلتف|يقترب|يختنق|يخنق|يقف|يركع|ينام|يقفل";
+
 /** Rough count of distinct action-verb beats (general — any actions). */
 export function countActionVerbs(text: string, arabic: boolean): number {
   if (arabic) {
-    const re =
-      /(?:^|[\s،,])((?:تسدد|ترفع|ترمي|تقذف|تمسك|تؤدي|تضرب|تقفل|تلف|تسقط|تمشي|تجلس|تضحك|تركض|تجري|تعطي|تأخذ|تفتح|تغلق|تقول|تنظر|ترقص|تضع|تحمل|تقفز|تدفع|تسحب|تركل|تعانق|تقبّل|تقبل|يرفع|يرمي|يقذف|يمسك|يسقط|يمشي|يجلس|يضحك|يركض|يجري|يعطي|يأخذ|يفتح|يغلق|يقول|ينظر|يرقص|يضع|يحمل|يقفز|يدفع|يسحب|يركل|يلكم|يضرب)(?:ه|ها|هم|هن)?)/g;
+    const re = new RegExp(
+      `(?:^|[\\s،,])((?:${ARABIC_ACTION_VERBS})(?:ه|ها|هم|هن)?)`,
+      "g",
+    );
     return [...text.matchAll(re)].length;
   }
   const re =
-    /\b(punche?s?|lifts?|throws?|catches?|holds?|falls?|walks?|sits?|laughs?|runs?|gives?|takes?|opens?|closes?|kicks?|hugs?|kisses?|jumps?|drops?|grabs?)\b/gi;
+    /\b(punche?s?|lifts?|throws?|catches?|holds?|falls?|walks?|sits?|laughs?|runs?|gives?|takes?|opens?|closes?|kicks?|hugs?|kisses?|jumps?|drops?|grabs?|approaches?|lies|lie|wraps?|chokes?|squeezes?|kneels?|stands?)\b/gi;
   return [...text.matchAll(re)].length;
 }
 
@@ -204,8 +213,11 @@ export function splitByActionVerbs(text: string, arabic: boolean): string[] {
   const t = text.trim();
   if (!t) return [];
   const re = arabic
-    ? /(?:^|[\s،,])((?:تسدد|ترفع|ترمي|تقذف|تمسك|تؤدي|تضرب|تقفل|تلف|تسقط|تمشي|تجلس|تضحك|تركض|تجري|تعطي|تأخذ|تفتح|تغلق|تقول|تنظر|ترقص|تضع|تحمل|تقفز|تدفع|تسحب|تركل|تعانق|يقفز|يرفع|يرمي|يقذف|يمسك|يسقط|يمشي|يجلس|يضحك|يركض|يجري|يعطي|يأخذ|يفتح|يغلق|يقول|ينظر|يرقص|يضع|يحمل|يدفع|يسحب|يركل|يلكم|يضرب)(?:ه|ها|هم|هن)?)/g
-    : /\b(punche?s?|lifts?|throws?|catches?|holds?|falls?|walks?|sits?|laughs?|runs?|gives?|takes?|opens?|closes?|kicks?|hugs?|jumps?|drops?|grabs?)\b/gi;
+    ? new RegExp(
+        `(?:^|[\\s،,])((?:${ARABIC_ACTION_VERBS})(?:ه|ها|هم|هن)?)`,
+        "g",
+      )
+    : /\b(punche?s?|lifts?|throws?|catches?|holds?|falls?|walks?|sits?|laughs?|runs?|gives?|takes?|opens?|closes?|kicks?|hugs?|jumps?|drops?|grabs?|approaches?|lies|lie|wraps?|chokes?|squeezes?|kneels?|stands?)\b/gi;
 
   const hits: number[] = [];
   let m: RegExpExecArray | null;
@@ -222,13 +234,22 @@ export function splitByActionVerbs(text: string, arabic: boolean): string[] {
     hits.push(verbStart);
   }
 
-  if (hits.length < 2) return [t];
+  if (hits.length < 1) return [t];
+
+  // Cut before the first verb when there is a real opening state
+  // (e.g. «ممددة على ظهرها…» then «يتقدم نحوها…»).
+  const points: number[] = [];
+  if (hits[0]! > 8) points.push(0);
+  for (const h of hits) {
+    if (!points.length || h - points[points.length - 1]! >= 8) points.push(h);
+  }
+  points.push(t.length);
+
+  if (points.length < 3) return [t]; // need at least 2 segments
 
   const clauses: string[] = [];
-  for (let i = 0; i < hits.length; i += 1) {
-    const start = i === 0 ? 0 : hits[i]!;
-    const end = i + 1 < hits.length ? hits[i + 1]! : t.length;
-    const chunk = t.slice(start, end).trim();
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const chunk = t.slice(points[i]!, points[i + 1]!).trim();
     if (chunk.length >= 3) clauses.push(chunk);
   }
   return clauses.length >= 2 ? clauses : [t];

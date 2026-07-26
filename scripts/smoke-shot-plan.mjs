@@ -66,9 +66,16 @@ check("shot script lists لقطة", /لقطة 1/.test(script) && /لقطة 2/.te
 check("shot script not one dense cinematic blob", !/^مشهد سينمائي واقعي:/.test(script), script);
 
 const timing = recommendShotTiming(4, 4, 15);
-check("timing prefers 3s ideal", timing.preferredPerShot === 3 && timing.preferredTotalSeconds === 12, timing);
-check("timing clamps to model min 4", timing.perShotSeconds === 4 && timing.totalSeconds === 16, timing);
-check("timing label mentions 4×3=12", /4 لقطات × 3/.test(timing.labelAr) && /12/.test(timing.labelAr), timing.labelAr);
+check("timing prefers 2s product", timing.preferredPerShot === 2 && timing.preferredTotalSeconds === 8, timing);
+check("timing final 2s after trim", timing.perShotSeconds === 2 && timing.totalSeconds === 8, timing);
+check("timing api uses model min 4", timing.apiPerShotSeconds === 4, timing);
+check("timing label mentions 4×2", /4 لقطات × 2/.test(timing.labelAr) && /8/.test(timing.labelAr), timing.labelAr);
+
+const beach = planShotSequence(
+  "مشهد سينمائي واقعي: الانثى افريقية عملاقة طويلة ممددة على ظهرها في شاطء يتقدم نحوها رجل قصير نحيل يتمدد على بطنه فوق بطنها تلف الانثى ساقيها حول جانبي خصره باحكام في وضعية مقص الجسد على شكل قفلة اربعة يختنق الرجل. لقطة واحدة فقط، فعل أساسي واحد واضح، بدون سرد باقي المشهد. إضاءة طبيعية سينمائية، تفاصيل حادة، بدون تشويش",
+);
+check("beach multi-action splits >= 5", beach.multiShot && beach.shotCount >= 5, beach);
+check("beach under 15 shots", beach.shotCount <= 15, beach.shotCount);
 
 rmSync(outDir, { recursive: true, force: true });
 if (failed) process.exit(1);

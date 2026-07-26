@@ -94,6 +94,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     preferredPerShot: number;
     preferredTotalSeconds: number;
     perShotSeconds: number;
+    /** OpenArt render length (may be model min > 2); final trim uses perShotSeconds. */
+    apiPerShotSeconds: number;
     totalSeconds: number;
     labelAr: string;
   } | null>(null);
@@ -303,7 +305,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               actions?: string[];
               perShotSeconds?: number;
               totalSeconds?: number;
-              timing?: { labelAr?: string; perShotSeconds?: number; totalSeconds?: number };
+              timing?: {
+                labelAr?: string;
+                perShotSeconds?: number;
+                totalSeconds?: number;
+                preferredPerShot?: number;
+                preferredTotalSeconds?: number;
+                apiPerShotSeconds?: number;
+              };
             }>("/api/shots/plan", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -326,12 +335,18 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               (planRes.data.shotCount || 0) >= 2
             ) {
               const count = planRes.data.shotCount || 0;
-              const preferredPerShot = 3;
-              const preferredTotal = preferredPerShot * count;
+              const preferredPerShot =
+                planRes.data.timing?.preferredPerShot || 2;
+              const preferredTotal =
+                planRes.data.timing?.preferredTotalSeconds ||
+                preferredPerShot * count;
               const per =
                 planRes.data.timing?.perShotSeconds ||
                 planRes.data.perShotSeconds ||
-                Math.max(durationBounds.min, preferredPerShot);
+                preferredPerShot;
+              const apiPer =
+                planRes.data.timing?.apiPerShotSeconds ||
+                Math.max(durationBounds.min, per);
               const total =
                 planRes.data.timing?.totalSeconds ||
                 planRes.data.totalSeconds ||
@@ -346,12 +361,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 preferredPerShot,
                 preferredTotalSeconds: preferredTotal,
                 perShotSeconds: per,
+                apiPerShotSeconds: apiPer,
                 totalSeconds: total,
                 labelAr:
                   planRes.data.timing?.labelAr ||
-                  (per > preferredPerShot
-                    ? `توصية: ${count} لقطات × ${preferredPerShot} ثوانٍ = ${preferredTotal} ثانية → للتوليد: ${count}×${per}ث = ${total}ث`
-                    : `توصية: ${count} لقطات × ${per} ثوانٍ = ${total} ثانية`),
+                  `توصية: ${count} لقطات × ${per} ثوانٍ = ${total} ثانية`,
               };
               if (typeof planRes.data.totalCredits === "number") {
                 nextCost = planRes.data.totalCredits;
@@ -543,9 +557,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         setPlannedShots(data.shots || null);
         setMultiShotOn(true);
         const count = data.shotCount || data.shots!.length;
-        const preferredPerShot = 3;
+        const preferredPerShot = 2;
         const preferredTotal = preferredPerShot * count;
-        const per = Math.max(durationBounds.min, preferredPerShot);
+        const per = preferredPerShot;
+        const apiPer = Math.max(durationBounds.min, preferredPerShot);
         const total = per * count;
         setShotHint({
           count,
@@ -554,12 +569,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           preferredPerShot,
           preferredTotalSeconds: preferredTotal,
           perShotSeconds: per,
+          apiPerShotSeconds: apiPer,
           totalSeconds: total,
-          labelAr:
-            per > preferredPerShot
-              ? `توصية: ${count} لقطات × ${preferredPerShot} ثوانٍ = ${preferredTotal} ثانية → للتوليد: ${count}×${per}ث = ${total}ث`
-              : `توصية: ${count} لقطات × ${per} ثوانٍ = ${total} ثانية إجمالي`,
+          labelAr: `توصية: ${count} لقطات × ${per} ثوانٍ = ${total} ثانية`,
         });
+        setDuration(apiPer);
       } else {
         setPlannedShots(null);
       }
@@ -899,11 +913,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       // Plan multi-shot from context (no ثم required) — paid video only.
       let useMulti = false;
       let shots: Array<{ prompt: string; action: string }> = [];
-      // Duration slider = seconds per shot (recommendation button applies it).
-      let perShotSeconds = Math.min(
-        durationBounds.max,
-        Math.max(durationBounds.min, duration),
-      );
+      // Product: each beat ends at 2s (trimmed). OpenArt may need model min to render.
+      let perShotSeconds = shotHint?.perShotSeconds || 2;
+      let apiPerShotSeconds =
+        shotHint?.apiPerShotSeconds ||
+        Math.min(durationBounds.max, Math.max(durationBounds.min, duration));
       if (media === "video" && multiShotOn && !freeTrial) {
         if (plannedShots && plannedShots.length >= 2) {
           useMulti = true;
@@ -920,6 +934,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               totalSeconds?: number;
               preferredPerShot?: number;
               preferredTotalSeconds?: number;
+              apiPerShotSeconds?: number;
             };
             plan?: { shots?: Array<{ prompt: string; action: string }> };
             actions?: string[];
@@ -949,17 +964,22 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             shots = planRes.data.plan!.shots!;
             setPlannedShots(shots);
             const count = planRes.data.shotCount || shots.length;
-            const preferredPerShot = planRes.data.timing?.preferredPerShot || 3;
+            const preferredPerShot = planRes.data.timing?.preferredPerShot || 2;
             const preferredTotal =
               planRes.data.timing?.preferredTotalSeconds || preferredPerShot * count;
             const recPer =
               planRes.data.timing?.perShotSeconds ||
               planRes.data.perShotSeconds ||
-              Math.max(durationBounds.min, preferredPerShot);
+              preferredPerShot;
+            const apiPer =
+              planRes.data.timing?.apiPerShotSeconds ||
+              Math.max(durationBounds.min, recPer);
             const total =
               planRes.data.timing?.totalSeconds ||
               planRes.data.totalSeconds ||
               recPer * count;
+            perShotSeconds = recPer;
+            apiPerShotSeconds = apiPer;
             setShotHint({
               count,
               totalCredits:
@@ -970,6 +990,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               preferredPerShot,
               preferredTotalSeconds: preferredTotal,
               perShotSeconds: recPer,
+              apiPerShotSeconds: apiPer,
               totalSeconds: total,
               labelAr:
                 planRes.data.timing?.labelAr ||
@@ -1009,7 +1030,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             const { res, data } = await createOneClip({
               prompt: shot.prompt,
               mode,
-              duration: perShotSeconds,
+              duration: apiPerShotSeconds,
               startFrame: frame,
               endFrame: i === 0 ? endFrame : null,
               sequencePart: true,
@@ -1115,6 +1136,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 prompt: prompt.trim(),
                 modelId: selectedModelId,
                 shotCount: shots.length,
+                maxSecondsPerClip: perShotSeconds,
               }),
             });
             if (concatRes.res.ok && concatRes.data.url) {
@@ -1536,7 +1558,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               <span className="font-semibold tabular-nums text-[#22f0ff]">
                 {duration}s
                 {multiShotOn && !freeTrial && shotHint && shotHint.count >= 2
-                  ? ` × ${shotHint.count} = ${duration * shotHint.count}s`
+                  ? ` → ${shotHint.count}×${shotHint.perShotSeconds}ث = ${shotHint.totalSeconds}ث`
                   : ""}
                 {freeSettingsLocked ? " · مجاني أول مرة" : ""}
               </span>
@@ -1613,26 +1635,29 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                     <span className="font-semibold text-white">توصية المدة: </span>
                     {shotHint.count}×{shotHint.preferredPerShot}ث ={" "}
                     {shotHint.preferredTotalSeconds}ث
-                    {shotHint.perShotSeconds > shotHint.preferredPerShot ? (
+                    {shotHint.apiPerShotSeconds > shotHint.perShotSeconds ? (
                       <span className="mt-1 block text-white/55">
-                        حد الموديل الأدنى {shotHint.perShotSeconds}ث لكل لقطة → التوليد:{" "}
-                        {shotHint.count}×{shotHint.perShotSeconds}ث = {shotHint.totalSeconds}ث
+                        كل لقطة تُقصّ إلى {shotHint.perShotSeconds}ث في الفيديو النهائي (حتى ١٥ لقطة ≈ ٣٠ث)
                       </span>
-                    ) : null}
+                    ) : (
+                      <span className="mt-1 block text-white/55">
+                        حتى ١٥ لقطة × {shotHint.perShotSeconds}ث = ٣٠ث كحد أقصى
+                      </span>
+                    )}
                   </span>
                   <button
                     type="button"
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      setDuration(shotHint.perShotSeconds);
+                      setDuration(shotHint.apiPerShotSeconds);
                       setStatus(
-                        `طُبّقت التوصية: ${shotHint.count} لقطات × ${shotHint.perShotSeconds}ث = ${shotHint.totalSeconds}ث (فيديو واحد)`,
+                        `طُبّقت التوصية: ${shotHint.count} لقطات × ${shotHint.perShotSeconds}ث = ${shotHint.totalSeconds}ث (فيديو واحد بعد القصّ)`,
                       );
                     }}
                     className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/15"
                   >
-                    تطبيق التوصية ({shotHint.perShotSeconds}ث لكل لقطة)
+                    تطبيق التوصية ({shotHint.count}×{shotHint.perShotSeconds}ث = {shotHint.totalSeconds}ث)
                   </button>
                 </span>
               ) : null}

@@ -145,9 +145,19 @@ export async function extractLastFrameJpeg(sourceUrl: string): Promise<Buffer> {
 /**
  * Concatenate N video URLs into one MP4 under `/generations/…`.
  * Normalizes canvas to 1280x720 @ 24fps with stereo AAC.
+ * When `maxSecondsPerClip` is set (product default 2), each beat is trimmed.
  */
-export async function concatVideos(sourceUrls: string[]): Promise<string> {
+export async function concatVideos(
+  sourceUrls: string[],
+  options?: { maxSecondsPerClip?: number },
+): Promise<string> {
   if (sourceUrls.length < 1) throw new Error("No videos to concat");
+  const maxSec =
+    typeof options?.maxSecondsPerClip === "number" && options.maxSecondsPerClip > 0
+      ? options.maxSecondsPerClip
+      : 0;
+  const trimArgs = maxSec > 0 ? ["-t", String(maxSec)] : [];
+
   if (sourceUrls.length === 1) {
     // Still copy into generations for a stable local URL when remote
     const id = `shot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -157,7 +167,29 @@ export async function concatVideos(sourceUrls: string[]): Promise<string> {
     try {
       const src = path.join(work, "in.mp4");
       await downloadToFile(sourceUrls[0]!, src);
-      await copyFile(src, outPublic);
+      if (maxSec > 0) {
+        const trimmed = path.join(work, "trim.mp4");
+        await run("ffmpeg", [
+          "-y",
+          "-i",
+          src,
+          ...trimArgs,
+          "-c:v",
+          "libx264",
+          "-preset",
+          "veryfast",
+          "-pix_fmt",
+          "yuv420p",
+          "-c:a",
+          "aac",
+          "-movflags",
+          "+faststart",
+          trimmed,
+        ]);
+        await copyFile(trimmed, outPublic);
+      } else {
+        await copyFile(src, outPublic);
+      }
       return `/generations/${id}.mp4`;
     } finally {
       await rm(work, { recursive: true, force: true }).catch(() => undefined);
@@ -183,6 +215,7 @@ export async function concatVideos(sourceUrls: string[]): Promise<string> {
           "-y",
           "-i",
           raw,
+          ...trimArgs,
           "-vf",
           `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p`,
           "-af",
@@ -206,6 +239,7 @@ export async function concatVideos(sourceUrls: string[]): Promise<string> {
           "-y",
           "-i",
           raw,
+          ...trimArgs,
           "-f",
           "lavfi",
           "-i",

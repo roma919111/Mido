@@ -34,8 +34,12 @@ export type ShotPlan = {
   reason: string;
 };
 
-const MAX_SHOTS = 6;
-const DEFAULT_PER_SHOT_SECONDS = 5;
+/** Product cap: up to 15 beats × 2s = 30s stitched video. */
+export const MAX_SHOTS = 15;
+/** Final length of each beat after trim (OpenArt may render longer if model min > 2). */
+export const PRODUCT_PER_SHOT_SECONDS = 2;
+export const MAX_TOTAL_SECONDS = MAX_SHOTS * PRODUCT_PER_SHOT_SECONDS;
+const DEFAULT_PER_SHOT_SECONDS = PRODUCT_PER_SHOT_SECONDS;
 
 /** Strip cinematic wrapper / trailing polish so splitting sees the action chain. */
 export function extractActionBody(prompt: string): {
@@ -55,6 +59,23 @@ export function extractActionBody(prompt: string): {
   // Drop numbered shot script headers if re-enhancing
   body = body.replace(/^\[?\s*لقطة\s*\d+\s*\]?\s*[:：\-]?\s*/gim, "");
   body = body.replace(/^\[?\s*Shot\s*\d+\s*\]?\s*[:：\-]?\s*/gim, "");
+  // Strip single-shot polish so re-plan can see the full action chain
+  body = body.replace(
+    /لقطة\s*واحدة?\s*فقط[^.]*\.?/gi,
+    "",
+  );
+  body = body.replace(
+    /one shot only[^.]*\.?/gi,
+    "",
+  );
+  body = body.replace(
+    /فعل أساسي واحد واضح[^.]*\.?/gi,
+    "",
+  );
+  body = body.replace(
+    /بدون سرد باقي المشهد\.?/gi,
+    "",
+  );
 
   const suffixMatch = body.match(
     /\.\s*(?:المكان كما في الصورة|حافظ على نفس|Setting matches|Keep the exact|تفاصيل وجه|دفعة كاميرا|إضاءة|مشهد سينمائي واقعي،|وفي اللحظة الأخيرة|In the final held moment)[\s\S]*$/i,
@@ -95,12 +116,12 @@ export async function inferBeatsWithGemini(text: string, arabic: boolean): Promi
 قاعدة عامة لأي نوع أفعال (مشي، جلوس، قتال، رقص، …) — ليس مشهداً محدداً.
 لا تشترط وجود كلمة «ثم». افهم التسلسل من السياق (قبل أن، بعد، ثم فعل جديد، …).
 أعد JSON فقط بهذا الشكل: {"beats":["...","..."]}
-بدون دمج فعلين قويين في لقطة واحدة. حد أقصى 6 لقطات.`
+بدون دمج فعلين قويين في لقطة واحدة. حد أقصى 15 لقطة. كل لقطة فعل واحد (تقدم، تمدد، لف، اختناق، …).`
     : `Split the following narration into ordered video beats. Each beat = one clear primary action.
-GENERAL for any actions (walk, sit, fight, dance, …) — not a specific scene type.
+GENERAL for any actions (walk, sit, fight, dance, approach, wrap, choke, …) — not a specific scene type.
 Do NOT require the word "then". Infer sequence from context (before, after, new verb, …).
 Return JSON only: {"beats":["...","..."]}
-Do not merge two strong actions into one beat. Max 6 beats.`;
+Do not merge two strong actions into one beat. Max 15 beats.`;
 
   try {
     const res = await fetch(
@@ -375,7 +396,10 @@ export function shouldAutoMultiShot(
   return plan.multiShot && plan.shotCount >= 2;
 }
 
-/** Preferred beat length is 3s; clamp to the model’s allowed duration. */
+/**
+ * Product timing: each beat ends at 2s (trimmed), up to 15 beats = 30s.
+ * If the model cannot render under 2s, we still request its minimum then trim.
+ */
 export function recommendShotTiming(
   shotCount: number,
   modelMin = 4,
@@ -383,30 +407,37 @@ export function recommendShotTiming(
 ): {
   preferredPerShot: number;
   preferredTotalSeconds: number;
+  /** Final seconds per shot after trim (always product 2s). */
   perShotSeconds: number;
   totalSeconds: number;
+  /** Duration sent to the video model (may be > 2 when model min is higher). */
+  apiPerShotSeconds: number;
   clampedToModelMin: boolean;
   labelAr: string;
   labelEn: string;
 } {
-  const n = Math.max(1, Math.floor(shotCount));
-  const preferredPerShot = 3;
+  const n = Math.min(MAX_SHOTS, Math.max(1, Math.floor(shotCount)));
+  const preferredPerShot = PRODUCT_PER_SHOT_SECONDS;
   const preferredTotalSeconds = preferredPerShot * n;
-  const perShotSeconds = Math.min(modelMax, Math.max(modelMin, preferredPerShot));
-  const totalSeconds = perShotSeconds * n;
-  const clampedToModelMin = perShotSeconds > preferredPerShot;
-  // Always lead with N×3 = total (what the user expects), then note model clamp.
+  const perShotSeconds = PRODUCT_PER_SHOT_SECONDS;
+  const totalSeconds = Math.min(MAX_TOTAL_SECONDS, perShotSeconds * n);
+  const apiPerShotSeconds = Math.min(
+    modelMax,
+    Math.max(modelMin, PRODUCT_PER_SHOT_SECONDS),
+  );
+  const clampedToModelMin = apiPerShotSeconds > PRODUCT_PER_SHOT_SECONDS;
   const labelAr = clampedToModelMin
-    ? `توصية: ${n} لقطات × ${preferredPerShot} ثوانٍ = ${preferredTotalSeconds} ثانية → للتوليد: ${n}×${perShotSeconds}ث = ${totalSeconds}ث (حد الموديل الأدنى ${modelMin}ث)`
+    ? `توصية: ${n} لقطات × ${preferredPerShot} ثوانٍ = ${totalSeconds} ثانية (قصّ كل لقطة إلى ${preferredPerShot}ث؛ الموديل يولّد ${apiPerShotSeconds}ث كحد أدنى)`
     : `توصية: ${n} لقطات × ${perShotSeconds} ثوانٍ = ${totalSeconds} ثانية إجمالي`;
   const labelEn = clampedToModelMin
-    ? `Recommend: ${n}×${preferredPerShot}s = ${preferredTotalSeconds}s → generate ${n}×${perShotSeconds}s = ${totalSeconds}s (model min ${modelMin}s)`
+    ? `Recommend: ${n}×${preferredPerShot}s = ${totalSeconds}s (trim each beat to ${preferredPerShot}s; model min render ${apiPerShotSeconds}s)`
     : `Recommend: ${n}×${perShotSeconds}s = ${totalSeconds}s total`;
   return {
     preferredPerShot,
     preferredTotalSeconds,
     perShotSeconds,
     totalSeconds,
+    apiPerShotSeconds,
     clampedToModelMin,
     labelAr,
     labelEn,
