@@ -26,7 +26,7 @@ function productCatalog(video: CatalogModel[], image: CatalogModel[]) {
           available: true,
           badge: "حصري",
           tagline: isBytePlusConfigured()
-            ? "Veronix · BytePlus Seedance Mini (OpenArt احتياط)"
+            ? "Veronix · BytePlus Seedance Mini"
             : veronix.tagline,
         },
       ]
@@ -58,7 +58,7 @@ export async function GET(request: Request) {
       updatedAt: catalog.updatedAt,
       multiplier: VERONIX_CREDIT_MULTIPLIER,
       source: catalog.source,
-      provider: isBytePlusConfigured() ? "byteplus+openart-fallback" : "openart",
+      provider: isBytePlusConfigured() ? "byteplus" : "unconfigured",
       imageStudioEnabled: false,
     });
   } catch (error) {
@@ -71,7 +71,7 @@ export async function GET(request: Request) {
       synced: false,
       syncedNow: false,
       multiplier: VERONIX_CREDIT_MULTIPLIER,
-      provider: isBytePlusConfigured() ? "byteplus+openart-fallback" : "openart",
+      provider: isBytePlusConfigured() ? "byteplus" : "unconfigured",
       imageStudioEnabled: false,
       error: error instanceof Error ? error.message : "Catalog sync failed",
     });

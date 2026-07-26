@@ -1,6 +1,6 @@
 /**
- * BytePlus ModelArk — direct Seedance / Dreamina video generation.
- * Primary path for Veronix (seedance-2-mini). OpenArt remains a fallback.
+ * BytePlus ModelArk — Seedance / Dreamina video generation.
+ * Sole video provider for Veronix (seedance-2-mini). OpenArt is not used for generate.
  */
 
 import type { VisualReference } from "@/lib/types";
@@ -138,17 +138,28 @@ export async function createBytePlusVideoTask(
     duration,
     watermark: input.watermark === true,
   };
-  if (input.resolution) {
-    // Some Ark builds accept resolution; ignore if rejected by API.
-    body.resolution = input.resolution;
+  async function postCreate(payload: Record<string, unknown>) {
+    const res = await fetch(`${getBytePlusBaseUrl()}/contents/generations/tasks`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify(payload),
+    });
+    const data = await parseJson(res);
+    return { res, data };
   }
 
-  const res = await fetch(`${getBytePlusBaseUrl()}/contents/generations/tasks`, {
-    method: "POST",
-    headers: authHeaders(),
-    body: JSON.stringify(body),
-  });
-  const data = await parseJson(res);
+  let { res, data } = await postCreate(
+    input.resolution ? { ...body, resolution: input.resolution } : body,
+  );
+  // Retry without resolution if the Ark build rejects the field.
+  if (!res.ok && input.resolution) {
+    const errObj = data.error as { message?: string; code?: string } | undefined;
+    const msg = String(errObj?.message || data.message || "");
+    if (/resolution|unknown|invalid|not support/i.test(msg) || res.status === 400) {
+      ({ res, data } = await postCreate(body));
+    }
+  }
+
   if (!res.ok) {
     const errObj = data.error as { message?: string; code?: string } | undefined;
     const msg =

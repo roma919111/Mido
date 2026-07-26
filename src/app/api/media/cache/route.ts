@@ -1,4 +1,8 @@
 import { NextResponse } from "next/server";
+import {
+  getBytePlusVideoTask,
+  parseBytePlusHistoryId,
+} from "@/lib/byteplus-ark";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { updateAsset } from "@/lib/db";
 import {
@@ -20,6 +24,20 @@ type Body = {
   clarity?: boolean;
 };
 
+async function resolveHistoryUrl(historyId: string): Promise<string> {
+  const bpId = parseBytePlusHistoryId(historyId);
+  if (bpId) {
+    const task = await getBytePlusVideoTask(bpId);
+    return task.content?.video_url || "";
+  }
+  const result = await callOpenArtTool("openart_creation_get", { historyId });
+  const payload = parseToolPayload(result);
+  if (result.isError) {
+    throw new Error(String(payload.error || "Failed to resolve historyId"));
+  }
+  return collectMediaUrls(payload)[0] || "";
+}
+
 export async function POST(request: Request) {
   try {
     const user = await getCurrentUser();
@@ -31,17 +49,7 @@ export async function POST(request: Request) {
     let videoUrl = body.videoUrl?.trim() || "";
 
     if (!videoUrl && body.historyId?.trim()) {
-      const result = await callOpenArtTool("openart_creation_get", {
-        historyId: body.historyId.trim(),
-      });
-      const payload = parseToolPayload(result);
-      if (result.isError) {
-        return NextResponse.json(
-          { error: String(payload.error || "Failed to resolve historyId") },
-          { status: 422 },
-        );
-      }
-      videoUrl = collectMediaUrls(payload)[0] || "";
+      videoUrl = await resolveHistoryUrl(body.historyId.trim());
     }
 
     if (!videoUrl) {
@@ -54,11 +62,7 @@ export async function POST(request: Request) {
     } catch (firstErr) {
       // One more resolve via historyId when CDN fetch flaps.
       if (body.historyId?.trim()) {
-        const result = await callOpenArtTool("openart_creation_get", {
-          historyId: body.historyId.trim(),
-        });
-        const payload = parseToolPayload(result);
-        const refreshed = collectMediaUrls(payload)[0] || "";
+        const refreshed = await resolveHistoryUrl(body.historyId.trim());
         if (refreshed && refreshed !== videoUrl) {
           localUrl = await cacheVideoLocally(refreshed, {
             clarity: Boolean(body.clarity),

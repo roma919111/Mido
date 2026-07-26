@@ -1,4 +1,9 @@
 import { NextResponse } from "next/server";
+import {
+  getBytePlusVideoTask,
+  mapBytePlusStatus,
+  parseBytePlusHistoryId,
+} from "@/lib/byteplus-ark";
 import { getCurrentUser } from "@/lib/customer-auth";
 import {
   listAssetsForUser,
@@ -35,12 +40,54 @@ function needsLocalBrand(asset: {
   return true;
 }
 
-/** Refresh running assets from OpenArt; brand free Veronix clips locally. */
+/** Refresh running assets from BytePlus (primary) or legacy OpenArt ids. */
 async function syncRunningAssets(userId: string) {
   const assets = await listAssetsForUser(userId, { includeHidden: true });
   const running = assets.filter((a) => a.status === "running" && a.historyId).slice(0, 8);
   for (const asset of running) {
     try {
+      const bpId = parseBytePlusHistoryId(asset.historyId || "");
+      if (bpId) {
+        const task = await getBytePlusVideoTask(bpId);
+        const status = mapBytePlusStatus(task.status);
+        const videoUrl = task.content?.video_url || "";
+        if (videoUrl || status === "COMPLETED") {
+          let finalUrl = videoUrl || asset.url;
+          if (
+            finalUrl &&
+            needsLocalBrand({
+              ...asset,
+              url: finalUrl,
+              status: "completed",
+            })
+          ) {
+            try {
+              finalUrl = await appendVyronixOutro(finalUrl);
+            } catch {
+              // keep remote URL
+            }
+          }
+          await updateAsset(asset.id, userId, {
+            url: finalUrl,
+            status: "completed",
+            error: undefined,
+          });
+        } else if (status === "FAILED") {
+          const errMsg =
+            typeof task.error === "string"
+              ? task.error
+              : task.error && typeof task.error === "object"
+                ? String(task.error.message || task.error.code || "BytePlus generation failed")
+                : "BytePlus generation failed";
+          await updateAsset(asset.id, userId, {
+            status: "failed",
+            error: errMsg,
+          });
+        }
+        continue;
+      }
+
+      // Legacy OpenArt history ids only (pre–BytePlus-only).
       const result = await callOpenArtTool("openart_creation_get", {
         historyId: asset.historyId,
       });
@@ -61,7 +108,7 @@ async function syncRunningAssets(userId: string) {
           try {
             finalUrl = await appendVyronixOutro(finalUrl);
           } catch {
-            // Keep OpenArt URL; client brand-outro may still succeed.
+            // Keep remote URL; client brand-outro may still succeed.
           }
         }
         await updateAsset(asset.id, userId, {
@@ -80,7 +127,7 @@ async function syncRunningAssets(userId: string) {
     }
   }
 
-  // Brand any completed free Veronix clips that still point at OpenArt CDN.
+  // Brand any completed free Veronix clips that still point at a remote CDN.
   const latest = await listAssetsForUser(userId);
   for (const asset of latest.filter(needsLocalBrand).slice(0, 4)) {
     try {

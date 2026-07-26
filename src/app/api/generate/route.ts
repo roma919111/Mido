@@ -17,24 +17,12 @@ import {
 import {
   durationBoundsForModel,
   getCatalogModel,
-  resolveMcpModel,
   setLiveCatalogCache,
 } from "@/lib/model-catalog";
 import { loadSyncedCatalog } from "@/lib/openart-catalog-sync";
-import { audioParamForMcpModel, mapResolutionForMcpModel } from "@/lib/model-params";
-import {
-  callOpenArtTool,
-  collectMediaUrls,
-  getHistoryId,
-  OpenArtConfigError,
-  parseToolPayload,
-} from "@/lib/openart-mcp";
-import type { VisualReference } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
-
-const MCP_ENDPOINT = process.env.OPENART_MCP_URL ?? "https://mcp.openart.ai/mcp";
 
 type GenBody = {
   modelIds?: string[];
@@ -45,40 +33,13 @@ type GenBody = {
   resolution?: string;
   duration?: number;
   generateAudio?: boolean;
-  startFrame?: VisualReference | null;
-  endFrame?: VisualReference | null;
-  referenceImages?: VisualReference[];
+  startFrame?: import("@/lib/types").VisualReference | null;
+  endFrame?: import("@/lib/types").VisualReference | null;
+  referenceImages?: import("@/lib/types").VisualReference[];
   waitForResult?: boolean;
   /** Intermediate multi-shot clip — hidden from Assets; final stitch is shown */
   sequencePart?: boolean;
 };
-
-async function waitForCreation(historyId: string, attempts = 2) {
-  let lastPayload: Record<string, unknown> = {};
-  let lastRaw: unknown = null;
-
-  for (let i = 0; i < attempts; i += 1) {
-    const waitResult = await callOpenArtTool("openart_creation_wait", {
-      historyId,
-      timeoutSeconds: 40,
-    });
-    lastRaw = waitResult;
-    lastPayload = parseToolPayload(waitResult);
-    if (waitResult.isError) {
-      return { status: "FAILED", payload: lastPayload, raw: lastRaw };
-    }
-    const status = String(
-      lastPayload.status ?? lastPayload.state ?? lastPayload.resultStatus ?? "",
-    ).toUpperCase();
-    if (["COMPLETED", "FAILED", "CANCELLED"].includes(status)) {
-      return { status, payload: lastPayload, raw: lastRaw };
-    }
-    const urls = collectMediaUrls(lastPayload);
-    if (urls.length > 0) return { status: "COMPLETED", payload: lastPayload, raw: lastRaw };
-  }
-
-  return { status: "STILL_RUNNING", payload: lastPayload, raw: lastRaw };
-}
 
 function resolveToolMode(media: "image" | "video", hasStart: boolean, hasRefs: boolean) {
   if (media === "image") return hasRefs ? "image2image" : "text2image";
@@ -88,7 +49,6 @@ function resolveToolMode(media: "image" | "video", hasStart: boolean, hasRefs: b
 
 export async function POST(request: Request) {
   try {
-    // Prefer last OpenArt-synced catalog so every MCP model resolves correctly.
     const synced = await loadSyncedCatalog();
     if (synced) setLiveCatalogCache({ image: synced.image, video: synced.video });
 
@@ -100,11 +60,21 @@ export async function POST(request: Request) {
       );
     }
 
+    if (!isBytePlusConfigured()) {
+      return NextResponse.json(
+        {
+          error: "توليد الفيديو عبر BytePlus غير مُعدّ على السيرفر (BYTEPLUS_API_KEY).",
+          provider: "byteplus",
+          needsOwnerSetup: true,
+        },
+        { status: 503 },
+      );
+    }
+
     const body = (await request.json()) as GenBody;
     const prompt = body.prompt?.trim();
     const requestedMedia = body.media ?? "video";
     const modelIds = [...new Set(body.modelIds?.filter(Boolean) ?? [])].slice(0, 4);
-    const waitForResult = body.waitForResult === true;
 
     if (!prompt) {
       return NextResponse.json({ error: "prompt is required" }, { status: 400 });
@@ -134,7 +104,7 @@ export async function POST(request: Request) {
       body.mode ||
       resolveToolMode(media, Boolean(body.startFrame), Boolean(body.referenceImages?.length));
 
-    // Quote exact OpenArt costs for all selected models
+    // Pricing may still use the cached OpenArt cost table; generation is BytePlus only.
     const quotes = [];
     for (const modelId of modelIds) {
       quotes.push(
@@ -148,7 +118,7 @@ export async function POST(request: Request) {
             duration: body.duration,
             generateAudio: body.generateAudio,
           },
-          { allowCache: false },
+          { allowCache: true },
         ),
       );
     }
@@ -222,40 +192,14 @@ export async function POST(request: Request) {
     const results = [];
     for (const quote of billedQuotes) {
       const catalog = getCatalogModel(quote.modelId);
-      const mcpModel = catalog ? resolveMcpModel(catalog) : quote.mcpModel;
-      const toolName = "openart_generate_video";
-
-      const hasResolutionControl = Array.isArray(catalog?.resolutions)
-        ? catalog.resolutions.length > 0
-        : true;
       const uiResolution = freeTrial
         ? FREE_VERONIX_RESOLUTION
         : body.resolution || catalog?.resolutionDefault || "720p";
-      const mappedResolution = hasResolutionControl
-        ? mapResolutionForMcpModel(mcpModel, uiResolution)
-        : undefined;
-      // Free trial: model renders 4s; stock intro is prepended locally afterward.
       const bounds = durationBoundsForModel(catalog);
       const requestedDuration = body.duration ?? bounds.max;
       const modelDuration = freeTrial
         ? FREE_VERONIX_MODEL_DURATION_SECONDS
         : Math.min(bounds.max, Math.max(bounds.min, requestedDuration));
-      const params: Record<string, unknown> = {
-        prompt,
-        videoCount: 1,
-        duration: modelDuration,
-        ...(mappedResolution ? { resolution: mappedResolution } : {}),
-        // Product rule: video output is locked to 16:9.
-        aspectRatio: "16:9",
-        ...audioParamForMcpModel(
-          mcpModel,
-          freeTrial ? true : body.generateAudio,
-          catalog?.audioParam,
-        ),
-        autoEnhancePrompt: false,
-        ...(body.startFrame ? { startFrame: body.startFrame } : {}),
-        ...(body.endFrame ? { endFrame: body.endFrame } : {}),
-      };
 
       const asset = await createAsset({
         userId: user.id,
@@ -271,134 +215,50 @@ export async function POST(request: Request) {
       });
 
       try {
-        // Primary: BytePlus ModelArk for Veronix video. OpenArt kept as fallback.
-        const useBytePlus =
-          media === "video" &&
-          quote.modelId === VERONIX_MODEL_ID &&
-          isBytePlusConfigured();
-
-        if (useBytePlus) {
-          try {
-            const startUrl = resolvePublicMediaUrl(body.startFrame);
-            const task = await createBytePlusVideoTask({
-              prompt,
-              duration: modelDuration,
-              ratio: "16:9",
-              generateAudio: freeTrial ? true : Boolean(body.generateAudio),
-              watermark: false,
-              startFrameUrl: startUrl,
-              resolution: uiResolution,
-            });
-            const historyId = toBytePlusHistoryId(task.id);
-            await updateAsset(asset.id, user.id, {
-              historyId,
-              url: "",
-              status: "running",
-            });
-            results.push({
-              assetId: asset.id,
-              modelId: quote.modelId,
-              historyId,
-              status: "running",
-              urls: [] as string[],
-              creditsUsed: quote.totalCredits,
-              freeTrial,
-              needsBrandOutro: freeTrial,
-              live: true,
-              provider: "byteplus",
-              tool: "byteplus_contents_generations",
-              quote,
-            });
-            continue;
-          } catch (bpErr) {
-            const bpMsg =
-              bpErr instanceof Error ? bpErr.message : "BytePlus generation failed";
-            // ModelNotOpen / misconfig → fall through to OpenArt backup.
-            console.warn("[veronix] BytePlus primary failed, OpenArt fallback:", bpMsg);
-          }
-        }
-
-        const generateResult = await callOpenArtTool(toolName, {
-          model: mcpModel,
-          mode: quote.mode,
-          params,
+        const startUrl = resolvePublicMediaUrl(body.startFrame);
+        const task = await createBytePlusVideoTask({
+          prompt,
+          duration: modelDuration,
+          ratio: "16:9",
+          generateAudio: freeTrial ? true : Boolean(body.generateAudio),
+          watermark: false,
+          startFrameUrl: startUrl,
+          resolution: uiResolution,
         });
-        const generatePayload = parseToolPayload(generateResult);
-
-        if (generateResult.isError) {
-          const nestedError =
-            typeof generatePayload.error === "string"
-              ? generatePayload.error
-              : "Veronix generation failed";
-          await updateAsset(asset.id, user.id, { status: "failed", error: nestedError });
-          if (!freeTrial && quote.totalCredits > 0) {
-            await adjustCredits(user.id, quote.totalCredits);
-          }
-          results.push({
-            modelId: quote.modelId,
-            error: nestedError,
-            creditsUsed: 0,
-            freeTrial,
-            details: generatePayload,
-          });
-          continue;
-        }
-
-        const historyId = getHistoryId(generatePayload);
-        let urls: string[] = collectMediaUrls(generatePayload);
-        let status = String(generatePayload.status ?? "PENDING").toUpperCase();
-
-        if (waitForResult && historyId) {
-          const waited = await waitForCreation(historyId);
-          urls = collectMediaUrls(waited.payload);
-          status = waited.status;
-        }
-
-        const finalStatus =
-          status === "FAILED"
-            ? "failed"
-            : urls.length || status === "COMPLETED"
-              ? "completed"
-              : "running";
-
+        const historyId = toBytePlusHistoryId(task.id);
         await updateAsset(asset.id, user.id, {
-          historyId: historyId || undefined,
-          url: urls[0] || "",
-          status: finalStatus,
-          error: finalStatus === "failed" ? String(generatePayload.error || "failed") : undefined,
-          creditsUsed: finalStatus === "failed" ? 0 : quote.totalCredits,
+          historyId,
+          url: "",
+          status: "running",
         });
-
-        if (finalStatus === "failed" && !freeTrial && quote.totalCredits > 0) {
-          await adjustCredits(user.id, quote.totalCredits);
-        }
-
         results.push({
           assetId: asset.id,
           modelId: quote.modelId,
           historyId,
-          status: finalStatus,
-          urls,
-          creditsUsed: finalStatus === "failed" ? 0 : quote.totalCredits,
+          status: "running",
+          urls: [] as string[],
+          creditsUsed: quote.totalCredits,
           freeTrial,
-          needsBrandOutro: freeTrial && finalStatus !== "failed",
+          needsBrandOutro: freeTrial,
           live: true,
-          provider: "openart",
-          mcpEndpoint: MCP_ENDPOINT,
-          tool: toolName,
+          provider: "byteplus",
+          tool: "byteplus_contents_generations",
           quote,
         });
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Generation failed";
+        const message = err instanceof Error ? err.message : "BytePlus generation failed";
+        console.error("[veronix] BytePlus generation failed (no OpenArt fallback):", message);
         await updateAsset(asset.id, user.id, { status: "failed", error: message });
         if (!freeTrial && quote.totalCredits > 0) {
           await adjustCredits(user.id, quote.totalCredits);
         }
         results.push({
           modelId: quote.modelId,
+          assetId: asset.id,
           error: message,
           creditsUsed: 0,
           freeTrial,
+          provider: "byteplus",
         });
       }
     }
@@ -411,21 +271,10 @@ export async function POST(request: Request) {
       creditsRemaining: refreshed?.credits ?? 0,
       freeVeronixUsed: Boolean(refreshed?.freeVeronixUsed),
       live: true,
-      mcpEndpoint: MCP_ENDPOINT,
+      provider: "byteplus",
       billing: freeTrial ? "free_veronix_trial" : "customer_wallet",
     });
   } catch (error) {
-    if (error instanceof OpenArtConfigError) {
-      return NextResponse.json(
-        {
-          error: error.message,
-          live: false,
-          needsOwnerSetup: error.needsAuth,
-          mcpEndpoint: MCP_ENDPOINT,
-        },
-        { status: 401 },
-      );
-    }
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Generation failed" },
       { status: 500 },

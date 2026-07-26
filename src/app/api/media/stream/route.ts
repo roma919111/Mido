@@ -2,6 +2,10 @@ import { createReadStream } from "node:fs";
 import { access } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { NextResponse } from "next/server";
+import {
+  getBytePlusVideoTask,
+  parseBytePlusHistoryId,
+} from "@/lib/byteplus-ark";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { isAllowedMediaHost } from "@/lib/media-proxy";
 import {
@@ -36,6 +40,13 @@ async function resolveRemoteUrl(request: Request): Promise<{
 
   const historyId = searchParams.get("historyId")?.trim();
   if (historyId) {
+    const bpId = parseBytePlusHistoryId(historyId);
+    if (bpId) {
+      const task = await getBytePlusVideoTask(bpId);
+      const url = task.content?.video_url;
+      if (!url) return null;
+      return { url, mediaType };
+    }
     const result = await callOpenArtTool("openart_creation_get", { historyId });
     const payload = parseToolPayload(result);
     if (result.isError) return null;
