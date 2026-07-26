@@ -83,9 +83,8 @@ const chained = buildChainedIdea({
   entityGenders: genders,
 });
 check("chained flag", chained.chained);
-check("chained keeps concrete entities or pose", /الحالة النهائية|ليغينغ|قميص/.test(chained.idea), chained.idea);
+check("chained keeps concrete entities or pose", /ليغينغ|قميص|يرفع|رفع/.test(chained.idea), chained.idea);
 
-// Multi-clause: male noun must stay male on later ثم beats (regression for gender swap)
 const multi = injectEntitiesIntoAction(
   "أنثى تسدد لكمة على وجه رجل ثم يسقط الرجل ثم تمسكه الأنثى ثم ترفعه ثم ترميه ثم تؤدي وقفة يدين ثم يسقط الرجل ممدد على بطنه فوق منتصف ساقيها",
   entities,
@@ -106,10 +105,18 @@ const continuity = applyIntraPromptContinuity(
   genders,
 );
 check(
-  "handstand held during male fall",
-  /تحافظ.*وقفة|وقفة يدين|حالتها السابقة/.test(continuity) &&
+  "handstand / air described vividly",
+  /وقفة يدين|انشقاق/.test(continuity) &&
+    /هواء|يتطاير|متفاجئ|معلّق|مندفع/.test(continuity) &&
     /رجل قصير/.test(continuity) &&
     /يسقط/.test(continuity),
+  continuity,
+);
+check(
+  "no meta previous-state phrasing",
+  !/حالته السابقة|حالتها السابقة|مبني مباشرة|تحافظ تماماً|دون تغيير|الحالة النهائية الثابتة/.test(
+    continuity,
+  ),
   continuity,
 );
 check(
@@ -120,7 +127,6 @@ check(
   continuity,
 );
 
-// GENERAL RULE (not handstand-specific): later beat keeps earlier state of the other person
 const general = applyIntraPromptContinuity(
   "رجل يجلس على كرسي ثم أنثى تعطيه كوباً ثم يضحك الرجل",
   entities,
@@ -128,13 +134,13 @@ const general = applyIntraPromptContinuity(
   genders,
 );
 check(
-  "general rule: she acts while he keeps sitting",
-  /تحافظ|حالته السابقة|يجلس/.test(general) && /تعطيه/.test(general),
+  "general rule: sitting described while she acts",
+  /جالس|كرسي/.test(general) && /تعطيه/.test(general) && !/حالته السابقة/.test(general),
   general,
 );
 check(
-  "general rule: final states for both",
-  /الحالة النهائية الثابتة/.test(general),
+  "general rule: vivid final tableau",
+  /اللحظة الأخيرة|Final held moment/.test(general),
   general,
 );
 

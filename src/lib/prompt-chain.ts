@@ -3,8 +3,9 @@
  *
  * GENERAL RULE (not tied to any specific move like handstand/body-lock):
  * After each beat, every character ends in a state. The next beat builds on
- * those states. Anyone whose action is not explicitly changed MUST keep their
- * previous state; the new action is physically relative to that held state.
+ * those states. Anyone not explicitly moved keeps living in that state —
+ * described vividly (hair, expression, tension, atmosphere), NEVER with meta
+ * phrases like "يحافظ على حالته السابقة".
  *
  * Entity injection replaces generic person nouns with concrete vision phrases.
  */
@@ -287,42 +288,26 @@ export function applyIntraPromptContinuity(
 
     const continuity: string[] = [];
     if (i > 0) {
-      // Rule: anyone not moved by this beat keeps prior state.
+      let describedFemale = false;
+      let describedMale = false;
+
+      // Living atmosphere for anyone NOT moved — never meta "previous state".
       if (!touched.female && prevFemale) {
         continuity.push(
-          arabic
-            ? `بينما ${femalePhrase || "الأنثى"} تحافظ تماماً على حالتها السابقة (${prevFemale}) دون تغيير`
-            : `while ${femalePhrase || "the woman"} fully maintains her previous state (${prevFemale})`,
+          livingHeldAside(femalePhrase || (arabic ? "الأنثى" : "the woman"), prevFemale, "female", arabic, i),
         );
+        describedFemale = true;
       }
       if (!touched.male && prevMale) {
         continuity.push(
-          arabic
-            ? `بينما ${malePhrase || "الرجل"} يحافظ تماماً على حالته السابقة (${prevMale}) دون تغيير`
-            : `while ${malePhrase || "the man"} fully maintains his previous state (${prevMale})`,
+          livingHeldAside(malePhrase || (arabic ? "الرجل" : "the man"), prevMale, "male", arabic, i),
         );
+        describedMale = true;
       }
 
-      // Even when the actor moves, the OTHER's held state is the base of the new action.
-      if (touched.female && !touched.male && prevMale) {
-        continuity.push(
-          arabic
-            ? `وهذا الفعل مبني مباشرة على حالة ${malePhrase || "الرجل"} السابقة (${prevMale})`
-            : `and this action builds directly on ${malePhrase || "the man"}'s previous state (${prevMale})`,
-        );
-      }
-      if (touched.male && !touched.female && prevFemale) {
-        continuity.push(
-          arabic
-            ? `وهذا الفعل مبني مباشرة على حالة ${femalePhrase || "الأنثى"} السابقة (${prevFemale})`
-            : `and this action builds directly on ${femalePhrase || "the woman"}'s previous state (${prevFemale})`,
-        );
-      }
-
-      // If the actor also still holds an earlier pose component (e.g. adds a move
-      // while remaining in a stance), say so when prior pose exists and clause
-      // doesn't clearly replace the whole body stance.
+      // Actor adds a secondary move while still living in an earlier stance.
       if (
+        !describedFemale &&
         touched.female &&
         prevFemale &&
         lockedFemale &&
@@ -331,13 +316,13 @@ export function applyIntraPromptContinuity(
         !/وقفة|انشقاق|handstand|جلوس/.test(raw)
       ) {
         continuity.push(
-          arabic
-            ? `مع بقائها في ${prevFemale}`
-            : `while remaining in ${prevFemale}`,
+          livingHeldAside(femalePhrase || (arabic ? "الأنثى" : "the woman"), prevFemale, "female", arabic, i + 23),
         );
         lockedFemale = mergePose(prevFemale, lockedFemale, arabic);
+        describedFemale = true;
       }
       if (
+        !describedMale &&
         touched.male &&
         prevMale &&
         lockedMale &&
@@ -346,12 +331,12 @@ export function applyIntraPromptContinuity(
         !/يسقط|ممدد|fall|land/.test(raw)
       ) {
         continuity.push(
-          arabic
-            ? `مع بقائه في ${prevMale}`
-            : `while remaining in ${prevMale}`,
+          livingHeldAside(malePhrase || (arabic ? "الرجل" : "the man"), prevMale, "male", arabic, i + 29),
         );
         lockedMale = mergePose(prevMale, lockedMale, arabic);
+        describedMale = true;
       }
+
     }
 
     if (continuity.length) {
@@ -364,32 +349,227 @@ export function applyIntraPromptContinuity(
   const joiner = arabic ? " ثم " : " then ";
   let idea = outClauses.join(joiner);
 
-  // Always close with the held final states of everyone we tracked.
+  // Close on a vivid held tableau — no "final state" meta wording.
   if (lockedFemale || lockedMale) {
-    if (arabic) {
-      const bits = [
-        lockedFemale
-          ? `${femalePhrase || "الأنثى"} تبقى في حالتها النهائية (${lockedFemale})`
-          : "",
-        lockedMale
-          ? `${malePhrase || "الرجل"} يبقى في حالته النهائية (${lockedMale})`
-          : "",
-      ].filter(Boolean);
-      idea += `. الحالة النهائية الثابتة: ${bits.join("، ")}`;
-    } else {
-      const bits = [
-        lockedFemale
-          ? `${femalePhrase || "the woman"} remains in final state (${lockedFemale})`
-          : "",
-        lockedMale
-          ? `${malePhrase || "the man"} remains in final state (${lockedMale})`
-          : "",
-      ].filter(Boolean);
-      idea += `. Final held state: ${bits.join("; ")}`;
-    }
+    const bits = [
+      lockedFemale
+        ? livingTableau(femalePhrase || (arabic ? "الأنثى" : "the woman"), lockedFemale, "female", arabic, 41)
+        : "",
+      lockedMale
+        ? livingTableau(malePhrase || (arabic ? "الرجل" : "the man"), lockedMale, "male", arabic, 43)
+        : "",
+    ].filter(Boolean);
+    idea += arabic
+      ? `. وفي اللحظة الأخيرة: ${bits.join("، و")}`
+      : `. In the final held moment: ${bits.join(", and ")}`;
   }
 
   return idea.replace(/\s+/g, " ").trim();
+}
+
+type PoseMood =
+  | "airborne"
+  | "handstand"
+  | "overhead_lift"
+  | "prone_on_legs"
+  | "sitting"
+  | "struck"
+  | "holding"
+  | "generic";
+
+function classifyPose(pose: string): PoseMood {
+  const p = pose || "";
+  if (/هواء|رمي|قبل السقوط|airborne|thrown|in the air/i.test(p)) return "airborne";
+  if (/وقفة\s*يدين|انشقاق|handstand|split/i.test(p)) return "handstand";
+  if (/مرفوع|فوق رأس|overhead|lifted/i.test(p)) return "overhead_lift";
+  if (/ممدد|منتصف\s*ساق|belly|across.*legs/i.test(p)) return "prone_on_legs";
+  if (/يجلس|جلوس|كرسي|sit(?:ting)?/i.test(p)) return "sitting";
+  if (/لكمة|ضربة|اشتباك|punch|struck/i.test(p)) return "struck";
+  if (/يمسك|تمسك|قفل|hold|lock|catch/i.test(p)) return "holding";
+  return "generic";
+}
+
+function pickVariant(options: string[], salt: number): string {
+  if (!options.length) return "";
+  return options[Math.abs(salt) % options.length]!;
+}
+
+/** Strip leading "بعد:" wrappers from generic poses. */
+function poseCore(pose: string): string {
+  return pose.replace(/^(?:بعد|after)\s*:\s*/i, "").trim();
+}
+
+/**
+ * Living aside for a character who continues their physical/emotional state.
+ * GENERAL for every action — vivid atmosphere, never "previous state" meta.
+ */
+export function livingHeldAside(
+  who: string,
+  pose: string,
+  gender: Gender,
+  arabic: boolean,
+  salt: number,
+): string {
+  const mood = classifyPose(pose);
+  const female = gender === "female";
+
+  if (arabic) {
+    switch (mood) {
+      case "airborne":
+        return pickVariant(
+          [
+            `بينما ${who} ما يزال في الهواء فوقها، جسده مرتخي منهك لا يسيطر على توازنه، شعره يتطاير للأعلى، وملامحه متفاجئة فاغرة`,
+            `و${who} معلّق في الهواء لحظةً، أطرافه مرتخية، قميصه يرفرف، عيناه متسعتان من المفاجأة`,
+            `فيما ${who} يندفع في الهواء، شعره يتطاير، تنفّسه مقطوع، وجهه بين الدهشة والعجز`,
+          ],
+          salt,
+        );
+      case "handstand":
+        return pickVariant(
+          [
+            `بينما ${who} ثابتة على يديها في انشقاق أفقي كامل، ساقاها ممدودتان بقوة، عضلات كتفيها مشدودة، وتنفّسها ثابت مركّز`,
+            `و${who} ما تزال مقلوبة على يديها، شعرها يتدلّى نحو الأرض، ساقان مفتوحتان بانشقاق حاد، وجسدها صلب كتمثال حي`,
+            `فيما ${who} تمسك وقفة اليدين بإتقان، أصابعها تغرس في الأرض، ساقاها مشدودتان أفقياً، ونظرها مركّز رغم انقلاب الجسد`,
+          ],
+          salt,
+        );
+      case "overhead_lift":
+        return female
+          ? pickVariant(
+              [
+                `بينما ${who} ترفعه فوق رأسها بعضلات مشدودة، ذراعاها ترتجفان خفيفاً من الجهد، وتعبيرها صارم واثق`,
+                `و${who} تُثبّته عالياً فوق رأسها، كتفاها مرتفعان، أنفاسها ثقيلة، ونظرها ثابت للأمام`,
+              ],
+              salt,
+            )
+          : pickVariant(
+              [
+                `بينما ${who} مرفوع فوق رأسها، جسده متدلٍّ منهك، قدماه عن الأرض، وشعره يتدلّى مع الجاذبية`,
+                `و${who} معلّق في الهواء فوقها عاجزاً عن الحركة، ذراعاه مرتخيتان، ووجهه متعب مذهول`,
+              ],
+              salt,
+            );
+      case "prone_on_legs":
+        return pickVariant(
+          [
+            `بينما ${who} ممدّد على بطنه فوق منتصف ساقيها، صدره يلامسها، وجهه قريب من الأرض، وجسده ثقيل بلا مقاومة`,
+            `و${who} مستلقٍ ممدوداً على ساقيها، أنفاسه قصيرة، شعره مبعثر على جبينه، ويداه مرتخيتان إلى الجانبين`,
+          ],
+          salt,
+        );
+      case "sitting":
+        return pickVariant(
+          [
+            `بينما ${who} ما يزال جالساً على الكرسي، ظهره مستند، يداه مرتاحتان على فخذيه، ونظره يتابع المشهد بثبات`,
+            `و${who} جالس في مكانه، كتفه مسترخٍ، قدماه ثابتتان على الأرض، وتعبيره هادئ منتظر`,
+          ],
+          salt,
+        );
+      case "struck":
+        return pickVariant(
+          [
+            `بينما ${who} ما يزال يترنّح من أثر الضربة، رأسه مائل، عيناه ضيّقتان، وجسده غير متوازن`,
+            `و${who} في لحظة الصدمة بعد الضربة، فكّه مشدود، كتفه متراجع، وتنفّسه متقطّع`,
+          ],
+          salt,
+        );
+      case "holding":
+        return pickVariant(
+          [
+            `بينما ${who} يُمسَك بإحكام، عضلاته مشدودة تحت القبضة، وجهه متوتّر، وحركته مقيدة`,
+            `و${who} في قبضة محكمة، كتفه مضغوط، تنفّسه ثقيل، ونظره مرتبك`,
+          ],
+          salt,
+        );
+      default: {
+        const core = poseCore(pose);
+        const still = female ? "ما تزال" : "ما يزال";
+        const poseWord = female ? "وضعيتها" : "وضعيته";
+        const hisHer = female ? "تعبيرها" : "تعبيره";
+        const body = female ? "جسدها" : "جسده";
+        const carries = female ? "يحمل" : "يحمل";
+        return pickVariant(
+          [
+            `بينما ${who} ${still} في ${poseWord} (${core})، بتفاصيل حيّة في الوجه والشعر وحركة الملابس`,
+            `و${who} يظهر بوضوح في (${core})، ${hisHer} متفاعل، و${body} ${carries} توتر اللحظة`,
+            `فيما ${who} ${still} ضمن المشهد: ${core}، مع إحساس واقعي بالوزن والتنفّس والمفاجأة`,
+          ],
+          salt,
+        );
+      }
+    }
+  }
+
+  // English
+  switch (mood) {
+    case "airborne":
+      return pickVariant(
+        [
+          `while ${who} is still mid-air above her, body limp and helpless, hair flying upward, face stunned and open-mouthed`,
+          `and ${who} hangs in the air for a beat, limbs loose, shirt fluttering, eyes wide with shock`,
+        ],
+        salt,
+      );
+    case "handstand":
+      return pickVariant(
+        [
+          `while ${who} holds a perfect handstand with a full horizontal split, shoulders locked, breath steady and focused`,
+          `and ${who} stays inverted on her hands, hair hanging toward the floor, legs stretched in a sharp split`,
+        ],
+        salt,
+      );
+    case "prone_on_legs":
+      return pickVariant(
+        [
+          `while ${who} lies belly-down across mid-legs, heavy and unresistant, breath short, hair messy on his brow`,
+        ],
+        salt,
+      );
+    case "sitting":
+      return pickVariant(
+        [
+          `while ${who} remains seated on the chair, back supported, hands resting, gaze following the moment`,
+        ],
+        salt,
+      );
+    default:
+      return `while ${who} is still in (${poseCore(pose)}), with vivid face, hair, and clothing motion`;
+  }
+}
+
+/** The new action happens against another character's living presence. */
+function livingRelativeTo(
+  who: string,
+  pose: string,
+  gender: Gender,
+  arabic: boolean,
+  salt: number,
+): string {
+  // Same vivid held atmosphere — continuity is shown by description, not meta links.
+  return livingHeldAside(who, pose, gender, arabic, salt);
+}
+
+function livingTableau(
+  who: string,
+  pose: string,
+  gender: Gender,
+  arabic: boolean,
+  salt: number,
+): string {
+  const mood = classifyPose(pose);
+  if (arabic) {
+    if (mood === "handstand") {
+      return `${who} ثابتة على يديها بانشقاق أفقي كامل، جسدها مشدود كتمثال حي`;
+    }
+    if (mood === "prone_on_legs") {
+      return `${who} ممدّد على بطنه فوق منتصف ساقيها، ثقيل بلا مقاومة`;
+    }
+    if (mood === "airborne") {
+      return `${who} ما يزال في الهواء، شعره يتطاير، ووجهه متفاجئ`;
+    }
+    return `${who} في ${poseCore(pose)}، بتفاصيل حيّة في التعبير والجسد`;
+  }
+  return `${who} in ${poseCore(pose)}, with vivid expression and body detail`;
 }
 
 /**
@@ -504,8 +684,6 @@ export function buildChainedIdea(input: {
     input.previous?.entityGenders ||
     entities.map(() => "unknown" as const);
 
-  // Multi-beat prompts (ثم… ثم…) get pose continuity even on first enhance.
-  const multiBeat = splitActionClauses(rawAction, arabic).length > 1;
   const grounded = entities.length
     ? applyIntraPromptContinuity(rawAction, entities, arabic, genders)
     : rawAction;
@@ -514,32 +692,30 @@ export function buildChainedIdea(input: {
     return { chained: false, idea: grounded };
   }
 
-  const prevPose = input.previous.finalPose;
   const prevChars = input.previous.characterPoses;
-  const holdBits: string[] = [];
+  const femaleWho =
+    entities.find((_, i) => genders[i] === "female") ||
+    (arabic ? "الأنثى" : "the woman");
+  const maleWho =
+    entities.find((_, i) => genders[i] === "male") ||
+    (arabic ? "الرجل" : "the man");
+
+  const livingOpen: string[] = [];
   if (prevChars?.female) {
-    holdBits.push(
-      arabic
-        ? `الأنثى تبدأ من: ${prevChars.female}`
-        : `woman starts from: ${prevChars.female}`,
-    );
+    livingOpen.push(livingTableau(femaleWho, prevChars.female, "female", arabic, 3));
   }
   if (prevChars?.male) {
-    holdBits.push(
-      arabic
-        ? `الرجل يبدأ من: ${prevChars.male}`
-        : `man starts from: ${prevChars.male}`,
-    );
+    livingOpen.push(livingTableau(maleWho, prevChars.male, "male", arabic, 5));
   }
 
   if (arabic) {
     return {
       chained: true,
       idea: [
-        `بدءاً من الحالة النهائية السابقة (${prevPose})`,
-        holdBits.length ? holdBits.join("؛ ") : "",
-        `ينتقل المشهد بسلاسة إلى: ${grounded}`,
-        "بدون إعادة تهيئة المشهد من الصفر، مع الحفاظ على وضعيات الشخصيات غير المذكورة كمتغيّرة",
+        livingOpen.length
+          ? `المشهد متصل حيّاً: ${livingOpen.join("، و")}`
+          : `المشهد متصل بحركة طبيعية دون إعادة تهيئة`,
+        `ثم ينساب إلى: ${grounded}`,
       ]
         .filter(Boolean)
         .join(" "),
@@ -549,10 +725,10 @@ export function buildChainedIdea(input: {
   return {
     chained: true,
     idea: [
-      `Starting from the previous final state (${prevPose})`,
-      holdBits.length ? holdBits.join("; ") : "",
-      `the scene transitions smoothly into: ${grounded}`,
-      "without resetting the scene, preserving any character pose not explicitly changed",
+      livingOpen.length
+        ? `The scene continues live: ${livingOpen.join(", and ")}`
+        : `The scene continues naturally without a reset`,
+      `then flows into: ${grounded}`,
     ]
       .filter(Boolean)
       .join(" "),
