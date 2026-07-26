@@ -17,7 +17,7 @@ export interface UserRecord {
   avatarUrl?: string;
   credits: number;
   planId: PlanId;
-  /** One free 6s Veronix video (4s model + 2s outro) already used */
+  /** One free Veronix video (stock intro + 4s model) already used */
   freeVeronixUsed?: boolean;
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;

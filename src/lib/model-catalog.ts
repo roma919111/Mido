@@ -249,7 +249,7 @@ const VIDEO_MODELS_BASE: CatalogModel[] = [
     mcpId: "byte-plus-seedance-2-mini",
     modes: ["text2video", "image2video", "element2video"],
     badge: "حصري",
-    tagline: "موديل فيديو حصري — أول فيديو 6 ثوانٍ مجاني (480p)",
+    tagline: "موديل فيديو حصري — أول فيديو مجاني (مقدمة Veronix + 4 ثوانٍ · 480p)",
     available: true,
   },
   { id: "seedance-2", name: "Seedance 2.0", kind: "video", mcpId: "byte-plus-seedance-2", modes: ["text2video", "image2video", "element2video"], available: true },

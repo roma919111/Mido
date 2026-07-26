@@ -76,6 +76,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     mediaType: "image" | "video";
     historyId?: string;
     status: "running" | "completed" | "failed";
+    freeTrial?: boolean;
   } | null>(null);
   const [shareNote, setShareNote] = useState<string | null>(null);
   const [genStartedAt, setGenStartedAt] = useState<number | null>(null);
@@ -104,7 +105,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     if (freeLocked) {
       setDuration(FREE_VERONIX_DURATION_SECONDS);
       setResolution(FREE_VERONIX_RESOLUTION);
-      setGenerateAudio(false);
+      // Keep OpenArt audio for the free clip; stock intro also has sound.
+      setGenerateAudio(true);
       return;
     }
     setDuration(options.duration.max);
@@ -122,7 +124,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     if (lockedMedia) setMedia(lockedMedia);
   }, [lockedMedia]);
 
-  // Free first visit: lock Veronix defaults to 6s / 480p.
+  // Free first visit: lock Veronix defaults to 4s model / 480p (+ stock intro).
   useEffect(() => {
     if (!freeSettingsLocked) return;
     setDuration(FREE_VERONIX_DURATION_SECONDS);
@@ -407,15 +409,17 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         mediaType: input.mediaType,
         historyId: input.historyId,
         status: "completed",
+        freeTrial: true,
       });
       return;
     }
-    setStatus("Generating…");
+    setStatus("جاري إضافة مقدمة Veronix…");
     setPreview({
       url: "",
       mediaType: "video",
       historyId: input.historyId,
       status: "running",
+      freeTrial: true,
     });
 
     let lastError: Error | null = null;
@@ -434,12 +438,12 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           },
         );
         if (!res.ok || !data.url) throw new Error(data.error || "تعذر تجهيز الفيديو");
-        // Local same-origin file — plays without OpenArt CDN / stream proxy.
         setPreview({
           url: data.url,
           mediaType: "video",
           historyId: input.historyId,
           status: "completed",
+          freeTrial: true,
         });
         setStatus(null);
         return;
@@ -454,9 +458,23 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       mediaType: "video",
       historyId: input.historyId,
       status: "failed",
+      freeTrial: true,
     });
     setError(lastError?.message || "تعذر عرض الفيديو بعد التوليد");
     setStatus(null);
+  }
+
+  function handleFreeTrialPlay(event: React.SyntheticEvent<HTMLVideoElement>) {
+    // Free-trial Play → registration so the customer can watch it from their account.
+    if (!preview?.freeTrial) return;
+    if (user) return;
+    event.preventDefault();
+    try {
+      event.currentTarget.pause();
+    } catch {
+      // ignore
+    }
+    router.push(`/signup?next=${encodeURIComponent("/assets")}`);
   }
 
   async function pollPreview(
@@ -757,7 +775,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         !user?.freeVeronixUsed && (
           <div className="rounded-2xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-50">
             أول فيديو على <span className="font-semibold">Veronix</span> مجاني مرة واحدة —{" "}
-            <span className="font-semibold tabular-nums">6 ثوانٍ · 480p</span>.
+            <span className="font-semibold">مقدمة Veronix + 4 ثوانٍ · 480p</span>.
           </div>
         )}
 
@@ -1002,7 +1020,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             <div className="flex justify-between text-[10px] text-white/35">
               <span>{durationBounds.min}s</span>
               {selectedModelId === VERONIX_MODEL_ID && !user?.freeVeronixUsed ? (
-                <span className="text-[#22f0ff]">6s مجاني</span>
+                <span className="text-[#22f0ff]">تجربة مجانية</span>
               ) : (
                 <span className="text-[#22f0ff]">أقصى {durationBounds.max}s</span>
               )}
@@ -1013,9 +1031,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 <input
                   type="checkbox"
                   checked={generateAudio}
+                  disabled={freeSettingsLocked}
                   onChange={(e) => setGenerateAudio(e.target.checked)}
                 />
                 توليد صوت
+                {freeSettingsLocked ? (
+                  <span className="text-[10px] text-white/40">(مفعّل في التجربة المجانية)</span>
+                ) : null}
               </label>
             ) : (
               <p className="mt-2 text-xs text-white/40">
@@ -1080,6 +1102,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 controls
                 playsInline
                 controlsList="nodownload"
+                onPlay={handleFreeTrialPlay}
                 className="h-full w-full object-contain"
               />
             ) : preview?.url && preview.mediaType === "image" ? (
@@ -1125,6 +1148,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               </div>
             )}
           </div>
+          {preview?.freeTrial ? (
+            <div className="border-t border-amber-500/20 bg-amber-500/10 px-4 py-2 text-center text-[11px] text-amber-100/90">
+              تجربة مجانية · مقدمة Veronix + 4 ثوانٍ · 480p · مع صوت
+            </div>
+          ) : null}
           <div className="flex gap-2 p-3">
             <button
               type="button"

@@ -110,7 +110,7 @@ function buildCatalogFromOpenArt(models: OpenArtModelRow[]): SyncedCatalogFile {
         available: true,
         badge: isVeronix ? "حصري" : undefined,
         tagline: isVeronix
-          ? "موديل فيديو حصري — أول فيديو 6 ثوانٍ مجاني (480p)"
+          ? "موديل فيديو حصري — أول فيديو مجاني (مقدمة Veronix + 4 ثوانٍ · 480p)"
           : row.description?.slice(0, 120),
         durationMin: fallback?.duration.min,
         durationMax: fallback?.duration.max,

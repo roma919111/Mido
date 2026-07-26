@@ -1,5 +1,13 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { PricingPage } from "@/components/veronix/PricingPage";
+
+export const metadata: Metadata = {
+  title: "الباقات والأسعار",
+  description:
+    "باقات Veronix.ai الشهرية وشحن الكريدت: الأساسية، برو 7200، الترا 14400. دفع آمن عبر Stripe.",
+  alternates: { canonical: "https://vyronix.app/pricing" },
+};
 
 export default function Page() {
   return (

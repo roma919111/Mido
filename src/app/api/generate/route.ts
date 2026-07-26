@@ -127,7 +127,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Free trial: single Veronix 6s package (4s model + 2s local VYRONIX outro).
+    // Free trial: stock Veronix intro + 4s Seedance clip (480p), once per account.
     const freeTrial =
       modelIds.length === 1 &&
       isFreeVeronixEligible(user, {
@@ -205,7 +205,7 @@ export async function POST(request: Request) {
       const mappedResolution = hasResolutionControl
         ? mapResolutionForMcpModel(mcpModel, uiResolution)
         : undefined;
-      // Free trial: model renders prompt for 4s only; 2s VYRONIX outro is added locally later.
+      // Free trial: model renders 4s; stock intro is prepended locally afterward.
       const bounds = durationBoundsForModel(catalog);
       const requestedDuration = body.duration ?? bounds.max;
       const modelDuration = freeTrial
@@ -231,7 +231,7 @@ export async function POST(request: Request) {
               aspectRatio: "16:9",
               ...audioParamForMcpModel(
                 mcpModel,
-                body.generateAudio,
+                freeTrial ? true : body.generateAudio,
                 catalog?.audioParam,
               ),
               autoEnhancePrompt: false,
