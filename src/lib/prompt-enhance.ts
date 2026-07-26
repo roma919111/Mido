@@ -3,7 +3,22 @@
  * Rewrites the user's core idea into a cinematic generation brief
  * based on subject, action, setting, and secondary motion physics.
  * Always replaces the field contents (never appends polish onto prior polish).
+ *
+ * Advanced path (enhancePromptWithContext):
+ * 1) Vision entity matching from uploaded reference images
+ * 2) State continuity / prompt chaining across sequential actions
  */
+
+import {
+  buildChainedIdea,
+  buildSceneState,
+  type SceneState,
+} from "@/lib/prompt-chain";
+import {
+  analyzeReferenceImages,
+  formatEntityBrief,
+  type VisionSceneBrief,
+} from "@/lib/prompt-vision";
 
 export type SceneAnalysis = {
   idea: string;
@@ -686,3 +701,124 @@ export function enhancePromptVariant(prompt: string, mode: string, emphasis: str
     : emphasis;
   return enhancePrompt(`${idea}. ${emphasisLine}`, mode);
 }
+
+export type EnhanceContext = {
+  imageUrls?: string[];
+  previousState?: SceneState | null;
+  /** When true, treat as continuation even without ثم/then if previousState exists */
+  forceChain?: boolean;
+};
+
+export type EnhanceWithContextResult = {
+  enhanced: string;
+  finalState: SceneState;
+  visionUsed: boolean;
+  chained: boolean;
+  entityBrief: string;
+  coreIdea: string;
+};
+
+function entityPhrasesFromVision(brief: VisionSceneBrief | null): string[] {
+  return (brief?.entities || [])
+    .map((e) => e.summary.trim())
+    .filter(Boolean)
+    .slice(0, 4);
+}
+
+/**
+ * Full enhance pipeline with optional vision entity injection + state chaining.
+ */
+export async function enhancePromptWithContext(
+  prompt: string,
+  mode: string,
+  context: EnhanceContext = {},
+): Promise<EnhanceWithContextResult> {
+  const rawIdea = extractCoreIdea(prompt);
+  if (!rawIdea) {
+    return {
+      enhanced: "",
+      finalState: buildSceneState({
+        action: "",
+        enhanced: "",
+        entityPhrases: [],
+        previous: context.previousState,
+      }),
+      visionUsed: false,
+      chained: false,
+      entityBrief: "",
+      coreIdea: "",
+    };
+  }
+
+  const imageUrls = (context.imageUrls || []).filter(Boolean);
+  let vision: VisionSceneBrief | null = null;
+  if (imageUrls.length) {
+    vision = await analyzeReferenceImages(imageUrls, rawIdea);
+  }
+
+  const arabic =
+    isArabic(rawIdea) ||
+    Boolean(context.previousState?.arabic) ||
+    Boolean(vision?.arabicPreferred);
+
+  let entities = entityPhrasesFromVision(vision);
+  if (!entities.length && context.previousState?.entities?.length) {
+    entities = context.previousState.entities;
+  }
+
+  // Soft fallback when images exist but vision API is not configured:
+  // keep identity locked to the uploaded reference appearance.
+  if (!entities.length && imageUrls.length) {
+    entities = arabic
+      ? ["الشخصية الظاهرة في الصورة المرجعية بملابسها وألوانها وملامحها"]
+      : ["the exact character from the reference image with their clothing, colors, and features"];
+    if ((rawIdea.match(/رجل|امرأة|man|woman|person/gi) || []).length >= 2) {
+      entities.push(
+        arabic
+          ? "الشخصية الثانية الظاهرة في الصورة المرجعية بملابسها وألوانها"
+          : "the second character from the reference image with their clothing and colors",
+      );
+    }
+  }
+
+  const previous = context.previousState || null;
+
+  const chainedBuild = buildChainedIdea({
+    action: rawIdea,
+    previous,
+    entityPhrases: entities,
+    forceChain: context.forceChain,
+  });
+
+  let groundedIdea = chainedBuild.idea;
+  if (vision?.setting) {
+    groundedIdea = arabic
+      ? `${groundedIdea}. المكان كما في الصورة: ${vision.setting}`
+      : `${groundedIdea}. Setting matches the reference image: ${vision.setting}`;
+  }
+  if (imageUrls.length) {
+    groundedIdea = arabic
+      ? `${groundedIdea}. طابق المظهر البصري للصورة/الصور المرفوعة بدقة (ملابس، ألوان، بشرة، ملامح) بدون استبدال الشخصيات.`
+      : `${groundedIdea}. Strictly match the uploaded reference appearance (clothing, colors, skin, features) without swapping characters.`;
+  }
+
+  const enhanced = enhancePrompt(groundedIdea, mode);
+  const finalState = buildSceneState({
+    action: rawIdea,
+    enhanced,
+    entityPhrases: entities,
+    setting: vision?.setting || previous?.setting,
+    previous,
+  });
+
+  return {
+    enhanced,
+    finalState,
+    visionUsed: Boolean(vision && vision.source !== "none" && vision.entities.length),
+    chained: chainedBuild.chained,
+    entityBrief: formatEntityBrief(vision, arabic),
+    coreIdea: groundedIdea,
+  };
+}
+
+export type { SceneState };

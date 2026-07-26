@@ -243,17 +243,25 @@ export function StudioApp() {
     setEnhancing(true);
     setError(null);
     try {
-      const { res, data } = await fetchJson<{ error?: string; enhanced?: string }>(
-        "/api/enhance",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt, mode }),
-        },
+      const imageUrls = [startFrame?.url, referenceImage?.url].filter(
+        (u): u is string => Boolean(u && String(u).trim()),
       );
+      const { res, data } = await fetchJson<{
+        error?: string;
+        enhanced?: string;
+        visionUsed?: boolean;
+        chained?: boolean;
+      }>("/api/enhance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, mode, imageUrls }),
+      });
       if (!res.ok) throw new Error(data.error || "Enhance failed");
       setPrompt(data.enhanced as string);
-      setStatusMessage("Prompt enhanced for stronger composition and lighting.");
+      const bits = ["تم تحسين الوصف"];
+      if (data.visionUsed) bits.push("مع مطابقة الصورة");
+      if (data.chained) bits.push("مع تسلسل الحالة");
+      setStatusMessage(bits.join(" · "));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Enhance failed");
     } finally {

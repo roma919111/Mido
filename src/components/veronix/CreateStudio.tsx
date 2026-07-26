@@ -27,6 +27,7 @@ import {
   VERONIX_MODEL_ID,
 } from "@/lib/free-trial";
 import type { VisualReference } from "@/lib/types";
+import type { SceneState } from "@/lib/prompt-enhance";
 import { fetchJson } from "@/lib/fetch-json";
 import { veronixDownloadPath, veronixMediaSrc } from "@/lib/media-proxy";
 import type { CustomerUser } from "./AppHeader";
@@ -81,6 +82,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const [shareNote, setShareNote] = useState<string | null>(null);
   const [genStartedAt, setGenStartedAt] = useState<number | null>(null);
   const [elapsedSec, setElapsedSec] = useState(0);
+  /** Final pose / entities from last enhance — used for sequential actions (ثم…). */
+  const [promptSceneState, setPromptSceneState] = useState<SceneState | null>(null);
+  const [enhancing, setEnhancing] = useState(false);
   const waitingResult = generating || preview?.status === "running";
   const freeSettingsLocked =
     media === "video" &&
@@ -374,26 +378,48 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
   async function handleEnhance() {
     if (!prompt.trim()) return;
+    setEnhancing(true);
+    setError(null);
     try {
-      const { res, data } = await fetchJson<{ enhanced?: string; error?: string }>(
-        "/api/enhance",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prompt,
-            mode: media === "image" ? "text-to-image" : "text-to-video",
-          }),
-        },
-      );
+      const imageUrls = [
+        startFrame?.url,
+        endFrame?.url,
+        ...refs.map((r) => r.url),
+      ].filter((u): u is string => Boolean(u && String(u).trim()));
+
+      const { res, data } = await fetchJson<{
+        enhanced?: string;
+        error?: string;
+        finalState?: SceneState;
+        visionUsed?: boolean;
+        chained?: boolean;
+        entityBrief?: string;
+      }>("/api/enhance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt,
+          mode: media === "image" ? "text-to-image" : "text-to-video",
+          imageUrls,
+          previousState: promptSceneState,
+        }),
+      });
       if (!res.ok) throw new Error(data.error || "Enhance failed");
       const next = (data.enhanced || "").trim();
       if (!next) throw new Error("لم يتم إنشاء وصف محسّن");
       // Full replace — never append polish onto the existing field.
       setPrompt(next);
-      setStatus("تم تحسين الوصف حسب سياق المشهد والحركة");
+      if (data.finalState) setPromptSceneState(data.finalState);
+
+      const bits = ["تم تحسين الوصف"];
+      if (data.visionUsed) bits.push("مع مطابقة تفاصيل الصورة");
+      else if (imageUrls.length) bits.push("مع ربط الصورة المرجعية");
+      if (data.chained) bits.push("وتسلسل من الحالة السابقة");
+      setStatus(bits.join(" · "));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Enhance failed");
+    } finally {
+      setEnhancing(false);
     }
   }
 
@@ -936,11 +962,29 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           <button
             type="button"
             onClick={() => void handleEnhance()}
-            className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/70"
+            disabled={enhancing || !prompt.trim()}
+            className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/70 disabled:opacity-50"
           >
-            <WandSparkles className="h-3.5 w-3.5 text-[#22f0ff]" />
-            تحسين الوصف
+            {enhancing ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-[#22f0ff]" />
+            ) : (
+              <WandSparkles className="h-3.5 w-3.5 text-[#22f0ff]" />
+            )}
+            {enhancing ? "جاري التحسين…" : "تحسين الوصف"}
           </button>
+          {promptSceneState ? (
+            <button
+              type="button"
+              onClick={() => {
+                setPromptSceneState(null);
+                setStatus("تم مسح سلسلة الحالة — المشهد التالي يبدأ من الصفر");
+              }}
+              className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/50"
+              title="إعادة ضبط تسلسل الأفعال"
+            >
+              تصفير التسلسل
+            </button>
+          ) : null}
         </div>
       </div>
 
