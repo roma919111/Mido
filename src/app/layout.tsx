@@ -15,9 +15,49 @@ const outfit = Outfit({
 });
 
 export const metadata: Metadata = {
-  title: "Veronix.ai — AI Image & Video Studio",
+  metadataBase: new URL("https://vyronix.app"),
+  title: {
+    default: "Veronix.ai — استوديو الصور والفيديو بالذكاء الاصطناعي",
+    template: "%s · Veronix.ai",
+  },
   description:
-    "Veronix.ai studio for AI images and videos with customer accounts, assets, and subscriptions.",
+    "Veronix.ai منصة رسمية على vyronix.app لتوليد الصور والفيديو بالذكاء الاصطناعي مع حسابات زبائن ومحفظة كريدت ودفع آمن عبر Stripe.",
+  applicationName: "Veronix.ai",
+  keywords: [
+    "Veronix",
+    "Veronix.ai",
+    "vyronix.app",
+    "AI video",
+    "AI image",
+    "توليد فيديو",
+    "ذكاء اصطناعي",
+  ],
+  authors: [{ name: "Veronix.ai", url: "https://vyronix.app" }],
+  creator: "Veronix.ai",
+  publisher: "Veronix.ai",
+  alternates: {
+    canonical: "https://vyronix.app",
+  },
+  openGraph: {
+    type: "website",
+    locale: "ar_SA",
+    url: "https://vyronix.app",
+    siteName: "Veronix.ai",
+    title: "Veronix.ai — استوديو الصور والفيديو",
+    description:
+      "منصة رسمية لتوليد الصور والفيديو بالذكاء الاصطناعي على vyronix.app",
+    images: [{ url: "/promo/poster.jpg", width: 1920, height: 1080, alt: "Veronix.ai" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Veronix.ai",
+    description: "استوديو AI للصور والفيديو — vyronix.app",
+    images: ["/promo/poster.jpg"],
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function RootLayout({
@@ -25,9 +65,33 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const orgJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: "Veronix.ai",
+    url: "https://vyronix.app",
+    logo: "https://vyronix.app/promo/poster.jpg",
+    email: "support@vyronix.app",
+    sameAs: ["https://vyronix.app"],
+    contactPoint: [
+      {
+        "@type": "ContactPoint",
+        email: "support@vyronix.app",
+        contactType: "customer support",
+        availableLanguage: ["Arabic", "English"],
+      },
+    ],
+  };
+
   return (
     <html lang="ar" className={`${syne.variable} ${outfit.variable} h-full antialiased`}>
-      <body className="min-h-full overflow-x-hidden font-sans">{children}</body>
+      <body className="min-h-full overflow-x-hidden font-sans">
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(orgJsonLd) }}
+        />
+        {children}
+      </body>
     </html>
   );
 }

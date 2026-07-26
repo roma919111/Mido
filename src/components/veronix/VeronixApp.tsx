@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AppHeader, type CustomerUser } from "./AppHeader";
 import { BottomNav } from "./BottomNav";
 import { CreateStudio } from "./CreateStudio";
+import { SiteFooter } from "./SiteFooter";
 import { fetchJson } from "@/lib/fetch-json";
 
 export function VeronixApp() {
@@ -74,6 +75,9 @@ export function VeronixApp() {
           <CreateStudio user={user} onUserRefresh={refreshUser} />
         </section>
       </main>
+      <div className="pb-24">
+        <SiteFooter />
+      </div>
       <BottomNav />
     </div>
   );

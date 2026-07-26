@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowUpRight, Check, Coins, Sparkles, Zap } from "lucide-react";
 import { AppHeader, type CustomerUser } from "./AppHeader";
+import { SiteFooter } from "./SiteFooter";
 import { BottomNav } from "./BottomNav";
 import {
   canPurchasePlan,
@@ -419,6 +420,9 @@ export function PricingPage() {
           )}
         </section>
       </main>
+      <div className="pb-24">
+        <SiteFooter />
+      </div>
       <BottomNav />
     </div>
   );
