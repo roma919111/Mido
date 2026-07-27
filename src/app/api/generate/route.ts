@@ -253,37 +253,20 @@ export async function POST(request: Request) {
         });
 
         /**
-         * CreateStudio sends waitForResult:false so we return the task id quickly.
-         * The client (and Assets GET sync) poll BytePlus for the MP4.
-         * A long server-side wait here used to hit Next/Railway maxDuration (~5m)
-         * and leave multi-shot jobs stuck "running" for 20–30+ minutes with no video.
+         * CreateStudio sends waitForResult:false. We still do a short poll
+         * (~90s) so typical 4s→~55s jobs finish in-request and privacy/mute
+         * retries can run. Avoid the old 200–240s wait that blew Railway
+         * maxDuration and left multi-shot cards stuck for 30+ minutes.
          */
-        const shouldWait = body.waitForResult === true;
-        if (!shouldWait) {
-          results.push({
-            assetId: asset.id,
-            modelId: quote.modelId,
-            historyId,
-            status: "running",
-            urls: [] as string[],
-            creditsUsed: quote.totalCredits,
-            freeTrial,
-            needsBrandOutro: freeTrial,
-            live: true,
-            provider: "byteplus",
-            tool: "byteplus_contents_generations",
-            quote,
-          });
-          continue;
-        }
-
-        // Optional synchronous wait (explicit waitForResult:true only).
+        const waitMs = body.waitForResult === true ? 240_000 : 90_000;
         const finished = await waitForBytePlusVideoTask(created.id, {
-          timeoutMs: body.sequencePart ? 180_000 : 240_000,
-          intervalMs: 5_000,
+          timeoutMs: body.sequencePart
+            ? Math.min(waitMs, 90_000)
+            : waitMs,
+          intervalMs: 4_000,
           retryInput: createInput,
         });
-        // Mute-retry may have created a new task id.
+        // Mute/privacy-retry may have created a new task id.
         if (finished.id && finished.id !== created.id) {
           historyId = toBytePlusHistoryId(finished.id);
         }
@@ -352,7 +335,7 @@ export async function POST(request: Request) {
           continue;
         }
 
-        // Still running after timeout — leave running for Assets poll.
+        // Still running after short wait — client / Assets poll finishes it.
         results.push({
           assetId: asset.id,
           modelId: quote.modelId,

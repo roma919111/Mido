@@ -87,9 +87,48 @@ async function syncRunningAssets(userId: string) {
                 ? String(task.error.message || task.error.code || "BytePlus generation failed")
                 : "BytePlus generation failed";
           const alreadyMuted = Boolean(asset.error?.includes("[muted-retry]"));
+          const alreadyPrivacy = Boolean(asset.error?.includes("[privacy-retry]"));
           const sensitive = /OutputAudioSensitive|SensitiveContent|sensitive/i.test(
             errMsg,
           );
+          const privacy = /InputImageSensitive|PrivacyInformation|real person/i.test(
+            errMsg,
+          );
+          if (privacy && !alreadyPrivacy && asset.prompt?.trim()) {
+            try {
+              const rawDuration = Number(
+                (task.raw as { duration?: number }).duration || 0,
+              );
+              const duration =
+                rawDuration > 0
+                  ? rawDuration
+                  : asset.mode === "sequence-part"
+                    ? PRODUCT_PER_SHOT_SECONDS
+                    : 8;
+              // Last resort: drop the start-frame still (text-only) so the job
+              // can finish instead of hanging failed/running for 30+ minutes.
+              const retry = await createBytePlusVideoTask({
+                prompt: asset.prompt
+                  .replace(/\n\n\(جارٍ توليد ودمج[\s\S]*$/u, "")
+                  .trim(),
+                duration,
+                ratio: "16:9",
+                generateAudio: false,
+                watermark: false,
+              });
+              await updateAsset(asset.id, userId, {
+                historyId: toBytePlusHistoryId(retry.id),
+                status: "running",
+                url: "",
+                error:
+                  "[privacy-retry] أُعيد التوليد بدون صورة البداية بسبب رفض الخصوصية",
+                hidden: asset.mode === "sequence-part" ? true : false,
+              });
+              continue;
+            } catch {
+              // fall through
+            }
+          }
           if (sensitive && !alreadyMuted && asset.prompt?.trim()) {
             try {
               const rawDuration = Number(

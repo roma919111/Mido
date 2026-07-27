@@ -323,6 +323,7 @@ export async function waitForBytePlusVideoTask(
   let currentId = taskId;
   let mutedRetryUsed = false;
   let privacyRetryUsed = false;
+  let privacyDropUsed = false;
 
   while (Date.now() - started < timeoutMs) {
     const task = await getBytePlusVideoTask(currentId);
@@ -363,8 +364,23 @@ export async function waitForBytePlusVideoTask(
           currentId = retry.id;
           continue;
         } catch {
-          // Fall through — return original failure.
+          // Fall through to drop-frame retry.
         }
+      }
+      if (
+        !privacyDropUsed &&
+        options?.retryInput?.startFrameUrl &&
+        isInputImagePrivacyError(err)
+      ) {
+        privacyDropUsed = true;
+        const retry = await createBytePlusVideoTask({
+          ...options.retryInput,
+          startFrameUrl: undefined,
+          imageRole: undefined,
+          generateAudio: false,
+        });
+        currentId = retry.id;
+        continue;
       }
       return task;
     }
