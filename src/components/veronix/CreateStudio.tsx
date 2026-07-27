@@ -817,12 +817,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             setStatus(null);
           }
           setGenStartedAt(null);
+          await onUserRefresh().catch(() => undefined);
           return;
         }
         if (st === "FAILED" || st === "CANCELLED") {
           setPreview({ url: "", mediaType, historyId, status: "failed" });
           setError(data.error || "فشل التوليد");
           setGenStartedAt(null);
+          await onUserRefresh().catch(() => undefined);
           return;
         }
         setPreview((prev) =>
@@ -839,6 +841,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       }
     }
     setStatus("ما زال التوليد جاريًا — افتح Assets لمتابعة النتيجة");
+    await onUserRefresh().catch(() => undefined);
   }
 
   function elapsedLabel(sec: number) {
@@ -1182,6 +1185,26 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         const partAssetIds: string[] = [];
         let frame: VisualReference | null = startFrame;
 
+        // Visible Assets card while beats stay hidden until stitch finishes.
+        let jobAssetId: string | undefined;
+        try {
+          const pendingRes = await fetchJson<{
+            asset?: { id?: string };
+            error?: string;
+          }>("/api/assets/pending", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              prompt: prompt.trim(),
+              shotCount: shots.length,
+            }),
+          });
+          jobAssetId = pendingRes.data.asset?.id;
+        } catch {
+          // Non-fatal — parts still generate.
+        }
+        await onUserRefresh().catch(() => undefined);
+
         const revealParts = async () => {
           if (!partAssetIds.length) return;
           try {
@@ -1193,6 +1216,20 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           } catch {
             // Assets GET also recovers orphans.
           }
+        };
+
+        const failJob = async (message: string) => {
+          if (!jobAssetId) return;
+          await fetchJson("/api/assets/pending", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              assetId: jobAssetId,
+              status: "failed",
+              error: message,
+              mode: "sequence-pending",
+            }),
+          }).catch(() => undefined);
         };
 
         try {
@@ -1318,7 +1355,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   videoUrls: localUrls,
-                  saveAsset: true,
+                  // Prefer updating the visible job card when we have one.
+                  saveAsset: !jobAssetId,
                   prompt: prompt.trim(),
                   modelId: selectedModelId,
                   shotCount: shots.length,
@@ -1342,10 +1380,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           }
 
           if (!concatUrl) {
-            // Keep parts hidden during grace; still surface a clear error.
-            // Orphan recovery will unhide after the grace window if needed.
+            await revealParts();
+            await failJob(concatError || "تعذر دمج اللقطات");
             setError(
-              `${concatError}. اكتملت ${localUrls.length} لقطات لكن الدمج لم ينجح — أعد المحاولة بعد لحظات.`,
+              `${concatError}. اكتملت ${localUrls.length} لقطات — ظهرت في Assets (الدمج لم يكتمل).`,
             );
             // Prefer first clip over last so preview is not a random tail beat.
             const fallback = localUrls[0] || "";
@@ -1368,6 +1406,23 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             }).catch(() => undefined);
           }
 
+          if (jobAssetId) {
+            await fetchJson("/api/assets/pending", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                assetId: jobAssetId,
+                url: concatUrl,
+                status: "completed",
+                mode: "sequence-concat",
+                error: "",
+              }),
+            }).catch(() => undefined);
+          } else {
+            // Fallback: let /api/media/concat saveAsset path create the card
+            // (already done when saveAsset:true above).
+          }
+
           setPreview({
             url: concatUrl,
             mediaType: "video",
@@ -1381,6 +1436,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           return;
         } catch (multiErr) {
           await revealParts();
+          await failJob(
+            multiErr instanceof Error ? multiErr.message : "فشل المشهد المتعدد",
+          );
           throw multiErr;
         }
       }

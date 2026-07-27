@@ -259,8 +259,8 @@ export async function setAssetsHidden(
   return n;
 }
 
-/** Wait before unhiding parts — multi-shot generate+stitch often takes 10–25+ min. */
-const ORPHAN_RECOVERY_GRACE_MS = 45 * 60 * 1000;
+/** Wait before unhiding parts — long enough for stitch, short enough to recover. */
+const ORPHAN_RECOVERY_GRACE_MS = 12 * 60 * 1000;
 
 /**
  * Unhide multi-shot parts that never got a stitched final video.

@@ -67,10 +67,13 @@ async function syncRunningAssets(userId: string) {
               // keep remote URL
             }
           }
+          // Persist URL so Assets can play even if history CDN expires later.
           await updateAsset(asset.id, userId, {
             url: finalUrl,
             status: "completed",
             error: undefined,
+            // Keep intermediate beats hidden; job/concat cards stay visible.
+            hidden: asset.mode === "sequence-part" ? true : false,
           });
         } else if (status === "FAILED") {
           const errMsg =
@@ -82,6 +85,8 @@ async function syncRunningAssets(userId: string) {
           await updateAsset(asset.id, userId, {
             status: "failed",
             error: errMsg,
+            // Surface failed beats so the user sees why nothing played.
+            hidden: false,
           });
         }
         continue;

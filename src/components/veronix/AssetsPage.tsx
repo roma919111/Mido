@@ -12,6 +12,7 @@ interface AssetItem {
   mediaType: "image" | "video";
   url: string;
   prompt: string;
+  mode?: string;
   model: string;
   creditsUsed: number;
   status: string;
@@ -154,49 +155,65 @@ export function AssetsPage() {
               className="overflow-hidden rounded-2xl border border-white/10 bg-[#141821]"
             >
               <div className="aspect-square bg-black/40">
-                {item.url && item.mediaType === "image" ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={
-                      veronixMediaSrc({
-                        historyId: item.historyId,
-                        url: item.url,
-                        mediaType: "image",
-                      }) || item.url
-                    }
-                    alt=""
-                    className="h-full w-full object-cover"
-                  />
-                ) : item.url && item.mediaType === "video" ? (
-                  <video
-                    src={
-                      veronixMediaSrc({
-                        historyId: item.historyId,
-                        url: item.url,
-                        mediaType: "video",
-                      }) || undefined
-                    }
-                    controls
-                    playsInline
-                    controlsList="nodownload"
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <div className="flex h-full items-center justify-center text-xs text-white/35">
-                    {item.status === "running" ? "جارٍ التوليد…" : item.status}
-                  </div>
-                )}
+                {(() => {
+                  const src = veronixMediaSrc({
+                    historyId: item.historyId,
+                    url: item.url,
+                    mediaType: item.mediaType,
+                  });
+                  const canPlay =
+                    Boolean(src) &&
+                    (Boolean(item.url) || Boolean(item.historyId)) &&
+                    item.status !== "failed";
+                  if (item.mediaType === "image" && canPlay) {
+                    return (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={src || item.url}
+                        alt=""
+                        className="h-full w-full object-cover"
+                      />
+                    );
+                  }
+                  if (item.mediaType === "video" && canPlay) {
+                    return (
+                      <video
+                        src={src || undefined}
+                        controls
+                        playsInline
+                        controlsList="nodownload"
+                        className="h-full w-full object-cover"
+                      />
+                    );
+                  }
+                  return (
+                    <div className="flex h-full flex-col items-center justify-center gap-1 px-3 text-center text-xs text-white/35">
+                      <span>
+                        {item.status === "running"
+                          ? "جارٍ التوليد عبر BytePlus…"
+                          : item.status === "failed"
+                            ? "فشل التوليد"
+                            : item.status}
+                      </span>
+                      {item.historyId?.startsWith("bp:") && (
+                        <span className="text-[10px] text-white/25">BytePlus</span>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
               <div className="space-y-1 p-3">
                 <p className="line-clamp-2 text-sm text-white/80">{item.prompt}</p>
                 <p className="text-[11px] text-white/40">
-                  {item.model === "seedance-2-mini"
-                    ? "Veronix"
-                    : item.model === "sequence-concat"
-                      ? "مشهد مدمج"
-                      : item.model}
+                  {item.mode === "sequence-concat"
+                    ? "مشهد مدمج"
+                    : item.mode === "sequence-pending"
+                      ? "جارٍ الدمج · BytePlus"
+                      : item.model === "seedance-2-mini" || item.model === "sequence-concat"
+                        ? "Veronix · BytePlus"
+                        : item.model}
                   {" · "}
-                  {item.model === "sequence-concat"
+                  {item.mode === "sequence-concat" || item.mode === "sequence-pending"
                     ? "فيديو واحد"
                     : item.creditsUsed === 0
                       ? "مجاني"
@@ -204,7 +221,7 @@ export function AssetsPage() {
                   {" · "}
                   {item.status}
                 </p>
-                {item.url && (
+                {(item.url || item.historyId) && item.status !== "failed" && (
                   <a
                     href={
                       veronixDownloadPath({

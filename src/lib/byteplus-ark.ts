@@ -148,15 +148,32 @@ export async function createBytePlusVideoTask(
     return { res, data };
   }
 
-  let { res, data } = await postCreate(
-    input.resolution ? { ...body, resolution: input.resolution } : body,
-  );
+  let payload: Record<string, unknown> = input.resolution
+    ? { ...body, resolution: input.resolution }
+    : { ...body };
+
+  let { res, data } = await postCreate(payload);
+
   // Retry without resolution if the Ark build rejects the field.
   if (!res.ok && input.resolution) {
     const errObj = data.error as { message?: string; code?: string } | undefined;
     const msg = String(errObj?.message || data.message || "");
     if (/resolution|unknown|invalid|not support/i.test(msg) || res.status === 400) {
-      ({ res, data } = await postCreate(body));
+      payload = body;
+      ({ res, data } = await postCreate(payload));
+    }
+  }
+
+  // Sensitive-audio rejects are common — retry once muted so the clip still lands.
+  if (!res.ok && payload.generate_audio === true) {
+    const errObj = data.error as { message?: string; code?: string } | undefined;
+    const code = String(errObj?.code || "");
+    const msg = String(errObj?.message || data.message || "");
+    if (
+      /OutputAudioSensitive|SensitiveContent|sensitive/i.test(`${code} ${msg}`)
+    ) {
+      payload = { ...payload, generate_audio: false };
+      ({ res, data } = await postCreate(payload));
     }
   }
 
