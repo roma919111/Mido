@@ -139,3 +139,18 @@ export function cleanAssetPrompt(prompt: string | undefined | null): string {
     .replace(/\n?Continuation beat[^\n]*/gi, "")
     .trim();
 }
+
+/**
+ * Short creative title derived from the generation prompt
+ * (first sentence / clause, trimmed for the Assets feed).
+ */
+export function assetPromptTitle(prompt: string | undefined | null): string {
+  const clean = cleanAssetPrompt(prompt);
+  if (!clean) return "إبداع Veronix";
+  const firstLine = clean.split(/\n+/)[0]?.trim() || clean;
+  const clause =
+    firstLine.split(/(?<=[.!?؟…])\s+|[,،;:]\s+/)[0]?.trim() || firstLine;
+  const title = clause.replace(/^["'«]+|["'»]+$/g, "").trim();
+  if (title.length <= 52) return title || "إبداع Veronix";
+  return `${title.slice(0, 50).trim()}…`;
+}

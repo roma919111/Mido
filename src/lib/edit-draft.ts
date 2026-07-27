@@ -28,7 +28,7 @@ export function readEditDraft(): CreateEditDraft | null {
     const raw = sessionStorage.getItem(EDIT_DRAFT_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as CreateEditDraft;
-    if (!parsed?.prompt || typeof parsed.prompt !== "string") return null;
+    if (!parsed || typeof parsed.prompt !== "string") return null;
     return parsed;
   } catch {
     return null;

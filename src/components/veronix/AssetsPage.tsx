@@ -24,6 +24,7 @@ import {
 import { writeEditDraft } from "@/lib/edit-draft";
 import {
   cleanAssetPrompt,
+  assetPromptTitle,
   veronixDownloadPath,
   veronixMediaSrc,
   veronixPosterSrc,
@@ -124,6 +125,7 @@ function FeedVideoSlide({
   const [editing, setEditing] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [posterFailed, setPosterFailed] = useState(false);
+  const [promptExpanded, setPromptExpanded] = useState(false);
 
   const src = veronixMediaSrc({
     historyId: item.historyId,
@@ -135,10 +137,16 @@ function FeedVideoSlide({
     url: item.url,
   });
   const prompt = cleanAssetPrompt(item.prompt);
+  const title = assetPromptTitle(item.prompt);
+  const promptLong = prompt.length > 110;
   const canPlay =
     Boolean(src) &&
     item.status !== "failed" &&
     item.status !== "running";
+
+  useEffect(() => {
+    setPromptExpanded(false);
+  }, [item.id]);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -165,7 +173,7 @@ function FeedVideoSlide({
     try {
       const el = videoRef.current;
       let startFrame: VisualReference | null = null;
-      if (el) {
+      if (el && active) {
         try {
           if (el.readyState < 2) {
             await new Promise<void>((resolve) => {
@@ -174,7 +182,6 @@ function FeedVideoSlide({
               window.setTimeout(done, 2500);
             });
           }
-          // Prefer a near-start frame (uploaded look) over mid-clip.
           try {
             el.currentTime = Math.min(0.15, (el.duration || 1) * 0.02);
             await new Promise<void>((resolve) => {
@@ -189,6 +196,15 @@ function FeedVideoSlide({
         } catch {
           startFrame = null;
         }
+      }
+      // Poster fallback when frame capture is blocked (CORS / not ready).
+      if (!startFrame && poster && !posterFailed) {
+        startFrame = {
+          type: "image",
+          id: `edit-poster-${item.id}`,
+          url: poster,
+          label: "edit-start-frame",
+        };
       }
       writeEditDraft({
         prompt: prompt || item.prompt || "",
@@ -298,11 +314,14 @@ function FeedVideoSlide({
       {/* Soft bottom gradient for prompt readability */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[42%] bg-gradient-to-t from-black/85 via-black/35 to-transparent" />
 
-      {/* Edit — visual left */}
-      <div className="absolute bottom-36 left-3 z-20 flex flex-col items-center gap-3 sm:bottom-40 sm:left-5">
+      {/* Edit / mute / download — above prompt overlay so taps always work */}
+      <div className="absolute bottom-36 left-3 z-40 flex flex-col items-center gap-3 sm:bottom-40 sm:left-5">
         <button
           type="button"
-          onClick={() => void handleEdit()}
+          onClick={(e) => {
+            e.stopPropagation();
+            void handleEdit();
+          }}
           disabled={editing || item.status !== "completed"}
           className="flex h-12 w-12 items-center justify-center rounded-full bg-white/12 text-white ring-1 ring-white/25 backdrop-blur-md disabled:opacity-40"
           aria-label="تعديل"
@@ -313,10 +332,13 @@ function FeedVideoSlide({
             <Pencil className="h-5 w-5" />
           )}
         </button>
-        <span className="text-[10px] font-semibold text-white/80">Edit</span>
+        <span className="text-[10px] font-semibold text-white/80">تعديل</span>
         <button
           type="button"
-          onClick={onToggleMute}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleMute();
+          }}
           className="mt-2 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white ring-1 ring-white/20 backdrop-blur-md"
           aria-label={muted ? "تشغيل الصوت" : "كتم الصوت"}
         >
@@ -325,7 +347,10 @@ function FeedVideoSlide({
         {(item.url || item.historyId) && item.status === "completed" && (
           <button
             type="button"
-            onClick={() => void handleDownload()}
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleDownload();
+            }}
             disabled={downloading}
             className="mt-1 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white ring-1 ring-white/20 backdrop-blur-md disabled:opacity-50"
             aria-label="تحميل"
@@ -339,20 +364,47 @@ function FeedVideoSlide({
         )}
       </div>
 
-      {/* Prompt under the video (bottom overlay) */}
+      {/* Title + truncated description with «عرض المزيد» */}
       <div
-        className="absolute inset-x-0 bottom-[4.75rem] z-20 px-4 pb-[env(safe-area-inset-bottom)] sm:px-6"
+        className="pointer-events-none absolute inset-x-0 bottom-[4.75rem] z-20 px-4 pb-[env(safe-area-inset-bottom)] pl-20 sm:px-6 sm:pl-24"
         dir="rtl"
       >
-        <p className="mb-1 text-[11px] font-semibold tracking-wide text-[#22f0ff]/90">
-          تم إنشاؤه بواسطة VYRONIX
-        </p>
-        <p className="max-h-28 overflow-y-auto text-sm leading-relaxed text-white/90 sm:text-[15px]">
-          {prompt || "بدون وصف"}
-        </p>
-        {item.error ? (
-          <p className="mt-1 text-xs text-rose-300">{item.error}</p>
-        ) : null}
+        <div className="pointer-events-auto max-w-[min(100%,28rem)]">
+          <p className="mb-1 text-[11px] font-semibold tracking-wide text-[#22f0ff]/90">
+            تم إنشاؤه بواسطة VYRONIX
+          </p>
+          <h2 className="text-base font-extrabold leading-snug text-white sm:text-lg">
+            {title}
+          </h2>
+          {prompt ? (
+            <div className="mt-1.5">
+              <p
+                className={`text-sm leading-relaxed text-white/80 sm:text-[15px] ${
+                  promptExpanded ? "" : "line-clamp-2"
+                }`}
+              >
+                {prompt}
+              </p>
+              {promptLong ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPromptExpanded((v) => !v);
+                  }}
+                  className="mt-1 text-xs font-semibold text-white/95 underline-offset-2 hover:underline"
+                >
+                  {promptExpanded ? "عرض أقل" : "عرض المزيد"}
+                </button>
+              ) : null}
+            </div>
+          ) : (
+            <p className="mt-1 text-sm text-white/50">بدون وصف</p>
+          )}
+          {item.error ? (
+            <p className="mt-1 text-xs text-rose-300">{item.error}</p>
+          ) : null}
+        </div>
       </div>
     </section>
   );
@@ -380,7 +432,10 @@ function ImageTile({ item }: { item: AssetItem }) {
         )}
       </div>
       <div className="space-y-2 p-3" dir="rtl">
-        <p className="line-clamp-3 text-sm text-white/85">{prompt}</p>
+        <h3 className="text-sm font-extrabold text-white">
+          {assetPromptTitle(item.prompt)}
+        </h3>
+        <p className="line-clamp-3 text-sm text-white/75">{prompt}</p>
         <button
           type="button"
           onClick={() => {
@@ -402,7 +457,7 @@ function ImageTile({ item }: { item: AssetItem }) {
           className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#22f0ff]"
         >
           <Pencil className="h-3.5 w-3.5" />
-          Edit
+          تعديل
         </button>
       </div>
     </article>

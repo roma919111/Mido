@@ -262,7 +262,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     setPrompt(draft.prompt || "");
     if (draft.startFrame?.url) {
       setStartFrame(draft.startFrame);
+      setStartPreview(draft.startFrame.url);
       setRefs([]);
+      setRefPreviews([]);
     }
     setStatus("تم تحميل الوصف والصورة للتعديل — عدّل ثم Generate");
     clearEditDraft();
@@ -594,67 +596,130 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     promptSceneState,
   ]);
 
-  async function uploadFile(file: File, purpose: "create-image" | "create-video") {
+  async function fileToDataUrl(file: File): Promise<string> {
+    const buf = await file.arrayBuffer();
+    let binary = "";
+    const bytes = new Uint8Array(buf);
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+    }
+    return `data:${file.type || "image/jpeg"};base64,${btoa(binary)}`;
+  }
+
+  /** Prefer OpenArt CDN URL; fall back to data URL so uploads always finish. */
+  async function uploadFile(
+    file: File,
+    purpose: "create-image" | "create-video",
+  ): Promise<VisualReference> {
+    const localId = `local-ref-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const dataUrl = await fileToDataUrl(file);
+    const localRef: VisualReference = {
+      type: "image",
+      id: localId,
+      url: dataUrl,
+      label: file.name || "reference",
+    };
+
     const form = new FormData();
     form.append("file", file);
     form.append("purpose", purpose);
     form.append("label", file.name || "reference");
-    const { res, data } = await fetchJson<{
-      error?: string;
-      visualReference?: VisualReference;
-      needsOwnerSetup?: boolean;
-    }>("/api/upload", { method: "POST", body: form });
-    if (!res.ok) {
-      if (data.needsOwnerSetup) {
-        setPlatformReady(false);
-        throw new Error(
-          "رفع الصور يحتاج ربط حساب المنصة مرة واحدة. افتح /setup/openart وأكمل الدخول ثم أعد المحاولة.",
-        );
+
+    try {
+      const uploadPromise = fetchJson<{
+        error?: string;
+        visualReference?: VisualReference;
+        needsOwnerSetup?: boolean;
+      }>("/api/upload", { method: "POST", body: form });
+      const timeout = new Promise<"timeout">((resolve) => {
+        window.setTimeout(() => resolve("timeout"), 18_000);
+      });
+      const raced = await Promise.race([uploadPromise, timeout]);
+      if (raced === "timeout") return localRef;
+
+      const { res, data } = raced;
+      if (res.ok && data.visualReference?.url) {
+        return data.visualReference;
       }
-      const msg = data.error || "فشل رفع الصورة";
-      if (/OPENART_ACCESS_TOKEN|Platform OpenArt|not connected|حساب المنصة/i.test(msg)) {
-        setPlatformReady(false);
-        throw new Error(
-          "رفع الصور يحتاج ربط حساب المنصة مرة واحدة. افتح /setup/openart وأكمل الدخول ثم أعد المحاولة.",
-        );
-      }
-      throw new Error(msg);
+      if (data.needsOwnerSetup) setPlatformReady(false);
+    } catch {
+      // keep local
     }
-    return data.visualReference as VisualReference;
+    return localRef;
   }
 
-  async function handleAddRefs(files: FileList | null) {
+  async function handleAddRefs(
+    files: FileList | null,
+    inputEl?: HTMLInputElement | null,
+  ) {
     if (!files?.length) return;
-    try {
-      const nextRefs = [...refs];
-      const nextPreviews = [...refPreviews];
-      for (const file of Array.from(files).slice(0, 4 - nextRefs.length)) {
-        const preview = URL.createObjectURL(file);
-        const ref = await uploadFile(file, media === "image" ? "create-image" : "create-video");
-        nextRefs.push(ref);
-        nextPreviews.push(preview);
+    const picked = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    if (inputEl) inputEl.value = "";
+    if (!picked.length) return;
+
+    setError(null);
+    setStatus("جاري رفع المراجع البصرية…");
+
+    let added = 0;
+    for (const file of picked) {
+      let room = true;
+      setRefPreviews((prev) => {
+        room = prev.length < 4;
+        return prev;
+      });
+      if (!room) break;
+
+      const preview = URL.createObjectURL(file);
+      // Instant thumbnail so the second image never looks stuck.
+      setRefPreviews((prev) => (prev.length >= 4 ? prev : [...prev, preview]));
+
+      try {
+        const ref = await uploadFile(
+          file,
+          media === "image" ? "create-image" : "create-video",
+        );
+        setRefs((prev) => (prev.length >= 4 ? prev : [...prev, ref]));
+        added += 1;
+      } catch (err) {
+        setRefPreviews((prev) => prev.filter((p) => p !== preview));
+        URL.revokeObjectURL(preview);
+        setError(err instanceof Error ? err.message : "فشل رفع الصورة");
       }
-      setRefs(nextRefs);
-      setRefPreviews(nextPreviews);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
+    }
+    if (added > 0) {
+      setStatus(
+        added === 1 ? "تم رفع المرجع البصري" : `تم رفع ${added} مراجع بصرية`,
+      );
     }
   }
 
-  async function handleFrame(file: File | undefined, which: "start" | "end") {
+  async function handleFrame(
+    file: File | undefined,
+    which: "start" | "end",
+    inputEl?: HTMLInputElement | null,
+  ) {
     if (!file) return;
+    if (inputEl) inputEl.value = "";
+    setError(null);
+    const preview = URL.createObjectURL(file);
+    if (which === "start") setStartPreview(preview);
+    else setEndPreview(preview);
     try {
-      const preview = URL.createObjectURL(file);
       const ref = await uploadFile(file, "create-video");
-      if (which === "start") {
-        setStartFrame(ref);
-        setStartPreview(preview);
-      } else {
-        setEndFrame(ref);
-        setEndPreview(preview);
-      }
+      if (which === "start") setStartFrame(ref);
+      else setEndFrame(ref);
+      setStatus(which === "start" ? "تم رفع Start Frame" : "تم رفع End Frame");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
+      if (which === "start") {
+        setStartPreview(null);
+        setStartFrame(null);
+      } else {
+        setEndPreview(null);
+        setEndFrame(null);
+      }
+      URL.revokeObjectURL(preview);
+      setError(err instanceof Error ? err.message : "فشل رفع الصورة");
     }
   }
 
@@ -1447,7 +1512,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         <p className="mb-2 text-sm font-medium text-white/80">مراجع بصرية (اختياري)</p>
         <div className="flex flex-wrap gap-2">
           {refPreviews.map((src, i) => (
-            <div key={src} className="relative h-16 w-16 overflow-hidden rounded-xl">
+            <div key={`${src}-${i}`} className="relative h-16 w-16 overflow-hidden rounded-xl">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={src} alt="" className="h-full w-full object-cover" />
               <button
@@ -1455,14 +1520,18 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 className="absolute right-1 top-1 rounded-full bg-black/70 p-0.5"
                 onClick={() => {
                   setRefs((r) => r.filter((_, idx) => idx !== i));
-                  setRefPreviews((r) => r.filter((_, idx) => idx !== i));
+                  setRefPreviews((r) => {
+                    const doomed = r[i];
+                    if (doomed?.startsWith("blob:")) URL.revokeObjectURL(doomed);
+                    return r.filter((_, idx) => idx !== i);
+                  });
                 }}
               >
                 <X className="h-3 w-3" />
               </button>
             </div>
           ))}
-          {refs.length < 4 && (
+          {refPreviews.length < 4 && (
             <label className="flex h-16 w-16 cursor-pointer flex-col items-center justify-center rounded-xl border border-white/15 text-white/60">
               <ImagePlus className="h-5 w-5" />
               <input
@@ -1470,7 +1539,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 accept="image/*"
                 multiple
                 className="hidden"
-                onChange={(e) => void handleAddRefs(e.target.files)}
+                onChange={(e) =>
+                  void handleAddRefs(e.target.files, e.target)
+                }
               />
             </label>
           )}
@@ -1498,7 +1569,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 type="file"
                 accept="image/*"
                 className="hidden"
-                onChange={(e) => void handleFrame(e.target.files?.[0], slot.which)}
+                onChange={(e) =>
+                  void handleFrame(e.target.files?.[0], slot.which, e.target)
+                }
               />
             </label>
           ))}
