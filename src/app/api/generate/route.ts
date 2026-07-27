@@ -135,6 +135,7 @@ export async function POST(request: Request) {
         modelId: modelIds[0],
         media,
         duration: body.duration,
+        resolution: body.resolution,
         sequencePart: Boolean(body.sequencePart),
         multiShot: Boolean(body.sequencePart),
       });

@@ -45,6 +45,7 @@ export async function POST(request: Request) {
           modelId: body.modelId,
           media,
           duration: body.duration,
+          resolution: body.resolution,
           multiShot: wantMulti,
         }),
     );

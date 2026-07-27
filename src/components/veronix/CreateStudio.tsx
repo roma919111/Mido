@@ -546,7 +546,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           setFreeTrial(false);
           throw new Error(data.error || "تعذر جلب سعر الكريدت");
         }
-        const isFree = Boolean(data.freeTrial);
+        const isFree =
+          Boolean(data.freeTrial) &&
+          (user?.credits ?? 0) <= 0 &&
+          !user?.freeVeronixUsed;
         setFreeTrial(isFree);
         const nextCost = data.totalCredits;
 
@@ -1427,7 +1430,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
       {media === "video" &&
         selectedModelId === VERONIX_MODEL_ID &&
-        !user?.freeVeronixUsed && (
+        !user?.freeVeronixUsed &&
+        (user?.credits ?? 0) <= 0 && (
           <div className="rounded-2xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-50">
             أول فيديو على <span className="font-semibold">Veronix</span> مجاني مرة واحدة —{" "}
             <span className="font-semibold">مقدمة Veronix + 4 ثوانٍ · 480p</span>.
@@ -1702,7 +1706,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             />
             <div className="flex justify-between text-[10px] text-white/35">
               <span>{sliderMin}s</span>
-              {selectedModelId === VERONIX_MODEL_ID && !user?.freeVeronixUsed ? (
+              {selectedModelId === VERONIX_MODEL_ID &&
+              !user?.freeVeronixUsed &&
+              (user?.credits ?? 0) <= 0 ? (
                 <span className="text-[#22f0ff]">تجربة مجانية</span>
               ) : (
                 <span className="text-[#22f0ff]">

@@ -54,6 +54,7 @@ export async function POST(request: Request) {
       modelId: modelIds[0],
       media,
       duration,
+      resolution: body.resolution,
       multiShot: Boolean(body.multiShot),
     });
 
