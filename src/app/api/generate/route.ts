@@ -216,6 +216,7 @@ export async function POST(request: Request) {
         status: "running",
         // Intermediate beats never appear in Assets — only the stitched final.
         hidden: Boolean(body.sequencePart),
+        targetSeconds: modelDuration,
       });
 
       try {
@@ -342,8 +343,11 @@ export async function POST(request: Request) {
           quote,
         });
       } catch (err) {
-        const message = err instanceof Error ? err.message : "BytePlus generation failed";
-        console.error("[veronix] BytePlus generation failed (no OpenArt fallback):", message);
+        const raw = err instanceof Error ? err.message : "BytePlus generation failed";
+        const message = /InputImageSensitive|PrivacyInformation|real person/i.test(raw)
+          ? "الصورة المرجعية رُفضت لأنها تبدو كشخص حقيقي. نعيد معالجتها بأسلوب فني تلقائياً — إن فشل مرة أخرى استخدم صورة مرسومة/AI أو احذف Start Frame."
+          : raw;
+        console.error("[veronix] BytePlus generation failed (no OpenArt fallback):", raw);
         await updateAsset(asset.id, user.id, {
           status: "failed",
           error: message,

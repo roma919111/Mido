@@ -5,6 +5,13 @@ import Link from "next/link";
 import { AppHeader, type CustomerUser } from "./AppHeader";
 import { BottomNav } from "./BottomNav";
 import { fetchJson } from "@/lib/fetch-json";
+import {
+  clearEtaStart,
+  formatCountdownLabel,
+  inferTargetSecondsFromAsset,
+  lockEtaStart,
+  remainingGenerateSeconds,
+} from "@/lib/generate-eta";
 import { veronixDownloadPath, veronixMediaSrc } from "@/lib/media-proxy";
 
 interface AssetItem {
@@ -19,28 +26,36 @@ interface AssetItem {
   createdAt: string;
   historyId?: string;
   error?: string;
+  targetSeconds?: number;
 }
 
-function elapsedLabel(sec: number) {
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return m > 0 ? `${m}م ${s}ث` : `${s}ث`;
-}
+function RunningCountdown({
+  assetId,
+  createdAt,
+  targetSeconds,
+}: {
+  assetId: string;
+  createdAt: string;
+  targetSeconds: number;
+}) {
+  const [remaining, setRemaining] = useState(() => {
+    const started = lockEtaStart(assetId, createdAt);
+    return remainingGenerateSeconds(started, targetSeconds);
+  });
 
-function RunningTimer({ createdAt }: { createdAt: string }) {
-  const [sec, setSec] = useState(0);
   useEffect(() => {
-    const started = new Date(createdAt).getTime();
+    const started = lockEtaStart(assetId, createdAt);
     const tick = () => {
-      setSec(Math.max(0, Math.floor((Date.now() - started) / 1000)));
+      setRemaining(remainingGenerateSeconds(started, targetSeconds));
     };
     tick();
     const id = window.setInterval(tick, 1000);
     return () => window.clearInterval(id);
-  }, [createdAt]);
+  }, [assetId, createdAt, targetSeconds]);
+
   return (
     <span className="text-2xl font-bold tabular-nums text-[#22f0ff]">
-      {elapsedLabel(sec)}
+      {formatCountdownLabel(remaining)}
     </span>
   );
 }
@@ -66,10 +81,13 @@ export function AssetsPage() {
       return;
     }
     setError(null);
-    // Extra client guard: never show intermediate multi-shot beats.
-    setAssets(
-      (data.assets || []).filter((a) => a.mode !== "sequence-part"),
-    );
+    const next = (data.assets || []).filter((a) => a.mode !== "sequence-part");
+    setAssets(next);
+    for (const a of next) {
+      if (a.status === "completed" || a.status === "failed") {
+        clearEtaStart(a.id);
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -214,6 +232,7 @@ export function AssetsPage() {
                       />
                     );
                   }
+                  const target = inferTargetSecondsFromAsset(item);
                   return (
                     <div className="flex h-full flex-col items-center justify-center gap-2 px-3 text-center">
                       <span className="text-base font-semibold text-white">
@@ -223,12 +242,16 @@ export function AssetsPage() {
                             ? "فشل التوليد"
                             : item.status}
                       </span>
-                      {item.status === "running" && item.createdAt ? (
-                        <RunningTimer createdAt={item.createdAt} />
-                      ) : null}
+                      {item.status === "running" && (
+                        <RunningCountdown
+                          assetId={item.id}
+                          createdAt={item.createdAt}
+                          targetSeconds={target}
+                        />
+                      )}
                       {item.status === "running" && (
                         <span className="text-xs text-white/40">
-                          فيديو واحد بالمدة المحددة…
+                          تقدير لمدة {target}ث
                         </span>
                       )}
                     </div>

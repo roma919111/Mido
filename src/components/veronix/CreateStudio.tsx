@@ -34,6 +34,13 @@ import {
   PRODUCT_PER_SHOT_SECONDS,
 } from "@/lib/shot-plan";
 import { fetchJson } from "@/lib/fetch-json";
+import {
+  estimateGenerateSeconds,
+  formatCountdownLabel,
+  inferTargetSecondsFromAsset,
+  lockEtaStart,
+  remainingGenerateSeconds,
+} from "@/lib/generate-eta";
 import { veronixDownloadPath, veronixMediaSrc } from "@/lib/media-proxy";
 import type { CustomerUser } from "./AppHeader";
 
@@ -49,6 +56,8 @@ type StudioPreview = {
   status: "running" | "completed" | "failed";
   freeTrial?: boolean;
   assetId?: string;
+  /** Output length chosen by the customer — drives countdown ETA */
+  targetSeconds?: number;
 };
 
 function readStoredPreview(): {
@@ -132,7 +141,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const [preview, setPreview] = useState<StudioPreview | null>(null);
   const [shareNote, setShareNote] = useState<string | null>(null);
   const [genStartedAt, setGenStartedAt] = useState<number | null>(null);
-  const [elapsedSec, setElapsedSec] = useState(0);
+  const [remainingSec, setRemainingSec] = useState(0);
   const [previewHydrated, setPreviewHydrated] = useState(false);
   /** Final pose / entities from last enhance — used for sequential actions (ثم…). */
   const [promptSceneState, setPromptSceneState] = useState<SceneState | null>(null);
@@ -244,6 +253,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               status: string;
               mode?: string;
               createdAt?: string;
+              prompt?: string;
+              targetSeconds?: number;
             }>;
           }>("/api/assets");
           if (!cancelled && res.ok) {
@@ -254,15 +265,15 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 a.mode !== "sequence-part",
             );
             if (running) {
-              const started = running.createdAt
-                ? new Date(running.createdAt).getTime()
-                : Date.now();
+              const targetSeconds = inferTargetSecondsFromAsset(running);
+              const started = lockEtaStart(running.id, running.createdAt);
               setPreview({
                 url: running.url || "",
                 mediaType: running.mediaType,
                 historyId: running.historyId,
                 status: "running",
                 assetId: running.id,
+                targetSeconds,
               });
               setGenStartedAt(started);
               setGenerating(true);
@@ -310,18 +321,28 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     // eslint-disable-next-line react-hooks/exhaustive-deps -- apply when model identity changes
   }, [media, selectedModelId, freeSettingsLocked, selectedModel?.mcpId]);
 
+  const countdownTargetSeconds =
+    preview?.targetSeconds ||
+    (media === "video"
+      ? Math.min(sliderMax, Math.max(sliderMin, duration))
+      : 4);
+
   useEffect(() => {
     if (!waitingResult || genStartedAt == null) {
-      if (!waitingResult) setElapsedSec(0);
+      if (!waitingResult) {
+        setRemainingSec(estimateGenerateSeconds(countdownTargetSeconds));
+      }
       return;
     }
     const tick = () => {
-      setElapsedSec(Math.max(0, Math.floor((Date.now() - genStartedAt) / 1000)));
+      setRemainingSec(
+        remainingGenerateSeconds(genStartedAt, countdownTargetSeconds),
+      );
     };
     tick();
     const id = window.setInterval(tick, 1000);
     return () => window.clearInterval(id);
-  }, [waitingResult, genStartedAt]);
+  }, [waitingResult, genStartedAt, countdownTargetSeconds]);
 
   useEffect(() => {
     let cancelled = false;
@@ -903,7 +924,12 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         throw new Error(data.error || `فشلت ${label}`);
       }
       setStatus(
-        `${label}… ${elapsedLabel(Math.floor((Date.now() - startedAt) / 1000))}`,
+        `${label}… ${formatCountdownLabel(
+          remainingGenerateSeconds(
+            startedAt,
+            preview?.targetSeconds || countdownTargetSeconds,
+          ),
+        )}`,
       );
       if (typeof data.pollAfterSeconds === "number" && data.pollAfterSeconds > 5) {
         await new Promise((r) => setTimeout(r, Math.min(data.pollAfterSeconds! * 1000, 20000)));
@@ -967,10 +993,23 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         }
         setPreview((prev) =>
           prev
-            ? { ...prev, status: "running" }
-            : { url: "", mediaType, historyId, status: "running" },
+            ? { ...prev, status: "running", historyId: prev.historyId || historyId }
+            : {
+                url: "",
+                mediaType,
+                historyId,
+                status: "running",
+                targetSeconds: countdownTargetSeconds,
+              },
         );
-        setStatus(`Generating… ${elapsedLabel(Math.floor((Date.now() - startedAt) / 1000))}`);
+        setStatus(
+          `جاري التوليد… ${formatCountdownLabel(
+            remainingGenerateSeconds(
+              startedAt,
+              preview?.targetSeconds || countdownTargetSeconds,
+            ),
+          )}`,
+        );
         if (typeof data.pollAfterSeconds === "number" && data.pollAfterSeconds > 5) {
           await new Promise((r) => setTimeout(r, Math.min(data.pollAfterSeconds! * 1000, 20000)));
         }
@@ -980,12 +1019,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     }
     setStatus("ما زال التوليد جاريًا — افتح Assets لمتابعة النتيجة");
     await onUserRefresh().catch(() => undefined);
-  }
-
-  function elapsedLabel(sec: number) {
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return m > 0 ? `${m}m ${s}s` : `${s}s`;
   }
 
   async function handleShare() {
@@ -1165,9 +1198,19 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     }
 
     const startedAt = Date.now();
+    const outputTargetSeconds =
+      media === "video"
+        ? Math.min(sliderMax, Math.max(sliderMin, duration))
+        : 4;
     setGenerating(true);
     setGenStartedAt(startedAt);
-    setElapsedSec(0);
+    setRemainingSec(estimateGenerateSeconds(outputTargetSeconds));
+    setPreview({
+      url: "",
+      mediaType: media,
+      status: "running",
+      targetSeconds: outputTargetSeconds,
+    });
     // Paid Veronix always uses internal multi-beat stitch up to 32s.
     const canPayMulti =
       media === "video" &&
@@ -1183,7 +1226,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         ? "تخطيط اللقطات المتعددة…"
         : freeTrial
           ? "جاري توليد فيديوك المجاني…"
-          : "Generating…",
+          : "جاري التوليد…",
     );
     try {
       // Plan multi-shot from context (no ثم required) — paid video only.
@@ -1333,7 +1376,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         // Ensure slider/total matches the shots we will actually generate.
         setDuration(shots.length * PRODUCT_PER_SHOT_SECONDS);
         setStatus(`توليد ${shots.length} لقطات × ${PRODUCT_PER_SHOT_SECONDS}ث ثم الدمج…`);
-        setPreview({ url: "", mediaType: "video", status: "running" });
+        const multiTargetSeconds = shots.length * PRODUCT_PER_SHOT_SECONDS;
+        setPreview({
+          url: "",
+          mediaType: "video",
+          status: "running",
+          targetSeconds: multiTargetSeconds,
+        });
+        setRemainingSec(estimateGenerateSeconds(multiTargetSeconds));
         const localUrls: string[] = [];
         const partAssetIds: string[] = [];
         let frame: VisualReference | null = startFrame;
@@ -1350,9 +1400,18 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             body: JSON.stringify({
               prompt: prompt.trim(),
               shotCount: shots.length,
+              targetSeconds: multiTargetSeconds,
             }),
           });
           jobAssetId = pendingRes.data.asset?.id;
+          if (jobAssetId) {
+            lockEtaStart(jobAssetId, new Date(startedAt).toISOString());
+            setPreview((prev) =>
+              prev
+                ? { ...prev, assetId: jobAssetId, targetSeconds: multiTargetSeconds }
+                : prev,
+            );
+          }
         } catch {
           // Non-fatal — parts still generate.
         }
@@ -1423,12 +1482,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             const assetId = ok?.assetId;
             if (assetId) partAssetIds.push(assetId);
             if (!url && historyId) {
-              setPreview({
+              setPreview((prev) => ({
                 url: "",
                 mediaType: "video",
                 historyId,
                 status: "running",
-              });
+                assetId: jobAssetId || prev?.assetId,
+                targetSeconds: prev?.targetSeconds ?? multiTargetSeconds,
+              }));
               url = await waitForHistoryUrl(historyId, startedAt, label);
             }
             if (!url && !historyId) throw new Error(`لا يوجد فيديو من ${label}`);
@@ -1458,12 +1519,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             localUrls.push(localUrl);
 
             // Assembling — parts stay hidden until final stitch (or reveal on failure).
-            setPreview({
+            setPreview((prev) => ({
               url: "",
               mediaType: "video",
               historyId,
               status: "running",
-            });
+              assetId: jobAssetId || prev?.assetId,
+              targetSeconds: prev?.targetSeconds ?? multiTargetSeconds,
+            }));
 
             if (i < shots.length - 1) {
               setStatus(`استخراج إطار الربط بعد ${label}…`);
@@ -1684,13 +1747,18 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         }
         setGenStartedAt(null);
       } else if (historyId) {
-        setPreview({
+        setPreview((prev) => ({
           url: "",
           mediaType: media,
           historyId,
           status: "running",
-        });
-        setStatus("Generating…");
+          assetId: assetId || prev?.assetId,
+          targetSeconds: prev?.targetSeconds ?? outputTargetSeconds,
+        }));
+        if (assetId) {
+          lockEtaStart(assetId, new Date(startedAt).toISOString());
+        }
+        setStatus("جاري التوليد…");
         void pollPreview(historyId, media, startedAt, brand, assetId);
       } else {
         setStatus("تم إرسال الطلب — افتح Assets لمتابعة النتيجة");
@@ -2088,7 +2156,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             {waitingResult && (
               <span className="inline-flex items-center gap-1 text-xs tabular-nums text-[#22f0ff]">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                جاري التوليد · {elapsedLabel(elapsedSec)}
+                جاري التوليد · {formatCountdownLabel(remainingSec)}
               </span>
             )}
           </div>
@@ -2131,10 +2199,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                       جاري التوليد
                     </p>
                     <p className="text-2xl font-bold tabular-nums text-[#22f0ff]">
-                      {elapsedLabel(elapsedSec)}
+                      {formatCountdownLabel(remainingSec)}
                     </p>
                     <p className="px-6 text-center text-xs text-white/35">
-                      فيديو واحد بالمدة المحددة — ستظهر المعاينة هنا تلقائيًا
+                      تقدير حسب مدة الفيديو ({countdownTargetSeconds}ث) — ستظهر المعاينة هنا
                     </p>
                   </>
                 ) : (
@@ -2147,7 +2215,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 <Loader2 className="h-8 w-8 animate-spin text-[#22f0ff]" />
                 <p className="mt-2 text-lg font-semibold text-white">جاري التوليد</p>
                 <p className="mt-1 text-2xl font-bold tabular-nums text-[#22f0ff]">
-                  {elapsedLabel(elapsedSec)}
+                  {formatCountdownLabel(remainingSec)}
                 </p>
               </div>
             )}

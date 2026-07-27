@@ -8,6 +8,8 @@ export const runtime = "nodejs";
 type Body = {
   prompt?: string;
   shotCount?: number;
+  /** Final stitched length in seconds (for ETA countdown) */
+  targetSeconds?: number;
   /** Update an existing pending/job asset instead of creating */
   assetId?: string;
   url?: string;
@@ -50,6 +52,12 @@ export async function POST(request: Request) {
       typeof body.shotCount === "number" && body.shotCount > 0
         ? Math.min(16, Math.round(body.shotCount))
         : 0;
+    const targetSeconds =
+      typeof body.targetSeconds === "number" && body.targetSeconds > 0
+        ? Math.round(body.targetSeconds)
+        : shotCount > 0
+          ? shotCount * 4
+          : 4;
     const asset = await createAsset({
       userId: user.id,
       mediaType: "video",
@@ -62,6 +70,7 @@ export async function POST(request: Request) {
       creditsUsed: 0,
       status: "running",
       hidden: false,
+      targetSeconds,
     });
     return NextResponse.json({ asset });
   } catch (error) {

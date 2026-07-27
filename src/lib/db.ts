@@ -39,6 +39,8 @@ export interface AssetRecord {
   error?: string;
   /** Hidden intermediate multi-shot parts — final stitched clip stays visible */
   hidden?: boolean;
+  /** Chosen output length (seconds) — drives generate ETA countdown in UI */
+  targetSeconds?: number;
   createdAt: string;
 }
 
@@ -207,6 +209,10 @@ export async function createAsset(
     status: input.status,
     error: input.error,
     hidden: Boolean(input.hidden),
+    targetSeconds:
+      typeof input.targetSeconds === "number" && input.targetSeconds > 0
+        ? Math.round(input.targetSeconds)
+        : undefined,
     createdAt: new Date().toISOString(),
   };
   db.assets.unshift(asset);
