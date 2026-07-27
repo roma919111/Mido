@@ -364,6 +364,26 @@ function FeedVideoSlide({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
+              void handleDelete();
+            }}
+            disabled={deleting}
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-rose-500/20 text-rose-100 ring-1 ring-rose-300/30 backdrop-blur-md disabled:opacity-40"
+            aria-label="حذف"
+          >
+            {deleting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Trash2 className="h-4 w-4" />
+            )}
+          </button>
+          <span className="text-[10px] font-semibold text-white/80">حذف</span>
+        </div>
+
+        <div className="flex flex-col items-center gap-1">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
               void handleDownload();
             }}
             disabled={
@@ -381,26 +401,6 @@ function FeedVideoSlide({
             )}
           </button>
           <span className="text-[10px] font-semibold text-white/80">تحميل</span>
-        </div>
-
-        <div className="flex flex-col items-center gap-1">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              void handleDelete();
-            }}
-            disabled={deleting}
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-rose-500/20 text-rose-100 ring-1 ring-rose-300/30 backdrop-blur-md disabled:opacity-40"
-            aria-label="حذف"
-          >
-            {deleting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Trash2 className="h-4 w-4" />
-            )}
-          </button>
-          <span className="text-[10px] font-semibold text-white/80">حذف</span>
         </div>
 
         <button
@@ -462,8 +462,15 @@ function FeedVideoSlide({
   );
 }
 
-function ImageTile({ item }: { item: AssetItem }) {
+function ImageTile({
+  item,
+  onDeleted,
+}: {
+  item: AssetItem;
+  onDeleted: (id: string) => void;
+}) {
   const router = useRouter();
+  const [deleting, setDeleting] = useState(false);
   const src = veronixMediaSrc({
     historyId: item.historyId,
     url: item.url,
@@ -488,29 +495,68 @@ function ImageTile({ item }: { item: AssetItem }) {
           {assetPromptTitle(item.prompt)}
         </h3>
         <p className="line-clamp-3 text-sm text-white/75">{prompt}</p>
-        <button
-          type="button"
-          onClick={() => {
-            writeEditDraft({
-              prompt: prompt || item.prompt || "",
-              media: "image",
-              startFrame: src
-                ? {
-                    type: "image",
-                    id: `edit-img-${item.id}`,
-                    url: src,
-                    label: "edit-image",
-                  }
-                : null,
-              sourceAssetId: item.id,
-            });
-            router.push("/create/video?edit=1");
-          }}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#22f0ff]"
-        >
-          <Pencil className="h-3.5 w-3.5" />
-          تعديل
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              writeEditDraft({
+                prompt: prompt || item.prompt || "",
+                media: "image",
+                startFrame: src
+                  ? {
+                      type: "image",
+                      id: `edit-img-${item.id}`,
+                      url: src,
+                      label: "edit-image",
+                    }
+                  : null,
+                sourceAssetId: item.id,
+              });
+              router.push("/create/video?edit=1");
+            }}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#22f0ff]"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            تعديل
+          </button>
+          <button
+            type="button"
+            disabled={deleting}
+            onClick={() => {
+              void (async () => {
+                if (deleting) return;
+                if (!window.confirm("حذف هذه الصورة من Assets؟")) return;
+                setDeleting(true);
+                try {
+                  const { res, data } = await fetchJson<{ error?: string }>(
+                    "/api/assets",
+                    {
+                      method: "DELETE",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ id: item.id }),
+                    },
+                  );
+                  if (!res.ok) throw new Error(data.error || "تعذر الحذف");
+                  onDeleted(item.id);
+                } catch (err) {
+                  window.alert(
+                    err instanceof Error ? err.message : "تعذر الحذف",
+                  );
+                } finally {
+                  setDeleting(false);
+                }
+              })();
+            }}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-300 disabled:opacity-50"
+          >
+            {deleting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Trash2 className="h-3.5 w-3.5" />
+            )}
+            حذف
+          </button>
+        </div>
       </div>
     </article>
   );
@@ -732,7 +778,13 @@ export function AssetsPage() {
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {images.map((item) => (
-            <ImageTile key={item.id} item={item} />
+            <ImageTile
+              key={item.id}
+              item={item}
+              onDeleted={(id) =>
+                setAssets((prev) => prev.filter((a) => a.id !== id))
+              }
+            />
           ))}
         </div>
       </main>

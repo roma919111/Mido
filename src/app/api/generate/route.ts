@@ -231,38 +231,41 @@ export async function POST(request: Request) {
           .map((r) => resolvePublicMediaUrl(r))
           .filter((u): u is string => Boolean(u));
 
-        // Seedance: first/last XOR reference_image. Prefer Start/End frames when set;
-        // otherwise send visual refs as reference_image so «مراجع بصرية» reach BytePlus.
+        // Seedance: first/last XOR reference_image.
+        // «رفع الشخصيات» → reference_image (do NOT stylize upfront — keeps likeness).
         if (startUrl) {
           referenceUrls = [];
+          try {
+            startUrl = await stylizeReferenceImage(startUrl);
+          } catch (styleErr) {
+            console.warn(
+              "[veronix] start-frame stylize skipped:",
+              styleErr instanceof Error ? styleErr.message : styleErr,
+            );
+          }
+          if (lastUrl) {
+            try {
+              lastUrl = await stylizeReferenceImage(lastUrl);
+            } catch {
+              // keep original last frame
+            }
+          }
         } else if (referenceUrls.length) {
           startUrl = null;
           lastUrl = null;
         }
 
-        async function maybeStylize(url: string | null): Promise<string | null> {
-          if (!url) return null;
-          try {
-            return await stylizeReferenceImage(url);
-          } catch (styleErr) {
-            console.warn(
-              "[veronix] proactive reference stylize skipped:",
-              styleErr instanceof Error ? styleErr.message : styleErr,
-            );
-            return url;
-          }
-        }
-
-        startUrl = await maybeStylize(startUrl);
-        lastUrl = startUrl ? await maybeStylize(lastUrl) : null;
+        // Seedance multimodal: cite @Image1… so character refs are actually used.
+        let finalPrompt = prompt;
         if (referenceUrls.length) {
-          referenceUrls = (
-            await Promise.all(referenceUrls.slice(0, 4).map((u) => maybeStylize(u)))
-          ).filter((u): u is string => Boolean(u));
+          const tags = referenceUrls
+            .map((_, i) => `@Image${i + 1}`)
+            .join(", ");
+          finalPrompt = `${prompt.trim()}\n\nCharacters: match appearance and wardrobe from ${tags}. Keep identity consistent across the shot.`;
         }
 
         const createInput = {
-          prompt,
+          prompt: finalPrompt,
           duration: modelDuration,
           ratio: "16:9" as const,
           generateAudio: freeTrial ? true : Boolean(body.generateAudio),

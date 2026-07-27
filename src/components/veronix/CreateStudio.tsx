@@ -662,7 +662,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     if (!picked.length) return;
 
     setError(null);
-    setStatus("جاري رفع المراجع البصرية…");
+    setStatus("جاري رفع الشخصيات…");
 
     let added = 0;
     for (const file of picked) {
@@ -674,7 +674,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       if (!room) break;
 
       const preview = URL.createObjectURL(file);
-      // Instant thumbnail so the second image never looks stuck.
       setRefPreviews((prev) => (prev.length >= 4 ? prev : [...prev, preview]));
 
       try {
@@ -692,7 +691,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     }
     if (added > 0) {
       setStatus(
-        added === 1 ? "تم رفع المرجع البصري" : `تم رفع ${added} مراجع بصرية`,
+        added === 1 ? "تم رفع الشخصية" : `تم رفع ${added} شخصيات`,
       );
     }
   }
@@ -1241,6 +1240,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       router.push("/pricing?paywall=1");
       return;
     }
+    if (refPreviews.length > refs.length) {
+      setError("انتظر اكتمال رفع الشخصيات ثم أعد التوليد.");
+      return;
+    }
 
     // New run id — previous in-flight generate keeps going in Assets but
     // stops updating this studio preview.
@@ -1513,10 +1516,12 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       </label>
 
       <div className="rounded-2xl border border-dashed border-white/15 bg-[#141821] p-4">
-        <p className="mb-2 text-sm font-medium text-white/80">مراجع بصرية (اختياري)</p>
+        <p className="mb-1 text-sm font-medium text-white/80">
+          رفع الشخصيات{" "}
+          <span className="font-normal text-white/45">(اختياري)</span>
+        </p>
         <p className="mb-3 text-[11px] leading-relaxed text-white/40">
-          تُرسل إلى BytePlus Seedance كـ reference_image لتوجيه الشخصيات والمشهد.
-          استخدم Start Frame إذا أردت تثبيت أول إطار حرفيًا.
+          ارفع صور الشخصيات لتظهر بنفس الملامح في الفيديو (BytePlus Seedance).
         </p>
         <div className="flex flex-wrap gap-2">
           {refPreviews.map((src, i) => (

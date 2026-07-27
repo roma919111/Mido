@@ -242,6 +242,31 @@ export async function createBytePlusVideoTask(
     }
   }
 
+  // If multimodal reference_image is rejected, fall back to first character as first_frame.
+  if (
+    !res.ok &&
+    input.referenceImageUrls?.length &&
+    !input.startFrameUrl
+  ) {
+    const msg = errorTextFromCreate(data, res.status);
+    if (
+      /reference_image|role|not support|invalid|multimodal|content/i.test(msg) ||
+      res.status === 400
+    ) {
+      const first = input.referenceImageUrls[0]!;
+      payload = buildCreatePayload(
+        { ...input, startFrameUrl: first, referenceImageUrls: [] },
+        {
+          frameUrl: first,
+          referenceUrls: [],
+          imageRole: "first_frame",
+          generateAudio: Boolean(payload.generate_audio),
+        },
+      );
+      ({ res, data } = await postCreateTask(payload));
+    }
+  }
+
   // Real-person privacy block on stills — rewrite as semi-realistic
   // scene + stylize; last resort drop images entirely.
   const hasImages = Boolean(
