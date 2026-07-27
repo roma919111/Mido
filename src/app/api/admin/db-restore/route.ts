@@ -6,14 +6,18 @@ import {
   mergeDbFromBackup,
   recoverDbFromBackupsIfNeeded,
 } from "@/lib/db-backup";
-import { ensureMultiShotBackground, isMultiShotJobMeta } from "@/lib/multi-shot-job";
+import {
+  ensureMultiShotBackground,
+  isMultiShotJobMeta,
+  tickMultiShotJob,
+} from "@/lib/multi-shot-job";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
 type Body = {
   /** List live DB + backups (default). */
-  action?: "status" | "restore" | "auto";
+  action?: "status" | "restore" | "auto" | "advance-multi";
   email?: string;
   backupName?: string;
   fullReplace?: boolean;
@@ -33,6 +37,49 @@ export async function POST(request: Request) {
 
     const body = (await request.json().catch(() => ({}))) as Body;
     const action = body.action || "status";
+
+    if (action === "advance-multi") {
+      const email = body.email?.trim().toLowerCase();
+      if (!email) {
+        return NextResponse.json({ error: "email required" }, { status: 400 });
+      }
+      const user = await findUserByEmail(email);
+      if (!user) {
+        return NextResponse.json({ error: "user not found" }, { status: 404 });
+      }
+      const jobs = await listRunningMultiShotJobs(user.id);
+      const report: Array<Record<string, unknown>> = [];
+      for (const job of jobs.slice(0, 2)) {
+        ensureMultiShotBackground(user.id, job.id);
+        // Advance up to 3 beats in this request (each ~1m).
+        let current = job;
+        for (let i = 0; i < 3; i += 1) {
+          if (current.status !== "running" || current.mode !== "sequence-pending") break;
+          const next = await tickMultiShotJob(user.id, current);
+          if (!next) break;
+          current = next;
+          if (current.status === "completed" || current.status === "failed") break;
+        }
+        report.push({
+          id: current.id,
+          status: current.status,
+          mode: current.mode,
+          targetSeconds: current.targetSeconds,
+          nextIndex: isMultiShotJobMeta(current.jobMeta)
+            ? current.jobMeta.nextIndex
+            : null,
+          partCount: isMultiShotJobMeta(current.jobMeta)
+            ? current.jobMeta.partUrls.length
+            : null,
+          shotCount: isMultiShotJobMeta(current.jobMeta)
+            ? current.jobMeta.shots.length
+            : null,
+          hasUrl: Boolean(current.url),
+          error: current.error?.slice(0, 160),
+        });
+      }
+      return NextResponse.json({ ok: true, report });
+    }
 
     if (action === "auto") {
       const recovered = await recoverDbFromBackupsIfNeeded();
