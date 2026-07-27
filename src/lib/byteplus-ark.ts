@@ -291,7 +291,7 @@ export async function waitForBytePlusVideoTask(
       if (
         !mutedRetryUsed &&
         options?.retryInput &&
-        /OutputAudioSensitive|SensitiveContent|sensitive/i.test(err)
+        /OutputAudioSensitive|AudioSensitive/i.test(err)
       ) {
         mutedRetryUsed = true;
         const retry = await createBytePlusVideoTask({
