@@ -1,12 +1,15 @@
 /**
- * Wall-clock ETA for Veronix / Seedance generation.
+ * Wall-clock ETA for Veronix generation.
  *
- * Measured on BytePlus: ~55–70s wall time per ~4s of output under load.
- * Single-clip path (4–15s) scales linearly from that baseline + clarity overhead.
+ * Video (Seedance): ~55–70s wall time per ~4s of output under load.
+ * Image (Seedream): ~30s measured on BytePlus for 2K stills.
  */
 
 /** Conservative BytePlus wall time for a 4-second render (includes queue jitter). */
 export const ETA_SECONDS_PER_4S_OUTPUT = 70;
+
+/** Seedream 2K still — typical BytePlus wall clock. */
+export const ETA_SECONDS_IMAGE = 30;
 
 /** Cache local copy + extract bridge frame between beats. */
 export const ETA_SECONDS_PER_BEAT_OVERHEAD = 15;
@@ -14,8 +17,14 @@ export const ETA_SECONDS_PER_BEAT_OVERHEAD = 15;
 /** Final ffmpeg concat + OmarFX clarity grade. */
 export const ETA_SECONDS_FINAL_STITCH = 60;
 
-/** Estimate total generate time (seconds) for a chosen output duration. */
-export function estimateGenerateSeconds(outputDurationSec: number): number {
+export type GenerateMediaKind = "image" | "video";
+
+/** Estimate total generate time (seconds) for a chosen output duration / media. */
+export function estimateGenerateSeconds(
+  outputDurationSec: number,
+  media: GenerateMediaKind = "video",
+): number {
+  if (media === "image") return ETA_SECONDS_IMAGE;
   const duration = Math.max(1, Math.round(outputDurationSec || 4));
   // Single clip: scale from the measured 4s wall time, then add clarity grade.
   const render = Math.ceil((duration / 4) * ETA_SECONDS_PER_4S_OUTPUT);
@@ -27,8 +36,9 @@ export function remainingGenerateSeconds(
   startedAtMs: number,
   outputDurationSec: number,
   nowMs = Date.now(),
+  media: GenerateMediaKind = "video",
 ): number {
-  const eta = estimateGenerateSeconds(outputDurationSec);
+  const eta = estimateGenerateSeconds(outputDurationSec, media);
   const elapsed = Math.max(0, Math.floor((nowMs - startedAtMs) / 1000));
   return Math.max(0, eta - elapsed);
 }
@@ -51,6 +61,7 @@ export function formatStudioCountdownLabel(input: {
   partCount?: number;
   shotCount?: number;
   overdueForSec?: number;
+  media?: GenerateMediaKind;
 }): string {
   const {
     remainingSec,
@@ -58,7 +69,17 @@ export function formatStudioCountdownLabel(input: {
     partCount = 0,
     shotCount = 0,
     overdueForSec = 0,
+    media = "video",
   } = input;
+
+  if (media === "image") {
+    if (remainingSec > 0) return formatCountdownLabel(remainingSec);
+    if (overdueForSec > 20) {
+      return "ما زال قيد المعالجة — الصورة عادة جاهزة خلال ~30 ثانية";
+    }
+    return "ما زال قيد التوليد…";
+  }
+
   const etaMin = Math.max(1, Math.ceil(estimateGenerateSeconds(targetSeconds) / 60));
   const progress =
     shotCount > 1

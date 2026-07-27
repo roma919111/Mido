@@ -405,13 +405,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     preview?.targetSeconds ||
     (media === "video"
       ? Math.min(sliderMax, Math.max(sliderMin, duration))
-      : 4);
+      : 1);
+  const countdownMedia = media;
   const countdownOverdueSec =
     waitingResult && genStartedAt != null && remainingSec <= 0
       ? Math.max(
           0,
           Math.floor((Date.now() - genStartedAt) / 1000) -
-            estimateGenerateSeconds(countdownTargetSeconds),
+            estimateGenerateSeconds(countdownTargetSeconds, countdownMedia),
         )
       : 0;
   const countdownLabel = formatStudioCountdownLabel({
@@ -420,24 +421,32 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     partCount: multiProgress?.partCount,
     shotCount: multiProgress?.shotCount,
     overdueForSec: countdownOverdueSec,
+    media: countdownMedia,
   });
 
   useEffect(() => {
     if (!waitingResult || genStartedAt == null) {
       if (!waitingResult) {
-        setRemainingSec(estimateGenerateSeconds(countdownTargetSeconds));
+        setRemainingSec(
+          estimateGenerateSeconds(countdownTargetSeconds, countdownMedia),
+        );
       }
       return;
     }
     const tick = () => {
       setRemainingSec(
-        remainingGenerateSeconds(genStartedAt, countdownTargetSeconds),
+        remainingGenerateSeconds(
+          genStartedAt,
+          countdownTargetSeconds,
+          Date.now(),
+          countdownMedia,
+        ),
       );
     };
     tick();
     const id = window.setInterval(tick, 1000);
     return () => window.clearInterval(id);
-  }, [waitingResult, genStartedAt, countdownTargetSeconds]);
+  }, [waitingResult, genStartedAt, countdownTargetSeconds, countdownMedia]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1114,8 +1123,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             remainingSec: remainingGenerateSeconds(
               startedAt,
               preview?.targetSeconds || countdownTargetSeconds,
+              Date.now(),
+              mediaType,
             ),
             targetSeconds: preview?.targetSeconds || countdownTargetSeconds,
+            media: mediaType,
           })}`,
         );
         if (typeof data.pollAfterSeconds === "number" && data.pollAfterSeconds > 2) {
@@ -1340,10 +1352,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     const outputTargetSeconds =
       media === "video"
         ? Math.min(sliderMax, Math.max(sliderMin, duration))
-        : 4;
+        : 1;
     setGenerating(true);
     setGenStartedAt(startedAt);
-    setRemainingSec(estimateGenerateSeconds(outputTargetSeconds));
+    setRemainingSec(estimateGenerateSeconds(outputTargetSeconds, media));
     setMultiProgress(null);
     setPreview({
       url: "",
@@ -1925,9 +1937,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                     </p>
                     <p className="px-6 text-center text-xs text-white/35">
                       {preview?.mediaType === "image" || media === "image"
-                        ? "الصورة جاهزة خلال ثوانٍ — لا تغلق التطبيق"
+                        ? "الصورة عادة جاهزة خلال ~30 ثانية — لا تغلق التطبيق"
                         : `فيديو ${countdownTargetSeconds}ث ≈ ${Math.ceil(
-                            estimateGenerateSeconds(countdownTargetSeconds) / 60,
+                            estimateGenerateSeconds(countdownTargetSeconds, "video") / 60,
                           )} دقائق خلف الكواليس — لا تغلق التطبيق`}
                     </p>
                   </>

@@ -112,12 +112,15 @@ async function captureVideoFrame(
 function FeedVideoSlide({
   item,
   active,
+  loadMedia,
   muted,
   onToggleMute,
   onDeleted,
 }: {
   item: AssetItem;
   active: boolean;
+  /** Load poster/proxy only for active + neighbors — keeps Assets snappy. */
+  loadMedia: boolean;
   muted: boolean;
   onToggleMute: () => void;
   onDeleted: (id: string) => void;
@@ -130,15 +133,21 @@ function FeedVideoSlide({
   const [posterFailed, setPosterFailed] = useState(false);
   const [promptExpanded, setPromptExpanded] = useState(false);
 
-  const src = veronixMediaSrc({
-    historyId: item.historyId,
-    url: item.url,
-    mediaType: "video",
-  });
-  const poster = veronixPosterSrc({
-    historyId: item.historyId,
-    url: item.url,
-  });
+  const src =
+    loadMedia
+      ? veronixMediaSrc({
+          historyId: item.historyId,
+          url: item.url,
+          mediaType: "video",
+        })
+      : null;
+  const poster =
+    loadMedia
+      ? veronixPosterSrc({
+          historyId: item.historyId,
+          url: item.url,
+        })
+      : null;
   const prompt = cleanAssetPrompt(item.prompt);
   const title = assetPromptTitle(item.prompt);
   const promptLong = prompt.length > 110;
@@ -604,15 +613,16 @@ export function AssetsPage() {
   const [muted, setMuted] = useState(true);
   const feedRef = useRef<HTMLDivElement | null>(null);
 
-  const loadAssets = useCallback(async () => {
+  const loadAssets = useCallback(async (opts?: { sync?: boolean }) => {
     const me = await fetchJson<{ user: CustomerUser | null }>("/api/auth/customer/me");
     setUser(me.data.user);
     if (!me.data.user) {
       setError("سجّل الدخول لعرض ملفاتك.");
       return;
     }
+    const qs = opts?.sync ? "?sync=1" : "";
     const { res, data } = await fetchJson<{ assets?: AssetItem[]; error?: string }>(
-      "/api/assets",
+      `/api/assets${qs}`,
     );
     if (!res.ok) {
       setError(data.error || "Failed to load assets");
@@ -629,14 +639,23 @@ export function AssetsPage() {
   }, []);
 
   useEffect(() => {
-    void loadAssets();
+    let cancelled = false;
+    void (async () => {
+      // Instant library paint, then background sync for running jobs / clarity.
+      await loadAssets();
+      if (cancelled) return;
+      await loadAssets({ sync: true });
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [loadAssets]);
 
   useEffect(() => {
     const hasRunning = assets.some((a) => a.status === "running");
     if (!hasRunning || !user) return;
     const t = window.setInterval(() => {
-      void loadAssets();
+      void loadAssets({ sync: true });
     }, 8000);
     return () => window.clearInterval(t);
   }, [assets, user, loadAssets]);
@@ -711,18 +730,26 @@ export function AssetsPage() {
             className="h-[100dvh] snap-y snap-mandatory overflow-y-scroll overscroll-y-contain"
             style={{ scrollSnapType: "y mandatory" }}
           >
-            {videos.map((item) => (
+            {videos.map((item, index) => {
+              const activeIndex = Math.max(
+                0,
+                videos.findIndex((v) => v.id === activeId),
+              );
+              const loadMedia = Math.abs(index - activeIndex) <= 1;
+              return (
               <FeedVideoSlide
                 key={item.id}
                 item={item}
                 active={activeId === item.id}
+                loadMedia={loadMedia}
                 muted={muted}
                 onToggleMute={() => setMuted((m) => !m)}
                 onDeleted={(id) =>
                   setAssets((prev) => prev.filter((a) => a.id !== id))
                 }
               />
-            ))}
+              );
+            })}
           </div>
         )}
 

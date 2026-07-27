@@ -331,11 +331,31 @@ async function syncRunningAssets(userId: string) {
   return listAssetsForUser(userId, { includeHidden: false });
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Login required", needsAuth: true }, { status: 401 });
   }
+
+  const wantSync = new URL(request.url).searchParams.get("sync") === "1";
+
+  // Fast path: return the customer's library immediately so Assets feels instant.
+  // Heavy recover / stitch / BytePlus sync only runs when explicitly requested.
+  if (!wantSync) {
+    try {
+      const assets = await listAssetsForUser(user.id);
+      return NextResponse.json({ assets, fast: true });
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error: error instanceof Error ? error.message : "Failed to load assets",
+          assets: [],
+        },
+        { status: 500 },
+      );
+    }
+  }
+
   try {
     // Restore paid multi-shot clips if stitch never produced a visible final.
     await recoverOrphanedHiddenAssets(user.id);
@@ -347,7 +367,7 @@ export async function GET() {
     }
     await stitchPendingJobs(user.id);
     const assets = await syncRunningAssets(user.id);
-    return NextResponse.json({ assets });
+    return NextResponse.json({ assets, synced: true });
   } catch (error) {
     if (error instanceof OpenArtConfigError) {
       await recoverOrphanedHiddenAssets(user.id).catch(() => 0);
