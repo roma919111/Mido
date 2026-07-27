@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { findUserByEmail, listAssetsForAdmin, listUsersForAdmin, listRunningMultiShotJobs } from "@/lib/db";
+import { findUserByEmail, listAssetsForAdmin, listUsersForAdmin, listRunningMultiShotJobs, updateAsset } from "@/lib/db";
 import {
   currentDbStats,
   listDbBackups,
@@ -17,7 +17,7 @@ export const maxDuration = 300;
 
 type Body = {
   /** List live DB + backups (default). */
-  action?: "status" | "restore" | "auto" | "advance-multi";
+  action?: "status" | "restore" | "auto" | "advance-multi" | "promote-finals";
   email?: string;
   backupName?: string;
   fullReplace?: boolean;
@@ -37,6 +37,46 @@ export async function POST(request: Request) {
 
     const body = (await request.json().catch(() => ({}))) as Body;
     const action = body.action || "status";
+
+    if (action === "promote-finals") {
+      const email = body.email?.trim().toLowerCase();
+      if (!email) {
+        return NextResponse.json({ error: "email required" }, { status: 400 });
+      }
+      const user = await findUserByEmail(email);
+      if (!user) {
+        return NextResponse.json({ error: "user not found" }, { status: 404 });
+      }
+      const assets = await listAssetsForAdmin(user.id, 200);
+      let promoted = 0;
+      for (const a of assets) {
+        if (
+          a.status === "completed" &&
+          a.hidden !== true &&
+          a.url &&
+          (a.mode === "sequence-concat" || a.mediaType === "video")
+        ) {
+          // Touch to reorder to top (updateAsset promotes visible finals).
+          await updateAsset(a.id, user.id, { hidden: false });
+          promoted += 1;
+          if (promoted >= 12) break;
+        }
+      }
+      const refreshed = await listAssetsForAdmin(user.id, 15);
+      return NextResponse.json({
+        ok: true,
+        promoted,
+        sample: refreshed.map((a) => ({
+          id: a.id,
+          status: a.status,
+          mode: a.mode,
+          targetSeconds: a.targetSeconds,
+          hasUrl: Boolean(a.url),
+          hidden: a.hidden,
+          error: a.error?.slice(0, 120),
+        })),
+      });
+    }
 
     if (action === "advance-multi") {
       const email = body.email?.trim().toLowerCase();
