@@ -91,6 +91,7 @@ ${trimmed.slice(0, 4000)}`,
 
 /**
  * AI-polish one action beat into a full English Seedance shot description.
+ * Customer-facing enhance text — do NOT inject "CGI" jargon.
  */
 export async function polishShotPromptEnglish(
   action: string,
@@ -109,9 +110,10 @@ export async function polishShotPromptEnglish(
     `Rewrite this single video action into one polished English cinematic shot prompt for AI video (Seedance).
 Rules:
 - ONE primary action only
-- Semi-realistic / cinematic CGI look (not a real photograph of a person)
+- Natural cinematic film look (live-action style). Do NOT write the words CGI, 3D, render, or Unreal
 - Include lighting, camera, motion, wardrobe continuity
 - 2–4 sentences max
+- Do not mention brand names or technical pipeline jargon
 Return JSON only: {"prompt":"..."}
 
 ACTION:
@@ -122,16 +124,27 @@ ${settingLine}`,
   if (raw) {
     const parsed = parseJsonObject(raw);
     const p = typeof parsed?.prompt === "string" ? parsed.prompt.trim() : "";
-    if (p.length >= 12) return p;
+    if (p.length >= 12) return stripEnhanceJargon(p);
   }
 
   const bits = [
-    `Cinematic semi-realistic shot: ${act}.`,
+    `Cinematic shot: ${act}.`,
     "Smooth natural motion, rich color grade, soft cinematic lighting.",
-    "Not a real photograph of a person — high-quality CGI / digital film look.",
   ];
   if (entityLine) bits.push(entityLine);
   if (settingLine) bits.push(settingLine);
   bits.push("One shot only — perform this action without adding events from other shots.");
-  return bits.join(" ");
+  return stripEnhanceJargon(bits.join(" "));
+}
+
+/** Remove technical labels that confuse customers in the enhance box. */
+function stripEnhanceJargon(text: string): string {
+  return text
+    .replace(/\bCGI\b/gi, "")
+    .replace(/\b3D\s*render(?:ed|ing)?\b/gi, "")
+    .replace(/\bUnreal(?:\s*Engine)?\b/gi, "")
+    .replace(/\bdigital\s*film\s*look\b/gi, "film look")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.])/g, "$1")
+    .trim();
 }
