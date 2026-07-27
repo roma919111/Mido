@@ -65,6 +65,32 @@ function buildMediaApiPath(
     return `${endpoint}?${qs.toString()}`;
   }
 
+  // Prefer direct CDN/local URL over historyId — avoids a BytePlus task lookup
+  // on every poster/stream request (multi-second cold start on Assets).
+  const raw = existing || "";
+  if (raw) {
+    // Absolute same-origin paths (already Veronix).
+    if (raw.startsWith("/") && !raw.startsWith("//")) {
+      if (mode === "stream") return raw;
+      if (mode === "poster") return null;
+      return null;
+    }
+
+    try {
+      const parsed = new URL(raw);
+      if (isAllowedMediaHost(parsed.hostname)) {
+        const qs = new URLSearchParams({
+          u: toBase64Url(raw),
+          type: mediaType,
+          filename,
+        });
+        return `${endpoint}?${qs.toString()}`;
+      }
+    } catch {
+      // fall through to historyId
+    }
+  }
+
   if (input.historyId?.trim()) {
     const qs = new URLSearchParams({
       historyId: input.historyId.trim(),
@@ -74,32 +100,7 @@ function buildMediaApiPath(
     return `${endpoint}?${qs.toString()}`;
   }
 
-  const raw = input.url?.trim();
-  if (!raw) return null;
-
-  // Absolute same-origin paths (already Veronix).
-  if (raw.startsWith("/") && !raw.startsWith("//")) {
-    if (mode === "stream") return raw;
-    if (mode === "poster") return null;
-    return null;
-  }
-
-  try {
-    const parsed = new URL(raw);
-    if (!isAllowedMediaHost(parsed.hostname)) {
-      // Non-OpenArt absolute URL: use as-is for stream only if same site later.
-      return null;
-    }
-  } catch {
-    return null;
-  }
-
-  const qs = new URLSearchParams({
-    u: toBase64Url(raw),
-    type: mediaType,
-    filename,
-  });
-  return `${endpoint}?${qs.toString()}`;
+  return null;
 }
 
 /** Force-download through Veronix with a Veronix filename. */

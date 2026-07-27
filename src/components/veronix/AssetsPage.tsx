@@ -29,22 +29,16 @@ import {
   veronixMediaSrc,
   veronixPosterSrc,
 } from "@/lib/media-proxy";
+import {
+  clearAssetsCache,
+  readAssetsCache,
+  writeAssetsCache,
+  warmAssetPosters,
+  type CachedAssetItem,
+} from "@/lib/assets-cache";
 import type { VisualReference } from "@/lib/types";
 
-interface AssetItem {
-  id: string;
-  mediaType: "image" | "video";
-  url: string;
-  prompt: string;
-  mode?: string;
-  model: string;
-  creditsUsed: number;
-  status: string;
-  createdAt: string;
-  historyId?: string;
-  error?: string;
-  targetSeconds?: number;
-}
+type AssetItem = CachedAssetItem;
 
 function RunningCountdown({
   assetId,
@@ -132,6 +126,7 @@ function FeedVideoSlide({
   const [deleting, setDeleting] = useState(false);
   const [posterFailed, setPosterFailed] = useState(false);
   const [promptExpanded, setPromptExpanded] = useState(false);
+  const [videoReady, setVideoReady] = useState(false);
 
   const src =
     loadMedia
@@ -141,11 +136,12 @@ function FeedVideoSlide({
           mediaType: "video",
         })
       : null;
+  // Prefer URL-based posters (CDN) — skip BytePlus history lookup on cold open.
   const poster =
     loadMedia
       ? veronixPosterSrc({
-          historyId: item.historyId,
           url: item.url,
+          historyId: item.historyId,
         })
       : null;
   const prompt = cleanAssetPrompt(item.prompt);
@@ -158,6 +154,8 @@ function FeedVideoSlide({
 
   useEffect(() => {
     setPromptExpanded(false);
+    setVideoReady(false);
+    setPosterFailed(false);
   }, [item.id]);
 
   useEffect(() => {
@@ -171,6 +169,7 @@ function FeedVideoSlide({
       }
     } else {
       el.pause();
+      setVideoReady(false);
       try {
         el.currentTime = 0;
       } catch {
@@ -292,8 +291,10 @@ function FeedVideoSlide({
             <img
               src={poster}
               alt=""
-              className={`absolute inset-0 h-full w-full object-contain transition-opacity ${
-                active ? "opacity-0" : "opacity-100"
+              decoding="async"
+              loading={active ? "eager" : "lazy"}
+              className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-200 ${
+                active && videoReady ? "opacity-0" : "opacity-100"
               }`}
               onError={() => setPosterFailed(true)}
             />
@@ -305,11 +306,14 @@ function FeedVideoSlide({
             playsInline
             loop
             muted={muted}
-            preload={active ? "auto" : "none"}
+            preload={active ? "metadata" : "none"}
             controls={false}
             controlsList="nodownload"
-            className={`absolute inset-0 h-full w-full object-contain ${
-              active ? "opacity-100" : "opacity-0"
+            onLoadedData={() => setVideoReady(true)}
+            onWaiting={() => setVideoReady(false)}
+            onPlaying={() => setVideoReady(true)}
+            className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-200 ${
+              active && videoReady ? "opacity-100" : "opacity-0"
             }`}
           />
         </>
@@ -492,7 +496,13 @@ function ImageTile({
       <div className="aspect-[3/4] bg-black/40">
         {src ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={src} alt="" className="h-full w-full object-cover" />
+          <img
+            src={src}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className="h-full w-full object-cover"
+          />
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-white/40">
             {item.status}
@@ -607,10 +617,11 @@ function useActiveSlide(
 
 export function AssetsPage() {
   const [user, setUser] = useState<CustomerUser | null>(null);
-  const [assets, setAssets] = useState<AssetItem[]>([]);
+  const [assets, setAssets] = useState<AssetItem[]>(() => readAssetsCache() || []);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<"video" | "image">("video");
   const [muted, setMuted] = useState(true);
+  const [loading, setLoading] = useState(() => !readAssetsCache()?.length);
   const feedRef = useRef<HTMLDivElement | null>(null);
 
   const loadAssets = useCallback(async (opts?: { sync?: boolean }) => {
@@ -620,15 +631,24 @@ export function AssetsPage() {
     );
     if (!res.ok) {
       if (res.status === 401) {
+        clearAssetsCache();
+        setAssets([]);
         setError("سجّل الدخول لعرض ملفاتك.");
         return;
       }
-      setError(data.error || "Failed to load assets");
+      // Keep cached tiles visible if a background refresh fails.
+      if (!opts?.sync) setError(data.error || "Failed to load assets");
       return;
     }
     setError(null);
     const next = (data.assets || []).filter((a) => a.mode !== "sequence-part");
     setAssets(next);
+    writeAssetsCache(next);
+    if (!opts?.sync) {
+      warmAssetPosters(next, (item) =>
+        veronixPosterSrc({ url: item.url, historyId: item.historyId }),
+      );
+    }
     for (const a of next) {
       if (a.status === "completed" || a.status === "failed") {
         clearEtaStart(a.id);
@@ -639,6 +659,12 @@ export function AssetsPage() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
+      const cached = readAssetsCache();
+      if (cached?.length) {
+        setAssets(cached);
+        setLoading(false);
+      }
+
       // Auth + fast library in parallel so Assets paints immediately.
       const mePromise = fetchJson<{ user: CustomerUser | null }>("/api/auth/customer/me");
       const listPromise = loadAssets();
@@ -646,11 +672,15 @@ export function AssetsPage() {
       if (cancelled) return;
       setUser(me.data.user);
       if (!me.data.user) {
+        clearAssetsCache();
+        setAssets([]);
         setError("سجّل الدخول لعرض ملفاتك.");
+        setLoading(false);
         return;
       }
       await listPromise;
       if (cancelled) return;
+      setLoading(false);
       // Background sync only — never block the first paint.
       void loadAssets({ sync: true });
     })();
@@ -683,6 +713,7 @@ export function AssetsPage() {
                 void fetch("/api/auth/customer/logout", { method: "POST" }).then(() => {
                   setUser(null);
                   setAssets([]);
+                  clearAssetsCache();
                 });
               }}
             />
@@ -720,7 +751,13 @@ export function AssetsPage() {
           </div>
         )}
 
-        {!error && videos.length === 0 && (
+        {!error && loading && videos.length === 0 && (
+          <div className="flex min-h-[100dvh] items-center justify-center">
+            <Loader2 className="h-7 w-7 animate-spin text-[#22f0ff]" />
+          </div>
+        )}
+
+        {!error && !loading && videos.length === 0 && (
           <div className="flex min-h-[100dvh] flex-col items-center justify-center gap-3 px-6 text-center">
             <p className="text-sm text-white/50">لا توجد فيديوهات بعد.</p>
             <Link
@@ -752,9 +789,13 @@ export function AssetsPage() {
                 loadMedia={loadMedia}
                 muted={muted}
                 onToggleMute={() => setMuted((m) => !m)}
-                onDeleted={(id) =>
-                  setAssets((prev) => prev.filter((a) => a.id !== id))
-                }
+                onDeleted={(id) => {
+                  setAssets((prev) => {
+                    const next = prev.filter((a) => a.id !== id);
+                    writeAssetsCache(next);
+                    return next;
+                  });
+                }}
               />
               );
             })}
@@ -774,6 +815,7 @@ export function AssetsPage() {
           void fetch("/api/auth/customer/logout", { method: "POST" }).then(() => {
             setUser(null);
             setAssets([]);
+            clearAssetsCache();
           });
         }}
       />
@@ -807,7 +849,13 @@ export function AssetsPage() {
           </div>
         )}
 
-        {!error && images.length === 0 && (
+        {!error && loading && images.length === 0 && (
+          <div className="mt-16 flex justify-center">
+            <Loader2 className="h-7 w-7 animate-spin text-[#22f0ff]" />
+          </div>
+        )}
+
+        {!error && !loading && images.length === 0 && (
           <p className="mt-8 text-sm text-white/45">لا توجد صور بعد.</p>
         )}
 
@@ -816,9 +864,13 @@ export function AssetsPage() {
             <ImageTile
               key={item.id}
               item={item}
-              onDeleted={(id) =>
-                setAssets((prev) => prev.filter((a) => a.id !== id))
-              }
+              onDeleted={(id) => {
+                setAssets((prev) => {
+                  const next = prev.filter((a) => a.id !== id);
+                  writeAssetsCache(next);
+                  return next;
+                });
+              }}
             />
           ))}
         </div>
