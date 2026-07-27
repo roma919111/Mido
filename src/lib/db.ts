@@ -286,9 +286,20 @@ export async function updateAsset(
     const db = await ensureDb();
     const idx = db.assets.findIndex((a) => a.id === id && a.userId === userId);
     if (idx < 0) return null;
-    db.assets[idx] = { ...db.assets[idx]!, ...patch };
+    const next = { ...db.assets[idx]!, ...patch };
+    // Promote finished multi-shot finals to the top so Assets shows them immediately.
+    const becameVisibleFinal =
+      next.status === "completed" &&
+      next.hidden !== true &&
+      (next.mode === "sequence-concat" || Boolean(next.url));
+    if (becameVisibleFinal && idx > 0) {
+      db.assets.splice(idx, 1);
+      db.assets.unshift(next);
+    } else {
+      db.assets[idx] = next;
+    }
     await saveDb(db);
-    return db.assets[idx]!;
+    return next;
   });
 }
 
