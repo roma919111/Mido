@@ -4,6 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Clapperboard, FolderOpen, Home, ImageIcon, Lightbulb, Sparkles, Wrench } from "lucide-react";
+import {
+  writeAssetsCache,
+  warmAssetPosters,
+  type CachedAssetItem,
+} from "@/lib/assets-cache";
+import { fetchJson } from "@/lib/fetch-json";
+import { veronixPosterSrc } from "@/lib/media-proxy";
 
 const ITEMS: Array<{
   href: string;
@@ -20,7 +27,22 @@ const ITEMS: Array<{
 
 function prefetchAssets() {
   if (typeof window === "undefined") return;
-  void fetch("/api/assets", { credentials: "include" }).catch(() => undefined);
+  void (async () => {
+    try {
+      const { res, data } = await fetchJson<{ assets?: CachedAssetItem[] }>(
+        "/api/assets",
+        { credentials: "include" },
+      );
+      if (!res.ok || !data.assets) return;
+      const assets = data.assets.filter((a) => a.mode !== "sequence-part");
+      writeAssetsCache(assets);
+      warmAssetPosters(assets, (item) =>
+        veronixPosterSrc({ historyId: item.historyId, url: item.url }),
+      );
+    } catch {
+      // best-effort warm
+    }
+  })();
 }
 
 export function BottomNav() {
