@@ -134,3 +134,27 @@ export function isInputImagePrivacyError(message: string): boolean {
     message,
   );
 }
+
+const SEMI_REAL_MARK = "مشهد سينمائي شبه واقعي";
+
+/**
+ * When BytePlus rejects a start-frame as a real person, rewrite the prompt as a
+ * semi-realistic cinematic/CGI scene so the retry is creative media — not a photo.
+ */
+export function toSemiRealisticScenePrompt(prompt: string): string {
+  const base = (prompt || "")
+    .replace(/\n\n\(جارٍ توليد ودمج[\s\S]*$/u, "")
+    .trim();
+  if (!base) {
+    return `${SEMI_REAL_MARK} بأسلوب CGI فني، إضاءة سينمائية، تفاصيل واضحة، ليس صورة فوتوغرافية لشخص حقيقي.`;
+  }
+  if (base.includes(SEMI_REAL_MARK) || /شبه\s*واقعي/u.test(base)) {
+    return base;
+  }
+  return [
+    `${SEMI_REAL_MARK} بأسلوب CGI / رسم رقمي عالي الجودة (ليست صورة كاميرا لشخص حقيقي).`,
+    "إضاءة سينمائية، ملمس جلدي ناعم مرسوم، ألوان غنية، حركة طبيعية سلسة.",
+    "",
+    base,
+  ].join("\n");
+}

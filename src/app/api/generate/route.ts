@@ -312,7 +312,7 @@ export async function POST(request: Request) {
           const errMsg = /InputImageSensitive|PrivacyInformation|real person/i.test(
             rawErr,
           )
-            ? "الصورة المرجعية رُفضت لأنها تبدو كشخص حقيقي. أعدنا معالجتها تلقائياً بأسلوب فني — إن استمر الرفض جرّب صورة مرسومة/AI أو ولّد بدون Start Frame."
+            ? "الصورة المرجعية رُفضت (شخص حقيقي). أعدنا كتابة الوصف كمشهد شبه واقعي وأعدنا التوليد — إن فشل مرة أخرى استخدم صورة مرسومة/AI أو احذف Start Frame."
             : rawErr;
           await updateAsset(asset.id, user.id, {
             historyId,
@@ -353,7 +353,7 @@ export async function POST(request: Request) {
       } catch (err) {
         const raw = err instanceof Error ? err.message : "BytePlus generation failed";
         const message = /InputImageSensitive|PrivacyInformation|real person/i.test(raw)
-          ? "الصورة المرجعية رُفضت لأنها تبدو كشخص حقيقي. نعيد معالجتها بأسلوب فني تلقائياً — إن فشل مرة أخرى استخدم صورة مرسومة/AI أو احذف Start Frame."
+          ? "الصورة المرجعية رُفضت (شخص حقيقي). أعدنا كتابة الوصف كمشهد شبه واقعي تلقائياً — إن فشل استخدم صورة مرسومة/AI أو احذف Start Frame."
           : raw;
         console.error("[veronix] BytePlus generation failed (no OpenArt fallback):", raw);
         await updateAsset(asset.id, user.id, {

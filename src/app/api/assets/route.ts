@@ -15,6 +15,7 @@ import {
 } from "@/lib/db";
 import { PRODUCT_PER_SHOT_SECONDS } from "@/lib/shot-plan";
 import { VERONIX_MODEL_ID } from "@/lib/free-trial";
+import { toSemiRealisticScenePrompt } from "@/lib/reference-sanitize";
 import {
   callOpenArtTool,
   collectMediaUrls,
@@ -105,12 +106,9 @@ async function syncRunningAssets(userId: string) {
                   : asset.mode === "sequence-part"
                     ? PRODUCT_PER_SHOT_SECONDS
                     : 8;
-              // Last resort: drop the start-frame still (text-only) so the job
-              // can finish instead of hanging failed/running for 30+ minutes.
+              // Rewrite as semi-realistic cinematic scene (no real-person photo intent).
               const retry = await createBytePlusVideoTask({
-                prompt: asset.prompt
-                  .replace(/\n\n\(جارٍ توليد ودمج[\s\S]*$/u, "")
-                  .trim(),
+                prompt: toSemiRealisticScenePrompt(asset.prompt),
                 duration,
                 ratio: "16:9",
                 generateAudio: false,
@@ -121,7 +119,7 @@ async function syncRunningAssets(userId: string) {
                 status: "running",
                 url: "",
                 error:
-                  "[privacy-retry] أُعيد التوليد بدون صورة البداية بسبب رفض الخصوصية",
+                  "[privacy-retry] أُعيد كتابة الوصف كمشهد شبه واقعي وأُعيد التوليد",
                 hidden: asset.mode === "sequence-part" ? true : false,
               });
               continue;

@@ -6,6 +6,7 @@
 import {
   isInputImagePrivacyError,
   stylizeReferenceImage,
+  toSemiRealisticScenePrompt,
 } from "@/lib/reference-sanitize";
 import type { VisualReference } from "@/lib/types";
 
@@ -197,21 +198,26 @@ export async function createBytePlusVideoTask(
     }
   }
 
-  // Real-person privacy block on the start frame — stylize creatively and retry.
+  // Real-person privacy block on the start frame — rewrite as semi-realistic
+  // scene + stylize still; last resort drop the still entirely.
   if (!res.ok && input.startFrameUrl) {
     const msg = errorTextFromCreate(data, res.status);
     if (isInputImagePrivacyError(msg)) {
+      const rewritten = {
+        ...input,
+        prompt: toSemiRealisticScenePrompt(input.prompt),
+      };
       try {
         const styled = await stylizeReferenceImage(input.startFrameUrl);
-        payload = buildCreatePayload(input, {
+        payload = buildCreatePayload(rewritten, {
           frameUrl: styled,
           imageRole: "first_frame",
           generateAudio: Boolean(payload.generate_audio),
         });
         ({ res, data } = await postCreateTask(payload));
-        // Last resort: keep motion from the prompt only (no still).
+        // Last resort: keep motion from the rewritten prompt only (no still).
         if (!res.ok && isInputImagePrivacyError(errorTextFromCreate(data, res.status))) {
-          payload = buildCreatePayload(input, {
+          payload = buildCreatePayload(rewritten, {
             frameUrl: null,
             generateAudio: Boolean(payload.generate_audio),
           });
@@ -222,6 +228,16 @@ export async function createBytePlusVideoTask(
           "[veronix] reference stylize failed:",
           styleErr instanceof Error ? styleErr.message : styleErr,
         );
+        // Still try text-only with the rewritten semi-realistic prompt.
+        try {
+          payload = buildCreatePayload(rewritten, {
+            frameUrl: null,
+            generateAudio: false,
+          });
+          ({ res, data } = await postCreateTask(payload));
+        } catch {
+          // fall through to throw below
+        }
       }
     }
   }
@@ -352,12 +368,14 @@ export async function waitForBytePlusVideoTask(
         isInputImagePrivacyError(err)
       ) {
         privacyRetryUsed = true;
+        const semiPrompt = toSemiRealisticScenePrompt(options.retryInput.prompt);
         try {
           const styled = await stylizeReferenceImage(
             options.retryInput.startFrameUrl,
           );
           const retry = await createBytePlusVideoTask({
             ...options.retryInput,
+            prompt: semiPrompt,
             startFrameUrl: styled,
             imageRole: "first_frame",
           });
@@ -369,12 +387,13 @@ export async function waitForBytePlusVideoTask(
       }
       if (
         !privacyDropUsed &&
-        options?.retryInput?.startFrameUrl &&
+        options?.retryInput &&
         isInputImagePrivacyError(err)
       ) {
         privacyDropUsed = true;
         const retry = await createBytePlusVideoTask({
           ...options.retryInput,
+          prompt: toSemiRealisticScenePrompt(options.retryInput.prompt),
           startFrameUrl: undefined,
           imageRole: undefined,
           generateAudio: false,
