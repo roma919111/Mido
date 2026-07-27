@@ -213,9 +213,8 @@ export async function POST(request: Request) {
         model: quote.modelId,
         creditsUsed: quote.totalCredits,
         status: "running",
-        // Keep beats visible until a successful stitch hides them — empty Assets
-        // was worse than seeing intermediate clips.
-        hidden: false,
+        // Intermediate beats never appear in Assets — only the stitched final.
+        hidden: Boolean(body.sequencePart),
       });
 
       try {
@@ -235,7 +234,7 @@ export async function POST(request: Request) {
           historyId,
           url: "",
           status: "running",
-          hidden: false,
+          hidden: Boolean(body.sequencePart),
         });
 
         // Wait for the MP4 so Assets gets a real URL in this same request.
@@ -257,7 +256,7 @@ export async function POST(request: Request) {
             url: videoUrl,
             status: "completed",
             error: undefined,
-            hidden: false,
+            hidden: Boolean(body.sequencePart),
           });
           results.push({
             assetId: asset.id,
@@ -291,7 +290,7 @@ export async function POST(request: Request) {
             historyId,
             status: "failed",
             error: errMsg,
-            hidden: false,
+            hidden: Boolean(body.sequencePart),
           });
           if (!freeTrial && quote.totalCredits > 0) {
             await adjustCredits(user.id, quote.totalCredits);
@@ -329,7 +328,7 @@ export async function POST(request: Request) {
         await updateAsset(asset.id, user.id, {
           status: "failed",
           error: message,
-          hidden: false,
+          hidden: Boolean(body.sequencePart),
         });
         if (!freeTrial && quote.totalCredits > 0) {
           await adjustCredits(user.id, quote.totalCredits);

@@ -252,11 +252,13 @@ export async function listAssetsForUser(
   opts?: { includeHidden?: boolean },
 ): Promise<AssetRecord[]> {
   const db = await ensureDb();
-  return db.assets.filter(
-    (a) =>
-      a.userId === userId &&
-      (opts?.includeHidden ? true : a.hidden !== true),
-  );
+  return db.assets.filter((a) => {
+    if (a.userId !== userId) return false;
+    // Intermediate multi-shot beats never appear in the Assets UI.
+    if (!opts?.includeHidden && a.mode === "sequence-part") return false;
+    if (opts?.includeHidden) return true;
+    return a.hidden !== true;
+  });
 }
 
 /** Show or hide many assets at once (multi-shot parts). */
@@ -305,9 +307,10 @@ export async function recoverOrphanedHiddenAssets(
     const a = db.assets[i]!;
     if (a.userId !== userId || a.hidden !== true) continue;
     if (a.mediaType !== "video" || a.status !== "completed" || !a.url) continue;
+    // Never surface intermediate beats in Assets — only the stitched final.
+    if (a.mode === "sequence-part") continue;
     const partAt = new Date(a.createdAt).getTime();
-    // Do not surface in-progress sequence beats — that left users with 3 clips
-    // before the merge finished (or while Assets refreshed mid-job).
+    // Do not surface in-progress jobs while stitch may still be running.
     if (now - partAt < ORPHAN_RECOVERY_GRACE_MS) continue;
     const covered = concats.some((c) => {
       const dt = new Date(c.createdAt).getTime() - partAt;

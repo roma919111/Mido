@@ -90,10 +90,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   /** Final pose / entities from last enhance — used for sequential actions (ثم…). */
   const [promptSceneState, setPromptSceneState] = useState<SceneState | null>(null);
   const [enhancing, setEnhancing] = useState(false);
-  /** Auto-split ANY sequential ثم/then prompt into chained clips (paid video only). */
-  // Default OFF so a single BytePlus clip lands in Assets immediately.
-  // User can still enable multi-shot when they want a stitched sequence.
-  const [multiShotOn, setMultiShotOn] = useState(false);
+  /**
+   * Paid Veronix always plans/stitches beats internally (4s×N up to 32s).
+   * Intermediate clips stay hidden — Assets only shows the final video.
+   */
+  const [multiShotOn, setMultiShotOn] = useState(true);
   const [shotHint, setShotHint] = useState<{
     count: number;
     totalCredits: number | null;
@@ -128,9 +129,12 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const durationBounds = durationBoundsForModel(selectedModel);
   const formOptions = formOptionsForModel(selectedModel);
   const resolutionOptions = formOptions.resolutions;
-  /** Multi-shot: slider = final stitched length (up to 30s). Single: model bounds. */
+  /** Paid Veronix: slider = final stitched length (4–32s). Free trial: model bounds. */
   const multiDurationMode = Boolean(
-    media === "video" && multiShotOn && !freeTrial && !freeSettingsLocked,
+    media === "video" &&
+      selectedModelId === VERONIX_MODEL_ID &&
+      !freeTrial &&
+      !freeSettingsLocked,
   );
   const sliderMin = multiDurationMode ? PRODUCT_PER_SHOT_SECONDS : durationBounds.min;
   const sliderMax = multiDurationMode ? MAX_TOTAL_SECONDS : durationBounds.max;
@@ -150,7 +154,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       setGenerateAudio(true);
       return;
     }
-    setDuration(options.duration.max);
+    // Paid Veronix product length is stitched up to 32s (not the raw model max).
+    setDuration(
+      model.id === VERONIX_MODEL_ID ? MAX_TOTAL_SECONDS : options.duration.max,
+    );
     if (options.resolutions.length) {
       const nextRes =
         options.resolutionDefault ||
@@ -300,10 +307,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             resolution: media === "video" ? resolution : undefined,
             duration: media === "video" ? duration : undefined,
             generateAudio: media === "video" ? generateAudio : undefined,
-            // Multi-shot is paid — never mark as the free 4s trial when unlocked.
+            // Paid Veronix quotes as multi-beat product (up to 32s).
             multiShot:
               media === "video" &&
-              multiShotOn &&
+              selectedModelId === VERONIX_MODEL_ID &&
               (Boolean(user?.freeVeronixUsed) || (user?.credits ?? 0) > 0),
           }),
         });
@@ -320,7 +327,12 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         let nextHint: typeof shotHint = null;
 
         // General multi-shot estimate — context-aware (لا يشترط ثم).
-        if (media === "video" && multiShotOn && !isFree && prompt.trim().length >= 12) {
+        if (
+          media === "video" &&
+          selectedModelId === VERONIX_MODEL_ID &&
+          !isFree &&
+          prompt.trim().length >= 12
+        ) {
           try {
             const planRes = await fetchJson<{
               autoMultiShot?: boolean;
@@ -586,8 +598,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         // (it was leaking late actions like overhead lift into shot 1).
         setPromptSceneState(null);
         setPlannedShots(data.shots || null);
-        // Keep user's multi-shot preference; enhance may still plan beats.
-        setMultiShotOn((prev) => prev);
         const count = Math.min(
           MAX_SHOTS,
           data.shotCount || data.shots!.length,
@@ -789,12 +799,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     for (let i = 0; i < PREVIEW_POLL_ATTEMPTS; i += 1) {
       await new Promise((r) => setTimeout(r, PREVIEW_POLL_MS));
       try {
+        const statusQs = new URLSearchParams({ historyId });
+        if (assetId) statusQs.set("assetId", assetId);
         const { res, data } = await fetchJson<{
           status?: string;
           urls?: string[];
           error?: string;
           pollAfterSeconds?: number;
-        }>(`/api/status?historyId=${encodeURIComponent(historyId)}`);
+        }>(`/api/status?${statusQs.toString()}`);
         if (!res.ok) continue;
         const st = String(data.status || "").toUpperCase();
         const url = data.urls?.[0];
@@ -1033,12 +1045,15 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     setGenerating(true);
     setGenStartedAt(startedAt);
     setElapsedSec(0);
-    // Paid balance always unlocks multi-shot for this run (ignore stale freeTrial flag).
+    // Paid Veronix always uses internal multi-beat stitch up to 32s.
     const canPayMulti =
       media === "video" &&
-      multiShotOn &&
+      selectedModelId === VERONIX_MODEL_ID &&
       ((user.credits ?? 0) > 0 || Boolean(user.freeVeronixUsed));
-    if (canPayMulti) setFreeTrial(false);
+    if (canPayMulti) {
+      setFreeTrial(false);
+      setMultiShotOn(true);
+    }
 
     setStatus(
       canPayMulti
@@ -1149,15 +1164,27 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         }
       }
 
-      if (
-        canPayMulti &&
-        !useMulti &&
-        (/ثم|\bthen\b|لقطة\s*\d+|Shot\s*\d+/i.test(prompt) ||
-          (shotHint?.count || 0) >= 2)
-      ) {
-        throw new Error(
-          "تعذر تقسيم المشهد إلى لقطات متعددة — أعد صياغة الوصف بأفعال متسلسلة ثم حاول مرة أخرى",
+      // Paid product length is N×4s — if AI/plan didn't split, still stitch by budget.
+      if (canPayMulti && !useMulti) {
+        const n = Math.max(
+          1,
+          Math.min(
+            MAX_SHOTS,
+            Math.round(
+              Math.min(MAX_TOTAL_SECONDS, Math.max(PRODUCT_PER_SHOT_SECONDS, duration)) /
+                PRODUCT_PER_SHOT_SECONDS,
+            ),
+          ),
         );
+        if (n >= 2) {
+          useMulti = true;
+          const base = prompt.trim();
+          shots = Array.from({ length: n }, (_, i) => ({
+            action: `جزء ${i + 1}`,
+            prompt: `${base}\n\nلقطة ${i + 1} من ${n} فقط، نفّذ استمرارية المشهد دون إضافة أحداث من لقطات أخرى.`,
+          }));
+          setPlannedShots(shots);
+        }
       }
 
       if (useMulti && shots.length >= 2) {
@@ -1938,7 +1965,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             {waitingResult && (
               <span className="inline-flex items-center gap-1 text-xs tabular-nums text-[#22f0ff]">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Generating · {elapsedLabel(elapsedSec)}
+                جاري التوليد · {elapsedLabel(elapsedSec)}
               </span>
             )}
           </div>
@@ -1977,14 +2004,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 {waitingResult ? (
                   <>
                     <Loader2 className="h-8 w-8 animate-spin text-[#22f0ff]" />
-                    <p className="text-base font-semibold tracking-wide text-white">
-                      Generating
+                    <p className="text-lg font-semibold tracking-wide text-white">
+                      جاري التوليد
                     </p>
-                    <p className="tabular-nums text-[#22f0ff]">
+                    <p className="text-2xl font-bold tabular-nums text-[#22f0ff]">
                       {elapsedLabel(elapsedSec)}
                     </p>
                     <p className="px-6 text-center text-xs text-white/35">
-                      الفيديو قد يستغرق عدة دقائق — ستظهر المعاينة هنا تلقائيًا
+                      فيديو واحد بالمدة المحددة — ستظهر المعاينة هنا تلقائيًا
                     </p>
                   </>
                 ) : (
@@ -1995,12 +2022,15 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             {waitingResult && preview?.url && (
               <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/55">
                 <Loader2 className="h-8 w-8 animate-spin text-[#22f0ff]" />
-                <p className="mt-2 text-base font-semibold text-white">Generating</p>
-                <p className="mt-1 tabular-nums text-[#22f0ff]">
+                <p className="mt-2 text-lg font-semibold text-white">جاري التوليد</p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-[#22f0ff]">
                   {elapsedLabel(elapsedSec)}
                 </p>
               </div>
             )}
+          </div>
+          <div className="border-t border-white/8 px-4 py-2 text-center text-[11px] text-white/45">
+            تم إنشاؤه بواسطة VYRONIX
           </div>
           {preview?.freeTrial ? (
             <div className="border-t border-amber-500/20 bg-amber-500/10 px-4 py-2 text-center text-[11px] text-amber-100/90">

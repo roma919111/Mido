@@ -26,7 +26,7 @@ function productCatalog(video: CatalogModel[], image: CatalogModel[]) {
           available: true,
           badge: "حصري",
           tagline: isBytePlusConfigured()
-            ? "Veronix · BytePlus Seedance Mini"
+            ? "تم إنشاؤه بواسطة VYRONIX"
             : veronix.tagline,
         },
       ]

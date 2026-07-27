@@ -71,7 +71,8 @@ export async function POST(request: Request) {
                 url,
                 status: "completed",
                 error: undefined,
-                hidden: false,
+                // Never expose intermediate beats in Assets.
+                hidden: asset.mode === "sequence-part" ? true : false,
               });
               fixed += 1;
             } else if (status === "FAILED") {
@@ -81,7 +82,7 @@ export async function POST(request: Request) {
                   typeof task.error === "string"
                     ? task.error
                     : "BytePlus generation failed",
-                hidden: false,
+                hidden: asset.mode === "sequence-part" ? true : false,
               });
               fixed += 1;
             }
@@ -91,7 +92,8 @@ export async function POST(request: Request) {
         } else if (
           asset.hidden === true &&
           asset.status === "completed" &&
-          asset.url
+          asset.url &&
+          asset.mode !== "sequence-part"
         ) {
           await updateAsset(asset.id, t.id, { hidden: false });
           unhidden += 1;

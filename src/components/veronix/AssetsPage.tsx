@@ -42,7 +42,10 @@ export function AssetsPage() {
       return;
     }
     setError(null);
-    setAssets(data.assets || []);
+    // Extra client guard: never show intermediate multi-shot beats.
+    setAssets(
+      (data.assets || []).filter((a) => a.mode !== "sequence-part"),
+    );
   }, []);
 
   useEffect(() => {
@@ -77,7 +80,7 @@ export function AssetsPage() {
           <div>
             <h1 className="font-display text-3xl font-extrabold">Assets</h1>
             <p className="mt-2 text-sm text-white/50">
-              كل توليداتك محفوظة في حسابك — فيديو وصور.
+              كل توليداتك محفوظة في حسابك — فيديو واحد لكل طلب.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -164,7 +167,8 @@ export function AssetsPage() {
                   const canPlay =
                     Boolean(src) &&
                     (Boolean(item.url) || Boolean(item.historyId)) &&
-                    item.status !== "failed";
+                    item.status !== "failed" &&
+                    item.status !== "running";
                   if (item.mediaType === "image" && canPlay) {
                     return (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -187,16 +191,18 @@ export function AssetsPage() {
                     );
                   }
                   return (
-                    <div className="flex h-full flex-col items-center justify-center gap-1 px-3 text-center text-xs text-white/35">
-                      <span>
+                    <div className="flex h-full flex-col items-center justify-center gap-2 px-3 text-center">
+                      <span className="text-sm font-semibold text-white">
                         {item.status === "running"
-                          ? "جارٍ التوليد عبر BytePlus…"
+                          ? "جاري التوليد"
                           : item.status === "failed"
                             ? "فشل التوليد"
                             : item.status}
                       </span>
-                      {item.historyId?.startsWith("bp:") && (
-                        <span className="text-[10px] text-white/25">BytePlus</span>
+                      {item.status === "running" && (
+                        <span className="text-xs text-white/40">
+                          فيديو واحد بالمدة المحددة…
+                        </span>
                       )}
                     </div>
                   );
@@ -205,23 +211,20 @@ export function AssetsPage() {
               <div className="space-y-1 p-3">
                 <p className="line-clamp-2 text-sm text-white/80">{item.prompt}</p>
                 <p className="text-[11px] text-white/40">
-                  {item.mode === "sequence-concat"
-                    ? "مشهد مدمج"
-                    : item.mode === "sequence-pending"
-                      ? "جارٍ الدمج · BytePlus"
-                      : item.model === "seedance-2-mini" || item.model === "sequence-concat"
-                        ? "Veronix · BytePlus"
+                  {item.mode === "sequence-pending"
+                    ? "جاري التوليد"
+                    : item.mode === "sequence-concat"
+                      ? "فيديو واحد"
+                      : item.model === "seedance-2-mini"
+                        ? "Veronix"
                         : item.model}
                   {" · "}
-                  {item.mode === "sequence-concat" || item.mode === "sequence-pending"
-                    ? "فيديو واحد"
-                    : item.creditsUsed === 0
-                      ? "مجاني"
-                      : `−${item.creditsUsed}`}
+                  {item.creditsUsed === 0 ? "مجاني" : `−${item.creditsUsed}`}
                   {" · "}
                   {item.status}
                 </p>
-                {(item.url || item.historyId) && item.status !== "failed" && (
+                <p className="text-[10px] text-white/35">تم إنشاؤه بواسطة VYRONIX</p>
+                {(item.url || item.historyId) && item.status === "completed" && (
                   <a
                     href={
                       veronixDownloadPath({

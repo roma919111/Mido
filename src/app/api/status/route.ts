@@ -45,20 +45,22 @@ export async function GET(request: Request) {
         const byHistory = await findAssetByHistoryId(user.id, historyId);
         const targetId = assetId || byHistory?.id;
         if (targetId) {
+          const existing = byHistory;
+          const keepHidden = existing?.mode === "sequence-part";
           if (urls[0]) {
             await updateAsset(targetId, user.id, {
               historyId,
               url: urls[0],
               status: "completed",
               error: undefined,
-              hidden: false,
+              hidden: keepHidden ? true : false,
             }).catch(() => null);
           } else if (status === "FAILED") {
             await updateAsset(targetId, user.id, {
               historyId,
               status: "failed",
               error: errMsg || "BytePlus generation failed",
-              hidden: false,
+              hidden: keepHidden ? true : false,
             }).catch(() => null);
           }
         }
