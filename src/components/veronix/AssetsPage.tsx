@@ -122,6 +122,7 @@ function FeedVideoSlide({
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [editing, setEditing] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [posterFailed, setPosterFailed] = useState(false);
 
   const src = veronixMediaSrc({
@@ -198,6 +199,36 @@ function FeedVideoSlide({
       router.push("/create/video?edit=1");
     } finally {
       setEditing(false);
+    }
+  };
+
+  const handleDownload = async () => {
+    if (downloading || item.status !== "completed") return;
+    const path = veronixDownloadPath({
+      historyId: item.historyId,
+      url: item.url,
+      mediaType: "video",
+    });
+    if (!path) return;
+    setDownloading(true);
+    try {
+      const res = await fetch(path, { credentials: "same-origin" });
+      if (!res.ok) throw new Error("download failed");
+      const blob = await res.blob();
+      if (!blob.size) throw new Error("empty");
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = `veronix-${Date.now()}.mp4`;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 2_000);
+    } catch {
+      window.location.assign(path);
+    } finally {
+      setDownloading(false);
     }
   };
 
@@ -292,20 +323,19 @@ function FeedVideoSlide({
           {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
         </button>
         {(item.url || item.historyId) && item.status === "completed" && (
-          <a
-            href={
-              veronixDownloadPath({
-                historyId: item.historyId,
-                url: item.url,
-                mediaType: "video",
-              }) || "/assets"
-            }
-            download
-            className="mt-1 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white ring-1 ring-white/20 backdrop-blur-md"
+          <button
+            type="button"
+            onClick={() => void handleDownload()}
+            disabled={downloading}
+            className="mt-1 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white ring-1 ring-white/20 backdrop-blur-md disabled:opacity-50"
             aria-label="تحميل"
           >
-            <Download className="h-4 w-4" />
-          </a>
+            {downloading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+          </button>
         )}
       </div>
 

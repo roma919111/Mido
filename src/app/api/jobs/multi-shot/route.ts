@@ -1,6 +1,6 @@
 import { after, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/customer-auth";
-import { listAssetsForAdmin } from "@/lib/db";
+import { findAssetById } from "@/lib/db";
 import {
   ensureMultiShotBackground,
   startMultiShotJob,
@@ -47,8 +47,7 @@ export async function POST(request: Request) {
       if (!assetId) {
         return NextResponse.json({ error: "assetId required" }, { status: 400 });
       }
-      const assets = await listAssetsForAdmin(user.id, 80);
-      const pending = assets.find((a) => a.id === assetId);
+      const pending = await findAssetById(user.id, assetId);
       if (!pending) {
         return NextResponse.json({ error: "job not found" }, { status: 404 });
       }
@@ -65,10 +64,7 @@ export async function POST(request: Request) {
         updated = (await tickMultiShotJob(user.id, pending)) || pending;
       } else {
         // Re-read after kick in case BG already finished a beat.
-        const fresh = (await listAssetsForAdmin(user.id, 80)).find(
-          (a) => a.id === assetId,
-        );
-        if (fresh) updated = fresh;
+        updated = (await findAssetById(user.id, assetId)) || pending;
       }
 
       const meta = updated.jobMeta;

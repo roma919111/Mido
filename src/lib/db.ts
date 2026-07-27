@@ -312,6 +312,30 @@ export async function listAssetsForAdmin(
   return db.assets.filter((a) => a.userId === userId).slice(0, limit);
 }
 
+/** Full lookup — never miss a multi-shot pending buried under newer parts. */
+export async function findAssetById(
+  userId: string,
+  assetId: string,
+): Promise<AssetRecord | null> {
+  const db = await ensureDb();
+  return (
+    db.assets.find((a) => a.userId === userId && a.id === assetId) || null
+  );
+}
+
+/** All running multi-shot job cards for a user (no limit). */
+export async function listRunningMultiShotJobs(
+  userId: string,
+): Promise<AssetRecord[]> {
+  const db = await ensureDb();
+  return db.assets.filter(
+    (a) =>
+      a.userId === userId &&
+      a.mode === "sequence-pending" &&
+      a.status === "running",
+  );
+}
+
 export async function listAssetsForUser(
   userId: string,
   opts?: { includeHidden?: boolean },

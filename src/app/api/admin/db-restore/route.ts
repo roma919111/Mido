@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { findUserByEmail, listAssetsForAdmin, listUsersForAdmin } from "@/lib/db";
+import { findUserByEmail, listAssetsForAdmin, listUsersForAdmin, listRunningMultiShotJobs } from "@/lib/db";
 import {
   currentDbStats,
   listDbBackups,
   mergeDbFromBackup,
   recoverDbFromBackupsIfNeeded,
 } from "@/lib/db-backup";
+import { ensureMultiShotBackground, isMultiShotJobMeta } from "@/lib/multi-shot-job";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -74,10 +75,30 @@ export async function POST(request: Request) {
     const stats = await currentDbStats();
     const backups = await listDbBackups();
     const users = await listUsersForAdmin();
+    const pendingJobs: Array<Record<string, unknown>> = [];
+    for (const u of users.slice(0, 20)) {
+      const full = await findUserByEmail(u.email);
+      if (!full) continue;
+      const running = await listRunningMultiShotJobs(full.id);
+      for (const job of running) {
+        ensureMultiShotBackground(full.id, job.id);
+        pendingJobs.push({
+          email: u.email,
+          id: job.id,
+          targetSeconds: job.targetSeconds,
+          nextIndex: isMultiShotJobMeta(job.jobMeta) ? job.jobMeta.nextIndex : null,
+          shotCount: isMultiShotJobMeta(job.jobMeta) ? job.jobMeta.shots.length : null,
+          partCount: isMultiShotJobMeta(job.jobMeta) ? job.jobMeta.partUrls.length : null,
+          createdAt: job.createdAt,
+          error: job.error?.slice(0, 120),
+        });
+      }
+    }
     return NextResponse.json({
       ok: true,
       stats,
       users,
+      pendingJobs,
       backups: backups.slice(0, 20),
     });
   } catch (error) {

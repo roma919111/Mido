@@ -1,4 +1,4 @@
-import { createReadStream } from "node:fs";
+import { createReadStream, statSync } from "node:fs";
 import { access } from "node:fs/promises";
 import { NextResponse } from "next/server";
 import { Readable } from "node:stream";
@@ -30,10 +30,6 @@ function safeFilename(name: string | null, mediaType: "image" | "video") {
   return cleaned;
 }
 
-function resolveLocalGeneration(localPath: string): string | null {
-  return resolveGenerationFile(localPath);
-}
-
 async function resolveSource(request: Request): Promise<{
   kind: "remote" | "local";
   url?: string;
@@ -48,7 +44,7 @@ async function resolveSource(request: Request): Promise<{
 
   const local = searchParams.get("local")?.trim();
   if (local) {
-    const filePath = resolveLocalGeneration(local);
+    const filePath = resolveGenerationFile(local);
     if (!filePath) return null;
     return { kind: "local", filePath, mediaType, filename };
   }
@@ -103,12 +99,16 @@ export async function GET(request: Request) {
 
     if (source.kind === "local" && source.filePath) {
       await access(source.filePath);
+      const size = statSync(source.filePath).size;
       const nodeStream = createReadStream(source.filePath);
       const webStream = Readable.toWeb(nodeStream) as unknown as ReadableStream;
+      const contentType =
+        source.mediaType === "image" ? "image/png" : "video/mp4";
       return new NextResponse(webStream, {
         status: 200,
         headers: {
-          "Content-Type": "video/mp4",
+          "Content-Type": contentType,
+          "Content-Length": String(size),
           "Content-Disposition": `attachment; filename="${source.filename}"`,
           "Cache-Control": "private, no-store",
           "X-Content-Type-Options": "nosniff",
@@ -130,15 +130,18 @@ export async function GET(request: Request) {
     const contentType =
       upstream.headers.get("content-type") ||
       (source.mediaType === "video" ? "video/mp4" : "image/png");
+    const headers: Record<string, string> = {
+      "Content-Type": contentType,
+      "Content-Disposition": `attachment; filename="${source.filename}"`,
+      "Cache-Control": "private, no-store",
+      "X-Content-Type-Options": "nosniff",
+    };
+    const len = upstream.headers.get("content-length");
+    if (len) headers["Content-Length"] = len;
 
     return new NextResponse(upstream.body, {
       status: 200,
-      headers: {
-        "Content-Type": contentType,
-        "Content-Disposition": `attachment; filename="${source.filename}"`,
-        "Cache-Control": "private, no-store",
-        "X-Content-Type-Options": "nosniff",
-      },
+      headers,
     });
   } catch (error) {
     if (error instanceof OpenArtConfigError) {

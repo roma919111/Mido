@@ -19,8 +19,9 @@ import { quoteOpenArtCredits } from "@/lib/credit-quote";
 import {
   adjustCredits,
   createAsset,
+  findAssetById,
   findUserById,
-  listAssetsForAdmin,
+  listRunningMultiShotJobs,
   updateAsset,
   type AssetRecord,
 } from "@/lib/db";
@@ -130,15 +131,14 @@ export function ensureMultiShotBackground(userId: string, assetId: string) {
     try {
       // 8 beats × ~70s + stitch — stay under a generous in-process budget.
       for (let step = 0; step < 16; step += 1) {
-        const assets = await listAssetsForAdmin(userId, 80);
-        const pending = assets.find((a) => a.id === assetId);
+        const pending = await findAssetById(userId, assetId);
         if (!pending) break;
         if (pending.mode !== "sequence-pending" || pending.status !== "running") break;
         if (!isMultiShotJobMeta(pending.jobMeta)) break;
 
         await tickMultiShotJob(userId, pending);
 
-        const after = (await listAssetsForAdmin(userId, 80)).find((a) => a.id === assetId);
+        const after = await findAssetById(userId, assetId);
         if (!after || after.status !== "running" || after.mode !== "sequence-pending") break;
         if (
           isMultiShotJobMeta(after.jobMeta) &&
@@ -159,15 +159,8 @@ export function ensureMultiShotBackground(userId: string, assetId: string) {
 }
 
 /** Tick all running multi-shot jobs for a user (kick / resume background runners). */
-export async function tickUserMultiShotJobs(userId: string, assets: AssetRecord[]) {
-  const pendings = assets
-    .filter(
-      (a) =>
-        a.mode === "sequence-pending" &&
-        a.status === "running" &&
-        isMultiShotJobMeta(a.jobMeta),
-    )
-    .slice(0, 3);
+export async function tickUserMultiShotJobs(userId: string, _assets?: AssetRecord[]) {
+  const pendings = (await listRunningMultiShotJobs(userId)).slice(0, 3);
   for (const p of pendings) {
     ensureMultiShotBackground(userId, p.id);
   }
@@ -199,10 +192,7 @@ async function tickMultiShotJobUnlocked(
   pendingIn: AssetRecord,
 ): Promise<AssetRecord | null> {
   // Re-read latest job state under the lock.
-  const latest = (await listAssetsForAdmin(userId, 80)).find(
-    (a) => a.id === pendingIn.id,
-  );
-  const pending = latest || pendingIn;
+  const pending = (await findAssetById(userId, pendingIn.id)) || pendingIn;
 
   if (pending.mode !== "sequence-pending" || pending.status !== "running") {
     return pending;
@@ -230,8 +220,7 @@ async function tickMultiShotJobUnlocked(
   // Resume existing part for this beat if present.
   const existingPartId = meta.partAssetIds[meta.nextIndex];
   if (existingPartId) {
-    const assets = await listAssetsForAdmin(userId, 80);
-    const part = assets.find((a) => a.id === existingPartId);
+    const part = await findAssetById(userId, existingPartId);
     if (part?.status === "completed" && part.url) {
       return adoptCompletedPart(userId, pending, meta, part);
     }

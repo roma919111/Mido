@@ -1131,8 +1131,15 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   }
 
   async function handleDownload() {
-    if (!preview?.url && !preview?.historyId) return;
-    setShareNote(null);
+    if (!preview?.url && !preview?.historyId) {
+      setShareNote("انتظر اكتمال الفيديو ثم حمّل");
+      return;
+    }
+    if (preview.status === "running") {
+      setShareNote("الفيديو ما زال يُولَّد — التحميل بعد الاكتمال");
+      return;
+    }
+    setShareNote("جاري التحضير للتحميل…");
     const path = veronixDownloadPath({
       historyId: preview.historyId,
       url: preview.url,
@@ -1144,25 +1151,37 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     }
     try {
       const res = await fetch(path, { credentials: "same-origin" });
-      if (!res.ok) throw new Error("download failed");
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        throw new Error(errText || `download failed (${res.status})`);
+      }
       const blob = await res.blob();
+      if (!blob.size) throw new Error("empty file");
       const ext = preview.mediaType === "video" ? "mp4" : "png";
       const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = objectUrl;
       a.download = `veronix-${Date.now()}.${ext}`;
+      a.rel = "noopener";
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(objectUrl);
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 2_000);
+      setShareNote("بدأ التحميل");
     } catch {
-      // Same-origin fallback only — never open OpenArt CDN in a new tab.
-      const a = document.createElement("a");
-      a.href = path;
-      a.download = `veronix-${Date.now()}.${preview.mediaType === "video" ? "mp4" : "png"}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      // Navigate same-origin with attachment header (works when blob path fails on iOS).
+      try {
+        const a = document.createElement("a");
+        a.href = path;
+        a.download = `veronix-${Date.now()}.${preview.mediaType === "video" ? "mp4" : "png"}`;
+        a.rel = "noopener";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setShareNote("بدأ التحميل");
+      } catch {
+        setShareNote("تعذر التحميل — افتح Assets وحاول من هناك");
+      }
     }
   }
 
@@ -2195,7 +2214,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             <button
               type="button"
               onClick={() => void handleDownload()}
-              disabled={!preview?.url && !preview?.historyId}
+              disabled={
+                preview?.status === "running" ||
+                (!preview?.url && !preview?.historyId)
+              }
               className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] py-3 text-sm font-semibold text-white disabled:opacity-40"
             >
               <Download className="h-4 w-4" />
