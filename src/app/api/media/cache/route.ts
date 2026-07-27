@@ -5,12 +5,6 @@ import {
 } from "@/lib/byteplus-ark";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { updateAsset } from "@/lib/db";
-import {
-  callOpenArtTool,
-  collectMediaUrls,
-  OpenArtConfigError,
-  parseToolPayload,
-} from "@/lib/openart-mcp";
 import { cacheVideoLocally } from "@/lib/video-stitch";
 
 export const runtime = "nodejs";
@@ -26,16 +20,11 @@ type Body = {
 
 async function resolveHistoryUrl(historyId: string): Promise<string> {
   const bpId = parseBytePlusHistoryId(historyId);
-  if (bpId) {
-    const task = await getBytePlusVideoTask(bpId);
-    return task.content?.video_url || "";
+  if (!bpId) {
+    throw new Error("Unknown history id — OpenArt ids are no longer supported");
   }
-  const result = await callOpenArtTool("openart_creation_get", { historyId });
-  const payload = parseToolPayload(result);
-  if (result.isError) {
-    throw new Error(String(payload.error || "Failed to resolve historyId"));
-  }
-  return collectMediaUrls(payload)[0] || "";
+  const task = await getBytePlusVideoTask(bpId);
+  return task.content?.video_url || "";
 }
 
 export async function POST(request: Request) {
@@ -84,9 +73,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ url: localUrl, sourceUrl: videoUrl });
   } catch (error) {
-    if (error instanceof OpenArtConfigError) {
-      return NextResponse.json({ error: error.message }, { status: 503 });
-    }
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "cache failed" },
       { status: 500 },

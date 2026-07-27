@@ -8,12 +8,6 @@ import {
 } from "@/lib/byteplus-ark";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { isAllowedMediaHost } from "@/lib/media-proxy";
-import {
-  callOpenArtTool,
-  collectMediaUrls,
-  OpenArtConfigError,
-  parseToolPayload,
-} from "@/lib/openart-mcp";
 import { resolveGenerationFile } from "@/lib/veronix-outro";
 
 export const runtime = "nodejs";
@@ -43,12 +37,7 @@ async function resolveRemoteUrl(request: Request): Promise<{
       if (!url) return null;
       return { url, mediaType };
     }
-    const result = await callOpenArtTool("openart_creation_get", { historyId });
-    const payload = parseToolPayload(result);
-    if (result.isError) return null;
-    const url = collectMediaUrls(payload)[0];
-    if (!url) return null;
-    return { url, mediaType };
+    return null;
   }
 
   const encoded = searchParams.get("u")?.trim();
@@ -200,9 +189,6 @@ export async function GET(request: Request) {
       headers,
     });
   } catch (error) {
-    if (error instanceof OpenArtConfigError) {
-      return NextResponse.json({ error: error.message }, { status: 401 });
-    }
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Stream failed" },
       { status: 500 },

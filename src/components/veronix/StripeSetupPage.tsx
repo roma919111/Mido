@@ -226,8 +226,8 @@ export function StripeSetupPage() {
           صفحة الباقات
         </Link>
         <span className="text-white/30">·</span>
-        <Link href="/setup/openart" className="text-[#22f0ff]">
-          ربط OpenArt
+        <Link href="/setup" className="text-[#22f0ff]">
+          إعداد المنصة
         </Link>
       </div>
     </div>

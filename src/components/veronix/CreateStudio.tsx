@@ -464,12 +464,12 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         // Keep static catalog already in state.
       }
 
-      // Background refresh from OpenArt (duration/resolution/audio + costs).
+      // Background catalog refresh (local/static only — no OpenArt).
       try {
         const { data } = await fetchJson<{
           image: CatalogModel[];
           video: CatalogModel[];
-        }>("/api/models?sync=1");
+        }>("/api/models");
         if (cancelled) return;
         if (data.image?.length) setImageModels(data.image);
         if (data.video?.length) setVideoModels(data.video);
@@ -582,18 +582,18 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         setCreditCost(nextCost);
         const quote = data.quotes?.[0];
         const live = Boolean(
-          data.liveOpenArt ||
-            data.synced ||
+          data.synced ||
             data.freeTrial ||
-            (media === "image" &&
-              quote?.available !== false &&
-              data.totalCredits != null) ||
+            data.totalCredits != null ||
             (quote?.available &&
-              (quote.source === "openart" || quote.source === "openart-cache")),
+              (quote.source === "cache" ||
+                quote.source === "estimate" ||
+                quote.source === "openart" ||
+                quote.source === "openart-cache")),
         );
         setCreditLive(live);
         if (!live) {
-          setQuoteError("لم تُزامن التكلفة بعد — اختر موديلًا متاحًا أو أعد المحاولة");
+          setQuoteError("تعذر حساب التكلفة — أعد المحاولة");
         } else {
           setQuoteError(null);
         }
@@ -640,7 +640,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     return `data:${file.type || "image/jpeg"};base64,${btoa(binary)}`;
   }
 
-  /** Prefer OpenArt CDN URL; fall back to data URL so uploads always finish. */
+  /** Prefer local `/generations` URL; fall back to data URL so uploads always finish. */
   async function uploadFile(
     file: File,
     purpose: "create-image" | "create-video",
@@ -663,10 +663,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       const uploadPromise = fetchJson<{
         error?: string;
         visualReference?: VisualReference;
-        needsOwnerSetup?: boolean;
       }>("/api/upload", { method: "POST", body: form });
       const timeout = new Promise<"timeout">((resolve) => {
-        window.setTimeout(() => resolve("timeout"), 18_000);
+        window.setTimeout(() => resolve("timeout"), 12_000);
       });
       const raced = await Promise.race([uploadPromise, timeout]);
       if (raced === "timeout") return localRef;
@@ -675,7 +674,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       if (res.ok && data.visualReference?.url) {
         return data.visualReference;
       }
-      if (data.needsOwnerSetup) setPlatformReady(false);
     } catch {
       // keep local
     }
@@ -1502,10 +1500,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     <div className="mx-auto w-full max-w-3xl space-y-4 px-3 pb-8 pt-4 sm:px-6" dir="rtl">
       {platformReady === false && (
         <div className="rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-50">
-          رفع الصور والتوليد يحتاجان ربط حساب المنصة مرة واحدة.{" "}
-          <a href="/setup/openart" className="font-semibold text-[#22f0ff] underline-offset-2 hover:underline">
-            اربط حساب المنصة الآن
-          </a>
+          التوليد غير مُعدّ على السيرفر. يلزم ضبط{" "}
+          <code className="rounded bg-black/30 px-1.5 py-0.5 text-[#22f0ff]">BYTEPLUS_API_KEY</code>{" "}
+          ثم إعادة التشغيل.
         </div>
       )}
 
@@ -1517,19 +1514,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               : "border-cyan-400/25 bg-cyan-400/10 text-cyan-50"
           }`}
         >
-          {error?.includes("/setup/openart") ? (
-            <>
-              رفع الصور يحتاج ربط حساب المنصة مرة واحدة.{" "}
-              <a
-                href="/setup/openart"
-                className="font-semibold text-[#22f0ff] underline-offset-2 hover:underline"
-              >
-                اربط حساب المنصة الآن
-              </a>
-            </>
-          ) : (
-            (error ?? status)
-          )}
+          {error ?? status}
         </div>
       )}
 

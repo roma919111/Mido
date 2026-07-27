@@ -21,12 +21,6 @@ import { ensureClarityUrl, needsClarityGrade } from "@/lib/ensure-clarity";
 import { concatVideos } from "@/lib/video-stitch";
 import { tickUserMultiShotJobs, isMultiShotStillGenerating } from "@/lib/multi-shot-job";
 import { estimateGenerateSeconds } from "@/lib/generate-eta";
-import {
-  callOpenArtTool,
-  collectMediaUrls,
-  OpenArtConfigError,
-  parseToolPayload,
-} from "@/lib/openart-mcp";
 import { appendVyronixOutro } from "@/lib/veronix-outro";
 
 export const runtime = "nodejs";
@@ -256,41 +250,7 @@ async function syncRunningAssets(userId: string) {
         continue;
       }
 
-      // Legacy OpenArt history ids only (pre–BytePlus-only).
-      const result = await callOpenArtTool("openart_creation_get", {
-        historyId: asset.historyId,
-      });
-      const payload = parseToolPayload(result);
-      if (result.isError) continue;
-      const status = String(payload.status ?? payload.state ?? "").toUpperCase();
-      const urls = collectMediaUrls(payload);
-      if (urls.length > 0 || status === "COMPLETED") {
-        let finalUrl = urls[0] || asset.url;
-        if (
-          finalUrl &&
-          needsLocalBrand({
-            ...asset,
-            url: finalUrl,
-            status: "completed",
-          })
-        ) {
-          try {
-            finalUrl = await appendVyronixOutro(finalUrl);
-          } catch {
-            // Keep remote URL; client brand-outro may still succeed.
-          }
-        }
-        await updateAsset(asset.id, userId, {
-          url: finalUrl,
-          status: "completed",
-          error: undefined,
-        });
-      } else if (status === "FAILED" || status === "CANCELLED") {
-        await updateAsset(asset.id, userId, {
-          status: "failed",
-          error: String(payload.error ?? payload.message ?? "Generation failed"),
-        });
-      }
+      // Non-BytePlus history ids are ignored (OpenArt retired).
     } catch {
       // leave as running; next poll retries
     }
@@ -369,18 +329,15 @@ export async function GET(request: Request) {
     const assets = await syncRunningAssets(user.id);
     return NextResponse.json({ assets, synced: true });
   } catch (error) {
-    if (error instanceof OpenArtConfigError) {
-      await recoverOrphanedHiddenAssets(user.id).catch(() => 0);
-      await recoverStuckSequencePending(user.id).catch(() => 0);
-      await stitchPendingJobs(user.id).catch(() => 0);
-      const assets = await listAssetsForUser(user.id);
-      return NextResponse.json({ assets, syncSkipped: true });
-    }
     await recoverOrphanedHiddenAssets(user.id).catch(() => 0);
     await recoverStuckSequencePending(user.id).catch(() => 0);
     await stitchPendingJobs(user.id).catch(() => 0);
     const assets = await listAssetsForUser(user.id);
-    return NextResponse.json({ assets });
+    return NextResponse.json({
+      assets,
+      syncSkipped: true,
+      error: error instanceof Error ? error.message : undefined,
+    });
   }
 }
 

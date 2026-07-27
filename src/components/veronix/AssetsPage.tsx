@@ -614,17 +614,15 @@ export function AssetsPage() {
   const feedRef = useRef<HTMLDivElement | null>(null);
 
   const loadAssets = useCallback(async (opts?: { sync?: boolean }) => {
-    const me = await fetchJson<{ user: CustomerUser | null }>("/api/auth/customer/me");
-    setUser(me.data.user);
-    if (!me.data.user) {
-      setError("سجّل الدخول لعرض ملفاتك.");
-      return;
-    }
     const qs = opts?.sync ? "?sync=1" : "";
     const { res, data } = await fetchJson<{ assets?: AssetItem[]; error?: string }>(
       `/api/assets${qs}`,
     );
     if (!res.ok) {
+      if (res.status === 401) {
+        setError("سجّل الدخول لعرض ملفاتك.");
+        return;
+      }
       setError(data.error || "Failed to load assets");
       return;
     }
@@ -641,10 +639,20 @@ export function AssetsPage() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      // Instant library paint, then background sync for running jobs / clarity.
-      await loadAssets();
+      // Auth + fast library in parallel so Assets paints immediately.
+      const mePromise = fetchJson<{ user: CustomerUser | null }>("/api/auth/customer/me");
+      const listPromise = loadAssets();
+      const me = await mePromise;
       if (cancelled) return;
-      await loadAssets({ sync: true });
+      setUser(me.data.user);
+      if (!me.data.user) {
+        setError("سجّل الدخول لعرض ملفاتك.");
+        return;
+      }
+      await listPromise;
+      if (cancelled) return;
+      // Background sync only — never block the first paint.
+      void loadAssets({ sync: true });
     })();
     return () => {
       cancelled = true;

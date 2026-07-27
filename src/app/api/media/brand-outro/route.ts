@@ -6,12 +6,6 @@ import {
 import { getCurrentUser } from "@/lib/customer-auth";
 import { listAssetsForUser, updateAsset } from "@/lib/db";
 import { isAllowedMediaHost } from "@/lib/media-proxy";
-import {
-  callOpenArtTool,
-  collectMediaUrls,
-  OpenArtConfigError,
-  parseToolPayload,
-} from "@/lib/openart-mcp";
 import { appendVyronixOutro } from "@/lib/veronix-outro";
 
 export const runtime = "nodejs";
@@ -28,13 +22,6 @@ async function resolveSourceUrl(input: {
     if (bpId) {
       const task = await getBytePlusVideoTask(bpId);
       if (task.content?.video_url) return task.content.video_url;
-    } else {
-      const result = await callOpenArtTool("openart_creation_get", { historyId });
-      const payload = parseToolPayload(result);
-      if (!result.isError) {
-        const fromHistory = collectMediaUrls(payload)[0];
-        if (fromHistory) return fromHistory;
-      }
     }
   }
 
@@ -102,9 +89,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ url: brandedPath, branded: true });
   } catch (error) {
-    if (error instanceof OpenArtConfigError) {
-      return NextResponse.json({ error: error.message }, { status: 401 });
-    }
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Brand outro failed" },
       { status: 500 },

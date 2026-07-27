@@ -8,12 +8,6 @@ import {
 } from "@/lib/byteplus-ark";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { isAllowedMediaHost } from "@/lib/media-proxy";
-import {
-  callOpenArtTool,
-  collectMediaUrls,
-  OpenArtConfigError,
-  parseToolPayload,
-} from "@/lib/openart-mcp";
 import { resolveGenerationFile } from "@/lib/veronix-outro";
 import { extractFirstFrameJpeg } from "@/lib/video-stitch";
 
@@ -43,10 +37,7 @@ async function resolveVideoSource(request: Request): Promise<string | null> {
       const task = await getBytePlusVideoTask(bpId);
       return task.content?.video_url || null;
     }
-    const result = await callOpenArtTool("openart_creation_get", { historyId });
-    const payload = parseToolPayload(result);
-    if (result.isError) return null;
-    return collectMediaUrls(payload)[0] || null;
+    return null;
   }
 
   const encoded = searchParams.get("u")?.trim();
@@ -117,9 +108,6 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
-    if (error instanceof OpenArtConfigError) {
-      return NextResponse.json({ error: error.message }, { status: 401 });
-    }
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Poster failed" },
       { status: 500 },

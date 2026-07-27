@@ -18,15 +18,31 @@ const ITEMS: Array<{
   { href: "/assets", label: "Assets", icon: FolderOpen },
 ];
 
+function prefetchAssets() {
+  if (typeof window === "undefined") return;
+  void fetch("/api/assets", { credentials: "include" }).catch(() => undefined);
+}
+
 export function BottomNav() {
   const pathname = usePathname();
   const router = useRouter();
   const [createOpen, setCreateOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const prefetched = useRef(false);
 
   useEffect(() => {
     setCreateOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    if (pathname.startsWith("/assets") || prefetched.current) return;
+    const t = window.setTimeout(() => {
+      prefetched.current = true;
+      router.prefetch("/assets");
+      prefetchAssets();
+    }, 800);
+    return () => window.clearTimeout(t);
+  }, [pathname, router]);
 
   useEffect(() => {
     if (!createOpen) return;
@@ -137,6 +153,18 @@ export function BottomNav() {
             <Link
               key={item.label}
               href={item.href}
+              onMouseEnter={() => {
+                if (item.href === "/assets") {
+                  router.prefetch("/assets");
+                  prefetchAssets();
+                }
+              }}
+              onTouchStart={() => {
+                if (item.href === "/assets") {
+                  router.prefetch("/assets");
+                  prefetchAssets();
+                }
+              }}
               className={`flex flex-col items-center gap-1 py-2 text-[10px] font-medium ${
                 active ? "text-white" : "text-white/45"
               }`}
