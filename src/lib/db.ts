@@ -107,6 +107,18 @@ async function saveDb(db: DbShape): Promise<void> {
     .catch(() => undefined);
 }
 
+/** Serialize read-modify-write so concurrent generates cannot wipe assets/credits. */
+let dbWriteChain: Promise<unknown> = Promise.resolve();
+
+function withDbLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = dbWriteChain.then(fn, fn);
+  dbWriteChain = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
 export async function findUserByEmail(email: string): Promise<UserRecord | null> {
   const db = await ensureDb();
   return db.users.find((u) => u.email.toLowerCase() === email.toLowerCase()) ?? null;
@@ -129,27 +141,29 @@ export async function createUser(input: {
   googleId?: string;
   avatarUrl?: string;
 }): Promise<UserRecord> {
-  const db = await ensureDb();
-  if (db.users.some((u) => u.email.toLowerCase() === input.email.toLowerCase())) {
-    throw new Error("Email already registered");
-  }
-  const now = new Date().toISOString();
-  const user: UserRecord = {
-    id: randomUUID(),
-    email: input.email.trim().toLowerCase(),
-    name: input.name.trim() || "Creator",
-    passwordHash: input.passwordHash || "",
-    googleId: input.googleId,
-    avatarUrl: input.avatarUrl,
-    credits: 0,
-    planId: "free",
-    freeVeronixUsed: false,
-    createdAt: now,
-    updatedAt: now,
-  };
-  db.users.push(user);
-  await saveDb(db);
-  return user;
+  return withDbLock(async () => {
+    const db = await ensureDb();
+    if (db.users.some((u) => u.email.toLowerCase() === input.email.toLowerCase())) {
+      throw new Error("Email already registered");
+    }
+    const now = new Date().toISOString();
+    const user: UserRecord = {
+      id: randomUUID(),
+      email: input.email.trim().toLowerCase(),
+      name: input.name.trim() || "Creator",
+      passwordHash: input.passwordHash || "",
+      googleId: input.googleId,
+      avatarUrl: input.avatarUrl,
+      credits: 0,
+      planId: "free",
+      freeVeronixUsed: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    db.users.push(user);
+    await saveDb(db);
+    return user;
+  });
 }
 
 export async function upsertGoogleUser(input: {
@@ -188,23 +202,35 @@ export async function updateUser(
   id: string,
   patch: Partial<Omit<UserRecord, "id" | "createdAt">>,
 ): Promise<UserRecord> {
-  const db = await ensureDb();
-  const idx = db.users.findIndex((u) => u.id === id);
-  if (idx < 0) throw new Error("User not found");
-  db.users[idx] = {
-    ...db.users[idx],
-    ...patch,
-    updatedAt: new Date().toISOString(),
-  };
-  await saveDb(db);
-  return db.users[idx];
+  return withDbLock(async () => {
+    const db = await ensureDb();
+    const idx = db.users.findIndex((u) => u.id === id);
+    if (idx < 0) throw new Error("User not found");
+    db.users[idx] = {
+      ...db.users[idx],
+      ...patch,
+      updatedAt: new Date().toISOString(),
+    };
+    await saveDb(db);
+    return db.users[idx]!;
+  });
 }
 
 export async function adjustCredits(userId: string, delta: number): Promise<UserRecord> {
-  const user = await findUserById(userId);
-  if (!user) throw new Error("User not found");
-  const next = Math.max(0, Math.floor(user.credits + delta));
-  return updateUser(userId, { credits: next });
+  return withDbLock(async () => {
+    const db = await ensureDb();
+    const idx = db.users.findIndex((u) => u.id === userId);
+    if (idx < 0) throw new Error("User not found");
+    const user = db.users[idx]!;
+    const next = Math.max(0, Math.floor(user.credits + delta));
+    db.users[idx] = {
+      ...user,
+      credits: next,
+      updatedAt: new Date().toISOString(),
+    };
+    await saveDb(db);
+    return db.users[idx]!;
+  });
 }
 
 /** Ops-only: email/credits/plan for credit grants (no secrets). */
@@ -223,30 +249,32 @@ export async function listUsersForAdmin(): Promise<
 export async function createAsset(
   input: Omit<AssetRecord, "id" | "createdAt"> & { id?: string },
 ): Promise<AssetRecord> {
-  const db = await ensureDb();
-  const asset: AssetRecord = {
-    id: input.id ?? randomUUID(),
-    userId: input.userId,
-    historyId: input.historyId,
-    mediaType: input.mediaType,
-    url: input.url,
-    prompt: input.prompt,
-    mode: input.mode,
-    model: input.model,
-    creditsUsed: input.creditsUsed,
-    status: input.status,
-    error: input.error,
-    hidden: Boolean(input.hidden),
-    targetSeconds:
-      typeof input.targetSeconds === "number" && input.targetSeconds > 0
-        ? Math.round(input.targetSeconds)
-        : undefined,
-    jobMeta: input.jobMeta,
-    createdAt: new Date().toISOString(),
-  };
-  db.assets.unshift(asset);
-  await saveDb(db);
-  return asset;
+  return withDbLock(async () => {
+    const db = await ensureDb();
+    const asset: AssetRecord = {
+      id: input.id ?? randomUUID(),
+      userId: input.userId,
+      historyId: input.historyId,
+      mediaType: input.mediaType,
+      url: input.url,
+      prompt: input.prompt,
+      mode: input.mode,
+      model: input.model,
+      creditsUsed: input.creditsUsed,
+      status: input.status,
+      error: input.error,
+      hidden: Boolean(input.hidden),
+      targetSeconds:
+        typeof input.targetSeconds === "number" && input.targetSeconds > 0
+          ? Math.round(input.targetSeconds)
+          : undefined,
+      jobMeta: input.jobMeta,
+      createdAt: new Date().toISOString(),
+    };
+    db.assets.unshift(asset);
+    await saveDb(db);
+    return asset;
+  });
 }
 
 export async function updateAsset(
@@ -254,12 +282,14 @@ export async function updateAsset(
   userId: string,
   patch: Partial<Omit<AssetRecord, "id" | "userId" | "createdAt">>,
 ): Promise<AssetRecord | null> {
-  const db = await ensureDb();
-  const idx = db.assets.findIndex((a) => a.id === id && a.userId === userId);
-  if (idx < 0) return null;
-  db.assets[idx] = { ...db.assets[idx], ...patch };
-  await saveDb(db);
-  return db.assets[idx];
+  return withDbLock(async () => {
+    const db = await ensureDb();
+    const idx = db.assets.findIndex((a) => a.id === id && a.userId === userId);
+    if (idx < 0) return null;
+    db.assets[idx] = { ...db.assets[idx]!, ...patch };
+    await saveDb(db);
+    return db.assets[idx]!;
+  });
 }
 
 export async function findAssetByHistoryId(
@@ -303,17 +333,19 @@ export async function setAssetsHidden(
   hidden: boolean,
 ): Promise<number> {
   if (!assetIds.length) return 0;
-  const db = await ensureDb();
-  const want = new Set(assetIds);
-  let n = 0;
-  for (let i = 0; i < db.assets.length; i += 1) {
-    const a = db.assets[i]!;
-    if (a.userId !== userId || !want.has(a.id)) continue;
-    db.assets[i] = { ...a, hidden };
-    n += 1;
-  }
-  if (n) await saveDb(db);
-  return n;
+  return withDbLock(async () => {
+    const db = await ensureDb();
+    const want = new Set(assetIds);
+    let n = 0;
+    for (let i = 0; i < db.assets.length; i += 1) {
+      const a = db.assets[i]!;
+      if (a.userId !== userId || !want.has(a.id)) continue;
+      db.assets[i] = { ...a, hidden };
+      n += 1;
+    }
+    if (n) await saveDb(db);
+    return n;
+  });
 }
 
 /** Wait before unhiding parts — long enough for full 32s multi-shot + stitch. */
@@ -329,6 +361,7 @@ const ORPHAN_RECOVERY_GRACE_MS = 20 * 60 * 1000;
 export async function recoverStuckSequencePending(
   userId: string,
 ): Promise<number> {
+  return withDbLock(async () => {
   const db = await ensureDb();
   const now = Date.now();
   let n = 0;
@@ -428,6 +461,7 @@ export async function recoverStuckSequencePending(
 
   if (n) await saveDb(db);
   return n;
+  });
 }
 
 /**
@@ -438,6 +472,7 @@ export async function recoverStuckSequencePending(
 export async function recoverOrphanedHiddenAssets(
   userId: string,
 ): Promise<number> {
+  return withDbLock(async () => {
   const db = await ensureDb();
   const now = Date.now();
   const mine = db.assets.filter((a) => a.userId === userId);
@@ -470,6 +505,7 @@ export async function recoverOrphanedHiddenAssets(
   }
   if (n) await saveDb(db);
   return n;
+  });
 }
 
 export function publicUser(user: UserRecord) {
@@ -491,12 +527,14 @@ export async function hasProcessedCheckoutSession(sessionId: string): Promise<bo
 
 /** Returns true if this process claimed the session (first writer wins). */
 export async function claimCheckoutSession(sessionId: string): Promise<boolean> {
-  const db = await ensureDb();
-  const list = db.processedCheckoutSessions || [];
-  if (list.includes(sessionId)) return false;
-  list.push(sessionId);
-  // Keep the list bounded
-  db.processedCheckoutSessions = list.slice(-500);
-  await saveDb(db);
-  return true;
+  return withDbLock(async () => {
+    const db = await ensureDb();
+    const list = db.processedCheckoutSessions || [];
+    if (list.includes(sessionId)) return false;
+    list.push(sessionId);
+    // Keep the list bounded
+    db.processedCheckoutSessions = list.slice(-500);
+    await saveDb(db);
+    return true;
+  });
 }

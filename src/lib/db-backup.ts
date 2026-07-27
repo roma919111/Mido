@@ -395,6 +395,14 @@ export async function recoverDbFromBackupsIfNeeded(): Promise<{
       detail: `${result.message}:${result.backup}:assets=${result.mergedAssets}`,
     };
   }
+  // Partial wipe (e.g. race left 2–4 rows while backup has dozens).
+  if (best.assets >= current.assets + 10) {
+    const result = await mergeDbFromBackup({ backupName: best.name });
+    return {
+      recovered: result.ok && result.mergedAssets > 0,
+      detail: `${result.message}:${result.backup}:partial=${result.mergedAssets}`,
+    };
+  }
   if (current.users === 0 && best.users > 0) {
     const result = await mergeDbFromBackup({ backupName: best.name, fullReplace: true });
     return {
