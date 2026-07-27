@@ -90,14 +90,14 @@ ${trimmed.slice(0, 4000)}`,
 }
 
 /**
- * AI-polish one action beat into a full English Seedance shot description.
+ * Classic enhance polish: English scene → one cinematic AI prompt.
  * Customer-facing enhance text — do NOT inject "CGI" jargon.
  */
-export async function polishShotPromptEnglish(
-  action: string,
+export async function polishPromptEnglish(
+  text: string,
   opts?: { entities?: string[]; setting?: string },
 ): Promise<string> {
-  const act = action.trim();
+  const act = text.trim();
   if (!act) return "";
 
   const entityLine =
@@ -107,17 +107,17 @@ export async function polishShotPromptEnglish(
   const settingLine = opts?.setting ? `Setting: ${opts.setting}` : "";
 
   const raw = await geminiJsonText(
-    `Rewrite this single video action into one polished English cinematic shot prompt for AI video (Seedance).
+    `Polish this English video prompt into one cinematic AI video description (Seedance).
 Rules:
-- ONE primary action only
+- Keep every action and detail from the source; do not invent a new plot
 - Natural cinematic film look (live-action style). Do NOT write the words CGI, 3D, render, or Unreal
-- Include lighting, camera, motion, wardrobe continuity
-- 2–4 sentences max
+- Include lighting, camera, and natural motion
+- 2–5 sentences max
 - Do not mention brand names or technical pipeline jargon
 Return JSON only: {"prompt":"..."}
 
-ACTION:
-${act.slice(0, 1500)}
+SOURCE:
+${act.slice(0, 4000)}
 ${entityLine}
 ${settingLine}`,
   );
@@ -128,13 +128,20 @@ ${settingLine}`,
   }
 
   const bits = [
-    `Cinematic shot: ${act}.`,
+    act,
     "Smooth natural motion, rich color grade, soft cinematic lighting.",
   ];
   if (entityLine) bits.push(entityLine);
   if (settingLine) bits.push(settingLine);
-  bits.push("One shot only — perform this action without adding events from other shots.");
   return stripEnhanceJargon(bits.join(" "));
+}
+
+/** @deprecated alias — same as polishPromptEnglish */
+export async function polishShotPromptEnglish(
+  action: string,
+  opts?: { entities?: string[]; setting?: string },
+): Promise<string> {
+  return polishPromptEnglish(action, opts);
 }
 
 /** Remove technical labels that confuse customers in the enhance box. */

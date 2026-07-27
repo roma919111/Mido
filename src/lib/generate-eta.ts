@@ -1,10 +1,8 @@
 /**
  * Wall-clock ETA for Veronix / Seedance generation.
  *
- * Measured on BytePlus: ~55s wall time for a 4s clip (often 55–70s under load).
- * Multi-shot adds per-beat cache/bridge + final concat/clarity.
- * Countdown must stay honest for 32s (8 beats ≈ 10–12 minutes) — never
- * flip to «يكتمل الآن» after only a couple of minutes.
+ * Measured on BytePlus: ~55–70s wall time per ~4s of output under load.
+ * Single-clip path (4–15s) scales linearly from that baseline + clarity overhead.
  */
 
 /** Conservative BytePlus wall time for a 4-second render (includes queue jitter). */
@@ -19,16 +17,9 @@ export const ETA_SECONDS_FINAL_STITCH = 60;
 /** Estimate total generate time (seconds) for a chosen output duration. */
 export function estimateGenerateSeconds(outputDurationSec: number): number {
   const duration = Math.max(1, Math.round(outputDurationSec || 4));
-  const beats = Math.max(1, Math.ceil(duration / 4));
-  // N×70s BytePlus + N×15s cache/bridge + stitch/clarity
-  return Math.max(
-    40,
-    Math.round(
-      beats * ETA_SECONDS_PER_4S_OUTPUT +
-        beats * ETA_SECONDS_PER_BEAT_OVERHEAD +
-        (beats > 1 ? ETA_SECONDS_FINAL_STITCH : 25),
-    ),
-  );
+  // Single clip: scale from the measured 4s wall time, then add clarity grade.
+  const render = Math.ceil((duration / 4) * ETA_SECONDS_PER_4S_OUTPUT);
+  return Math.max(45, render + 25);
 }
 
 /** Seconds remaining until the ETA (0 when overdue). */

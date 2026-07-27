@@ -8,6 +8,7 @@ import {
 import type { AudioParamKey, CatalogModel, ModelKind } from "@/lib/model-catalog";
 import {
   mergeLiveIntoFullCatalog,
+  VIDEO_CLARITY_LADDER,
   VIDEO_FORM_FALLBACKS,
 } from "@/lib/model-catalog";
 import { saveCostCache } from "@/lib/openart-cost-cache";
@@ -299,6 +300,19 @@ async function enrichVideoFormOptions(catalog: SyncedCatalogFile): Promise<void>
       model.audioSupported = options.audioSupported;
       model.audioDefault = options.audioDefault;
       model.audioParam = options.audioParam;
+
+      // Veronix Create UI: always offer 4–15s and the full clarity ladder
+      // (480p → 4K), even if OpenArt’s form enum is narrower.
+      if (
+        model.id === VERONIX_MODEL_ID ||
+        model.mcpId === "byte-plus-seedance-2-mini"
+      ) {
+        model.durationMin = 4;
+        model.durationMax = 15;
+        model.durationDefault = model.durationDefault ?? 5;
+        model.resolutions = [...VIDEO_CLARITY_LADDER];
+        model.resolutionDefault = model.resolutionDefault || "720p";
+      }
     } catch {
       // keep fallback options
     }

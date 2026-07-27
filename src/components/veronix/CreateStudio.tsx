@@ -18,6 +18,7 @@ import {
   formOptionsForModel,
   IMAGE_MODELS,
   resolutionLabel,
+  VIDEO_CLARITY_LADDER,
   VIDEO_MODELS,
   type CatalogModel,
 } from "@/lib/model-catalog";
@@ -28,11 +29,6 @@ import {
 } from "@/lib/free-trial";
 import type { VisualReference } from "@/lib/types";
 import type { SceneState } from "@/lib/prompt-enhance";
-import {
-  MAX_SHOTS,
-  MAX_TOTAL_SECONDS,
-  PRODUCT_PER_SHOT_SECONDS,
-} from "@/lib/shot-plan";
 import { fetchJson } from "@/lib/fetch-json";
 import {
   estimateGenerateSeconds,
@@ -41,13 +37,15 @@ import {
   lockEtaStart,
   remainingGenerateSeconds,
 } from "@/lib/generate-eta";
-import { expandShotsToBudget, shotBudgetFromDuration } from "@/lib/expand-shots";
 import { veronixDownloadPath, veronixMediaSrc } from "@/lib/media-proxy";
 import { clearEditDraft, readEditDraft } from "@/lib/edit-draft";
 import type { CustomerUser } from "./AppHeader";
 
-/** Default paid product length — 8s (2×4s). Max remains 32s via the slider. */
-const DEFAULT_PAID_DURATION_SECONDS = 8;
+/** Default paid length — familiar OpenArt default within 4–15s. */
+const DEFAULT_PAID_DURATION_SECONDS = 5;
+/** Paid Veronix duration window (slider steps by 1s). */
+const PAID_DURATION_MIN = 4;
+const PAID_DURATION_MAX = 15;
 
 /** Poll long enough for a slow Seedance beat (~6–7 min). */
 const PREVIEW_POLL_ATTEMPTS = 80;
@@ -160,10 +158,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   /** Allows starting a new Generate while a previous job continues in Assets. */
   const genRunIdRef = useRef(0);
   /**
-   * Paid Veronix always plans/stitches beats internally (4s×N up to 32s).
-   * Intermediate clips stay hidden — Assets only shows the final video.
+   * Multi-beat stitch is no longer the paid default — duration is a native
+   * 4–15s Seedance clip. Flag kept for any restored running multi jobs.
    */
-  const [multiShotOn, setMultiShotOn] = useState(true);
+  const [multiShotOn, setMultiShotOn] = useState(false);
   const [shotHint, setShotHint] = useState<{
     count: number;
     totalCredits: number | null;
@@ -197,16 +195,24 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const selectedModel = allModels.find((m) => m.id === selectedModelId) ?? null;
   const durationBounds = durationBoundsForModel(selectedModel);
   const formOptions = formOptionsForModel(selectedModel);
-  const resolutionOptions = formOptions.resolutions;
-  /** Paid Veronix: slider = final stitched length (4–32s). Free trial: model bounds. */
-  const multiDurationMode = Boolean(
+  /** Paid Veronix: always show full clarity ladder 480p → 4K. */
+  const resolutionOptions =
+    selectedModelId === VERONIX_MODEL_ID && !freeSettingsLocked
+      ? [...VIDEO_CLARITY_LADDER]
+      : formOptions.resolutions;
+  /** Paid Veronix: native 4–15s slider (1s steps). Free trial: locked 4s. */
+  const paidDurationMode = Boolean(
     media === "video" &&
       selectedModelId === VERONIX_MODEL_ID &&
       !freeTrial &&
       !freeSettingsLocked,
   );
-  const sliderMin = multiDurationMode ? PRODUCT_PER_SHOT_SECONDS : durationBounds.min;
-  const sliderMax = multiDurationMode ? MAX_TOTAL_SECONDS : durationBounds.max;
+  const sliderMin = paidDurationMode
+    ? PAID_DURATION_MIN
+    : durationBounds.min;
+  const sliderMax = paidDurationMode
+    ? PAID_DURATION_MAX
+    : durationBounds.max;
 
   const applyVideoModelDefaults = (model: CatalogModel | null | undefined) => {
     setAspectRatio(VIDEO_ASPECT);
@@ -223,13 +229,15 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       setGenerateAudio(true);
       return;
     }
-    // Paid Veronix: default 8s (fast). Slider still goes up to 32s.
+    // Paid Veronix: default 5s. Slider goes 4 → 5 → … → 15.
     setDuration(
       model.id === VERONIX_MODEL_ID
         ? DEFAULT_PAID_DURATION_SECONDS
-        : options.duration.max,
+        : options.duration.default || options.duration.max,
     );
-    if (options.resolutions.length) {
+    if (model.id === VERONIX_MODEL_ID) {
+      setResolution(options.resolutionDefault || "720p");
+    } else if (options.resolutions.length) {
       const nextRes =
         options.resolutionDefault ||
         options.resolutions[options.resolutions.length - 1] ||
@@ -526,11 +534,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             resolution: media === "video" ? resolution : undefined,
             duration: media === "video" ? duration : undefined,
             generateAudio: media === "video" ? generateAudio : undefined,
-            // Paid Veronix quotes as multi-beat product (up to 32s).
-            multiShot:
-              media === "video" &&
-              selectedModelId === VERONIX_MODEL_ID &&
-              (Boolean(user?.freeVeronixUsed) || (user?.credits ?? 0) > 0),
+            multiShot: false,
           }),
         });
         if (cancelled) return;
@@ -542,101 +546,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         }
         const isFree = Boolean(data.freeTrial);
         setFreeTrial(isFree);
-        let nextCost = data.totalCredits;
-        let nextHint: typeof shotHint = null;
-
-        // General multi-shot estimate — context-aware (لا يشترط ثم).
-        if (
-          media === "video" &&
-          selectedModelId === VERONIX_MODEL_ID &&
-          !isFree &&
-          prompt.trim().length >= 12
-        ) {
-          try {
-            const planRes = await fetchJson<{
-              autoMultiShot?: boolean;
-              shotCount?: number;
-              totalCredits?: number | null;
-              actions?: string[];
-              perShotSeconds?: number;
-              totalSeconds?: number;
-              timing?: {
-                labelAr?: string;
-                perShotSeconds?: number;
-                totalSeconds?: number;
-                preferredPerShot?: number;
-                preferredTotalSeconds?: number;
-                apiPerShotSeconds?: number;
-              };
-            }>("/api/shots/plan", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                prompt: prompt.trim(),
-                modelId: selectedModelId,
-                media,
-                duration,
-                resolution,
-                generateAudio,
-                aspectRatio: VIDEO_ASPECT,
-                previousState: promptSceneState,
-                multiShot: true,
-              }),
-            });
-            if (
-              !cancelled &&
-              planRes.res.ok &&
-              planRes.data.autoMultiShot &&
-              (planRes.data.shotCount || 0) >= 2
-            ) {
-              const count = planRes.data.shotCount || 0;
-              const preferredPerShot =
-                planRes.data.timing?.preferredPerShot || PRODUCT_PER_SHOT_SECONDS;
-              const preferredTotal =
-                planRes.data.timing?.preferredTotalSeconds ||
-                preferredPerShot * count;
-              const per =
-                planRes.data.timing?.perShotSeconds ||
-                planRes.data.perShotSeconds ||
-                preferredPerShot;
-              const apiPer =
-                planRes.data.timing?.apiPerShotSeconds ||
-                Math.max(durationBounds.min, per);
-              const total = Math.min(
-                MAX_TOTAL_SECONDS,
-                planRes.data.timing?.totalSeconds ||
-                  planRes.data.totalSeconds ||
-                  per * count,
-              );
-              nextHint = {
-                count,
-                totalCredits:
-                  typeof planRes.data.totalCredits === "number"
-                    ? planRes.data.totalCredits
-                    : null,
-                actions: planRes.data.actions || [],
-                preferredPerShot,
-                preferredTotalSeconds: preferredTotal,
-                perShotSeconds: per,
-                apiPerShotSeconds: apiPer,
-                totalSeconds: total,
-                labelAr:
-                  planRes.data.timing?.labelAr ||
-                  `توصية: ${count} لقطات × ${per} ثوانٍ = ${total} ثانية`,
-              };
-              if (typeof planRes.data.totalCredits === "number") {
-                nextCost = planRes.data.totalCredits;
-              }
-              // Do NOT setDuration here — overwriting snaps the slider back
-              // (e.g. user picks 30s, quote returns 2×2s=4s).
-            }
-          } catch {
-            // Keep single-clip quote if plan fails.
-          }
-        }
+        const nextCost = data.totalCredits;
 
         if (cancelled) return;
-        setShotHint(nextHint);
+        setShotHint(null);
         setCreditCost(nextCost);
         const quote = data.quotes?.[0];
         const live = Boolean(
@@ -810,43 +723,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       if (!res.ok) throw new Error(data.error || "Enhance failed");
       const next = (data.enhanced || "").trim();
       if (!next) throw new Error("لم يتم إنشاء وصف محسّن");
-      // Full replace — never append polish onto the existing field.
+      // Full replace — English translate + AI polish (familiar flow).
       setPrompt(next);
-      if (data.multiShot && (data.shots?.length || 0) >= 2) {
-        // Fresh multi-shot script — do not keep prior end-pose as "previous"
-        // (it was leaking late actions like overhead lift into shot 1).
-        setPromptSceneState(null);
-        setPlannedShots(data.shots || null);
-        const count = Math.min(
-          MAX_SHOTS,
-          data.shotCount || data.shots!.length,
-        );
-        const preferredPerShot = PRODUCT_PER_SHOT_SECONDS;
-        const preferredTotal = preferredPerShot * count;
-        const per = preferredPerShot;
-        const apiPer = Math.max(durationBounds.min, preferredPerShot);
-        const total = Math.min(MAX_TOTAL_SECONDS, per * count);
-        setShotHint({
-          count,
-          totalCredits: null,
-          actions: data.shots!.map((s) => s.action),
-          preferredPerShot,
-          preferredTotalSeconds: preferredTotal,
-          perShotSeconds: per,
-          apiPerShotSeconds: apiPer,
-          totalSeconds: total,
-          labelAr: `توصية: ${count} لقطات × ${per} ثوانٍ = ${total} ثانية`,
-        });
-        // Suggest total only if slider is still on a low default (≤4s).
-        setDuration((prev) =>
-          prev <= FREE_VERONIX_DURATION_SECONDS
-            ? total
-            : Math.min(MAX_TOTAL_SECONDS, Math.max(prev, total)),
-        );
-      } else {
-        setPlannedShots(null);
-        if (data.finalState) setPromptSceneState(data.finalState);
-      }
+      setPlannedShots(null);
+      setShotHint(null);
+      if (data.finalState) setPromptSceneState(data.finalState);
 
       if (data.needsVisionKey) {
         setStatus(
@@ -860,14 +741,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         const bits = ["تم تحسين الوصف"];
         if (data.visionUsed) bits.push("مع استبدال الشخصيات بمواصفات الصورة");
         if (data.chained) bits.push("وتسلسل من الحالة السابقة");
-        if (data.multiShot && (data.shotCount || 0) >= 2) {
-          bits.push(`وتقسيم إلى ${data.shotCount} لقطات من السياق`);
-        }
-        setStatus(
-          bits.length
-            ? `${bits.join(" · ")} · الوصف بالإنجليزية ولقطة لكل أكشن`
-            : "تم تحسين الوصف بالإنجليزية",
-        );
+        bits.push("ترجمة إنجليزية ثم AI Polish");
+        setStatus(bits.join(" · "));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Enhance failed");
@@ -1253,7 +1128,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         prompt: body,
       });
     }
-    return shots.length >= 2 ? shots.slice(0, MAX_SHOTS) : null;
+    return shots.length >= 2 ? shots.slice(0, 8) : null;
   }
 
   async function gatherEnhanceImageUrls(): Promise<string[]> {
@@ -1319,313 +1194,22 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       status: "running",
       targetSeconds: outputTargetSeconds,
     });
-    // Paid Veronix always uses internal multi-beat stitch up to 32s.
-    const canPayMulti =
+    // Paid Veronix: clear free-trial lock so the chosen 4–15s clip is billed.
+    if (
       media === "video" &&
       selectedModelId === VERONIX_MODEL_ID &&
-      ((user.credits ?? 0) > 0 || Boolean(user.freeVeronixUsed));
-    if (canPayMulti) {
+      ((user.credits ?? 0) > 0 || Boolean(user.freeVeronixUsed))
+    ) {
       setFreeTrial(false);
-      setMultiShotOn(true);
+      setMultiShotOn(false);
     }
 
     setStatus(
-      canPayMulti
-        ? "تخطيط اللقطات المتعددة…"
-        : freeTrial
-          ? "جاري توليد فيديوك المجاني…"
-          : "جاري التوليد…",
+      freeTrial
+        ? "جاري توليد فيديوك المجاني…"
+        : "جاري التوليد…",
     );
     try {
-      // Plan multi-shot from context (no ثم required) — paid video only.
-      let useMulti = false;
-      let shots: Array<{ prompt: string; action: string }> = [];
-      // Seedance/Veronix: each beat = 4s. Slider = total budget (up to 32s).
-      let perShotSeconds = PRODUCT_PER_SHOT_SECONDS;
-      let apiPerShotSeconds = Math.min(
-        durationBounds.max,
-        Math.max(durationBounds.min, PRODUCT_PER_SHOT_SECONDS),
-      );
-      if (canPayMulti) {
-        // Always AI-enhance/split right before generate so every shot has a
-        // polished description — even if the user skipped «تحسين الوصف».
-        setStatus("تحسين وصف كل لقطة بالذكاء الاصطناعي…");
-        const uniqueUrls = await gatherEnhanceImageUrls();
-        const enhanceRes = await fetchJson<{
-          enhanced?: string;
-          error?: string;
-          multiShot?: boolean;
-          shotCount?: number;
-          shots?: Array<{ prompt: string; action: string }>;
-        }>("/api/enhance", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prompt: prompt.trim(),
-            mode: "text-to-video",
-            imageUrls: uniqueUrls,
-            previousState: null,
-          }),
-        });
-        if (
-          enhanceRes.res.ok &&
-          enhanceRes.data.multiShot &&
-          (enhanceRes.data.shots?.length || 0) >= 2
-        ) {
-          useMulti = true;
-          shots = enhanceRes.data.shots!;
-          setPlannedShots(shots);
-          if (enhanceRes.data.enhanced?.trim()) {
-            setPrompt(enhanceRes.data.enhanced.trim());
-          }
-          const count = Math.min(MAX_SHOTS, shots.length);
-          setShotHint({
-            count,
-            totalCredits: null,
-            actions: shots.map((s) => s.action),
-            preferredPerShot: PRODUCT_PER_SHOT_SECONDS,
-            preferredTotalSeconds: count * PRODUCT_PER_SHOT_SECONDS,
-            perShotSeconds: PRODUCT_PER_SHOT_SECONDS,
-            apiPerShotSeconds: apiPerShotSeconds,
-            totalSeconds: count * PRODUCT_PER_SHOT_SECONDS,
-            labelAr: `توصية: ${count} لقطات × ${PRODUCT_PER_SHOT_SECONDS} ثوانٍ = ${count * PRODUCT_PER_SHOT_SECONDS} ثانية`,
-          });
-        } else if (plannedShots && plannedShots.length >= 2) {
-          useMulti = true;
-          shots = plannedShots;
-        } else {
-          const fromScript = parseShotScriptLines(prompt.trim());
-          if (fromScript) {
-            useMulti = true;
-            shots = fromScript;
-            setPlannedShots(fromScript);
-          }
-        }
-      }
-
-      if (canPayMulti && !useMulti) {
-        // Last resort plan API (no AI polish) — still prefer multi over silent 4s.
-        const planRes = await fetchJson<{
-          autoMultiShot?: boolean;
-          plan?: { shots?: Array<{ prompt: string; action: string }> };
-          shotCount?: number;
-          actions?: string[];
-          totalCredits?: number | null;
-          timing?: { labelAr?: string };
-        }>("/api/shots/plan", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prompt: prompt.trim(),
-            modelId: selectedModelId,
-            media,
-            duration: Math.max(PRODUCT_PER_SHOT_SECONDS, duration),
-            resolution,
-            generateAudio,
-            aspectRatio: VIDEO_ASPECT,
-            previousState: null,
-            multiShot: true,
-          }),
-        });
-        if (
-          planRes.res.ok &&
-          planRes.data.autoMultiShot &&
-          (planRes.data.plan?.shots?.length || 0) >= 2
-        ) {
-          useMulti = true;
-          shots = planRes.data.plan!.shots!;
-          setPlannedShots(shots);
-        }
-      }
-
-      // Paid product length is N×4s — always fill the slider budget with action beats.
-      if (canPayMulti) {
-        const budget = shotBudgetFromDuration(duration, MAX_SHOTS);
-        if (!useMulti || shots.length < 2) {
-          const base = prompt.trim();
-          shots = Array.from({ length: Math.max(2, budget) }, (_, i) => ({
-            action: `beat ${i + 1}`,
-            prompt: `${base}\n\nBeat ${i + 1} of ${budget} only — continue the same scene seamlessly. one shot only.`,
-          }));
-        }
-        shots = expandShotsToBudget(shots, budget);
-        useMulti = shots.length >= 2;
-        setPlannedShots(shots);
-        setDuration(shots.length * PRODUCT_PER_SHOT_SECONDS);
-      }
-
-      if (useMulti && shots.length >= 2) {
-        // Server-side multi-shot: split by action, generate beats in background,
-        // concat + clarity on the server so the full duration (e.g. 32s) completes
-        // even if the browser navigates away.
-        const multiTargetSeconds = shots.length * PRODUCT_PER_SHOT_SECONDS;
-        if (stillMine()) {
-          setStatus(
-            `توليد ${shots.length} لقطات × ${PRODUCT_PER_SHOT_SECONDS}ث خلف الكواليس ثم الدمج…`,
-          );
-          setPreview({
-            url: "",
-            mediaType: "video",
-            status: "running",
-            targetSeconds: multiTargetSeconds,
-          });
-          setRemainingSec(estimateGenerateSeconds(multiTargetSeconds));
-        }
-
-        const startRes = await fetchJson<{
-          error?: string;
-          asset?: {
-            id?: string;
-            status?: string;
-            url?: string;
-            targetSeconds?: number;
-          };
-          targetSeconds?: number;
-          shotCount?: number;
-          estimatedSeconds?: number;
-        }>("/api/jobs/multi-shot", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "start",
-            prompt: prompt.trim(),
-            shots,
-            duration: multiTargetSeconds,
-            resolution,
-            generateAudio,
-            startFrame: startFrame ?? null,
-          }),
-        });
-        if (!startRes.res.ok || !startRes.data.asset?.id) {
-          throw new Error(startRes.data.error || "تعذر بدء توليد المشهد المتعدد");
-        }
-        const jobAssetId = startRes.data.asset.id;
-        const etaSec =
-          startRes.data.estimatedSeconds ||
-          estimateGenerateSeconds(multiTargetSeconds);
-        lockEtaStart(jobAssetId, new Date(startedAt).toISOString());
-        if (stillMine()) {
-          setRemainingSec(etaSec);
-          setPreview((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  assetId: jobAssetId,
-                  targetSeconds:
-                    startRes.data.targetSeconds || multiTargetSeconds,
-                }
-              : prev,
-          );
-        }
-        await onUserRefresh().catch(() => undefined);
-
-        // Server runs beats in the background. Poll STATUS (non-blocking) so
-        // the UI keeps a real ~10m countdown for 32s instead of hanging on tick.
-        setMultiProgress({ partCount: 0, shotCount: shots.length });
-        const pollDeadline = Date.now() + Math.max(etaSec, 120) * 1000 + 5 * 60_000;
-        let lastKick = 0;
-        while (Date.now() < pollDeadline) {
-          if (!stillMine()) break;
-          const now = Date.now();
-          // Kick a real tick occasionally so progress continues even if BG died.
-          const action =
-            now - lastKick > 55_000 ? ("tick" as const) : ("status" as const);
-          if (action === "tick") lastKick = now;
-
-          const tickRes = await fetchJson<{
-            error?: string;
-            done?: boolean;
-            asset?: {
-              status?: string;
-              url?: string;
-              targetSeconds?: number;
-              error?: string;
-            };
-            nextIndex?: number;
-            shotCount?: number;
-            partCount?: number;
-          }>("/api/jobs/multi-shot", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action, assetId: jobAssetId }),
-          });
-
-          if (tickRes.res.status === 404) {
-            // Ghost preview — server job gone (deploy wipe / lost).
-            throw new Error(
-              "انقطع التوليد على السيرفر — أعد Generate من الاستوديو",
-            );
-          }
-
-          const asset = tickRes.data.asset;
-          const shotCount = tickRes.data.shotCount || shots.length;
-          const nextIndex = tickRes.data.nextIndex ?? 0;
-          const partCount = tickRes.data.partCount ?? 0;
-          if (stillMine()) {
-            setMultiProgress({ partCount, shotCount });
-            setStatus(
-              asset?.status === "completed"
-                ? `فيديو واحد جاهز · ${asset.targetSeconds || multiTargetSeconds}ث`
-                : `خلف الكواليس: لقطة ${Math.min(shotCount, Math.max(1, partCount + 1))} من ${shotCount} · دمج وفلتر في النهاية`,
-            );
-            setPreview((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    status: asset?.status === "failed" ? "failed" : "running",
-                    url: asset?.url || prev.url,
-                    targetSeconds:
-                      asset?.targetSeconds ||
-                      prev.targetSeconds ||
-                      multiTargetSeconds,
-                  }
-                : prev,
-            );
-          }
-          if (tickRes.data.done || asset?.status === "completed") {
-            if (stillMine()) {
-              if (asset?.status === "failed") {
-                setError(asset.error || "فشل توليد المشهد المتعدد");
-                setPreview({
-                  url: "",
-                  mediaType: "video",
-                  status: "failed",
-                  assetId: jobAssetId,
-                });
-                setMultiProgress(null);
-              } else if (asset?.url) {
-                setPreview({
-                  url: asset.url,
-                  mediaType: "video",
-                  status: "completed",
-                  assetId: jobAssetId,
-                  targetSeconds: asset.targetSeconds || multiTargetSeconds,
-                });
-                setStatus(
-                  `فيديو واحد جاهز · ${asset.targetSeconds || multiTargetSeconds}ث`,
-                );
-                setMultiProgress(null);
-              }
-              setGenStartedAt(null);
-            }
-            await onUserRefresh().catch(() => undefined);
-            return;
-          }
-          if (asset?.status === "failed") {
-            throw new Error(asset.error || "فشل توليد المشهد المتعدد");
-          }
-          void nextIndex;
-          await new Promise((r) => setTimeout(r, action === "tick" ? 1500 : 3500));
-        }
-        if (stillMine()) {
-          setStatus(
-            "التوليد مستمر في Assets — افتح Assets أو ابقَ هنا حتى يظهر الفيديو",
-          );
-        }
-        await onUserRefresh().catch(() => undefined);
-        return;
-      }
-
       // Single-clip path (images, free trial, or one action)
       const mode =
         media === "image"
@@ -2022,9 +1606,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         {media === "video" && (
           <div className="mt-4 space-y-2">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-white/70">
-                {multiDurationMode ? "مدة الفيديو" : "المدة"}
-              </span>
+              <span className="text-white/70">المدة</span>
               <span className="font-semibold tabular-nums text-[#22f0ff]">
                 {Math.min(sliderMax, Math.max(sliderMin, duration))}ث
                 {freeSettingsLocked ? " · مجاني أول مرة" : ""}
@@ -2034,24 +1616,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               type="range"
               min={sliderMin}
               max={sliderMax}
-              step={multiDurationMode ? PRODUCT_PER_SHOT_SECONDS : 1}
+              step={1}
               value={Math.min(sliderMax, Math.max(sliderMin, duration))}
               disabled={freeSettingsLocked}
               onChange={(e) => {
-                const raw = Number(e.target.value);
-                if (!multiDurationMode) {
-                  setDuration(raw);
-                  return;
-                }
-                // Snap to 4s steps (Seedance min per shot).
-                const stepped =
-                  Math.round(raw / PRODUCT_PER_SHOT_SECONDS) *
-                  PRODUCT_PER_SHOT_SECONDS;
+                const raw = Math.round(Number(e.target.value));
                 setDuration(
-                  Math.min(
-                    MAX_TOTAL_SECONDS,
-                    Math.max(PRODUCT_PER_SHOT_SECONDS, stepped),
-                  ),
+                  Math.min(sliderMax, Math.max(sliderMin, raw)),
                 );
               }}
               className="w-full accent-[#22f0ff] disabled:opacity-60"
@@ -2061,7 +1632,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               {selectedModelId === VERONIX_MODEL_ID && !user?.freeVeronixUsed ? (
                 <span className="text-[#22f0ff]">تجربة مجانية</span>
               ) : (
-                <span className="text-[#22f0ff]">أقصى {sliderMax}s</span>
+                <span className="text-[#22f0ff]">
+                  {paidDurationMode ? "4 → 15 ثانية" : `أقصى ${sliderMax}s`}
+                </span>
               )}
               <span>{sliderMax}s</span>
             </div>

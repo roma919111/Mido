@@ -157,7 +157,8 @@ function buildCreatePayload(
       role: opts?.imageRole || input.imageRole || "first_frame",
     });
   }
-  const duration = Math.max(4, Math.min(12, Math.round(input.duration)));
+  // Seedance / OpenArt window: 4–15 seconds (integer steps).
+  const duration = Math.max(4, Math.min(15, Math.round(input.duration)));
   const body: Record<string, unknown> = {
     model: getBytePlusModelId(),
     content,
@@ -169,7 +170,13 @@ function buildCreatePayload(
     duration,
     watermark: input.watermark === true,
   };
-  if (input.resolution) body.resolution = input.resolution;
+  if (input.resolution) {
+    // Normalize UI clarity labels; drop unknown values so Ark can default.
+    const r = String(input.resolution).trim().toLowerCase();
+    if (["480p", "720p", "1080p", "4k"].includes(r)) {
+      body.resolution = r;
+    }
+  }
   return body;
 }
 

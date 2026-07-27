@@ -37,11 +37,14 @@ export type VideoFormFallback = {
 };
 
 /** Fallback OpenArt form options when live form sync is unavailable. */
+/** Clarity ladder shown in Create (480p → highest). */
+export const VIDEO_CLARITY_LADDER = ["480p", "720p", "1080p", "4k"] as const;
+
 export const VIDEO_FORM_FALLBACKS: Record<string, VideoFormFallback> = {
   "byte-plus-seedance-2-mini": {
-    // BytePlus Dreamina Seedance 2.0 Mini typical window is 4–12s.
-    duration: { min: 4, max: 12, default: 4 },
-    resolutions: ["480p", "720p"],
+    // OpenArt / Seedance window: 4–15s, step 1.
+    duration: { min: 4, max: 15, default: 5 },
+    resolutions: [...VIDEO_CLARITY_LADDER],
     resolutionDefault: "720p",
     audioSupported: true,
     audioDefault: true,
@@ -49,7 +52,7 @@ export const VIDEO_FORM_FALLBACKS: Record<string, VideoFormFallback> = {
   },
   "byte-plus-seedance-2": {
     duration: { min: 4, max: 15, default: 5 },
-    resolutions: ["480p", "720p", "1080p", "4k"],
+    resolutions: [...VIDEO_CLARITY_LADDER],
     resolutionDefault: "720p",
     audioSupported: true,
     audioDefault: true,
@@ -57,7 +60,7 @@ export const VIDEO_FORM_FALLBACKS: Record<string, VideoFormFallback> = {
   },
   "byte-plus-seedance-2-fast": {
     duration: { min: 4, max: 15, default: 5 },
-    resolutions: ["480p", "720p", "1080p", "4k"],
+    resolutions: [...VIDEO_CLARITY_LADDER],
     resolutionDefault: "720p",
     audioSupported: true,
     audioDefault: true,
@@ -143,18 +146,26 @@ export function formOptionsForModel(model: CatalogModel | null | undefined): {
   const resolutions = Array.isArray(model.resolutions)
     ? model.resolutions
     : fallback.resolutions;
+  const isVeronix =
+    model.id === "seedance-2-mini" ||
+    model.mcpId === "byte-plus-seedance-2-mini";
   return {
-    duration: {
-      min: model.durationMin ?? fallback.duration.min,
-      max: model.durationMax ?? fallback.duration.max,
-      default: model.durationDefault ?? fallback.duration.default,
-    },
-    resolutions,
+    duration: isVeronix
+      ? {
+          min: 4,
+          max: 15,
+          default: model.durationDefault ?? fallback.duration.default ?? 5,
+        }
+      : {
+          min: model.durationMin ?? fallback.duration.min,
+          max: model.durationMax ?? fallback.duration.max,
+          default: model.durationDefault ?? fallback.duration.default,
+        },
+    resolutions: isVeronix ? [...VIDEO_CLARITY_LADDER] : resolutions,
     resolutionDefault:
       model.resolutionDefault ||
       fallback.resolutionDefault ||
-      resolutions[0] ||
-      "",
+      (isVeronix ? "720p" : resolutions[0] || ""),
     audioSupported: model.audioSupported ?? fallback.audioSupported,
     audioDefault: model.audioDefault ?? fallback.audioDefault,
     audioParam:
