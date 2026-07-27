@@ -33,7 +33,7 @@ async function downloadImage(url: string, dest: string) {
     return;
   }
   if (url.startsWith("data:image/")) {
-    const m = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/s.exec(url);
+    const m = /^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/.exec(url);
     if (!m) throw new Error("Invalid data URL");
     await writeFile(dest, Buffer.from(m[2]!, "base64"));
     return;
