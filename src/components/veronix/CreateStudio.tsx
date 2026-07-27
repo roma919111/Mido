@@ -44,8 +44,8 @@ import {
 import { veronixDownloadPath, veronixMediaSrc } from "@/lib/media-proxy";
 import type { CustomerUser } from "./AppHeader";
 
-/** Poll long enough for slow Seedance/OpenArt jobs (~15 min). */
-const PREVIEW_POLL_ATTEMPTS = 180;
+/** Poll long enough for a slow Seedance beat (~6–7 min). */
+const PREVIEW_POLL_ATTEMPTS = 80;
 const PREVIEW_POLL_MS = 5000;
 const PREVIEW_SESSION_KEY = "veronix.create.preview.v1";
 
@@ -935,7 +935,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         await new Promise((r) => setTimeout(r, Math.min(data.pollAfterSeconds! * 1000, 20000)));
       }
     }
-    throw new Error(`انتهت مهلة ${label} — افتح Assets للمتابعة`);
+    throw new Error(
+      `انتهت مهلة ${label} (~${Math.round((PREVIEW_POLL_ATTEMPTS * PREVIEW_POLL_MS) / 60000)} دقائق) — افتح Assets أو أعد التوليد`,
+    );
   }
 
   async function pollPreview(

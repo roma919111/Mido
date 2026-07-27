@@ -291,6 +291,83 @@ export async function setAssetsHidden(
 const ORPHAN_RECOVERY_GRACE_MS = 12 * 60 * 1000;
 
 /**
+ * Promote or fail stuck multi-shot job cards (sequence-pending) that never
+ * received a final stitch — e.g. browser closed mid-generate / proxy timeout.
+ */
+export async function recoverStuckSequencePending(
+  userId: string,
+): Promise<number> {
+  const db = await ensureDb();
+  const now = Date.now();
+  const STALE_PROMOTE_MS = 6 * 60 * 1000;
+  const STALE_FAIL_MS = 18 * 60 * 1000;
+  let n = 0;
+
+  for (let i = 0; i < db.assets.length; i += 1) {
+    const pending = db.assets[i]!;
+    if (pending.userId !== userId) continue;
+    if (pending.mode !== "sequence-pending") continue;
+    if (pending.status !== "running") continue;
+    if (pending.url) continue;
+
+    const age = now - new Date(pending.createdAt).getTime();
+    if (!Number.isFinite(age) || age < STALE_PROMOTE_MS) continue;
+
+    const pendingAt = new Date(pending.createdAt).getTime();
+    const parts = db.assets.filter((a) => {
+      if (a.userId !== userId || a.mode !== "sequence-part") return false;
+      const t = new Date(a.createdAt).getTime();
+      return t >= pendingAt - 5_000 && t < pendingAt + 2 * 60 * 60 * 1000;
+    });
+    const completedParts = parts.filter((a) => a.status === "completed" && a.url);
+    const runningParts = parts.filter((a) => a.status === "running");
+
+    if (completedParts.length > 0 && runningParts.length === 0) {
+      // Prefer the first completed beat as a visible recovery video.
+      const best =
+        [...completedParts].sort(
+          (a, b) =>
+            new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+        )[0]!;
+      db.assets[i] = {
+        ...pending,
+        url: best.url,
+        historyId: best.historyId || pending.historyId,
+        status: "completed",
+        mode: "sequence-concat",
+        error: undefined,
+        hidden: false,
+      };
+      // Keep all parts hidden.
+      for (let j = 0; j < db.assets.length; j += 1) {
+        const p = db.assets[j]!;
+        if (p.userId === userId && p.mode === "sequence-part" && parts.some((x) => x.id === p.id)) {
+          db.assets[j] = { ...p, hidden: true };
+        }
+      }
+      n += 1;
+      continue;
+    }
+
+    if (age >= STALE_FAIL_MS && runningParts.length === 0) {
+      const partErr = parts.find((a) => a.status === "failed" && a.error)?.error;
+      db.assets[i] = {
+        ...pending,
+        status: "failed",
+        error:
+          partErr ||
+          "انتهت مهلة التوليد قبل اكتمال الدمج — أعد المحاولة من الاستوديو",
+        hidden: false,
+      };
+      n += 1;
+    }
+  }
+
+  if (n) await saveDb(db);
+  return n;
+}
+
+/**
  * Unhide multi-shot parts that never got a stitched final video.
  * Keeps parts hidden when a sequence-concat exists shortly after, and while
  * generation/stitch may still be in flight (grace window).

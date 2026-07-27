@@ -10,6 +10,7 @@ import { getCurrentUser } from "@/lib/customer-auth";
 import {
   listAssetsForUser,
   recoverOrphanedHiddenAssets,
+  recoverStuckSequencePending,
   updateAsset,
 } from "@/lib/db";
 import { PRODUCT_PER_SHOT_SECONDS } from "@/lib/shot-plan";
@@ -192,15 +193,18 @@ export async function GET() {
   try {
     // Restore paid multi-shot clips if stitch never produced a visible final.
     await recoverOrphanedHiddenAssets(user.id);
+    await recoverStuckSequencePending(user.id);
     const assets = await syncRunningAssets(user.id);
     return NextResponse.json({ assets });
   } catch (error) {
     if (error instanceof OpenArtConfigError) {
       await recoverOrphanedHiddenAssets(user.id).catch(() => 0);
+      await recoverStuckSequencePending(user.id).catch(() => 0);
       const assets = await listAssetsForUser(user.id);
       return NextResponse.json({ assets, syncSkipped: true });
     }
     await recoverOrphanedHiddenAssets(user.id).catch(() => 0);
+    await recoverStuckSequencePending(user.id).catch(() => 0);
     const assets = await listAssetsForUser(user.id);
     return NextResponse.json({ assets });
   }

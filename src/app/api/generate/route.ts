@@ -252,9 +252,34 @@ export async function POST(request: Request) {
           hidden: Boolean(body.sequencePart),
         });
 
-        // Wait for the MP4 so Assets gets a real URL in this same request.
+        /**
+         * CreateStudio sends waitForResult:false so we return the task id quickly.
+         * The client (and Assets GET sync) poll BytePlus for the MP4.
+         * A long server-side wait here used to hit Next/Railway maxDuration (~5m)
+         * and leave multi-shot jobs stuck "running" for 20–30+ minutes with no video.
+         */
+        const shouldWait = body.waitForResult === true;
+        if (!shouldWait) {
+          results.push({
+            assetId: asset.id,
+            modelId: quote.modelId,
+            historyId,
+            status: "running",
+            urls: [] as string[],
+            creditsUsed: quote.totalCredits,
+            freeTrial,
+            needsBrandOutro: freeTrial,
+            live: true,
+            provider: "byteplus",
+            tool: "byteplus_contents_generations",
+            quote,
+          });
+          continue;
+        }
+
+        // Optional synchronous wait (explicit waitForResult:true only).
         const finished = await waitForBytePlusVideoTask(created.id, {
-          timeoutMs: body.sequencePart ? 200_000 : 240_000,
+          timeoutMs: body.sequencePart ? 180_000 : 240_000,
           intervalMs: 5_000,
           retryInput: createInput,
         });

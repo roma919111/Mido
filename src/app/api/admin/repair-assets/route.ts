@@ -8,6 +8,7 @@ import {
   findUserByEmail,
   listAssetsForAdmin,
   listUsersForAdmin,
+  recoverStuckSequencePending,
   updateAsset,
 } from "@/lib/db";
 
@@ -56,10 +57,17 @@ export async function POST(request: Request) {
     const report: Array<Record<string, unknown>> = [];
 
     for (const t of targets) {
+      await recoverStuckSequencePending(t.id).catch(() => 0);
       const assets = await listAssetsForAdmin(t.id, 80);
       let fixed = 0;
       let unhidden = 0;
+      let rehilddenParts = 0;
       for (const asset of assets) {
+        // Intermediate beats must stay hidden forever.
+        if (asset.mode === "sequence-part" && asset.hidden !== true) {
+          await updateAsset(asset.id, t.id, { hidden: true });
+          rehilddenParts += 1;
+        }
         const bpId = parseBytePlusHistoryId(asset.historyId || "");
         if (bpId && (asset.status === "running" || !asset.url)) {
           try {
@@ -121,18 +129,23 @@ export async function POST(request: Request) {
           }
         }
       }
+      const refreshed = await listAssetsForAdmin(t.id, 20);
       report.push({
         email: t.email,
         assets: assets.length,
         fixed,
         unhidden,
-        sample: assets.slice(0, 8).map((a) => ({
+        rehilddenParts,
+        sample: refreshed.slice(0, 12).map((a) => ({
           id: a.id,
           status: a.status,
           hidden: a.hidden,
           mode: a.mode,
           hasUrl: Boolean(a.url),
           historyId: a.historyId,
+          createdAt: a.createdAt,
+          error: a.error?.slice(0, 160),
+          targetSeconds: a.targetSeconds,
         })),
       });
     }
