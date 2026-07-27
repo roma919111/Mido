@@ -16,7 +16,7 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 type StartBody = {
-  action?: "start" | "tick";
+  action?: "start" | "tick" | "status";
   assetId?: string;
   prompt?: string;
   shots?: MultiShotBeat[];
@@ -27,7 +27,7 @@ type StartBody = {
 };
 
 /**
- * Server-side multi-shot: start a job or tick the next beat / final stitch.
+ * Server-side multi-shot: start a job, poll status, or tick the next beat.
  */
 export async function POST(request: Request) {
   try {
@@ -42,25 +42,45 @@ export async function POST(request: Request) {
     const body = (await request.json()) as StartBody;
     const action = body.action || "start";
 
-    if (action === "tick") {
+    if (action === "status" || action === "tick") {
       const assetId = body.assetId?.trim();
       if (!assetId) {
         return NextResponse.json({ error: "assetId required" }, { status: 400 });
       }
-      const assets = await listAssetsForAdmin(user.id, 40);
+      const assets = await listAssetsForAdmin(user.id, 80);
       const pending = assets.find((a) => a.id === assetId);
       if (!pending) {
         return NextResponse.json({ error: "job not found" }, { status: 404 });
       }
-      // Kick the in-process runner; also advance one beat now for responsive UI.
-      ensureMultiShotBackground(user.id, pending.id);
-      const updated = await tickMultiShotJob(user.id, pending);
+
+      // Always (re)attach the in-process runner so 32s jobs keep moving
+      // even if the previous deploy / request died mid-beat.
+      if (pending.status === "running" && pending.mode === "sequence-pending") {
+        ensureMultiShotBackground(user.id, pending.id);
+      }
+
+      let updated = pending;
+      // "tick" advances one beat in this request; "status" only reports + kicks BG.
+      if (action === "tick" && pending.status === "running") {
+        updated = (await tickMultiShotJob(user.id, pending)) || pending;
+      } else {
+        // Re-read after kick in case BG already finished a beat.
+        const fresh = (await listAssetsForAdmin(user.id, 80)).find(
+          (a) => a.id === assetId,
+        );
+        if (fresh) updated = fresh;
+      }
+
+      const meta = updated.jobMeta;
       return NextResponse.json({
         asset: updated,
-        done: updated?.status === "completed" || updated?.status === "failed",
-        nextIndex: updated?.jobMeta?.nextIndex,
-        shotCount: updated?.jobMeta?.shots?.length,
-        partCount: updated?.jobMeta?.partUrls?.length,
+        done: updated.status === "completed" || updated.status === "failed",
+        nextIndex: meta?.nextIndex ?? 0,
+        shotCount: meta?.shots?.length ?? 0,
+        partCount: meta?.partUrls?.length ?? 0,
+        estimatedSeconds: estimateGenerateSeconds(
+          updated.targetSeconds || meta?.targetSeconds || 4,
+        ),
       });
     }
 

@@ -1,30 +1,32 @@
 /**
  * Wall-clock ETA for Veronix / Seedance generation.
  *
- * Measured on BytePlus: ~55s wall time for a 4s clip.
+ * Measured on BytePlus: ~55s wall time for a 4s clip (often 55–70s under load).
  * Multi-shot adds per-beat cache/bridge + final concat/clarity.
+ * Countdown must stay honest for 32s (8 beats ≈ 10–12 minutes) — never
+ * flip to «يكتمل الآن» after only a couple of minutes.
  */
 
-/** Observed BytePlus wall time for a 4-second render. */
-export const ETA_SECONDS_PER_4S_OUTPUT = 55;
+/** Conservative BytePlus wall time for a 4-second render (includes queue jitter). */
+export const ETA_SECONDS_PER_4S_OUTPUT = 70;
 
 /** Cache local copy + extract bridge frame between beats. */
-export const ETA_SECONDS_PER_BEAT_OVERHEAD = 12;
+export const ETA_SECONDS_PER_BEAT_OVERHEAD = 15;
 
 /** Final ffmpeg concat + OmarFX clarity grade. */
-export const ETA_SECONDS_FINAL_STITCH = 45;
+export const ETA_SECONDS_FINAL_STITCH = 60;
 
 /** Estimate total generate time (seconds) for a chosen output duration. */
 export function estimateGenerateSeconds(outputDurationSec: number): number {
   const duration = Math.max(1, Math.round(outputDurationSec || 4));
   const beats = Math.max(1, Math.ceil(duration / 4));
-  // N×55s BytePlus + N×12s cache/bridge + 45s final stitch/clarity
+  // N×70s BytePlus + N×15s cache/bridge + stitch/clarity
   return Math.max(
-    25,
+    40,
     Math.round(
       beats * ETA_SECONDS_PER_4S_OUTPUT +
         beats * ETA_SECONDS_PER_BEAT_OVERHEAD +
-        (beats > 1 ? ETA_SECONDS_FINAL_STITCH : 20),
+        (beats > 1 ? ETA_SECONDS_FINAL_STITCH : 25),
     ),
   );
 }
@@ -41,11 +43,53 @@ export function remainingGenerateSeconds(
 }
 
 export function formatCountdownLabel(remainingSec: number): string {
-  if (remainingSec <= 0) return "يكتمل الآن…";
+  if (remainingSec <= 0) return "ما زال قيد التوليد…";
   const m = Math.floor(remainingSec / 60);
   const s = remainingSec % 60;
   if (m > 0) return `متبقي ${m}م ${s}ث`;
   return `متبقي ${s}ث`;
+}
+
+/**
+ * Studio / Assets label that stays truthful for long 32s jobs.
+ * Never implies the video is seconds away when we are only a few minutes in.
+ */
+export function formatStudioCountdownLabel(input: {
+  remainingSec: number;
+  targetSeconds: number;
+  partCount?: number;
+  shotCount?: number;
+  overdueForSec?: number;
+}): string {
+  const {
+    remainingSec,
+    targetSeconds,
+    partCount = 0,
+    shotCount = 0,
+    overdueForSec = 0,
+  } = input;
+  const etaMin = Math.max(1, Math.ceil(estimateGenerateSeconds(targetSeconds) / 60));
+  const progress =
+    shotCount > 1
+      ? `لقطة ${Math.min(shotCount, Math.max(1, partCount + (remainingSec <= 0 ? 0 : 1)))} من ${shotCount}`
+      : null;
+
+  if (remainingSec > 0) {
+    const base = formatCountdownLabel(remainingSec);
+    return progress ? `${progress} · ${base}` : base;
+  }
+
+  if (progress) {
+    if (overdueForSec > 120) {
+      return `${progress} · يستغرق عادة حتى ${etaMin} دقائق — تابع في Assets`;
+    }
+    return `${progress} · ما زال قيد التوليد (حتى ~${etaMin} دقائق)`;
+  }
+
+  if (overdueForSec > 180) {
+    return `ما زال قيد المعالجة — فيديو ${targetSeconds}ث قد يستغرق حتى ${etaMin} دقائق`;
+  }
+  return `ما زال قيد التوليد — تقدير حتى ${etaMin} دقائق`;
 }
 
 /** Overdue label after ETA — avoid endless empty finishing state. */
@@ -55,7 +99,7 @@ export function formatRunningStatusLabel(
 ): string {
   if (remainingSec > 0) return formatCountdownLabel(remainingSec);
   if (overdueForSec > 180) return "ما زال قيد المعالجة — حدّث Assets";
-  return "يكتمل الآن…";
+  return "ما زال قيد التوليد…";
 }
 
 /** Persist first-seen start times so Assets polls don't reset the countdown. */

@@ -16,7 +16,7 @@ import { fetchJson } from "@/lib/fetch-json";
 import {
   clearEtaStart,
   estimateGenerateSeconds,
-  formatRunningStatusLabel,
+  formatStudioCountdownLabel,
   inferTargetSecondsFromAsset,
   lockEtaStart,
   remainingGenerateSeconds,
@@ -75,8 +75,12 @@ function RunningCountdown({
   }, [assetId, createdAt, targetSeconds]);
 
   return (
-    <span className="text-2xl font-bold tabular-nums text-[#22f0ff]">
-      {formatRunningStatusLabel(remaining, overdue)}
+    <span className="max-w-[16rem] text-center text-sm font-bold tabular-nums text-[#22f0ff] sm:text-base">
+      {formatStudioCountdownLabel({
+        remainingSec: remaining,
+        targetSeconds,
+        overdueForSec: overdue,
+      })}
     </span>
   );
 }

@@ -36,7 +36,7 @@ import {
 import { fetchJson } from "@/lib/fetch-json";
 import {
   estimateGenerateSeconds,
-  formatCountdownLabel,
+  formatStudioCountdownLabel,
   inferTargetSecondsFromAsset,
   lockEtaStart,
   remainingGenerateSeconds,
@@ -149,6 +149,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const [shareNote, setShareNote] = useState<string | null>(null);
   const [genStartedAt, setGenStartedAt] = useState<number | null>(null);
   const [remainingSec, setRemainingSec] = useState(0);
+  const [multiProgress, setMultiProgress] = useState<{
+    partCount: number;
+    shotCount: number;
+  } | null>(null);
   const [previewHydrated, setPreviewHydrated] = useState(false);
   /** Final pose / entities from last enhance — used for sequential actions (ثم…). */
   const [promptSceneState, setPromptSceneState] = useState<SceneState | null>(null);
@@ -371,15 +375,32 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   // Paid / post-trial: select model → duration max + synced resolution/audio defaults.
   useEffect(() => {
     if (media !== "video" || !selectedModel || freeSettingsLocked) return;
+    // Never reset the slider mid-generate (e.g. catalog refresh was wiping 32s → 8s).
+    if (generating || preview?.status === "running") return;
     applyVideoModelDefaults(selectedModel);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- apply when model identity changes
-  }, [media, selectedModelId, freeSettingsLocked, selectedModel?.mcpId]);
+  }, [media, selectedModelId, freeSettingsLocked, selectedModel?.mcpId, generating, preview?.status]);
 
   const countdownTargetSeconds =
     preview?.targetSeconds ||
     (media === "video"
       ? Math.min(sliderMax, Math.max(sliderMin, duration))
       : 4);
+  const countdownOverdueSec =
+    waitingResult && genStartedAt != null && remainingSec <= 0
+      ? Math.max(
+          0,
+          Math.floor((Date.now() - genStartedAt) / 1000) -
+            estimateGenerateSeconds(countdownTargetSeconds),
+        )
+      : 0;
+  const countdownLabel = formatStudioCountdownLabel({
+    remainingSec,
+    targetSeconds: countdownTargetSeconds,
+    partCount: multiProgress?.partCount,
+    shotCount: multiProgress?.shotCount,
+    overdueForSec: countdownOverdueSec,
+  });
 
   useEffect(() => {
     if (!waitingResult || genStartedAt == null) {
@@ -982,12 +1003,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         throw new Error(data.error || `فشلت ${label}`);
       }
       setStatus(
-        `${label}… ${formatCountdownLabel(
-          remainingGenerateSeconds(
+        `${label}… ${formatStudioCountdownLabel({
+          remainingSec: remainingGenerateSeconds(
             startedAt,
             preview?.targetSeconds || countdownTargetSeconds,
           ),
-        )}`,
+          targetSeconds: preview?.targetSeconds || countdownTargetSeconds,
+        })}`,
       );
       if (typeof data.pollAfterSeconds === "number" && data.pollAfterSeconds > 5) {
         await new Promise((r) => setTimeout(r, Math.min(data.pollAfterSeconds! * 1000, 20000)));
@@ -1063,12 +1085,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               },
         );
         setStatus(
-          `جاري التوليد… ${formatCountdownLabel(
-            remainingGenerateSeconds(
+          `جاري التوليد… ${formatStudioCountdownLabel({
+            remainingSec: remainingGenerateSeconds(
               startedAt,
               preview?.targetSeconds || countdownTargetSeconds,
             ),
-          )}`,
+            targetSeconds: preview?.targetSeconds || countdownTargetSeconds,
+          })}`,
         );
         if (typeof data.pollAfterSeconds === "number" && data.pollAfterSeconds > 5) {
           await new Promise((r) => setTimeout(r, Math.min(data.pollAfterSeconds! * 1000, 20000)));
@@ -1270,6 +1293,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     setGenerating(true);
     setGenStartedAt(startedAt);
     setRemainingSec(estimateGenerateSeconds(outputTargetSeconds));
+    setMultiProgress(null);
     setPreview({
       url: "",
       mediaType: media,
@@ -1476,9 +1500,19 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         }
         await onUserRefresh().catch(() => undefined);
 
-        // Server runs beats in the background. Poll status; tick is a backup kick.
-        for (let tick = 0; tick < 80; tick += 1) {
+        // Server runs beats in the background. Poll STATUS (non-blocking) so
+        // the UI keeps a real ~10m countdown for 32s instead of hanging on tick.
+        setMultiProgress({ partCount: 0, shotCount: shots.length });
+        const pollDeadline = Date.now() + Math.max(etaSec, 120) * 1000 + 5 * 60_000;
+        let lastKick = 0;
+        while (Date.now() < pollDeadline) {
           if (!stillMine()) break;
+          const now = Date.now();
+          // Kick a real tick occasionally so progress continues even if BG died.
+          const action =
+            now - lastKick > 55_000 ? ("tick" as const) : ("status" as const);
+          if (action === "tick") lastKick = now;
+
           const tickRes = await fetchJson<{
             error?: string;
             done?: boolean;
@@ -1494,17 +1528,26 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           }>("/api/jobs/multi-shot", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "tick", assetId: jobAssetId }),
+            body: JSON.stringify({ action, assetId: jobAssetId }),
           });
+
+          if (tickRes.res.status === 404) {
+            // Ghost preview — server job gone (deploy wipe / lost).
+            throw new Error(
+              "انقطع التوليد على السيرفر — أعد Generate من الاستوديو",
+            );
+          }
+
           const asset = tickRes.data.asset;
           const shotCount = tickRes.data.shotCount || shots.length;
           const nextIndex = tickRes.data.nextIndex ?? 0;
           const partCount = tickRes.data.partCount ?? 0;
           if (stillMine()) {
+            setMultiProgress({ partCount, shotCount });
             setStatus(
               asset?.status === "completed"
                 ? `فيديو واحد جاهز · ${asset.targetSeconds || multiTargetSeconds}ث`
-                : `خلف الكواليس: لقطة ${Math.min(shotCount, Math.max(1, nextIndex + 1))} من ${shotCount} · ثم الدمج والفلتر…`,
+                : `خلف الكواليس: لقطة ${Math.min(shotCount, Math.max(1, partCount + 1))} من ${shotCount} · دمج وفلتر في النهاية`,
             );
             setPreview((prev) =>
               prev
@@ -1530,18 +1573,19 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                   status: "failed",
                   assetId: jobAssetId,
                 });
+                setMultiProgress(null);
               } else if (asset?.url) {
                 setPreview({
                   url: asset.url,
                   mediaType: "video",
                   status: "completed",
                   assetId: jobAssetId,
-                  targetSeconds:
-                    asset.targetSeconds || multiTargetSeconds,
+                  targetSeconds: asset.targetSeconds || multiTargetSeconds,
                 });
                 setStatus(
                   `فيديو واحد جاهز · ${asset.targetSeconds || multiTargetSeconds}ث`,
                 );
+                setMultiProgress(null);
               }
               setGenStartedAt(null);
             }
@@ -1551,12 +1595,12 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           if (asset?.status === "failed") {
             throw new Error(asset.error || "فشل توليد المشهد المتعدد");
           }
-          // Between ticks the background runner advances; wait for ETA slice.
-          await new Promise((r) => setTimeout(r, 4000));
+          void nextIndex;
+          await new Promise((r) => setTimeout(r, action === "tick" ? 1500 : 3500));
         }
         if (stillMine()) {
           setStatus(
-            "التوليد مستمر في Assets — يمكنك مغادرة الصفحة أو توليد فيديو جديد",
+            "التوليد مستمر في Assets — افتح Assets أو ابقَ هنا حتى يظهر الفيديو",
           );
         }
         await onUserRefresh().catch(() => undefined);
@@ -2062,7 +2106,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             {waitingResult && (
               <span className="inline-flex items-center gap-1 text-xs tabular-nums text-[#22f0ff]">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                جاري التوليد · {formatCountdownLabel(remainingSec)}
+                جاري التوليد · {countdownLabel}
               </span>
             )}
           </div>
@@ -2104,11 +2148,15 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                     <p className="text-lg font-semibold tracking-wide text-white">
                       جاري التوليد
                     </p>
-                    <p className="text-2xl font-bold tabular-nums text-[#22f0ff]">
-                      {formatCountdownLabel(remainingSec)}
+                    <p className="max-w-sm px-4 text-center text-xl font-bold tabular-nums text-[#22f0ff] sm:text-2xl">
+                      {countdownLabel}
                     </p>
                     <p className="px-6 text-center text-xs text-white/35">
-                      تقدير حسب مدة الفيديو ({countdownTargetSeconds}ث) — ستظهر المعاينة هنا
+                      فيديو {countdownTargetSeconds}ث ≈{" "}
+                      {Math.ceil(
+                        estimateGenerateSeconds(countdownTargetSeconds) / 60,
+                      )}{" "}
+                      دقائق خلف الكواليس — لا تغلق التطبيق
                     </p>
                   </>
                 ) : (
@@ -2120,8 +2168,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/55">
                 <Loader2 className="h-8 w-8 animate-spin text-[#22f0ff]" />
                 <p className="mt-2 text-lg font-semibold text-white">جاري التوليد</p>
-                <p className="mt-1 text-2xl font-bold tabular-nums text-[#22f0ff]">
-                  {formatCountdownLabel(remainingSec)}
+                <p className="mt-1 max-w-sm px-4 text-center text-xl font-bold tabular-nums text-[#22f0ff]">
+                  {countdownLabel}
                 </p>
               </div>
             )}
