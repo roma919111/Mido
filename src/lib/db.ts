@@ -41,6 +41,8 @@ export interface AssetRecord {
   hidden?: boolean;
   /** Chosen output length (seconds) — drives generate ETA countdown in UI */
   targetSeconds?: number;
+  /** Server-side multi-shot job plan / progress */
+  jobMeta?: import("@/lib/multi-shot-job").MultiShotJobMeta;
   createdAt: string;
 }
 
@@ -213,6 +215,7 @@ export async function createAsset(
       typeof input.targetSeconds === "number" && input.targetSeconds > 0
         ? Math.round(input.targetSeconds)
         : undefined,
+    jobMeta: input.jobMeta,
     createdAt: new Date().toISOString(),
   };
   db.assets.unshift(asset);
@@ -287,22 +290,21 @@ export async function setAssetsHidden(
   return n;
 }
 
-/** Wait before unhiding parts — long enough for stitch, short enough to recover. */
-const ORPHAN_RECOVERY_GRACE_MS = 12 * 60 * 1000;
+/** Wait before unhiding parts — long enough for full 32s multi-shot + stitch. */
+const ORPHAN_RECOVERY_GRACE_MS = 20 * 60 * 1000;
 
 /**
  * Promote or fail stuck multi-shot job cards (sequence-pending) that never
  * received a final stitch — e.g. browser closed mid-generate / proxy timeout.
  * Never promote a single 4s part as a "32s" success — only mark partial with
- * honest targetSeconds, or leave running while parts are still in flight.
+ * honest targetSeconds after the full ETA window, or leave running while
+ * parts / server jobMeta are still in flight.
  */
 export async function recoverStuckSequencePending(
   userId: string,
 ): Promise<number> {
   const db = await ensureDb();
   const now = Date.now();
-  const STALE_PROMOTE_MS = 8 * 60 * 1000;
-  const STALE_FAIL_MS = 25 * 60 * 1000;
   let n = 0;
 
   for (let i = 0; i < db.assets.length; i += 1) {
@@ -313,7 +315,14 @@ export async function recoverStuckSequencePending(
     if (pending.url) continue;
 
     const age = now - new Date(pending.createdAt).getTime();
-    if (!Number.isFinite(age) || age < STALE_PROMOTE_MS) continue;
+    if (!Number.isFinite(age)) continue;
+
+    const { estimateGenerateSeconds } = await import("@/lib/generate-eta");
+    const etaMs = estimateGenerateSeconds(pending.targetSeconds || 4) * 1000;
+    // Stay hands-off until well past the countdown (ETA + 3m).
+    const STALE_PROMOTE_MS = etaMs + 3 * 60_000;
+    const STALE_FAIL_MS = Math.max(STALE_PROMOTE_MS + 5 * 60_000, 30 * 60_000);
+    if (age < STALE_PROMOTE_MS) continue;
 
     const pendingAt = new Date(pending.createdAt).getTime();
     const parts = db.assets.filter((a) => {
@@ -333,10 +342,8 @@ export async function recoverStuckSequencePending(
       Math.round((pending.targetSeconds || 4) / 4),
     );
 
-    // Multiple completed beats — Assets route will stitch; here only flag for stitch
-    // by leaving pending running if age < fail window, or set a stitch hint error.
+    // Multiple completed beats — Assets route will stitch; here only flag for stitch.
     if (completedParts.length >= 2 && runningParts.length === 0) {
-      // Mark with a recoverable note — stitchPendingJobs in /api/assets does concat.
       db.assets[i] = {
         ...pending,
         error: `[stitch-ready] ${completedParts.length} parts ready`,
