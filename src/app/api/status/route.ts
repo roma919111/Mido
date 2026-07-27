@@ -6,6 +6,7 @@ import {
 } from "@/lib/byteplus-ark";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { findAssetByHistoryId, updateAsset } from "@/lib/db";
+import { ensureClarityUrl } from "@/lib/ensure-clarity";
 import {
   callOpenArtTool,
   collectMediaUrls,
@@ -48,13 +49,17 @@ export async function GET(request: Request) {
           const existing = byHistory;
           const keepHidden = existing?.mode === "sequence-part";
           if (urls[0]) {
+            const graded = keepHidden
+              ? urls[0]
+              : await ensureClarityUrl(urls[0]);
             await updateAsset(targetId, user.id, {
               historyId,
-              url: urls[0],
+              url: graded,
               status: "completed",
               error: undefined,
               hidden: keepHidden ? true : false,
             }).catch(() => null);
+            urls[0] = graded;
           } else if (status === "FAILED") {
             await updateAsset(targetId, user.id, {
               historyId,

@@ -11,6 +11,7 @@ import {
   waitForBytePlusVideoTask,
 } from "@/lib/byteplus-ark";
 import { stylizeReferenceImage } from "@/lib/reference-sanitize";
+import { ensureClarityUrl } from "@/lib/ensure-clarity";
 import {
   FREE_VERONIX_MODEL_DURATION_SECONDS,
   FREE_VERONIX_RESOLUTION,
@@ -274,9 +275,13 @@ export async function POST(request: Request) {
         const videoUrl = finished.content?.video_url || "";
 
         if (videoUrl) {
+          // Visible finals get clarity grade; sequence parts stay raw for stitch.
+          const finalUrl = body.sequencePart
+            ? videoUrl
+            : await ensureClarityUrl(videoUrl);
           await updateAsset(asset.id, user.id, {
             historyId,
-            url: videoUrl,
+            url: finalUrl,
             status: "completed",
             error: undefined,
             hidden: Boolean(body.sequencePart),
@@ -286,7 +291,7 @@ export async function POST(request: Request) {
             modelId: quote.modelId,
             historyId,
             status: "completed",
-            urls: [videoUrl],
+            urls: [finalUrl],
             creditsUsed: quote.totalCredits,
             freeTrial,
             needsBrandOutro: freeTrial,

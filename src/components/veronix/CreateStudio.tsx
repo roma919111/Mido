@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Camera,
@@ -151,6 +151,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   /** Final pose / entities from last enhance — used for sequential actions (ثم…). */
   const [promptSceneState, setPromptSceneState] = useState<SceneState | null>(null);
   const [enhancing, setEnhancing] = useState(false);
+  /** Allows starting a new Generate while a previous job continues in Assets. */
+  const genRunIdRef = useRef(0);
   /**
    * Paid Veronix always plans/stitches beats internally (4s×N up to 32s).
    * Intermediate clips stay hidden — Assets only shows the final video.
@@ -260,9 +262,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           setPreview(stored.preview);
           setGenStartedAt(stored.genStartedAt);
           if (stored.preview.status === "running") {
-            setGenerating(true);
-            setStatus("جاري التوليد…");
             restoredRunning = true;
+            // Do NOT lock Generate — user can start another video.
+            setStatus("توليد سابق يُتابع في Assets — يمكنك توليد فيديو جديد");
           }
         }
       }
@@ -302,8 +304,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 targetSeconds,
               });
               setGenStartedAt(started);
-              setGenerating(true);
-              setStatus("جاري التوليد…");
+              // Keep Generate unlocked for parallel jobs.
+              setStatus("توليد قيد المتابعة في Assets — يمكنك توليد فيديو جديد");
               if (running.historyId) {
                 void pollPreview(
                   running.historyId,
@@ -821,7 +823,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         if (data.multiShot && (data.shotCount || 0) >= 2) {
           bits.push(`وتقسيم إلى ${data.shotCount} لقطات من السياق`);
         }
-        setStatus(bits.join(" · "));
+        setStatus(
+          bits.length
+            ? `${bits.join(" · ")} · الوصف بالإنجليزية ولقطة لكل أكشن`
+            : "تم تحسين الوصف بالإنجليزية",
+        );
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Enhance failed");
@@ -1232,6 +1238,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       return;
     }
 
+    // New run id — previous in-flight generate keeps going in Assets but
+    // stops updating this studio preview.
+    const runId = ++genRunIdRef.current;
+    const stillMine = () => genRunIdRef.current === runId;
+
     const startedAt = Date.now();
     const outputTargetSeconds =
       media === "video"
@@ -1481,6 +1492,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
         try {
           for (let i = 0; i < shots.length; i += 1) {
+            if (!stillMine()) return;
             const shot = shots[i]!;
             const label = `لقطة ${i + 1} من ${shots.length}`;
             setStatus(
@@ -1608,23 +1620,31 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           }
 
           if (localUrls.length === 1) {
-            // Deliver the single completed beat instead of leaving the UI empty.
+            // Deliver the single completed beat with clarity grade.
+            if (!stillMine()) return;
             const only = localUrls[0]!;
+            let graded = only;
+            try {
+              graded = await finalizePaidVideo({ url: only });
+            } catch {
+              graded = only;
+            }
             if (jobAssetId) {
               await fetchJson("/api/assets/pending", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   assetId: jobAssetId,
-                  url: only,
+                  url: graded,
                   status: "completed",
                   mode: "sequence-concat",
                   error: "",
                 }),
               }).catch(() => undefined);
             }
+            if (!stillMine()) return;
             setPreview({
-              url: only,
+              url: graded,
               mediaType: "video",
               status: "completed",
               targetSeconds: PRODUCT_PER_SHOT_SECONDS,
@@ -1662,8 +1682,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                   modelId: selectedModelId,
                   shotCount: shots.length,
                   maxSecondsPerClip: perShotSeconds,
-                  // Attempts 0–1: clarity grade; 2–3: plain stitch fallback.
-                  clarity: attempt < 2,
+                  // Always bake clarity into the final stitch.
+                  clarity: true,
                 }),
               });
               if (concatRes.res.ok && concatRes.data.url) {
@@ -1724,6 +1744,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             // (already done when saveAsset:true above).
           }
 
+          if (!stillMine()) return;
           setPreview({
             url: concatUrl,
             mediaType: "video",
@@ -1753,7 +1774,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                     modelId: selectedModelId,
                     shotCount: localUrls.length,
                     maxSecondsPerClip: perShotSeconds,
-                    clarity: false,
+                    clarity: true,
                   }),
                 },
               );
@@ -1771,6 +1792,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                     }),
                   }).catch(() => undefined);
                 }
+                if (!stillMine()) return;
                 setPreview({
                   url: concatRes.data.url,
                   mediaType: "video",
@@ -1789,21 +1811,28 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             }
           } else if (localUrls.length === 1) {
             const only = localUrls[0]!;
+            let graded = only;
+            try {
+              graded = await finalizePaidVideo({ url: only });
+            } catch {
+              graded = only;
+            }
             if (jobAssetId) {
               await fetchJson("/api/assets/pending", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   assetId: jobAssetId,
-                  url: only,
+                  url: graded,
                   status: "completed",
                   mode: "sequence-concat",
                   error: "",
                 }),
               }).catch(() => undefined);
             }
+            if (!stillMine()) return;
             setPreview({
-              url: only,
+              url: graded,
               mediaType: "video",
               status: "completed",
               targetSeconds: PRODUCT_PER_SHOT_SECONDS,
@@ -1936,7 +1965,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       setError(err instanceof Error ? err.message : "فشل التوليد");
       setGenStartedAt(null);
     } finally {
-      setGenerating(false);
+      if (stillMine()) setGenerating(false);
     }
   }
 
@@ -2289,18 +2318,20 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       <button
         type="button"
         onClick={() => void handleGenerate()}
-        disabled={generating || quoting || !selectedModel?.available}
+        disabled={quoting || !selectedModel?.available}
         className="relative z-20 flex w-full items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-5 py-4 text-base font-bold text-white disabled:opacity-70"
       >
-        {generating || quoting ? (
+        {quoting ? (
           <Loader2 className="h-5 w-5 animate-spin" />
+        ) : generating ? (
+          <Sparkles className="h-5 w-5" />
         ) : (
           <Sparkles className="h-5 w-5" />
         )}
-        {generating
-          ? "جاري التوليد…"
-          : quoting
-            ? "يحسب السعر…"
+        {quoting
+          ? "يحسب السعر…"
+          : generating
+            ? "توليد فيديو جديد"
             : freeTrial
               ? "Generate مجاني"
               : "Generate"}

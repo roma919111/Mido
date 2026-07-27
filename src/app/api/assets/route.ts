@@ -16,6 +16,7 @@ import {
 import { PRODUCT_PER_SHOT_SECONDS } from "@/lib/shot-plan";
 import { VERONIX_MODEL_ID } from "@/lib/free-trial";
 import { toSemiRealisticScenePrompt } from "@/lib/reference-sanitize";
+import { ensureClarityUrl, needsClarityGrade } from "@/lib/ensure-clarity";
 import {
   callOpenArtTool,
   collectMediaUrls,
@@ -72,8 +73,10 @@ async function syncRunningAssets(userId: string) {
               // keep remote URL
             }
           }
-          // Persist URL so Assets can play even if history CDN expires later.
-          // sequence-part beats stay hidden — only the stitched card is shown.
+          // Visible finals always get clarity; parts stay raw for stitch.
+          if (finalUrl && asset.mode !== "sequence-part") {
+            finalUrl = await ensureClarityUrl(finalUrl);
+          }
           await updateAsset(asset.id, userId, {
             url: finalUrl,
             status: "completed",
@@ -219,6 +222,28 @@ async function syncRunningAssets(userId: string) {
       // retry next load
     }
   }
+
+  // Lazy clarity grade for visible completed videos still on raw CDN / ungraded parts.
+  for (const asset of latest
+    .filter(
+      (a) =>
+        a.status === "completed" &&
+        a.mediaType === "video" &&
+        a.mode !== "sequence-part" &&
+        a.hidden !== true &&
+        needsClarityGrade(a.url),
+    )
+    .slice(0, 4)) {
+    try {
+      const graded = await ensureClarityUrl(asset.url);
+      if (graded && graded !== asset.url) {
+        await updateAsset(asset.id, userId, { url: graded });
+      }
+    } catch {
+      // retry next load
+    }
+  }
+
   return listAssetsForUser(userId, { includeHidden: false });
 }
 
