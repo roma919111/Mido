@@ -220,12 +220,13 @@ async function tickMultiShotJobUnlocked(
   // Resume existing part for this beat if present.
   const existingPartId = meta.partAssetIds[meta.nextIndex];
   if (existingPartId) {
+    const beatIndex = meta.nextIndex;
     const part = await findAssetById(userId, existingPartId);
     if (part?.status === "completed" && part.url) {
-      return adoptCompletedPart(userId, pending, meta, part);
+      return adoptCompletedPart(userId, pending, meta, part, 0, beatIndex);
     }
     if (part?.status === "running" && part.historyId) {
-      return resumeRunningPart(userId, pending, meta, part);
+      return resumeRunningPart(userId, pending, meta, part, beatIndex);
     }
     // Failed / missing — skip this slot and continue.
     meta.nextIndex += 1;
@@ -238,7 +239,8 @@ async function tickMultiShotJobUnlocked(
   }
 
   const shot = meta.shots[meta.nextIndex]!;
-  const label = `لقطة ${meta.nextIndex + 1}/${meta.shots.length}`;
+  const beatIndex = meta.nextIndex;
+  const label = `لقطة ${beatIndex + 1}/${meta.shots.length}`;
 
   const quote = await quoteOpenArtCredits(
     {
@@ -288,10 +290,10 @@ async function tickMultiShotJobUnlocked(
     hidden: true,
     targetSeconds: meta.perShotSeconds,
   });
-  meta.partAssetIds[meta.nextIndex] = part.id;
+  meta.partAssetIds[beatIndex] = part.id;
   await updateAsset(pending.id, userId, { jobMeta: meta });
 
-  let frameUrl = meta.nextIndex === 0 ? meta.startFrameUrl : meta.bridgeFrameUrl;
+  let frameUrl = beatIndex === 0 ? meta.startFrameUrl : meta.bridgeFrameUrl;
 
   try {
     if (frameUrl && !frameUrl.startsWith("data:")) {
@@ -379,6 +381,7 @@ async function tickMultiShotJobUnlocked(
       meta,
       { ...part, url: localUrl, status: "completed" },
       quote.totalCredits,
+      beatIndex,
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "فشل توليد اللقطة";
@@ -408,12 +411,13 @@ async function resumeRunningPart(
   pending: AssetRecord,
   meta: MultiShotJobMeta,
   part: AssetRecord,
+  beatIndex: number,
 ): Promise<AssetRecord | null> {
   const bpId = part.historyId?.startsWith("bp:")
     ? part.historyId.slice(3)
     : null;
   if (!bpId) {
-    meta.nextIndex += 1;
+    meta.nextIndex = Math.max(meta.nextIndex, beatIndex + 1);
     await updateAsset(pending.id, userId, { jobMeta: meta });
     return pending;
   }
@@ -432,7 +436,7 @@ async function resumeRunningPart(
           error: "BytePlus generation failed",
           hidden: true,
         });
-        meta.nextIndex += 1;
+        meta.nextIndex = Math.max(meta.nextIndex, beatIndex + 1);
         meta.bridgeFrameUrl = null;
         await updateAsset(pending.id, userId, { jobMeta: meta });
         if (meta.nextIndex >= meta.shots.length) {
@@ -447,11 +451,18 @@ async function resumeRunningPart(
       status: "completed",
       hidden: true,
     });
-    return adoptCompletedPart(userId, pending, meta, {
-      ...part,
-      url: localUrl,
-      status: "completed",
-    });
+    return adoptCompletedPart(
+      userId,
+      pending,
+      meta,
+      {
+        ...part,
+        url: localUrl,
+        status: "completed",
+      },
+      0,
+      beatIndex,
+    );
   } catch {
     return pending;
   }
@@ -463,17 +474,21 @@ async function adoptCompletedPart(
   meta: MultiShotJobMeta,
   part: AssetRecord,
   addedCredits = 0,
+  completedBeatIndex?: number,
 ): Promise<AssetRecord | null> {
   const url = part.url;
   if (!url) return pending;
 
-  // Count this beat once — partUrls.length tracks completed beats in order.
-  if (meta.partUrls.length === meta.nextIndex && !meta.partUrls.includes(url)) {
-    meta.partUrls.push(url);
-  } else if (!meta.partUrls.includes(url) && meta.partUrls.length < meta.nextIndex) {
+  if (!meta.partUrls.includes(url)) {
     meta.partUrls.push(url);
   }
-  meta.nextIndex = Math.max(meta.nextIndex, meta.partUrls.length);
+  // Always advance past the completed beat. Using only partUrls.length breaks
+  // after a skipped/failed beat (nextIndex > partUrls.length).
+  const beat =
+    typeof completedBeatIndex === "number"
+      ? completedBeatIndex
+      : Math.max(0, meta.nextIndex);
+  meta.nextIndex = Math.max(meta.nextIndex, beat + 1, meta.partUrls.length);
 
   if (meta.nextIndex < meta.shots.length) {
     try {

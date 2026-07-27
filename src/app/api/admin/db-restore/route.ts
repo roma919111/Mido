@@ -13,7 +13,7 @@ import {
 } from "@/lib/multi-shot-job";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 type Body = {
   /** List live DB + backups (default). */
