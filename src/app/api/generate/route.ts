@@ -222,19 +222,45 @@ export async function POST(request: Request) {
       });
 
       try {
+        const refList = Array.isArray(body.referenceImages)
+          ? body.referenceImages
+          : [];
         let startUrl = resolvePublicMediaUrl(body.startFrame);
-        // Creative pipeline: stylize real-photo start frames before Ark sees them
-        // to avoid InputImageSensitiveContentDetected / PrivacyInformation blocks.
+        let lastUrl = resolvePublicMediaUrl(body.endFrame);
+        let referenceUrls = refList
+          .map((r) => resolvePublicMediaUrl(r))
+          .filter((u): u is string => Boolean(u));
+
+        // Seedance: first/last XOR reference_image. Prefer Start/End frames when set;
+        // otherwise send visual refs as reference_image so «مراجع بصرية» reach BytePlus.
         if (startUrl) {
+          referenceUrls = [];
+        } else if (referenceUrls.length) {
+          startUrl = null;
+          lastUrl = null;
+        }
+
+        async function maybeStylize(url: string | null): Promise<string | null> {
+          if (!url) return null;
           try {
-            startUrl = await stylizeReferenceImage(startUrl);
+            return await stylizeReferenceImage(url);
           } catch (styleErr) {
             console.warn(
               "[veronix] proactive reference stylize skipped:",
               styleErr instanceof Error ? styleErr.message : styleErr,
             );
+            return url;
           }
         }
+
+        startUrl = await maybeStylize(startUrl);
+        lastUrl = startUrl ? await maybeStylize(lastUrl) : null;
+        if (referenceUrls.length) {
+          referenceUrls = (
+            await Promise.all(referenceUrls.slice(0, 4).map((u) => maybeStylize(u)))
+          ).filter((u): u is string => Boolean(u));
+        }
+
         const createInput = {
           prompt,
           duration: modelDuration,
@@ -242,7 +268,11 @@ export async function POST(request: Request) {
           generateAudio: freeTrial ? true : Boolean(body.generateAudio),
           watermark: false,
           startFrameUrl: startUrl,
-          imageRole: "first_frame" as const,
+          lastFrameUrl: lastUrl,
+          referenceImageUrls: referenceUrls,
+          imageRole: (startUrl ? "first_frame" : "reference_image") as
+            | "first_frame"
+            | "reference_image",
           resolution: uiResolution,
         };
         const created = await createBytePlusVideoTask(createInput);

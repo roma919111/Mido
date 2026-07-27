@@ -1284,7 +1284,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           ? refs.length
             ? "image2image"
             : "text2image"
-          : startFrame
+          : startFrame || refs.length
             ? "image2video"
             : "text2video";
 
@@ -1514,6 +1514,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
       <div className="rounded-2xl border border-dashed border-white/15 bg-[#141821] p-4">
         <p className="mb-2 text-sm font-medium text-white/80">مراجع بصرية (اختياري)</p>
+        <p className="mb-3 text-[11px] leading-relaxed text-white/40">
+          تُرسل إلى BytePlus Seedance كـ reference_image لتوجيه الشخصيات والمشهد.
+          استخدم Start Frame إذا أردت تثبيت أول إطار حرفيًا.
+        </p>
         <div className="flex flex-wrap gap-2">
           {refPreviews.map((src, i) => (
             <div key={`${src}-${i}`} className="relative h-16 w-16 overflow-hidden rounded-xl">

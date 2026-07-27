@@ -361,6 +361,21 @@ export async function listAssetsForUser(
   });
 }
 
+/** Soft-delete (hide) one asset for the owning user. */
+export async function deleteAssetForUser(
+  userId: string,
+  assetId: string,
+): Promise<boolean> {
+  return withDbLock(async () => {
+    const db = await ensureDb();
+    const i = db.assets.findIndex((a) => a.id === assetId && a.userId === userId);
+    if (i < 0) return false;
+    db.assets[i] = { ...db.assets[i]!, hidden: true };
+    await saveDb(db);
+    return true;
+  });
+}
+
 /** Show or hide many assets at once (multi-shot parts). */
 export async function setAssetsHidden(
   userId: string,

@@ -9,7 +9,7 @@ import {
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Download, Loader2, Pencil, Volume2, VolumeX } from "lucide-react";
+import { Download, Loader2, Pencil, Trash2, Volume2, VolumeX } from "lucide-react";
 import { AppHeader, type CustomerUser } from "./AppHeader";
 import { BottomNav } from "./BottomNav";
 import { fetchJson } from "@/lib/fetch-json";
@@ -114,16 +114,19 @@ function FeedVideoSlide({
   active,
   muted,
   onToggleMute,
+  onDeleted,
 }: {
   item: AssetItem;
   active: boolean;
   muted: boolean;
   onToggleMute: () => void;
+  onDeleted: (id: string) => void;
 }) {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [editing, setEditing] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [posterFailed, setPosterFailed] = useState(false);
   const [promptExpanded, setPromptExpanded] = useState(false);
 
@@ -248,6 +251,26 @@ function FeedVideoSlide({
     }
   };
 
+  const handleDelete = async () => {
+    if (deleting) return;
+    const ok = window.confirm("حذف هذا الفيديو من Assets؟");
+    if (!ok) return;
+    setDeleting(true);
+    try {
+      const { res, data } = await fetchJson<{ error?: string }>("/api/assets", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: item.id }),
+      });
+      if (!res.ok) throw new Error(data.error || "تعذر الحذف");
+      onDeleted(item.id);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "تعذر الحذف");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <section
       data-asset-id={item.id}
@@ -314,45 +337,41 @@ function FeedVideoSlide({
       {/* Soft bottom gradient for prompt readability */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[42%] bg-gradient-to-t from-black/85 via-black/35 to-transparent" />
 
-      {/* Edit / mute / download — above prompt overlay so taps always work */}
-      <div className="absolute bottom-36 left-3 z-40 flex flex-col items-center gap-3 sm:bottom-40 sm:left-5">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            void handleEdit();
-          }}
-          disabled={editing || item.status !== "completed"}
-          className="flex h-12 w-12 items-center justify-center rounded-full bg-white/12 text-white ring-1 ring-white/25 backdrop-blur-md disabled:opacity-40"
-          aria-label="تعديل"
-        >
-          {editing ? (
-            <Loader2 className="h-5 w-5 animate-spin" />
-          ) : (
-            <Pencil className="h-5 w-5" />
-          )}
-        </button>
-        <span className="text-[10px] font-semibold text-white/80">تعديل</span>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleMute();
-          }}
-          className="mt-2 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white ring-1 ring-white/20 backdrop-blur-md"
-          aria-label={muted ? "تشغيل الصوت" : "كتم الصوت"}
-        >
-          {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-        </button>
-        {(item.url || item.historyId) && item.status === "completed" && (
+      {/* Side actions — raised above BottomNav; Download always under Edit */}
+      <div className="absolute bottom-48 left-3 z-40 flex flex-col items-center gap-2.5 sm:bottom-52 sm:left-5">
+        <div className="flex flex-col items-center gap-1">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleEdit();
+            }}
+            disabled={editing || item.status !== "completed"}
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-white/12 text-white ring-1 ring-white/25 backdrop-blur-md disabled:opacity-40"
+            aria-label="تعديل"
+          >
+            {editing ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <Pencil className="h-5 w-5" />
+            )}
+          </button>
+          <span className="text-[10px] font-semibold text-white/80">تعديل</span>
+        </div>
+
+        <div className="flex flex-col items-center gap-1">
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
               void handleDownload();
             }}
-            disabled={downloading}
-            className="mt-1 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white ring-1 ring-white/20 backdrop-blur-md disabled:opacity-50"
+            disabled={
+              downloading ||
+              item.status !== "completed" ||
+              !(item.url || item.historyId)
+            }
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-white/12 text-white ring-1 ring-white/25 backdrop-blur-md disabled:opacity-40"
             aria-label="تحميل"
           >
             {downloading ? (
@@ -361,7 +380,40 @@ function FeedVideoSlide({
               <Download className="h-4 w-4" />
             )}
           </button>
-        )}
+          <span className="text-[10px] font-semibold text-white/80">تحميل</span>
+        </div>
+
+        <div className="flex flex-col items-center gap-1">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleDelete();
+            }}
+            disabled={deleting}
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-rose-500/20 text-rose-100 ring-1 ring-rose-300/30 backdrop-blur-md disabled:opacity-40"
+            aria-label="حذف"
+          >
+            {deleting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Trash2 className="h-4 w-4" />
+            )}
+          </button>
+          <span className="text-[10px] font-semibold text-white/80">حذف</span>
+        </div>
+
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleMute();
+          }}
+          className="mt-1 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white ring-1 ring-white/20 backdrop-blur-md"
+          aria-label={muted ? "تشغيل الصوت" : "كتم الصوت"}
+        >
+          {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+        </button>
       </div>
 
       {/* Title + truncated description with «عرض المزيد» */}
@@ -620,6 +672,9 @@ export function AssetsPage() {
                 active={activeId === item.id}
                 muted={muted}
                 onToggleMute={() => setMuted((m) => !m)}
+                onDeleted={(id) =>
+                  setAssets((prev) => prev.filter((a) => a.id !== id))
+                }
               />
             ))}
           </div>

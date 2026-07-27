@@ -72,10 +72,17 @@ export type BytePlusCreateInput = {
   ratio?: string;
   generateAudio?: boolean;
   watermark?: boolean;
-  /** Absolute http(s) or data: URL for first-frame / reference */
+  /** Absolute http(s) or data: URL for first-frame */
   startFrameUrl?: string | null;
+  /** Absolute http(s) or data: URL for last-frame (requires startFrameUrl) */
+  lastFrameUrl?: string | null;
+  /**
+   * Multimodal visual references (role=reference_image).
+   * Mutually exclusive with first/last frame mode per Seedance rules.
+   */
+  referenceImageUrls?: string[];
   resolution?: string;
-  /** Ark image role — start frames should use first_frame */
+  /** Ark image role when only a single start frame is provided */
   imageRole?: "first_frame" | "reference_image";
 };
 
@@ -144,19 +151,50 @@ async function postCreateTask(payload: Record<string, unknown>) {
 
 function buildCreatePayload(
   input: BytePlusCreateInput,
-  opts?: { frameUrl?: string | null; imageRole?: string; generateAudio?: boolean },
+  opts?: {
+    frameUrl?: string | null;
+    lastFrameUrl?: string | null;
+    referenceUrls?: string[] | null;
+    imageRole?: string;
+    generateAudio?: boolean;
+  },
 ): Record<string, unknown> {
-  const frameUrl =
-    opts?.frameUrl !== undefined ? opts.frameUrl : input.startFrameUrl;
   const content: ContentPart[] = [{ type: "text", text: input.prompt }];
-  if (frameUrl) {
+
+  const startUrl =
+    opts?.frameUrl !== undefined ? opts.frameUrl : input.startFrameUrl;
+  const lastUrl =
+    opts?.lastFrameUrl !== undefined ? opts.lastFrameUrl : input.lastFrameUrl;
+  const refUrls =
+    opts?.referenceUrls !== undefined
+      ? opts.referenceUrls
+      : input.referenceImageUrls;
+
+  // Seedance: first/last frame mode XOR multimodal reference_image mode.
+  if (startUrl) {
     content.push({
       type: "image_url",
-      image_url: { url: frameUrl },
-      // Seedance i2v expects first_frame for the opening still.
+      image_url: { url: startUrl },
       role: opts?.imageRole || input.imageRole || "first_frame",
     });
+    if (lastUrl) {
+      content.push({
+        type: "image_url",
+        image_url: { url: lastUrl },
+        role: "last_frame",
+      });
+    }
+  } else if (refUrls?.length) {
+    for (const url of refUrls.slice(0, 4)) {
+      if (!url?.trim()) continue;
+      content.push({
+        type: "image_url",
+        image_url: { url: url.trim() },
+        role: "reference_image",
+      });
+    }
   }
+
   // Seedance / OpenArt window: 4–15 seconds (integer steps).
   const duration = Math.max(4, Math.min(15, Math.round(input.duration)));
   const body: Record<string, unknown> = {
@@ -171,7 +209,6 @@ function buildCreatePayload(
     watermark: input.watermark === true,
   };
   if (input.resolution) {
-    // Normalize UI clarity labels; drop unknown values so Ark can default.
     const r = String(input.resolution).trim().toLowerCase();
     if (["480p", "720p", "1080p", "4k"].includes(r)) {
       body.resolution = r;
@@ -205,9 +242,12 @@ export async function createBytePlusVideoTask(
     }
   }
 
-  // Real-person privacy block on the start frame — rewrite as semi-realistic
-  // scene + stylize still; last resort drop the still entirely.
-  if (!res.ok && input.startFrameUrl) {
+  // Real-person privacy block on stills — rewrite as semi-realistic
+  // scene + stylize; last resort drop images entirely.
+  const hasImages = Boolean(
+    input.startFrameUrl || (input.referenceImageUrls && input.referenceImageUrls.length),
+  );
+  if (!res.ok && hasImages) {
     const msg = errorTextFromCreate(data, res.status);
     if (isInputImagePrivacyError(msg)) {
       const rewritten = {
@@ -215,17 +255,37 @@ export async function createBytePlusVideoTask(
         prompt: toSemiRealisticScenePrompt(input.prompt),
       };
       try {
-        const styled = await stylizeReferenceImage(input.startFrameUrl);
-        payload = buildCreatePayload(rewritten, {
-          frameUrl: styled,
-          imageRole: "first_frame",
-          generateAudio: Boolean(payload.generate_audio),
-        });
+        if (input.startFrameUrl) {
+          const styled = await stylizeReferenceImage(input.startFrameUrl);
+          payload = buildCreatePayload(rewritten, {
+            frameUrl: styled,
+            lastFrameUrl: input.lastFrameUrl || null,
+            referenceUrls: [],
+            imageRole: "first_frame",
+            generateAudio: Boolean(payload.generate_audio),
+          });
+        } else {
+          const styledRefs: string[] = [];
+          for (const u of input.referenceImageUrls || []) {
+            try {
+              styledRefs.push(await stylizeReferenceImage(u));
+            } catch {
+              styledRefs.push(u);
+            }
+          }
+          payload = buildCreatePayload(rewritten, {
+            frameUrl: null,
+            referenceUrls: styledRefs,
+            generateAudio: Boolean(payload.generate_audio),
+          });
+        }
         ({ res, data } = await postCreateTask(payload));
         // Last resort: keep motion from the rewritten prompt only (no still).
         if (!res.ok && isInputImagePrivacyError(errorTextFromCreate(data, res.status))) {
           payload = buildCreatePayload(rewritten, {
             frameUrl: null,
+            lastFrameUrl: null,
+            referenceUrls: [],
             generateAudio: Boolean(payload.generate_audio),
           });
           ({ res, data } = await postCreateTask(payload));
@@ -235,10 +295,11 @@ export async function createBytePlusVideoTask(
           "[veronix] reference stylize failed:",
           styleErr instanceof Error ? styleErr.message : styleErr,
         );
-        // Still try text-only with the rewritten semi-realistic prompt.
         try {
           payload = buildCreatePayload(rewritten, {
             frameUrl: null,
+            lastFrameUrl: null,
+            referenceUrls: [],
             generateAudio: false,
           });
           ({ res, data } = await postCreateTask(payload));

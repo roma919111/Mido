@@ -12,6 +12,7 @@ import {
   recoverOrphanedHiddenAssets,
   recoverStuckSequencePending,
   updateAsset,
+  deleteAssetForUser,
 } from "@/lib/db";
 import { PRODUCT_PER_SHOT_SECONDS } from "@/lib/shot-plan";
 import { VERONIX_MODEL_ID } from "@/lib/free-trial";
@@ -360,5 +361,30 @@ export async function GET() {
     await stitchPendingJobs(user.id).catch(() => 0);
     const assets = await listAssetsForUser(user.id);
     return NextResponse.json({ assets });
+  }
+}
+
+/** Soft-delete an asset (hide from Assets feed). */
+export async function DELETE(request: Request) {
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json({ error: "Login required", needsAuth: true }, { status: 401 });
+  }
+  try {
+    const body = (await request.json().catch(() => ({}))) as { id?: string };
+    const id = String(body.id || "").trim();
+    if (!id) {
+      return NextResponse.json({ error: "id required" }, { status: 400 });
+    }
+    const ok = await deleteAssetForUser(user.id, id);
+    if (!ok) {
+      return NextResponse.json({ error: "Asset not found" }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true, id });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Delete failed" },
+      { status: 500 },
+    );
   }
 }
