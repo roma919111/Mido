@@ -44,10 +44,15 @@ import {
 import { veronixDownloadPath, veronixMediaSrc } from "@/lib/media-proxy";
 import type { CustomerUser } from "./AppHeader";
 
+/** Default paid product length — 8s (2×4s). Max remains 32s via the slider. */
+const DEFAULT_PAID_DURATION_SECONDS = 8;
+
 /** Poll long enough for a slow Seedance beat (~6–7 min). */
 const PREVIEW_POLL_ATTEMPTS = 80;
 const PREVIEW_POLL_MS = 5000;
 const PREVIEW_SESSION_KEY = "veronix.create.preview.v1";
+/** Drop restored "running" previews that outlived the job (no server progress). */
+const STALE_RUNNING_GRACE_MS = 12 * 60 * 1000;
 
 type StudioPreview = {
   url: string;
@@ -210,9 +215,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       setGenerateAudio(true);
       return;
     }
-    // Paid Veronix product length is stitched up to 32s (not the raw model max).
+    // Paid Veronix: default 8s (fast). Slider still goes up to 32s.
     setDuration(
-      model.id === VERONIX_MODEL_ID ? MAX_TOTAL_SECONDS : options.duration.max,
+      model.id === VERONIX_MODEL_ID
+        ? DEFAULT_PAID_DURATION_SECONDS
+        : options.duration.max,
     );
     if (options.resolutions.length) {
       const nextRes =
@@ -233,16 +240,35 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     let cancelled = false;
     void (async () => {
       const stored = readStoredPreview();
+      let restoredRunning = false;
+
       if (stored && !cancelled) {
-        setPreview(stored.preview);
-        setGenStartedAt(stored.genStartedAt);
-        if (stored.preview.status === "running") {
-          setGenerating(true);
-          setStatus("جاري التوليد…");
+        const target =
+          stored.preview.targetSeconds ||
+          (media === "video" ? duration : 4);
+        const etaMs = estimateGenerateSeconds(target) * 1000;
+        const started = stored.genStartedAt ?? 0;
+        const stale =
+          stored.preview.status === "running" &&
+          started > 0 &&
+          Date.now() - started > etaMs + STALE_RUNNING_GRACE_MS;
+
+        if (stale) {
+          // Ghost "جاري الإنهاء…" after a dead multi-shot — clear it.
+          writeStoredPreview(null, null);
+        } else {
+          setPreview(stored.preview);
+          setGenStartedAt(stored.genStartedAt);
+          if (stored.preview.status === "running") {
+            setGenerating(true);
+            setStatus("جاري التوليد…");
+            restoredRunning = true;
+          }
         }
       }
-      // Also resume from the latest running Assets job if session was cleared.
-      if ((!stored || stored.preview.status !== "running") && user) {
+
+      // Resume from a live Assets job, or clear a ghost running preview.
+      if (user) {
         try {
           const { res, data } = await fetchJson<{
             assets?: Array<{
@@ -287,6 +313,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                   running.id,
                 );
               }
+            } else if (restoredRunning) {
+              // Session said running but Assets has nothing — abandon ghost UI.
+              setPreview(null);
+              setGenStartedAt(null);
+              setGenerating(false);
+              setStatus(null);
+              writeStoredPreview(null, null);
             }
           }
         } catch {
@@ -1474,9 +1507,15 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               router.push("/pricing?paywall=1");
               return;
             }
-            if (!res.ok) throw new Error(data.error || `فشل ${label}`);
+            if (!res.ok) {
+              if (localUrls.length >= 1) break;
+              throw new Error(data.error || `فشل ${label}`);
+            }
             const failed = data.results?.find((r) => r.error);
-            if (failed?.error) throw new Error(failed.error);
+            if (failed?.error) {
+              if (localUrls.length >= 1) break;
+              throw new Error(failed.error);
+            }
 
             const ok = data.results?.find((r) => !r.error);
             let url = ok?.urls?.[0] || "";
@@ -1492,9 +1531,21 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 assetId: jobAssetId || prev?.assetId,
                 targetSeconds: prev?.targetSeconds ?? multiTargetSeconds,
               }));
-              url = await waitForHistoryUrl(historyId, startedAt, label);
+              try {
+                url = await waitForHistoryUrl(historyId, startedAt, label);
+              } catch (waitErr) {
+                if (localUrls.length >= 1) break;
+                throw waitErr;
+              }
             }
-            if (!url && !historyId) throw new Error(`لا يوجد فيديو من ${label}`);
+            if (!url && !historyId) {
+              if (localUrls.length >= 1) break;
+              throw new Error(`لا يوجد فيديو من ${label}`);
+            }
+            if (!url) {
+              if (localUrls.length >= 1) break;
+              throw new Error(`لا يوجد فيديو من ${label}`);
+            }
 
             // Persist locally only — clarity runs once on final concat (faster,
             // fewer timeouts; avoids three graded parts and a failed stitch).
@@ -1532,30 +1583,62 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
             if (i < shots.length - 1) {
               setStatus(`استخراج إطار الربط بعد ${label}…`);
-              const frameRes = await fetchJson<{
-                error?: string;
-                visualReference?: VisualReference;
-              }>("/api/media/extract-frame", {
+              try {
+                const frameRes = await fetchJson<{
+                  error?: string;
+                  visualReference?: VisualReference;
+                }>("/api/media/extract-frame", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    videoUrl: localUrl,
+                    label: `bridge-${i + 1}`,
+                  }),
+                });
+                if (frameRes.res.ok && frameRes.data.visualReference) {
+                  frame = frameRes.data.visualReference;
+                } else {
+                  // Continue text-only rather than aborting a long 8-beat job.
+                  frame = null;
+                }
+              } catch {
+                frame = null;
+              }
+            }
+          }
+
+          if (localUrls.length === 1) {
+            // Deliver the single completed beat instead of leaving the UI empty.
+            const only = localUrls[0]!;
+            if (jobAssetId) {
+              await fetchJson("/api/assets/pending", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  videoUrl: localUrl,
-                  label: `bridge-${i + 1}`,
+                  assetId: jobAssetId,
+                  url: only,
+                  status: "completed",
+                  mode: "sequence-concat",
+                  error: "",
                 }),
-              });
-              if (!frameRes.res.ok || !frameRes.data.visualReference) {
-                throw new Error(
-                  frameRes.data.error || "تعذر استخراج إطار الربط بين اللقطات",
-                );
-              }
-              frame = frameRes.data.visualReference;
+              }).catch(() => undefined);
             }
+            setPreview({
+              url: only,
+              mediaType: "video",
+              status: "completed",
+              targetSeconds: PRODUCT_PER_SHOT_SECONDS,
+            });
+            setStatus("اكتملت لقطة واحدة — عُرضت في المعاينة (أعد التوليد لمشهد أطول)");
+            setGenStartedAt(null);
+            await onUserRefresh();
+            return;
           }
 
           if (localUrls.length < 2) {
             await revealParts();
             throw new Error(
-              `اكتملت لقطة واحدة فقط من ${shots.length} — أعد التوليد لإكمال المشهد المدمج`,
+              `لم تكتمل أي لقطة من ${shots.length} — أعد التوليد`,
             );
           }
 
@@ -1645,14 +1728,95 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             url: concatUrl,
             mediaType: "video",
             status: "completed",
+            targetSeconds: localUrls.length * perShotSeconds,
           });
           setStatus(
-            `فيديو واحد جاهز · ${shots.length} لقطات × ${perShotSeconds}ث = ${shots.length * perShotSeconds}ث`,
+            `فيديو واحد جاهز · ${localUrls.length} لقطات × ${perShotSeconds}ث = ${localUrls.length * perShotSeconds}ث`,
           );
           setGenStartedAt(null);
           await onUserRefresh();
           return;
         } catch (multiErr) {
+          // Prefer delivering whatever beats we already cached.
+          if (localUrls.length >= 2) {
+            setStatus(`دمج ${localUrls.length} لقطات المتوفرة…`);
+            try {
+              const concatRes = await fetchJson<{ url?: string; error?: string }>(
+                "/api/media/concat",
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    videoUrls: localUrls,
+                    saveAsset: !jobAssetId,
+                    prompt: prompt.trim(),
+                    modelId: selectedModelId,
+                    shotCount: localUrls.length,
+                    maxSecondsPerClip: perShotSeconds,
+                    clarity: false,
+                  }),
+                },
+              );
+              if (concatRes.res.ok && concatRes.data.url) {
+                if (jobAssetId) {
+                  await fetchJson("/api/assets/pending", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      assetId: jobAssetId,
+                      url: concatRes.data.url,
+                      status: "completed",
+                      mode: "sequence-concat",
+                      error: "",
+                    }),
+                  }).catch(() => undefined);
+                }
+                setPreview({
+                  url: concatRes.data.url,
+                  mediaType: "video",
+                  status: "completed",
+                  targetSeconds: localUrls.length * perShotSeconds,
+                });
+                setStatus(
+                  `فيديو جزئي جاهز · ${localUrls.length} لقطات (تعذر إكمال الباقي)`,
+                );
+                setGenStartedAt(null);
+                await onUserRefresh();
+                return;
+              }
+            } catch {
+              // fall through to fail
+            }
+          } else if (localUrls.length === 1) {
+            const only = localUrls[0]!;
+            if (jobAssetId) {
+              await fetchJson("/api/assets/pending", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  assetId: jobAssetId,
+                  url: only,
+                  status: "completed",
+                  mode: "sequence-concat",
+                  error: "",
+                }),
+              }).catch(() => undefined);
+            }
+            setPreview({
+              url: only,
+              mediaType: "video",
+              status: "completed",
+              targetSeconds: PRODUCT_PER_SHOT_SECONDS,
+            });
+            setError(
+              multiErr instanceof Error
+                ? `${multiErr.message} — عُرضت اللقطة المكتملة`
+                : "عُرضت اللقطة المكتملة",
+            );
+            setGenStartedAt(null);
+            await onUserRefresh();
+            return;
+          }
           await revealParts();
           await failJob(
             multiErr instanceof Error ? multiErr.message : "فشل المشهد المتعدد",

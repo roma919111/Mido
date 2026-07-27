@@ -9,7 +9,9 @@ export const ETA_SECONDS_PER_4S_OUTPUT = 55;
 /** Estimate total generate time (seconds) for a chosen output duration. */
 export function estimateGenerateSeconds(outputDurationSec: number): number {
   const duration = Math.max(1, Math.round(outputDurationSec || 4));
-  return Math.max(20, Math.round((duration / 4) * ETA_SECONDS_PER_4S_OUTPUT));
+  const beats = Math.max(1, Math.ceil(duration / 4));
+  // ~55s per 4s beat on BytePlus + ~25s overhead (cache / bridge / stitch).
+  return Math.max(20, Math.round(beats * ETA_SECONDS_PER_4S_OUTPUT + beats * 25));
 }
 
 /** Seconds remaining until the ETA (0 when overdue). */
