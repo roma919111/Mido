@@ -110,20 +110,28 @@ export async function POST(request: Request) {
           asset.status === "running" &&
           !asset.url
         ) {
-          const part = assets.find(
-            (a) =>
-              a.mode === "sequence-part" &&
-              a.status === "completed" &&
-              Boolean(a.url),
-          );
-          if (part?.url) {
+          const parts = assets
+            .filter(
+              (a) =>
+                a.mode === "sequence-part" &&
+                a.status === "completed" &&
+                Boolean(a.url),
+            )
+            .sort(
+              (a, b) =>
+                new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+            );
+          // Only auto-promote a single part when the job was meant to be 4s.
+          const expected = Math.max(1, Math.round((asset.targetSeconds || 4) / 4));
+          if (parts.length === 1 && expected <= 1 && parts[0]?.url) {
             await updateAsset(asset.id, t.id, {
-              url: part.url,
-              historyId: part.historyId,
+              url: parts[0].url,
+              historyId: parts[0].historyId,
               status: "completed",
               mode: "sequence-concat",
               error: undefined,
               hidden: false,
+              targetSeconds: 4,
             });
             fixed += 1;
           }

@@ -41,6 +41,9 @@ export async function POST(request: Request) {
       if (body.error !== undefined) patch.error = body.error || undefined;
       if (body.historyId !== undefined) patch.historyId = body.historyId || undefined;
       if (body.mode) patch.mode = body.mode;
+      if (typeof body.targetSeconds === "number" && body.targetSeconds > 0) {
+        patch.targetSeconds = Math.round(body.targetSeconds);
+      }
       const updated = await updateAsset(body.assetId.trim(), user.id, patch);
       if (!updated) {
         return NextResponse.json({ error: "Asset not found" }, { status: 404 });

@@ -17,6 +17,7 @@ import { PRODUCT_PER_SHOT_SECONDS } from "@/lib/shot-plan";
 import { VERONIX_MODEL_ID } from "@/lib/free-trial";
 import { toSemiRealisticScenePrompt } from "@/lib/reference-sanitize";
 import { ensureClarityUrl, needsClarityGrade } from "@/lib/ensure-clarity";
+import { concatVideos } from "@/lib/video-stitch";
 import {
   callOpenArtTool,
   collectMediaUrls,
@@ -26,7 +27,7 @@ import {
 import { appendVyronixOutro } from "@/lib/veronix-outro";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 180;
 
 function needsLocalBrand(asset: {
   mediaType: string;
@@ -44,6 +45,65 @@ function needsLocalBrand(asset: {
   if (asset.status !== "completed" && asset.status !== "running") return false;
   if (!asset.url || asset.url.startsWith("/generations/")) return false;
   return true;
+}
+
+/**
+ * When a pending multi-shot job has ≥2 completed hidden parts and nothing
+ * still running, stitch them into one clarity-graded video.
+ */
+async function stitchPendingJobs(userId: string) {
+  const assets = await listAssetsForUser(userId, { includeHidden: true });
+  const pendings = assets
+    .filter(
+      (a) =>
+        a.mode === "sequence-pending" &&
+        a.status === "running" &&
+        !a.url,
+    )
+    .slice(0, 3);
+
+  for (const pending of pendings) {
+    const pendingAt = new Date(pending.createdAt).getTime();
+    const parts = assets
+      .filter((a) => {
+        if (a.mode !== "sequence-part") return false;
+        const t = new Date(a.createdAt).getTime();
+        return t >= pendingAt - 5_000 && t < pendingAt + 3 * 60 * 60 * 1000;
+      })
+      .sort(
+        (a, b) =>
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      );
+    if (parts.some((p) => p.status === "running")) continue;
+    const urls = parts
+      .filter((p) => p.status === "completed" && p.url)
+      .map((p) => p.url);
+    if (urls.length < 2) continue;
+    try {
+      const concatUrl = await concatVideos(urls, {
+        maxSecondsPerClip: PRODUCT_PER_SHOT_SECONDS,
+        clarity: true,
+      });
+      await updateAsset(pending.id, userId, {
+        url: concatUrl,
+        status: "completed",
+        mode: "sequence-concat",
+        error: undefined,
+        hidden: false,
+        targetSeconds: urls.length * PRODUCT_PER_SHOT_SECONDS,
+      });
+      for (const p of parts) {
+        if (p.hidden !== true) {
+          await updateAsset(p.id, userId, { hidden: true });
+        }
+      }
+    } catch (err) {
+      console.warn(
+        "[veronix] stitchPendingJobs failed:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
 }
 
 /** Refresh running assets from BytePlus (primary) or legacy OpenArt ids. */
@@ -256,17 +316,20 @@ export async function GET() {
     // Restore paid multi-shot clips if stitch never produced a visible final.
     await recoverOrphanedHiddenAssets(user.id);
     await recoverStuckSequencePending(user.id);
+    await stitchPendingJobs(user.id);
     const assets = await syncRunningAssets(user.id);
     return NextResponse.json({ assets });
   } catch (error) {
     if (error instanceof OpenArtConfigError) {
       await recoverOrphanedHiddenAssets(user.id).catch(() => 0);
       await recoverStuckSequencePending(user.id).catch(() => 0);
+      await stitchPendingJobs(user.id).catch(() => 0);
       const assets = await listAssetsForUser(user.id);
       return NextResponse.json({ assets, syncSkipped: true });
     }
     await recoverOrphanedHiddenAssets(user.id).catch(() => 0);
     await recoverStuckSequencePending(user.id).catch(() => 0);
+    await stitchPendingJobs(user.id).catch(() => 0);
     const assets = await listAssetsForUser(user.id);
     return NextResponse.json({ assets });
   }

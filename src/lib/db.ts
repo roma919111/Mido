@@ -293,14 +293,16 @@ const ORPHAN_RECOVERY_GRACE_MS = 12 * 60 * 1000;
 /**
  * Promote or fail stuck multi-shot job cards (sequence-pending) that never
  * received a final stitch — e.g. browser closed mid-generate / proxy timeout.
+ * Never promote a single 4s part as a "32s" success — only mark partial with
+ * honest targetSeconds, or leave running while parts are still in flight.
  */
 export async function recoverStuckSequencePending(
   userId: string,
 ): Promise<number> {
   const db = await ensureDb();
   const now = Date.now();
-  const STALE_PROMOTE_MS = 6 * 60 * 1000;
-  const STALE_FAIL_MS = 18 * 60 * 1000;
+  const STALE_PROMOTE_MS = 8 * 60 * 1000;
+  const STALE_FAIL_MS = 25 * 60 * 1000;
   let n = 0;
 
   for (let i = 0; i < db.assets.length; i += 1) {
@@ -317,31 +319,59 @@ export async function recoverStuckSequencePending(
     const parts = db.assets.filter((a) => {
       if (a.userId !== userId || a.mode !== "sequence-part") return false;
       const t = new Date(a.createdAt).getTime();
-      return t >= pendingAt - 5_000 && t < pendingAt + 2 * 60 * 60 * 1000;
+      return t >= pendingAt - 5_000 && t < pendingAt + 3 * 60 * 60 * 1000;
     });
-    const completedParts = parts.filter((a) => a.status === "completed" && a.url);
+    const completedParts = parts
+      .filter((a) => a.status === "completed" && a.url)
+      .sort(
+        (a, b) =>
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      );
     const runningParts = parts.filter((a) => a.status === "running");
+    const expected = Math.max(
+      1,
+      Math.round((pending.targetSeconds || 4) / 4),
+    );
 
-    if (completedParts.length > 0 && runningParts.length === 0) {
-      // Prefer the first completed beat as a visible recovery video.
-      const best =
-        [...completedParts].sort(
-          (a, b) =>
-            new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-        )[0]!;
+    // Multiple completed beats — Assets route will stitch; here only flag for stitch
+    // by leaving pending running if age < fail window, or set a stitch hint error.
+    if (completedParts.length >= 2 && runningParts.length === 0) {
+      // Mark with a recoverable note — stitchPendingJobs in /api/assets does concat.
+      db.assets[i] = {
+        ...pending,
+        error: `[stitch-ready] ${completedParts.length} parts ready`,
+      };
+      n += 1;
+      continue;
+    }
+
+    if (
+      completedParts.length === 1 &&
+      runningParts.length === 0 &&
+      age >= STALE_FAIL_MS
+    ) {
+      // Honest partial: one beat only, not the full requested length.
+      const best = completedParts[0]!;
       db.assets[i] = {
         ...pending,
         url: best.url,
         historyId: best.historyId || pending.historyId,
         status: "completed",
         mode: "sequence-concat",
-        error: undefined,
+        targetSeconds: 4,
+        error:
+          expected > 1
+            ? `اكتملت لقطة واحدة فقط من ${expected} — أعد التوليد للمدة الكاملة`
+            : undefined,
         hidden: false,
       };
-      // Keep all parts hidden.
       for (let j = 0; j < db.assets.length; j += 1) {
         const p = db.assets[j]!;
-        if (p.userId === userId && p.mode === "sequence-part" && parts.some((x) => x.id === p.id)) {
+        if (
+          p.userId === userId &&
+          p.mode === "sequence-part" &&
+          parts.some((x) => x.id === p.id)
+        ) {
           db.assets[j] = { ...p, hidden: true };
         }
       }
@@ -349,7 +379,7 @@ export async function recoverStuckSequencePending(
       continue;
     }
 
-    if (age >= STALE_FAIL_MS && runningParts.length === 0) {
+    if (age >= STALE_FAIL_MS && runningParts.length === 0 && completedParts.length === 0) {
       const partErr = parts.find((a) => a.status === "failed" && a.error)?.error;
       db.assets[i] = {
         ...pending,
