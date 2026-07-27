@@ -11,9 +11,17 @@ import {
   recoverStuckSequencePending,
   updateAsset,
 } from "@/lib/db";
+import {
+  ensureMultiShotBackground,
+  isMultiShotJobMeta,
+  isMultiShotStillGenerating,
+  tickMultiShotJob,
+} from "@/lib/multi-shot-job";
+import { estimateGenerateSeconds } from "@/lib/generate-eta";
+import { PRODUCT_PER_SHOT_SECONDS } from "@/lib/shot-plan";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 type Body = {
   email?: string;
@@ -59,6 +67,16 @@ export async function POST(request: Request) {
     for (const t of targets) {
       await recoverStuckSequencePending(t.id).catch(() => 0);
       const assets = await listAssetsForAdmin(t.id, 80);
+      // Resume any server multi-shot jobs instead of collapsing them early.
+      for (const a of assets) {
+        if (
+          a.mode === "sequence-pending" &&
+          a.status === "running" &&
+          isMultiShotJobMeta(a.jobMeta)
+        ) {
+          ensureMultiShotBackground(t.id, a.id);
+        }
+      }
       let fixed = 0;
       let unhidden = 0;
       let rehiddenParts = 0;
@@ -110,15 +128,31 @@ export async function POST(request: Request) {
           (asset.status === "running" || asset.status === "failed") &&
           !asset.url
         ) {
+          // Still generating the planned duration — tick, don't force early.
+          if (isMultiShotStillGenerating(asset)) {
+            try {
+              await tickMultiShotJob(t.id, asset);
+              fixed += 1;
+            } catch {
+              // background runner will retry
+            }
+            continue;
+          }
           const pendingAt = new Date(asset.createdAt).getTime();
           const ageMs = Date.now() - pendingAt;
+          const etaMs =
+            estimateGenerateSeconds(asset.targetSeconds || 4) * 1000;
+          const expectedBeats = Math.max(
+            1,
+            Math.round((asset.targetSeconds || 4) / PRODUCT_PER_SHOT_SECONDS),
+          );
           const parts = assets
             .filter((a) => {
               if (a.mode !== "sequence-part" || a.status !== "completed" || !a.url) {
                 return false;
               }
-              const t = new Date(a.createdAt).getTime();
-              return t >= pendingAt - 5_000 && t < pendingAt + 3 * 60 * 60 * 1000;
+              const pt = new Date(a.createdAt).getTime();
+              return pt >= pendingAt - 5_000 && pt < pendingAt + 3 * 60 * 60 * 1000;
             })
             .sort(
               (a, b) =>
@@ -126,16 +160,19 @@ export async function POST(request: Request) {
             );
           const runningParts = assets.filter((a) => {
             if (a.mode !== "sequence-part" || a.status !== "running") return false;
-            const t = new Date(a.createdAt).getTime();
-            return t >= pendingAt - 5_000 && t < pendingAt + 3 * 60 * 60 * 1000;
+            const pt = new Date(a.createdAt).getTime();
+            return pt >= pendingAt - 5_000 && pt < pendingAt + 3 * 60 * 60 * 1000;
           });
-          // Force-deliver after 3 minutes if beats exist and nothing is still running.
-          if (parts.length >= 1 && runningParts.length === 0 && ageMs > 3 * 60 * 1000) {
+          // Only force-deliver after full ETA (+1m) when nothing is still running.
+          if (
+            parts.length >= 1 &&
+            runningParts.length === 0 &&
+            ageMs > etaMs + 60_000
+          ) {
             let delivered = false;
             if (parts.length >= 2) {
               try {
                 const { concatVideos } = await import("@/lib/video-stitch");
-                const { PRODUCT_PER_SHOT_SECONDS } = await import("@/lib/shot-plan");
                 const concatUrl = await concatVideos(
                   parts.map((p) => p.url),
                   { maxSecondsPerClip: PRODUCT_PER_SHOT_SECONDS, clarity: true },
@@ -144,7 +181,10 @@ export async function POST(request: Request) {
                   url: concatUrl,
                   status: "completed",
                   mode: "sequence-concat",
-                  error: undefined,
+                  error:
+                    parts.length < expectedBeats
+                      ? `دُمجت ${parts.length}/${expectedBeats} لقطات بعد انتهاء المهلة`
+                      : undefined,
                   hidden: false,
                   targetSeconds: parts.length * PRODUCT_PER_SHOT_SECONDS,
                 });
@@ -169,11 +209,11 @@ export async function POST(request: Request) {
                 status: "completed",
                 mode: "sequence-concat",
                 error:
-                  parts.length < Math.max(1, Math.round((asset.targetSeconds || 4) / 4))
-                    ? `اكتملت ${parts.length} لقطة — عُرض المتاح`
+                  parts.length < expectedBeats
+                    ? `اكتملت ${parts.length} لقطة من ${expectedBeats} — عُرض المتاح`
                     : undefined,
                 hidden: false,
-                targetSeconds: parts.length * 4,
+                targetSeconds: parts.length * PRODUCT_PER_SHOT_SECONDS,
               });
               fixed += 1;
             }

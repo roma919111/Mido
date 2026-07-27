@@ -1394,17 +1394,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       }
 
       if (useMulti && shots.length >= 2) {
-        // Fixed 4s/shot (Seedance min). Slider budget already expanded above.
-        perShotSeconds = PRODUCT_PER_SHOT_SECONDS;
-        apiPerShotSeconds = Math.min(
-          durationBounds.max,
-          Math.max(durationBounds.min, PRODUCT_PER_SHOT_SECONDS),
-        );
-        setStatus(
-          `توليد ${shots.length} لقطات × ${PRODUCT_PER_SHOT_SECONDS}ث في الخلفية ثم الدمج…`,
-        );
+        // Server-side multi-shot: split by action, generate beats in background,
+        // concat + clarity on the server so the full duration (e.g. 32s) completes
+        // even if the browser navigates away.
         const multiTargetSeconds = shots.length * PRODUCT_PER_SHOT_SECONDS;
         if (stillMine()) {
+          setStatus(
+            `توليد ${shots.length} لقطات × ${PRODUCT_PER_SHOT_SECONDS}ث خلف الكواليس ثم الدمج…`,
+          );
           setPreview({
             url: "",
             mediaType: "video",
@@ -1413,396 +1410,139 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           });
           setRemainingSec(estimateGenerateSeconds(multiTargetSeconds));
         }
-        const localUrls: string[] = [];
-        const partAssetIds: string[] = [];
-        let frame: VisualReference | null = startFrame;
 
-        // Visible Assets card while beats stay hidden until stitch finishes.
-        let jobAssetId: string | undefined;
-        try {
-          const pendingRes = await fetchJson<{
-            asset?: { id?: string };
-            error?: string;
-          }>("/api/assets/pending", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              prompt: prompt.trim(),
-              shotCount: shots.length,
-              targetSeconds: multiTargetSeconds,
-            }),
-          });
-          jobAssetId = pendingRes.data.asset?.id;
-          if (jobAssetId) {
-            lockEtaStart(jobAssetId, new Date(startedAt).toISOString());
-            if (stillMine()) {
-              setPreview((prev) =>
-                prev
-                  ? {
-                      ...prev,
-                      assetId: jobAssetId,
-                      targetSeconds: multiTargetSeconds,
-                    }
-                  : prev,
-              );
-            }
-          }
-        } catch {
-          // Non-fatal — parts still generate.
+        const startRes = await fetchJson<{
+          error?: string;
+          asset?: {
+            id?: string;
+            status?: string;
+            url?: string;
+            targetSeconds?: number;
+          };
+          targetSeconds?: number;
+          shotCount?: number;
+          estimatedSeconds?: number;
+        }>("/api/jobs/multi-shot", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "start",
+            prompt: prompt.trim(),
+            shots,
+            duration: multiTargetSeconds,
+            resolution,
+            generateAudio,
+            startFrame: startFrame ?? null,
+          }),
+        });
+        if (!startRes.res.ok || !startRes.data.asset?.id) {
+          throw new Error(startRes.data.error || "تعذر بدء توليد المشهد المتعدد");
+        }
+        const jobAssetId = startRes.data.asset.id;
+        const etaSec =
+          startRes.data.estimatedSeconds ||
+          estimateGenerateSeconds(multiTargetSeconds);
+        lockEtaStart(jobAssetId, new Date(startedAt).toISOString());
+        if (stillMine()) {
+          setRemainingSec(etaSec);
+          setPreview((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  assetId: jobAssetId,
+                  targetSeconds:
+                    startRes.data.targetSeconds || multiTargetSeconds,
+                }
+              : prev,
+          );
         }
         await onUserRefresh().catch(() => undefined);
 
-        const revealParts = async () => {
-          if (!partAssetIds.length) return;
-          try {
-            await fetchJson("/api/assets/visibility", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ assetIds: partAssetIds, hidden: false }),
-            });
-          } catch {
-            // Assets GET also recovers orphans.
-          }
-        };
-
-        const failJob = async (message: string) => {
-          if (!jobAssetId) return;
-          await fetchJson("/api/assets/pending", {
+        // Server runs beats in the background. Poll status; tick is a backup kick.
+        for (let tick = 0; tick < 80; tick += 1) {
+          if (!stillMine()) break;
+          const tickRes = await fetchJson<{
+            error?: string;
+            done?: boolean;
+            asset?: {
+              status?: string;
+              url?: string;
+              targetSeconds?: number;
+              error?: string;
+            };
+            nextIndex?: number;
+            shotCount?: number;
+            partCount?: number;
+          }>("/api/jobs/multi-shot", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              assetId: jobAssetId,
-              status: "failed",
-              error: message,
-              mode: "sequence-pending",
-            }),
-          }).catch(() => undefined);
-        };
-
-        try {
-          for (let i = 0; i < shots.length; i += 1) {
-            // Keep generating all beats even if the user started another Generate
-            // (stillMine false) — results land on the Assets job card.
-            const shot = shots[i]!;
-            const label = `لقطة ${i + 1} من ${shots.length}`;
+            body: JSON.stringify({ action: "tick", assetId: jobAssetId }),
+          });
+          const asset = tickRes.data.asset;
+          const shotCount = tickRes.data.shotCount || shots.length;
+          const nextIndex = tickRes.data.nextIndex ?? 0;
+          const partCount = tickRes.data.partCount ?? 0;
+          if (stillMine()) {
+            setStatus(
+              asset?.status === "completed"
+                ? `فيديو واحد جاهز · ${asset.targetSeconds || multiTargetSeconds}ث`
+                : `خلف الكواليس: لقطة ${Math.min(shotCount, Math.max(1, nextIndex + 1))} من ${shotCount} · ثم الدمج والفلتر…`,
+            );
+            setPreview((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    status: asset?.status === "failed" ? "failed" : "running",
+                    url: asset?.url || prev.url,
+                    targetSeconds:
+                      asset?.targetSeconds ||
+                      prev.targetSeconds ||
+                      multiTargetSeconds,
+                  }
+                : prev,
+            );
+          }
+          if (tickRes.data.done || asset?.status === "completed") {
             if (stillMine()) {
-              setStatus(
-                `${label} (${perShotSeconds}ث): ${shot.action.slice(0, 40)}… — دمج لاحقاً في فيديو واحد`,
-              );
-            }
-
-            const tryClip = async (start: VisualReference | null) => {
-              const mode = start ? "image2video" : "text2video";
-              return createOneClip({
-                prompt: shot.prompt,
-                mode,
-                duration: apiPerShotSeconds,
-                startFrame: start,
-                endFrame: i === 0 ? endFrame : null,
-                sequencePart: true,
-              });
-            };
-
-            let res: Awaited<ReturnType<typeof createOneClip>>["res"];
-            let data: Awaited<ReturnType<typeof createOneClip>>["data"];
-            ({ res, data } = await tryClip(frame));
-
-            // Privacy / image reject → drop bridge frame and retry text-only.
-            const clipErr =
-              data.results?.find((r) => r.error)?.error ||
-              (!res.ok ? data.error : undefined);
-            if (
-              clipErr &&
-              frame &&
-              /InputImageSensitive|PrivacyInformation|real person|sensitive/i.test(
-                clipErr,
-              )
-            ) {
-              frame = null;
-              ({ res, data } = await tryClip(null));
-            }
-
-            if (res.status === 401 || data.needsAuth) {
-              await revealParts();
-              if (stillMine()) {
-                router.push(`/signup?next=${encodeURIComponent("/")}&paywall=1`);
-              }
-              return;
-            }
-            if (res.status === 402 || data.needsPaywall) {
-              await revealParts();
-              if (stillMine()) {
-                setError(data.error || "رصيدك غير كافٍ لإكمال اللقطات.");
-                router.push("/pricing?paywall=1");
-              }
-              return;
-            }
-
-            const failed = data.results?.find((r) => r.error);
-            if (!res.ok || failed?.error) {
-              // Skip this beat and continue — do not abort the whole 32s job.
-              frame = null;
-              continue;
-            }
-
-            const ok = data.results?.find((r) => !r.error);
-            let url = ok?.urls?.[0] || "";
-            const historyId = ok?.historyId;
-            const assetId = ok?.assetId;
-            if (assetId) partAssetIds.push(assetId);
-            if (!url && historyId) {
-              if (stillMine()) {
-                setPreview((prev) => ({
+              if (asset?.status === "failed") {
+                setError(asset.error || "فشل توليد المشهد المتعدد");
+                setPreview({
                   url: "",
                   mediaType: "video",
-                  historyId,
-                  status: "running",
-                  assetId: jobAssetId || prev?.assetId,
-                  targetSeconds: prev?.targetSeconds ?? multiTargetSeconds,
-                }));
-              }
-              try {
-                url = await waitForHistoryUrl(historyId, startedAt, label);
-              } catch {
-                frame = null;
-                continue;
-              }
-            }
-            if (!url) {
-              frame = null;
-              continue;
-            }
-
-            if (stillMine()) setStatus(`حفظ ${label} للدمج…`);
-            const cacheRes = await fetchJson<{ error?: string; url?: string }>(
-              "/api/media/cache",
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  videoUrl: url || undefined,
-                  historyId: historyId || undefined,
-                  assetId: assetId || undefined,
-                  clarity: false,
-                }),
-              },
-            );
-            const localUrl = cacheRes.res.ok ? cacheRes.data.url : null;
-            if (!localUrl) {
-              frame = null;
-              continue;
-            }
-            localUrls.push(localUrl);
-
-            if (stillMine()) {
-              setPreview((prev) => ({
-                url: "",
-                mediaType: "video",
-                historyId,
-                status: "running",
-                assetId: jobAssetId || prev?.assetId,
-                targetSeconds: prev?.targetSeconds ?? multiTargetSeconds,
-              }));
-            }
-
-            if (i < shots.length - 1) {
-              if (stillMine()) setStatus(`استخراج إطار الربط بعد ${label}…`);
-              try {
-                const frameRes = await fetchJson<{
-                  error?: string;
-                  visualReference?: VisualReference;
-                }>("/api/media/extract-frame", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    videoUrl: localUrl,
-                    label: `bridge-${i + 1}`,
-                  }),
+                  status: "failed",
+                  assetId: jobAssetId,
                 });
-                frame =
-                  frameRes.res.ok && frameRes.data.visualReference
-                    ? frameRes.data.visualReference
-                    : null;
-              } catch {
-                frame = null;
-              }
-            }
-          }
-
-          if (localUrls.length === 0) {
-            await failJob("لم تكتمل أي لقطة — أعد التوليد");
-            throw new Error(`لم تكتمل أي لقطة من ${shots.length} — أعد التوليد`);
-          }
-
-          // Always stitch what we have into ONE video (even a single beat gets
-          // a clarity grade). Never leave a raw 4s part as a fake 32s result.
-          if (stillMine()) {
-            setStatus(`دمج ${localUrls.length} لقطات في فيديو واحد…`);
-          }
-          let concatUrl: string | null = null;
-          let concatError = "";
-          if (localUrls.length === 1) {
-            try {
-              concatUrl = await finalizePaidVideo({ url: localUrls[0]! });
-            } catch {
-              concatUrl = localUrls[0]!;
-            }
-          } else {
-            for (let attempt = 0; attempt < 4; attempt += 1) {
-              try {
-                const concatRes = await fetchJson<{
-                  error?: string;
-                  url?: string;
-                  assetId?: string;
-                }>("/api/media/concat", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    videoUrls: localUrls,
-                    saveAsset: !jobAssetId,
-                    prompt: prompt.trim(),
-                    modelId: selectedModelId,
-                    shotCount: localUrls.length,
-                    maxSecondsPerClip: perShotSeconds,
-                    clarity: true,
-                  }),
+              } else if (asset?.url) {
+                setPreview({
+                  url: asset.url,
+                  mediaType: "video",
+                  status: "completed",
+                  assetId: jobAssetId,
+                  targetSeconds:
+                    asset.targetSeconds || multiTargetSeconds,
                 });
-                if (concatRes.res.ok && concatRes.data.url) {
-                  concatUrl = concatRes.data.url;
-                  break;
-                }
-                concatError = concatRes.data.error || "تعذر دمج اللقطات";
-              } catch (stitchErr) {
-                concatError =
-                  stitchErr instanceof Error
-                    ? stitchErr.message
-                    : "تعذر دمج اللقطات";
+                setStatus(
+                  `فيديو واحد جاهز · ${asset.targetSeconds || multiTargetSeconds}ث`,
+                );
               }
-              await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
-            }
-          }
-
-          if (!concatUrl) {
-            await revealParts();
-            await failJob(concatError || "تعذر دمج اللقطات");
-            if (stillMine()) {
-              setError(
-                `${concatError}. اكتملت ${localUrls.length} لقطات — ظهرت في Assets (الدمج لم يكتمل).`,
-              );
-              const fallback = localUrls[0] || "";
-              setPreview({
-                url: fallback,
-                mediaType: "video",
-                status: fallback ? "completed" : "failed",
-                targetSeconds: localUrls.length * perShotSeconds,
-              });
               setGenStartedAt(null);
             }
-            await onUserRefresh();
+            await onUserRefresh().catch(() => undefined);
             return;
           }
-
-          if (partAssetIds.length) {
-            await fetchJson("/api/assets/visibility", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ assetIds: partAssetIds, hidden: true }),
-            }).catch(() => undefined);
+          if (asset?.status === "failed") {
+            throw new Error(asset.error || "فشل توليد المشهد المتعدد");
           }
-
-          if (jobAssetId) {
-            await fetchJson("/api/assets/pending", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                assetId: jobAssetId,
-                url: concatUrl,
-                status: "completed",
-                mode: "sequence-concat",
-                error: "",
-                targetSeconds: localUrls.length * perShotSeconds,
-              }),
-            }).catch(() => undefined);
-          }
-
-          if (stillMine()) {
-            setPreview({
-              url: concatUrl,
-              mediaType: "video",
-              status: "completed",
-              targetSeconds: localUrls.length * perShotSeconds,
-            });
-            setStatus(
-              localUrls.length < shots.length
-                ? `فيديو جاهز · ${localUrls.length}/${shots.length} لقطات دُمجت (${localUrls.length * perShotSeconds}ث)`
-                : `فيديو واحد جاهز · ${localUrls.length} لقطات × ${perShotSeconds}ث = ${localUrls.length * perShotSeconds}ث`,
-            );
-            setGenStartedAt(null);
-          }
-          await onUserRefresh();
-          return;
-        } catch (multiErr) {
-          // Prefer stitching whatever beats finished before failing the job card.
-          if (localUrls.length >= 2) {
-            if (stillMine()) setStatus(`دمج ${localUrls.length} لقطات المتوفرة…`);
-            try {
-              const concatRes = await fetchJson<{ url?: string; error?: string }>(
-                "/api/media/concat",
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    videoUrls: localUrls,
-                    saveAsset: !jobAssetId,
-                    prompt: prompt.trim(),
-                    modelId: selectedModelId,
-                    shotCount: localUrls.length,
-                    maxSecondsPerClip: perShotSeconds,
-                    clarity: true,
-                  }),
-                },
-              );
-              if (concatRes.res.ok && concatRes.data.url) {
-                if (jobAssetId) {
-                  await fetchJson("/api/assets/pending", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      assetId: jobAssetId,
-                      url: concatRes.data.url,
-                      status: "completed",
-                      mode: "sequence-concat",
-                      error: "",
-                      targetSeconds: localUrls.length * perShotSeconds,
-                    }),
-                  }).catch(() => undefined);
-                }
-                if (stillMine()) {
-                  setPreview({
-                    url: concatRes.data.url,
-                    mediaType: "video",
-                    status: "completed",
-                    targetSeconds: localUrls.length * perShotSeconds,
-                  });
-                  setStatus(
-                    `فيديو جاهز · ${localUrls.length} لقطات دُمجت (تعذر إكمال الباقي)`,
-                  );
-                  setGenStartedAt(null);
-                }
-                await onUserRefresh();
-                return;
-              }
-            } catch {
-              // fall through
-            }
-          }
-          await revealParts();
-          await failJob(
-            multiErr instanceof Error ? multiErr.message : "فشل المشهد المتعدد",
-          );
-          if (!stillMine()) return;
-          throw multiErr;
+          // Between ticks the background runner advances; wait for ETA slice.
+          await new Promise((r) => setTimeout(r, 4000));
         }
+        if (stillMine()) {
+          setStatus(
+            "التوليد مستمر في Assets — يمكنك مغادرة الصفحة أو توليد فيديو جديد",
+          );
+        }
+        await onUserRefresh().catch(() => undefined);
+        return;
       }
 
       // Single-clip path (images, free trial, or one action)

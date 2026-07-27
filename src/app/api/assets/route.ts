@@ -18,6 +18,8 @@ import { VERONIX_MODEL_ID } from "@/lib/free-trial";
 import { toSemiRealisticScenePrompt } from "@/lib/reference-sanitize";
 import { ensureClarityUrl, needsClarityGrade } from "@/lib/ensure-clarity";
 import { concatVideos } from "@/lib/video-stitch";
+import { tickUserMultiShotJobs, isMultiShotStillGenerating } from "@/lib/multi-shot-job";
+import { estimateGenerateSeconds } from "@/lib/generate-eta";
 import {
   callOpenArtTool,
   collectMediaUrls,
@@ -63,6 +65,9 @@ async function stitchPendingJobs(userId: string) {
     .slice(0, 3);
 
   for (const pending of pendings) {
+    // Server multi-shot jobs own their lifecycle — do not collapse early.
+    if (isMultiShotStillGenerating(pending)) continue;
+
     const pendingAt = new Date(pending.createdAt).getTime();
     const parts = assets
       .filter((a) => {
@@ -78,10 +83,16 @@ async function stitchPendingJobs(userId: string) {
     const done = parts.filter((p) => p.status === "completed" && p.url);
     const urls = done.map((p) => p.url);
     const ageMs = Date.now() - pendingAt;
-    // Wait at least 2 minutes before delivering a partial single beat,
-    // so a second shot still in flight (no historyId yet) can appear.
+    const expectedBeats = Math.max(
+      1,
+      Math.round((pending.targetSeconds || 4) / PRODUCT_PER_SHOT_SECONDS),
+    );
+    const etaMs = estimateGenerateSeconds(pending.targetSeconds || urls.length * 4) * 1000;
+    // Never force-deliver a partial before the full ETA window — otherwise
+    // 32s jobs get collapsed to a single 4s clip while later beats are still planned.
     if (urls.length === 0) continue;
-    if (urls.length === 1 && ageMs < 2 * 60 * 1000) continue;
+    if (urls.length < expectedBeats && ageMs < etaMs + 60_000) continue;
+    if (urls.length === 1 && ageMs < Math.max(etaMs, 90_000)) continue;
 
     try {
       let finalUrl: string;
@@ -328,6 +339,11 @@ export async function GET() {
     // Restore paid multi-shot clips if stitch never produced a visible final.
     await recoverOrphanedHiddenAssets(user.id);
     await recoverStuckSequencePending(user.id);
+    // Kick / resume in-process multi-shot runners (non-blocking).
+    {
+      const all = await listAssetsForUser(user.id, { includeHidden: true });
+      await tickUserMultiShotJobs(user.id, all);
+    }
     await stitchPendingJobs(user.id);
     const assets = await syncRunningAssets(user.id);
     return NextResponse.json({ assets });
