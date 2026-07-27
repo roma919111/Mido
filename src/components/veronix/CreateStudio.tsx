@@ -91,7 +91,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const [promptSceneState, setPromptSceneState] = useState<SceneState | null>(null);
   const [enhancing, setEnhancing] = useState(false);
   /** Auto-split ANY sequential ثم/then prompt into chained clips (paid video only). */
-  const [multiShotOn, setMultiShotOn] = useState(true);
+  // Default OFF so a single BytePlus clip lands in Assets immediately.
+  // User can still enable multi-shot when they want a stitched sequence.
+  const [multiShotOn, setMultiShotOn] = useState(false);
   const [shotHint, setShotHint] = useState<{
     count: number;
     totalCredits: number | null;
@@ -584,7 +586,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         // (it was leaking late actions like overhead lift into shot 1).
         setPromptSceneState(null);
         setPlannedShots(data.shots || null);
-        setMultiShotOn(true);
+        // Keep user's multi-shot preference; enhance may still plan beats.
+        setMultiShotOn((prev) => prev);
         const count = Math.min(
           MAX_SHOTS,
           data.shotCount || data.shots!.length,

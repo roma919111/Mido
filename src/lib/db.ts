@@ -227,6 +227,26 @@ export async function updateAsset(
   return db.assets[idx];
 }
 
+export async function findAssetByHistoryId(
+  userId: string,
+  historyId: string,
+): Promise<AssetRecord | null> {
+  const db = await ensureDb();
+  return (
+    db.assets.find((a) => a.userId === userId && a.historyId === historyId) ||
+    null
+  );
+}
+
+/** Ops: recent assets for a user (debug / repair). */
+export async function listAssetsForAdmin(
+  userId: string,
+  limit = 40,
+): Promise<AssetRecord[]> {
+  const db = await ensureDb();
+  return db.assets.filter((a) => a.userId === userId).slice(0, limit);
+}
+
 export async function listAssetsForUser(
   userId: string,
   opts?: { includeHidden?: boolean },

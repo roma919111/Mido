@@ -5,8 +5,10 @@ import { quoteOpenArtCredits } from "@/lib/credit-quote";
 import {
   createBytePlusVideoTask,
   isBytePlusConfigured,
+  mapBytePlusStatus,
   resolvePublicMediaUrl,
   toBytePlusHistoryId,
+  waitForBytePlusVideoTask,
 } from "@/lib/byteplus-ark";
 import {
   FREE_VERONIX_MODEL_DURATION_SECONDS,
@@ -211,26 +213,102 @@ export async function POST(request: Request) {
         model: quote.modelId,
         creditsUsed: quote.totalCredits,
         status: "running",
-        hidden: Boolean(body.sequencePart),
+        // Keep beats visible until a successful stitch hides them — empty Assets
+        // was worse than seeing intermediate clips.
+        hidden: false,
       });
 
       try {
         const startUrl = resolvePublicMediaUrl(body.startFrame);
-        const task = await createBytePlusVideoTask({
+        const createInput = {
           prompt,
           duration: modelDuration,
-          ratio: "16:9",
+          ratio: "16:9" as const,
           generateAudio: freeTrial ? true : Boolean(body.generateAudio),
           watermark: false,
           startFrameUrl: startUrl,
           resolution: uiResolution,
-        });
-        const historyId = toBytePlusHistoryId(task.id);
+        };
+        const created = await createBytePlusVideoTask(createInput);
+        let historyId = toBytePlusHistoryId(created.id);
         await updateAsset(asset.id, user.id, {
           historyId,
           url: "",
           status: "running",
+          hidden: false,
         });
+
+        // Wait for the MP4 so Assets gets a real URL in this same request.
+        const finished = await waitForBytePlusVideoTask(created.id, {
+          timeoutMs: body.sequencePart ? 200_000 : 240_000,
+          intervalMs: 5_000,
+          retryInput: createInput,
+        });
+        // Mute-retry may have created a new task id.
+        if (finished.id && finished.id !== created.id) {
+          historyId = toBytePlusHistoryId(finished.id);
+        }
+        const st = mapBytePlusStatus(finished.status);
+        const videoUrl = finished.content?.video_url || "";
+
+        if (videoUrl) {
+          await updateAsset(asset.id, user.id, {
+            historyId,
+            url: videoUrl,
+            status: "completed",
+            error: undefined,
+            hidden: false,
+          });
+          results.push({
+            assetId: asset.id,
+            modelId: quote.modelId,
+            historyId,
+            status: "completed",
+            urls: [videoUrl],
+            creditsUsed: quote.totalCredits,
+            freeTrial,
+            needsBrandOutro: freeTrial,
+            live: true,
+            provider: "byteplus",
+            tool: "byteplus_contents_generations",
+            quote,
+          });
+          continue;
+        }
+
+        if (st === "FAILED") {
+          const errMsg =
+            typeof finished.error === "string"
+              ? finished.error
+              : finished.error && typeof finished.error === "object"
+                ? String(
+                    finished.error.message ||
+                      finished.error.code ||
+                      "BytePlus generation failed",
+                  )
+                : "BytePlus generation failed";
+          await updateAsset(asset.id, user.id, {
+            historyId,
+            status: "failed",
+            error: errMsg,
+            hidden: false,
+          });
+          if (!freeTrial && quote.totalCredits > 0) {
+            await adjustCredits(user.id, quote.totalCredits);
+          }
+          results.push({
+            modelId: quote.modelId,
+            assetId: asset.id,
+            historyId,
+            error: errMsg,
+            creditsUsed: 0,
+            freeTrial,
+            provider: "byteplus",
+          });
+          continue;
+        }
+
+        // Still running after timeout — leave running for Assets poll.
         results.push({
           assetId: asset.id,
           modelId: quote.modelId,
@@ -248,7 +326,11 @@ export async function POST(request: Request) {
       } catch (err) {
         const message = err instanceof Error ? err.message : "BytePlus generation failed";
         console.error("[veronix] BytePlus generation failed (no OpenArt fallback):", message);
-        await updateAsset(asset.id, user.id, { status: "failed", error: message });
+        await updateAsset(asset.id, user.id, {
+          status: "failed",
+          error: message,
+          hidden: false,
+        });
         if (!freeTrial && quote.totalCredits > 0) {
           await adjustCredits(user.id, quote.totalCredits);
         }

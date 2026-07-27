@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import {
+  createBytePlusVideoTask,
   getBytePlusVideoTask,
   mapBytePlusStatus,
   parseBytePlusHistoryId,
+  toBytePlusHistoryId,
 } from "@/lib/byteplus-ark";
 import { getCurrentUser } from "@/lib/customer-auth";
 import {
@@ -10,6 +12,7 @@ import {
   recoverOrphanedHiddenAssets,
   updateAsset,
 } from "@/lib/db";
+import { PRODUCT_PER_SHOT_SECONDS } from "@/lib/shot-plan";
 import { VERONIX_MODEL_ID } from "@/lib/free-trial";
 import {
   callOpenArtTool,
@@ -82,6 +85,42 @@ async function syncRunningAssets(userId: string) {
               : task.error && typeof task.error === "object"
                 ? String(task.error.message || task.error.code || "BytePlus generation failed")
                 : "BytePlus generation failed";
+          const alreadyMuted = Boolean(asset.error?.includes("[muted-retry]"));
+          const sensitive = /OutputAudioSensitive|SensitiveContent|sensitive/i.test(
+            errMsg,
+          );
+          if (sensitive && !alreadyMuted && asset.prompt?.trim()) {
+            try {
+              const rawDuration = Number(
+                (task.raw as { duration?: number }).duration || 0,
+              );
+              const duration =
+                rawDuration > 0
+                  ? rawDuration
+                  : asset.mode === "sequence-part"
+                    ? PRODUCT_PER_SHOT_SECONDS
+                    : 8;
+              const retry = await createBytePlusVideoTask({
+                prompt: asset.prompt
+                  .replace(/\n\n\(جارٍ توليد ودمج[\s\S]*$/u, "")
+                  .trim(),
+                duration,
+                ratio: "16:9",
+                generateAudio: false,
+                watermark: false,
+              });
+              await updateAsset(asset.id, userId, {
+                historyId: toBytePlusHistoryId(retry.id),
+                status: "running",
+                url: "",
+                error: "[muted-retry] إعادة التوليد بدون صوت بسبب حساسية الصوت",
+                hidden: asset.mode === "sequence-part" ? true : false,
+              });
+              continue;
+            } catch {
+              // fall through to mark failed
+            }
+          }
           await updateAsset(asset.id, userId, {
             status: "failed",
             error: errMsg,

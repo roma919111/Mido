@@ -4,6 +4,8 @@ import {
   mapBytePlusStatus,
   parseBytePlusHistoryId,
 } from "@/lib/byteplus-ark";
+import { getCurrentUser } from "@/lib/customer-auth";
+import { findAssetByHistoryId, updateAsset } from "@/lib/db";
 import {
   callOpenArtTool,
   collectMediaUrls,
@@ -18,6 +20,7 @@ const MCP_ENDPOINT = process.env.OPENART_MCP_URL ?? "https://mcp.openart.ai/mcp"
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const historyId = searchParams.get("historyId");
+  const assetId = searchParams.get("assetId")?.trim() || "";
 
   if (!historyId) {
     return NextResponse.json({ error: "historyId is required" }, { status: 400 });
@@ -35,6 +38,32 @@ export async function GET(request: Request) {
           : task.error && typeof task.error === "object"
             ? String(task.error.message || task.error.code || "")
             : "";
+
+      // Persist into Assets as soon as BytePlus has a URL.
+      const user = await getCurrentUser().catch(() => null);
+      if (user && (urls[0] || status === "FAILED")) {
+        const byHistory = await findAssetByHistoryId(user.id, historyId);
+        const targetId = assetId || byHistory?.id;
+        if (targetId) {
+          if (urls[0]) {
+            await updateAsset(targetId, user.id, {
+              historyId,
+              url: urls[0],
+              status: "completed",
+              error: undefined,
+              hidden: false,
+            }).catch(() => null);
+          } else if (status === "FAILED") {
+            await updateAsset(targetId, user.id, {
+              historyId,
+              status: "failed",
+              error: errMsg || "BytePlus generation failed",
+              hidden: false,
+            }).catch(() => null);
+          }
+        }
+      }
+
       return NextResponse.json({
         historyId,
         status,

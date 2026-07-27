@@ -248,3 +248,63 @@ export function mapBytePlusStatus(status: string): string {
   if (s === "running" || s === "processing" || s === "generating") return "RUNNING";
   return "PENDING";
 }
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function taskErrorText(task: BytePlusTask): string {
+  if (typeof task.error === "string") return task.error;
+  if (task.error && typeof task.error === "object") {
+    return String(task.error.message || task.error.code || "");
+  }
+  return "";
+}
+
+/**
+ * Poll a BytePlus task until it has a video URL, fails, or times out.
+ * On sensitive-audio failure, retries once with generate_audio=false.
+ */
+export async function waitForBytePlusVideoTask(
+  taskId: string,
+  options?: {
+    timeoutMs?: number;
+    intervalMs?: number;
+    /** Original create input — needed to mute-retry on sensitive audio */
+    retryInput?: BytePlusCreateInput;
+  },
+): Promise<BytePlusTask> {
+  const timeoutMs = options?.timeoutMs ?? 240_000;
+  const intervalMs = options?.intervalMs ?? 5_000;
+  const started = Date.now();
+  let currentId = taskId;
+  let mutedRetryUsed = false;
+
+  while (Date.now() - started < timeoutMs) {
+    const task = await getBytePlusVideoTask(currentId);
+    const status = mapBytePlusStatus(task.status);
+    if (status === "COMPLETED" && task.content?.video_url) {
+      return task;
+    }
+    if (status === "FAILED") {
+      const err = taskErrorText(task);
+      if (
+        !mutedRetryUsed &&
+        options?.retryInput &&
+        /OutputAudioSensitive|SensitiveContent|sensitive/i.test(err)
+      ) {
+        mutedRetryUsed = true;
+        const retry = await createBytePlusVideoTask({
+          ...options.retryInput,
+          generateAudio: false,
+        });
+        currentId = retry.id;
+        continue;
+      }
+      return task;
+    }
+    await sleep(intervalMs);
+  }
+
+  return getBytePlusVideoTask(currentId);
+}
