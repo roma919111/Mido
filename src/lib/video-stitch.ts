@@ -226,7 +226,7 @@ export async function extractLastFrameJpeg(sourceUrl: string): Promise<Buffer> {
   const videoPath = path.join(work, "in.mp4");
   const framePath = path.join(work, "frame.jpg");
   try {
-    await downloadToFile(sourceUrl, videoPath);
+    await materializeVideo(sourceUrl, videoPath);
     // Seek near end; fallback to first frame if seek fails.
     try {
       await run("ffmpeg", [
@@ -250,6 +250,46 @@ export async function extractLastFrameJpeg(sourceUrl: string): Promise<Buffer> {
   } finally {
     await rm(work, { recursive: true, force: true }).catch(() => undefined);
   }
+}
+
+/** First-frame JPEG for Assets posters / Edit start-frame. */
+export async function extractFirstFrameJpeg(sourceUrl: string): Promise<Buffer> {
+  const work = await mkdtemp(path.join(tmpdir(), "vyronix-poster-"));
+  const videoPath = path.join(work, "in.mp4");
+  const framePath = path.join(work, "frame.jpg");
+  try {
+    await materializeVideo(sourceUrl, videoPath);
+    try {
+      await run("ffmpeg", [
+        "-y",
+        "-ss",
+        "0.05",
+        "-i",
+        videoPath,
+        "-frames:v",
+        "1",
+        "-q:v",
+        "3",
+        framePath,
+      ]);
+    } catch {
+      await run("ffmpeg", ["-y", "-i", videoPath, "-frames:v", "1", "-q:v", "3", framePath]);
+    }
+    const buf = await readFile(framePath);
+    if (buf.length < 200) throw new Error("Poster frame too small");
+    return buf;
+  } finally {
+    await rm(work, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+async function materializeVideo(sourceUrl: string, dest: string) {
+  if (sourceUrl.startsWith("file://")) {
+    const local = sourceUrl.replace(/^file:\/\//, "");
+    await copyFile(local, dest);
+    return;
+  }
+  await downloadToFile(sourceUrl, dest);
 }
 
 /**

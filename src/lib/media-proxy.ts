@@ -42,13 +42,17 @@ function buildMediaApiPath(
     url?: string | null;
     mediaType?: "image" | "video";
   },
-  mode: "download" | "stream",
+  mode: "download" | "stream" | "poster",
 ): string | null {
   const mediaType = input.mediaType || "video";
   const ext = mediaType === "video" ? "mp4" : "png";
   const filename = `veronix-${Date.now()}.${ext}`;
   const endpoint =
-    mode === "download" ? "/api/media/download" : "/api/media/stream";
+    mode === "download"
+      ? "/api/media/download"
+      : mode === "poster"
+        ? "/api/media/poster"
+        : "/api/media/stream";
 
   const existing = input.url?.trim();
   // Branded files live under `.data/generations` — always proxy (never raw /generations).
@@ -75,7 +79,9 @@ function buildMediaApiPath(
 
   // Absolute same-origin paths (already Veronix).
   if (raw.startsWith("/") && !raw.startsWith("//")) {
-    return mode === "stream" ? raw : null;
+    if (mode === "stream") return raw;
+    if (mode === "poster") return null;
+    return null;
   }
 
   try {
@@ -112,4 +118,24 @@ export function veronixMediaSrc(input: {
   mediaType?: "image" | "video";
 }): string | null {
   return buildMediaApiPath(input, "stream") || input.url?.trim() || null;
+}
+
+/** First-frame JPEG poster for video tiles / feed. */
+export function veronixPosterSrc(input: {
+  historyId?: string | null;
+  url?: string | null;
+}): string | null {
+  return buildMediaApiPath({ ...input, mediaType: "video" }, "poster");
+}
+
+/** Strip internal multi-shot / ETA tags from the customer-facing prompt. */
+export function cleanAssetPrompt(prompt: string | undefined | null): string {
+  if (!prompt) return "";
+  return prompt
+    .replace(/\n\n\(جارٍ توليد ودمج[\s\S]*$/u, "")
+    .replace(/\n\n\(جاري توليد ودمج[\s\S]*$/u, "")
+    .replace(/\n?Beat \d+ of \d+[^\n]*/gi, "")
+    .replace(/\n?one shot only[^\n]*/gi, "")
+    .replace(/\n?Continuation beat[^\n]*/gi, "")
+    .trim();
 }

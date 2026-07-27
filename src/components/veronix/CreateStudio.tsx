@@ -43,6 +43,7 @@ import {
 } from "@/lib/generate-eta";
 import { expandShotsToBudget, shotBudgetFromDuration } from "@/lib/expand-shots";
 import { veronixDownloadPath, veronixMediaSrc } from "@/lib/media-proxy";
+import { clearEditDraft, readEditDraft } from "@/lib/edit-draft";
 import type { CustomerUser } from "./AppHeader";
 
 /** Default paid product length — 8s (2×4s). Max remains 32s via the slider. */
@@ -236,6 +237,23 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
   useEffect(() => {
     if (lockedMedia) setMedia(lockedMedia);
+  }, [lockedMedia]);
+
+  // Assets → Edit: restore prompt + start frame into the studio.
+  useEffect(() => {
+    const draft = readEditDraft();
+    if (!draft) return;
+    if (lockedMedia && draft.media !== lockedMedia) {
+      // Still apply video drafts on video studio.
+      if (lockedMedia !== "video") return;
+    }
+    setPrompt(draft.prompt || "");
+    if (draft.startFrame?.url) {
+      setStartFrame(draft.startFrame);
+      setRefs([]);
+    }
+    setStatus("تم تحميل الوصف والصورة للتعديل — عدّل ثم Generate");
+    clearEditDraft();
   }, [lockedMedia]);
 
   // Restore preview under Generate after navigating away (Home / Assets).

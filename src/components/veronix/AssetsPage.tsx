@@ -1,7 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Download, Loader2, Pencil, Volume2, VolumeX } from "lucide-react";
 import { AppHeader, type CustomerUser } from "./AppHeader";
 import { BottomNav } from "./BottomNav";
 import { fetchJson } from "@/lib/fetch-json";
@@ -13,7 +21,14 @@ import {
   lockEtaStart,
   remainingGenerateSeconds,
 } from "@/lib/generate-eta";
-import { veronixDownloadPath, veronixMediaSrc } from "@/lib/media-proxy";
+import { writeEditDraft } from "@/lib/edit-draft";
+import {
+  cleanAssetPrompt,
+  veronixDownloadPath,
+  veronixMediaSrc,
+  veronixPosterSrc,
+} from "@/lib/media-proxy";
+import type { VisualReference } from "@/lib/types";
 
 interface AssetItem {
   id: string;
@@ -66,11 +81,340 @@ function RunningCountdown({
   );
 }
 
+async function captureVideoFrame(
+  video: HTMLVideoElement,
+): Promise<VisualReference | null> {
+  try {
+    if (!video.videoWidth || !video.videoHeight) return null;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(video, 0, 0);
+    const url = canvas.toDataURL("image/jpeg", 0.88);
+    return {
+      type: "image",
+      id: `edit-frame-${Date.now()}`,
+      url,
+      label: "edit-start-frame",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function FeedVideoSlide({
+  item,
+  active,
+  muted,
+  onToggleMute,
+}: {
+  item: AssetItem;
+  active: boolean;
+  muted: boolean;
+  onToggleMute: () => void;
+}) {
+  const router = useRouter();
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [posterFailed, setPosterFailed] = useState(false);
+
+  const src = veronixMediaSrc({
+    historyId: item.historyId,
+    url: item.url,
+    mediaType: "video",
+  });
+  const poster = veronixPosterSrc({
+    historyId: item.historyId,
+    url: item.url,
+  });
+  const prompt = cleanAssetPrompt(item.prompt);
+  const canPlay =
+    Boolean(src) &&
+    item.status !== "failed" &&
+    item.status !== "running";
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || !canPlay) return;
+    el.muted = muted;
+    if (active) {
+      const play = el.play();
+      if (play && typeof play.catch === "function") {
+        play.catch(() => undefined);
+      }
+    } else {
+      el.pause();
+      try {
+        el.currentTime = 0;
+      } catch {
+        // ignore
+      }
+    }
+  }, [active, muted, canPlay, src]);
+
+  const handleEdit = async () => {
+    if (editing) return;
+    setEditing(true);
+    try {
+      const el = videoRef.current;
+      let startFrame: VisualReference | null = null;
+      if (el) {
+        try {
+          if (el.readyState < 2) {
+            await new Promise<void>((resolve) => {
+              const done = () => resolve();
+              el.addEventListener("loadeddata", done, { once: true });
+              window.setTimeout(done, 2500);
+            });
+          }
+          // Prefer a near-start frame (uploaded look) over mid-clip.
+          try {
+            el.currentTime = Math.min(0.15, (el.duration || 1) * 0.02);
+            await new Promise<void>((resolve) => {
+              const done = () => resolve();
+              el.addEventListener("seeked", done, { once: true });
+              window.setTimeout(done, 800);
+            });
+          } catch {
+            // keep current frame
+          }
+          startFrame = await captureVideoFrame(el);
+        } catch {
+          startFrame = null;
+        }
+      }
+      writeEditDraft({
+        prompt: prompt || item.prompt || "",
+        media: "video",
+        startFrame,
+        sourceAssetId: item.id,
+      });
+      router.push("/create/video?edit=1");
+    } finally {
+      setEditing(false);
+    }
+  };
+
+  return (
+    <section
+      data-asset-id={item.id}
+      className="relative h-[100dvh] w-full snap-start snap-always overflow-hidden bg-black"
+    >
+      {canPlay ? (
+        <>
+          {poster && !posterFailed ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={poster}
+              alt=""
+              className={`absolute inset-0 h-full w-full object-contain transition-opacity ${
+                active ? "opacity-0" : "opacity-100"
+              }`}
+              onError={() => setPosterFailed(true)}
+            />
+          ) : null}
+          <video
+            ref={videoRef}
+            src={active ? src || undefined : undefined}
+            poster={!posterFailed && poster ? poster : undefined}
+            playsInline
+            loop
+            muted={muted}
+            preload={active ? "auto" : "none"}
+            controls={false}
+            controlsList="nodownload"
+            className={`absolute inset-0 h-full w-full object-contain ${
+              active ? "opacity-100" : "opacity-0"
+            }`}
+          />
+        </>
+      ) : (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center">
+          {poster && !posterFailed ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={poster}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover opacity-50"
+              onError={() => setPosterFailed(true)}
+            />
+          ) : null}
+          <span className="relative z-10 text-base font-semibold text-white">
+            {item.status === "running"
+              ? "جاري التوليد"
+              : item.status === "failed"
+                ? "فشل التوليد"
+                : item.status}
+          </span>
+          {item.status === "running" && (
+            <div className="relative z-10">
+              <RunningCountdown
+                assetId={item.id}
+                createdAt={item.createdAt}
+                targetSeconds={inferTargetSecondsFromAsset(item)}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Soft bottom gradient for prompt readability */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[42%] bg-gradient-to-t from-black/85 via-black/35 to-transparent" />
+
+      {/* Edit — visual left */}
+      <div className="absolute bottom-36 left-3 z-20 flex flex-col items-center gap-3 sm:bottom-40 sm:left-5">
+        <button
+          type="button"
+          onClick={() => void handleEdit()}
+          disabled={editing || item.status !== "completed"}
+          className="flex h-12 w-12 items-center justify-center rounded-full bg-white/12 text-white ring-1 ring-white/25 backdrop-blur-md disabled:opacity-40"
+          aria-label="تعديل"
+        >
+          {editing ? (
+            <Loader2 className="h-5 w-5 animate-spin" />
+          ) : (
+            <Pencil className="h-5 w-5" />
+          )}
+        </button>
+        <span className="text-[10px] font-semibold text-white/80">Edit</span>
+        <button
+          type="button"
+          onClick={onToggleMute}
+          className="mt-2 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white ring-1 ring-white/20 backdrop-blur-md"
+          aria-label={muted ? "تشغيل الصوت" : "كتم الصوت"}
+        >
+          {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+        </button>
+        {(item.url || item.historyId) && item.status === "completed" && (
+          <a
+            href={
+              veronixDownloadPath({
+                historyId: item.historyId,
+                url: item.url,
+                mediaType: "video",
+              }) || "/assets"
+            }
+            download
+            className="mt-1 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white ring-1 ring-white/20 backdrop-blur-md"
+            aria-label="تحميل"
+          >
+            <Download className="h-4 w-4" />
+          </a>
+        )}
+      </div>
+
+      {/* Prompt under the video (bottom overlay) */}
+      <div
+        className="absolute inset-x-0 bottom-[4.75rem] z-20 px-4 pb-[env(safe-area-inset-bottom)] sm:px-6"
+        dir="rtl"
+      >
+        <p className="mb-1 text-[11px] font-semibold tracking-wide text-[#22f0ff]/90">
+          تم إنشاؤه بواسطة VYRONIX
+        </p>
+        <p className="max-h-28 overflow-y-auto text-sm leading-relaxed text-white/90 sm:text-[15px]">
+          {prompt || "بدون وصف"}
+        </p>
+        {item.error ? (
+          <p className="mt-1 text-xs text-rose-300">{item.error}</p>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function ImageTile({ item }: { item: AssetItem }) {
+  const router = useRouter();
+  const src = veronixMediaSrc({
+    historyId: item.historyId,
+    url: item.url,
+    mediaType: "image",
+  });
+  const prompt = cleanAssetPrompt(item.prompt);
+
+  return (
+    <article className="relative overflow-hidden rounded-2xl bg-[#10141c]">
+      <div className="aspect-[3/4] bg-black/40">
+        {src ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={src} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full items-center justify-center text-sm text-white/40">
+            {item.status}
+          </div>
+        )}
+      </div>
+      <div className="space-y-2 p-3" dir="rtl">
+        <p className="line-clamp-3 text-sm text-white/85">{prompt}</p>
+        <button
+          type="button"
+          onClick={() => {
+            writeEditDraft({
+              prompt: prompt || item.prompt || "",
+              media: "image",
+              startFrame: src
+                ? {
+                    type: "image",
+                    id: `edit-img-${item.id}`,
+                    url: src,
+                    label: "edit-image",
+                  }
+                : null,
+              sourceAssetId: item.id,
+            });
+            router.push("/create/video?edit=1");
+          }}
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#22f0ff]"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+          Edit
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function useActiveSlide(containerRef: RefObject<HTMLElement | null>) {
+  const [activeId, setActiveId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const root = containerRef.current;
+    if (!root) return;
+    const slides = Array.from(root.querySelectorAll<HTMLElement>("[data-asset-id]"));
+    if (!slides.length) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        let best: { id: string; ratio: number } | null = null;
+        for (const entry of entries) {
+          const id = entry.target.getAttribute("data-asset-id");
+          if (!id) continue;
+          if (!best || entry.intersectionRatio > best.ratio) {
+            best = { id, ratio: entry.intersectionRatio };
+          }
+        }
+        if (best && best.ratio >= 0.55) setActiveId(best.id);
+      },
+      { root, threshold: [0.35, 0.55, 0.75, 0.9] },
+    );
+    for (const slide of slides) observer.observe(slide);
+    // Seed first visible
+    setActiveId(slides[0]?.getAttribute("data-asset-id") || null);
+    return () => observer.disconnect();
+  }, [containerRef]);
+
+  return activeId;
+}
+
 export function AssetsPage() {
   const [user, setUser] = useState<CustomerUser | null>(null);
   const [assets, setAssets] = useState<AssetItem[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<"all" | "video" | "image">("all");
+  const [filter, setFilter] = useState<"video" | "image">("video");
+  const [muted, setMuted] = useState(true);
+  const feedRef = useRef<HTMLDivElement | null>(null);
+  const activeId = useActiveSlide(feedRef);
 
   const loadAssets = useCallback(async () => {
     const me = await fetchJson<{ user: CustomerUser | null }>("/api/auth/customer/me");
@@ -100,7 +444,6 @@ export function AssetsPage() {
     void loadAssets();
   }, [loadAssets]);
 
-  // Keep polling while any asset is still running so customers retain completed media.
   useEffect(() => {
     const hasRunning = assets.some((a) => a.status === "running");
     if (!hasRunning || !user) return;
@@ -110,7 +453,91 @@ export function AssetsPage() {
     return () => window.clearInterval(t);
   }, [assets, user, loadAssets]);
 
-  const visible = assets.filter((a) => filter === "all" || a.mediaType === filter);
+  const videos = assets.filter((a) => a.mediaType === "video");
+  const images = assets.filter((a) => a.mediaType === "image");
+
+  if (filter === "video") {
+    return (
+      <div className="relative min-h-[100dvh] bg-black text-white">
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-30 bg-gradient-to-b from-black/70 to-transparent">
+          <div className="pointer-events-auto">
+            <AppHeader
+              user={user}
+              onLogout={() => {
+                void fetch("/api/auth/customer/logout", { method: "POST" }).then(() => {
+                  setUser(null);
+                  setAssets([]);
+                });
+              }}
+            />
+          </div>
+          <div className="pointer-events-auto flex items-center justify-between px-4 pb-3" dir="rtl">
+            <div>
+              <p className="font-display text-lg font-extrabold">Assets</p>
+              <p className="text-[11px] text-white/45">اسحب للأعلى مثل تيك توك</p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setFilter("video")}
+                className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-black"
+              >
+                فيديو
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilter("image")}
+                className="rounded-full border border-white/20 px-3 py-1 text-xs font-semibold text-white/80"
+              >
+                صور
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {error && (
+          <div className="flex min-h-[100dvh] items-center justify-center px-6 text-center text-sm text-white/70">
+            {error}{" "}
+            <Link href="/login?next=/assets" className="text-[#22f0ff]">
+              دخول
+            </Link>
+          </div>
+        )}
+
+        {!error && videos.length === 0 && (
+          <div className="flex min-h-[100dvh] flex-col items-center justify-center gap-3 px-6 text-center">
+            <p className="text-sm text-white/50">لا توجد فيديوهات بعد.</p>
+            <Link
+              href="/create/video"
+              className="rounded-full bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-4 py-2 text-sm font-semibold"
+            >
+              إنشاء فيديو
+            </Link>
+          </div>
+        )}
+
+        {!error && videos.length > 0 && (
+          <div
+            ref={feedRef}
+            className="h-[100dvh] snap-y snap-mandatory overflow-y-scroll overscroll-y-contain"
+            style={{ scrollSnapType: "y mandatory" }}
+          >
+            {videos.map((item) => (
+              <FeedVideoSlide
+                key={item.id}
+                item={item}
+                active={activeId === item.id}
+                muted={muted}
+                onToggleMute={() => setMuted((m) => !m)}
+              />
+            ))}
+          </div>
+        )}
+
+        <BottomNav />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0b0d12] text-white">
@@ -123,179 +550,43 @@ export function AssetsPage() {
           });
         }}
       />
-      <main className="mx-auto max-w-6xl px-4 pb-28 pt-8 sm:px-6" dir="rtl">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      <main className="mx-auto max-w-6xl px-4 pb-28 pt-6 sm:px-6" dir="rtl">
+        <div className="flex items-center justify-between gap-3">
           <div>
             <h1 className="font-display text-3xl font-extrabold">Assets</h1>
-            <p className="mt-2 text-sm text-white/50">
-              كل توليداتك محفوظة في حسابك — فيديو واحد لكل طلب.
-            </p>
+            <p className="mt-1 text-sm text-white/50">صورك المحفوظة</p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href="/create/video"
-              className="inline-flex h-9 items-center rounded-full bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-3 text-xs font-semibold text-white"
-            >
-              إنشاء فيديو
-            </Link>
-            <Link
-              href="/create/image"
-              className="inline-flex h-9 items-center rounded-full border border-white/15 px-3 text-xs font-semibold text-white/85"
-            >
-              إنشاء صورة
-            </Link>
-            {user && (
-              <button
-                type="button"
-                onClick={() => {
-                  void fetch("/api/auth/customer/logout", { method: "POST" }).then(() => {
-                    setUser(null);
-                    setAssets([]);
-                  });
-                }}
-                className="inline-flex h-9 items-center rounded-full border border-rose-400/35 px-3 text-xs font-semibold text-rose-100"
-              >
-                خروج
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div className="mt-4 flex gap-2">
-          {(
-            [
-              { id: "all" as const, label: "الكل" },
-              { id: "video" as const, label: "فيديو" },
-              { id: "image" as const, label: "صور" },
-            ] as const
-          ).map((tab) => (
+          <div className="flex gap-2">
             <button
-              key={tab.id}
               type="button"
-              onClick={() => setFilter(tab.id)}
-              className={`rounded-full px-3 py-1.5 text-sm ${
-                filter === tab.id
-                  ? "bg-white text-black"
-                  : "border border-white/10 text-white/70"
-              }`}
+              onClick={() => setFilter("video")}
+              className="rounded-full border border-white/20 px-3 py-1.5 text-xs font-semibold text-white/80"
             >
-              {tab.label}
+              فيديو
             </button>
-          ))}
+            <button
+              type="button"
+              onClick={() => setFilter("image")}
+              className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-black"
+            >
+              صور
+            </button>
+          </div>
         </div>
 
         {error && (
           <div className="mt-6 rounded-2xl border border-white/10 bg-[#141821] p-6 text-sm text-white/70">
-            {error}{" "}
-            <Link href="/login?next=/assets" className="text-[#22f0ff]">
-              دخول
-            </Link>
+            {error}
           </div>
         )}
 
-        {!error && visible.length === 0 && (
-          <p className="mt-8 text-sm text-white/45">
-            لا توجد توليدات بعد. ابدأ من الصفحة الرئيسية بموديل Veronix.
-          </p>
+        {!error && images.length === 0 && (
+          <p className="mt-8 text-sm text-white/45">لا توجد صور بعد.</p>
         )}
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {visible.map((item) => (
-            <article
-              key={item.id}
-              className="overflow-hidden rounded-2xl border border-white/10 bg-[#141821]"
-            >
-              <div className="aspect-square bg-black/40">
-                {(() => {
-                  const src = veronixMediaSrc({
-                    historyId: item.historyId,
-                    url: item.url,
-                    mediaType: item.mediaType,
-                  });
-                  const canPlay =
-                    Boolean(src) &&
-                    (Boolean(item.url) || Boolean(item.historyId)) &&
-                    item.status !== "failed" &&
-                    item.status !== "running";
-                  if (item.mediaType === "image" && canPlay) {
-                    return (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={src || item.url}
-                        alt=""
-                        className="h-full w-full object-cover"
-                      />
-                    );
-                  }
-                  if (item.mediaType === "video" && canPlay) {
-                    return (
-                      <video
-                        src={src || undefined}
-                        controls
-                        playsInline
-                        controlsList="nodownload"
-                        className="h-full w-full object-cover"
-                      />
-                    );
-                  }
-                  const target = inferTargetSecondsFromAsset(item);
-                  return (
-                    <div className="flex h-full flex-col items-center justify-center gap-2 px-3 text-center">
-                      <span className="text-base font-semibold text-white">
-                        {item.status === "running"
-                          ? "جاري التوليد"
-                          : item.status === "failed"
-                            ? "فشل التوليد"
-                            : item.status}
-                      </span>
-                      {item.status === "running" && (
-                        <RunningCountdown
-                          assetId={item.id}
-                          createdAt={item.createdAt}
-                          targetSeconds={target}
-                        />
-                      )}
-                      {item.status === "running" && (
-                        <span className="text-xs text-white/40">
-                          تقدير لمدة {target}ث
-                        </span>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
-              <div className="space-y-1 p-3">
-                <p className="line-clamp-2 text-sm text-white/80">{item.prompt}</p>
-                <p className="text-[11px] text-white/40">
-                  {item.mode === "sequence-pending"
-                    ? "جاري التوليد"
-                    : item.mode === "sequence-concat"
-                      ? "فيديو واحد"
-                      : item.model === "seedance-2-mini"
-                        ? "Veronix"
-                        : item.model}
-                  {" · "}
-                  {item.status}
-                </p>
-                <p className="text-[10px] text-white/35">تم إنشاؤه بواسطة VYRONIX</p>
-                {(item.url || item.historyId) && item.status === "completed" && (
-                  <a
-                    href={
-                      veronixDownloadPath({
-                        historyId: item.historyId,
-                        url: item.url,
-                        mediaType: item.mediaType,
-                      }) || "/assets"
-                    }
-                    className="inline-block text-xs text-[#22f0ff]"
-                    download
-                  >
-                    تحميل
-                  </a>
-                )}
-                {item.error && <p className="text-xs text-rose-300">{item.error}</p>}
-              </div>
-            </article>
+          {images.map((item) => (
+            <ImageTile key={item.id} item={item} />
           ))}
         </div>
       </main>
