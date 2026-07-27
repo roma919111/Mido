@@ -311,45 +311,57 @@ export async function analyzeReferenceImages(
   imageUrls: string[],
   userHint = "",
 ): Promise<VisionSceneBrief | null> {
-  const urls = [...new Set(imageUrls.map((u) => u.trim()).filter(Boolean))].slice(0, 2);
+  const urls = [...new Set(imageUrls.map((u) => u.trim()).filter(Boolean))]
+    .filter((u) => !(u.startsWith("data:") && u.length > 400_000))
+    .slice(0, 2);
   if (!urls.length) return null;
 
   const cacheKey = urls.slice().sort().join("|");
   const hit = briefCache.get(cacheKey);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.brief;
 
-  let brief: VisionSceneBrief | null = null;
-  let lastError: Error | null = null;
+  const empty: VisionSceneBrief = {
+    entities: [],
+    arabicPreferred: /[\u0600-\u06FF]/.test(userHint),
+    source: "none",
+  };
 
-  if (visionOpenAiConfig()) {
-    try {
-      brief = await analyzeWithOpenAi(urls, userHint);
-    } catch (err) {
-      lastError = err instanceof Error ? err : new Error("OpenAI vision failed");
-    }
-  }
-  if (!brief && geminiKey()) {
-    try {
-      brief = await analyzeWithGemini(urls, userHint);
-    } catch (err) {
-      lastError = err instanceof Error ? err : new Error("Gemini vision failed");
-    }
-  }
+  const run = async (): Promise<VisionSceneBrief> => {
+    let brief: VisionSceneBrief | null = null;
+    let lastError: Error | null = null;
 
-  if (!brief) {
-    if (lastError) {
-      // Soft-fail: enhance can continue without vision.
-      console.warn("[prompt-vision]", lastError.message);
+    if (visionOpenAiConfig()) {
+      try {
+        brief = await analyzeWithOpenAi(urls, userHint);
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error("OpenAI vision failed");
+      }
     }
-    return {
-      entities: [],
-      arabicPreferred: /[\u0600-\u06FF]/.test(userHint),
-      source: "none",
-    };
-  }
+    if (!brief && geminiKey()) {
+      try {
+        brief = await analyzeWithGemini(urls, userHint);
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error("Gemini vision failed");
+      }
+    }
 
-  briefCache.set(cacheKey, { at: Date.now(), brief });
-  return brief;
+    if (!brief) {
+      if (lastError) {
+        console.warn("[prompt-vision]", lastError.message);
+      }
+      return empty;
+    }
+    briefCache.set(cacheKey, { at: Date.now(), brief });
+    return brief;
+  };
+
+  // Never let vision hang the whole enhance request.
+  return Promise.race([
+    run(),
+    new Promise<VisionSceneBrief>((resolve) =>
+      setTimeout(() => resolve(empty), 12_000),
+    ),
+  ]);
 }
 
 /** Build an injectable phrase from structured vision fields. */

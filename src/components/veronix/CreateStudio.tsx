@@ -683,37 +683,72 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     if (!picked.length) return;
 
     setError(null);
-    setStatus("جاري رفع الشخصيات…");
 
-    let added = 0;
-    for (const file of picked) {
-      let room = true;
-      setRefPreviews((prev) => {
-        room = prev.length < 4;
-        return prev;
-      });
-      if (!room) break;
-
-      const preview = URL.createObjectURL(file);
-      setRefPreviews((prev) => (prev.length >= 4 ? prev : [...prev, preview]));
-
-      try {
-        const ref = await uploadFile(
-          file,
-          media === "image" ? "create-image" : "create-video",
-        );
-        setRefs((prev) => (prev.length >= 4 ? prev : [...prev, ref]));
-        added += 1;
-      } catch (err) {
-        setRefPreviews((prev) => prev.filter((p) => p !== preview));
-        URL.revokeObjectURL(preview);
-        setError(err instanceof Error ? err.message : "فشل رفع الصورة");
-      }
+    // How many slots are free right now (previews drive the UI).
+    const freeSlots = Math.max(0, 4 - refPreviews.length);
+    const batch = picked.slice(0, freeSlots);
+    if (!batch.length) {
+      setStatus("يمكنك رفع حتى 4 صور");
+      return;
     }
-    if (added > 0) {
+
+    // Show every selected thumbnail immediately, then upload in parallel.
+    const previews = batch.map((file) => URL.createObjectURL(file));
+    setRefPreviews((prev) => [...prev, ...previews].slice(0, 4));
+    setStatus(
+      batch.length === 1
+        ? "جاري رفع الشخصية…"
+        : `جاري رفع ${batch.length} شخصيات معاً…`,
+    );
+
+    const purpose = media === "image" ? "create-image" : "create-video";
+    const settled = await Promise.all(
+      batch.map(async (file, index) => {
+        try {
+          const ref = await uploadFile(file, purpose);
+          return { index, preview: previews[index]!, ref };
+        } catch (err) {
+          return {
+            index,
+            preview: previews[index]!,
+            ref: null as VisualReference | null,
+            error: err instanceof Error ? err.message : "فشل رفع الصورة",
+          };
+        }
+      }),
+    );
+
+    const uploaded = settled.filter((s) => s.ref);
+    if (uploaded.length) {
+      setRefs((prev) => {
+        const next = [...prev];
+        for (const item of uploaded) {
+          if (item.ref && next.length < 4) next.push(item.ref);
+        }
+        return next;
+      });
+    }
+
+    const failed = settled.filter((s) => !s.ref);
+    if (failed.length) {
+      setRefPreviews((prev) => {
+        const drop = new Set(failed.map((f) => f.preview));
+        for (const f of failed) {
+          if (f.preview.startsWith("blob:")) URL.revokeObjectURL(f.preview);
+        }
+        return prev.filter((p) => !drop.has(p));
+      });
+      setError(failed[0]?.error || "فشل رفع بعض الصور");
+    }
+
+    if (uploaded.length > 0) {
       setStatus(
-        added === 1 ? "تم رفع الشخصية" : `تم رفع ${added} شخصيات`,
+        uploaded.length === 1
+          ? "تم رفع الشخصية"
+          : `تم رفع ${uploaded.length} شخصيات`,
       );
+    } else if (!failed.length) {
+      setStatus(null);
     }
   }
 
@@ -767,25 +802,31 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     }
   }
 
+  /** Prefer stable uploaded URLs for enhance — never block on blob→data conversion. */
+  function collectEnhanceImageUrls(): string[] {
+    const preferred: string[] = [];
+    const fallbackData: string[] = [];
+    const push = (url?: string | null) => {
+      const u = url?.trim();
+      if (!u) return;
+      if (/^https?:\/\//i.test(u)) preferred.push(u);
+      else if (u.startsWith("data:image/") && u.length <= 400_000) fallbackData.push(u);
+    };
+    push(startFrame?.url);
+    push(endFrame?.url);
+    for (const ref of refs) push(ref.url);
+    return [...new Set([...preferred, ...fallbackData])].slice(0, 2);
+  }
+
   async function handleEnhance() {
     if (!prompt.trim()) return;
     setEnhancing(true);
     setError(null);
+    setStatus("جاري التحسين…");
+    const controller = new AbortController();
+    const kill = window.setTimeout(() => controller.abort(), 45_000);
     try {
-      // Prefer data URLs from local previews so vision can read pixels even if CDN blocks server fetch.
-      const dataCandidates = await Promise.all([
-        previewToDataUrl(startPreview),
-        previewToDataUrl(endPreview),
-        ...refPreviews.slice(0, 2).map((p) => previewToDataUrl(p)),
-      ]);
-      const imageUrls = [
-        ...dataCandidates.filter((u): u is string => Boolean(u)),
-        startFrame?.url,
-        endFrame?.url,
-        ...refs.map((r) => r.url),
-      ].filter((u): u is string => Boolean(u && String(u).trim()));
-      // Dedupe, keep data URLs first, max 2 for vision payload size.
-      const uniqueUrls = [...new Set(imageUrls)].slice(0, 2);
+      const uniqueUrls = collectEnhanceImageUrls();
 
       const { res, data } = await fetchJson<{
         enhanced?: string;
@@ -801,6 +842,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       }>("/api/enhance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           prompt,
           mode: media === "image" ? "text-to-image" : "text-to-video",
@@ -823,7 +865,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         );
       } else if (uniqueUrls.length && !data.visionUsed) {
         setStatus(
-          "التحسين تم — تعذّر قراءة تفاصيل الصورة الآن؛ أعد رفع الصورة أو جرّب صورة أوضح ثم «تحسين الوصف»",
+          "تم تحسين الوصف · ترجمة إنجليزية ثم AI Polish",
         );
       } else {
         const bits = ["تم تحسين الوصف"];
@@ -833,8 +875,19 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         setStatus(bits.join(" · "));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Enhance failed");
+      const aborted =
+        (err instanceof DOMException && err.name === "AbortError") ||
+        (err instanceof Error && /abort/i.test(err.message));
+      setError(
+        aborted
+          ? "انتهت مهلة التحسين — حاول مرة أخرى بدون صور كبيرة أو أعد المحاولة"
+          : err instanceof Error
+            ? err.message
+            : "Enhance failed",
+      );
+      setStatus(null);
     } finally {
+      window.clearTimeout(kill);
       setEnhancing(false);
     }
   }
@@ -1559,8 +1612,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         </p>
         <p className="mb-3 text-[11px] leading-relaxed text-white/40">
           {media === "image"
-            ? "ارفع صورة مرجعية اختيارية لتوجيه أسلوب الصورة."
-            : "ارفع صور الشخصيات لتظهر بنفس الملامح في الفيديو."}
+            ? "يمكنك اختيار صورتين أو أكثر دفعة واحدة لتوجيه أسلوب الصورة."
+            : "اختر صورتين أو أكثر معاً لتظهر الشخصيات بنفس الملامح في الفيديو."}
         </p>
         <div className="flex flex-wrap gap-2">
           {refPreviews.map((src, i) => (

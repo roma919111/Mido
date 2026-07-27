@@ -33,6 +33,7 @@ async function geminiJsonText(prompt: string): Promise<string | null> {
           contents: [{ role: "user", parts: [{ text: prompt }] }],
           generationConfig: { temperature: 0.2, responseMimeType: "application/json" },
         }),
+        signal: AbortSignal.timeout(14_000),
       },
     );
     if (!res.ok) return null;
@@ -95,7 +96,11 @@ ${trimmed.slice(0, 4000)}`,
  */
 export async function polishPromptEnglish(
   text: string,
-  opts?: { entities?: string[]; setting?: string },
+  opts?: {
+    entities?: string[];
+    setting?: string;
+    media?: "image" | "video";
+  },
 ): Promise<string> {
   const act = text.trim();
   if (!act) return "";
@@ -105,9 +110,24 @@ export async function polishPromptEnglish(
       ? `Characters/wardrobe: ${opts.entities.join("; ")}`
       : "";
   const settingLine = opts?.setting ? `Setting: ${opts.setting}` : "";
+  const forImage = opts?.media === "image";
 
   const raw = await geminiJsonText(
-    `Polish this English video prompt into one cinematic AI video description (Seedance).
+    forImage
+      ? `Polish this English image prompt into one cinematic AI image description.
+Rules:
+- Keep every subject and detail from the source; do not invent a new scene
+- Natural photoreal / cinematic still look. Do NOT write CGI, 3D, render, or Unreal
+- Include lighting, composition, and mood
+- 2–4 sentences max
+- Do not mention brand names or technical pipeline jargon
+Return JSON only: {"prompt":"..."}
+
+SOURCE:
+${act.slice(0, 4000)}
+${entityLine}
+${settingLine}`
+      : `Polish this English video prompt into one cinematic AI video description (Seedance).
 Rules:
 - Keep every action and detail from the source; do not invent a new plot
 - Natural cinematic film look (live-action style). Do NOT write the words CGI, 3D, render, or Unreal
@@ -129,7 +149,9 @@ ${settingLine}`,
 
   const bits = [
     act,
-    "Smooth natural motion, rich color grade, soft cinematic lighting.",
+    forImage
+      ? "Rich color grade, soft cinematic lighting, intentional composition."
+      : "Smooth natural motion, rich color grade, soft cinematic lighting.",
   ];
   if (entityLine) bits.push(entityLine);
   if (settingLine) bits.push(settingLine);
