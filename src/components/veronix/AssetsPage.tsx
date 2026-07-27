@@ -7,7 +7,8 @@ import { BottomNav } from "./BottomNav";
 import { fetchJson } from "@/lib/fetch-json";
 import {
   clearEtaStart,
-  formatCountdownLabel,
+  estimateGenerateSeconds,
+  formatRunningStatusLabel,
   inferTargetSecondsFromAsset,
   lockEtaStart,
   remainingGenerateSeconds,
@@ -42,11 +43,16 @@ function RunningCountdown({
     const started = lockEtaStart(assetId, createdAt);
     return remainingGenerateSeconds(started, targetSeconds);
   });
+  const [overdue, setOverdue] = useState(0);
 
   useEffect(() => {
     const started = lockEtaStart(assetId, createdAt);
+    const eta = estimateGenerateSeconds(targetSeconds);
     const tick = () => {
-      setRemaining(remainingGenerateSeconds(started, targetSeconds));
+      const rem = remainingGenerateSeconds(started, targetSeconds);
+      setRemaining(rem);
+      const elapsed = Math.max(0, Math.floor((Date.now() - started) / 1000));
+      setOverdue(Math.max(0, elapsed - eta));
     };
     tick();
     const id = window.setInterval(tick, 1000);
@@ -55,7 +61,7 @@ function RunningCountdown({
 
   return (
     <span className="text-2xl font-bold tabular-nums text-[#22f0ff]">
-      {formatCountdownLabel(remaining)}
+      {formatRunningStatusLabel(remaining, overdue)}
     </span>
   );
 }
@@ -268,8 +274,6 @@ export function AssetsPage() {
                       : item.model === "seedance-2-mini"
                         ? "Veronix"
                         : item.model}
-                  {" · "}
-                  {item.creditsUsed === 0 ? "مجاني" : `−${item.creditsUsed}`}
                   {" · "}
                   {item.status}
                 </p>

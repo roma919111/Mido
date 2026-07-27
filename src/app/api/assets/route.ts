@@ -75,20 +75,32 @@ async function stitchPendingJobs(userId: string) {
           new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
       );
     if (parts.some((p) => p.status === "running")) continue;
-    const urls = parts
-      .filter((p) => p.status === "completed" && p.url)
-      .map((p) => p.url);
-    if (urls.length < 2) continue;
+    const done = parts.filter((p) => p.status === "completed" && p.url);
+    const urls = done.map((p) => p.url);
+    const ageMs = Date.now() - pendingAt;
+    // Wait at least 2 minutes before delivering a partial single beat,
+    // so a second shot still in flight (no historyId yet) can appear.
+    if (urls.length === 0) continue;
+    if (urls.length === 1 && ageMs < 2 * 60 * 1000) continue;
+
     try {
-      const concatUrl = await concatVideos(urls, {
-        maxSecondsPerClip: PRODUCT_PER_SHOT_SECONDS,
-        clarity: true,
-      });
+      let finalUrl: string;
+      if (urls.length >= 2) {
+        finalUrl = await concatVideos(urls, {
+          maxSecondsPerClip: PRODUCT_PER_SHOT_SECONDS,
+          clarity: true,
+        });
+      } else {
+        finalUrl = await ensureClarityUrl(urls[0]!);
+      }
       await updateAsset(pending.id, userId, {
-        url: concatUrl,
+        url: finalUrl,
         status: "completed",
         mode: "sequence-concat",
-        error: undefined,
+        error:
+          urls.length === 1
+            ? "اكتملت لقطة واحدة — عُرض المتاح (أعد التوليد لمدة أطول)"
+            : undefined,
         hidden: false,
         targetSeconds: urls.length * PRODUCT_PER_SHOT_SECONDS,
       });

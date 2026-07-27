@@ -107,33 +107,76 @@ export async function POST(request: Request) {
           unhidden += 1;
         } else if (
           asset.mode === "sequence-pending" &&
-          asset.status === "running" &&
+          (asset.status === "running" || asset.status === "failed") &&
           !asset.url
         ) {
+          const pendingAt = new Date(asset.createdAt).getTime();
+          const ageMs = Date.now() - pendingAt;
           const parts = assets
-            .filter(
-              (a) =>
-                a.mode === "sequence-part" &&
-                a.status === "completed" &&
-                Boolean(a.url),
-            )
+            .filter((a) => {
+              if (a.mode !== "sequence-part" || a.status !== "completed" || !a.url) {
+                return false;
+              }
+              const t = new Date(a.createdAt).getTime();
+              return t >= pendingAt - 5_000 && t < pendingAt + 3 * 60 * 60 * 1000;
+            })
             .sort(
               (a, b) =>
                 new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
             );
-          // Only auto-promote a single part when the job was meant to be 4s.
-          const expected = Math.max(1, Math.round((asset.targetSeconds || 4) / 4));
-          if (parts.length === 1 && expected <= 1 && parts[0]?.url) {
-            await updateAsset(asset.id, t.id, {
-              url: parts[0].url,
-              historyId: parts[0].historyId,
-              status: "completed",
-              mode: "sequence-concat",
-              error: undefined,
-              hidden: false,
-              targetSeconds: 4,
-            });
-            fixed += 1;
+          const runningParts = assets.filter((a) => {
+            if (a.mode !== "sequence-part" || a.status !== "running") return false;
+            const t = new Date(a.createdAt).getTime();
+            return t >= pendingAt - 5_000 && t < pendingAt + 3 * 60 * 60 * 1000;
+          });
+          // Force-deliver after 3 minutes if beats exist and nothing is still running.
+          if (parts.length >= 1 && runningParts.length === 0 && ageMs > 3 * 60 * 1000) {
+            let delivered = false;
+            if (parts.length >= 2) {
+              try {
+                const { concatVideos } = await import("@/lib/video-stitch");
+                const { PRODUCT_PER_SHOT_SECONDS } = await import("@/lib/shot-plan");
+                const concatUrl = await concatVideos(
+                  parts.map((p) => p.url),
+                  { maxSecondsPerClip: PRODUCT_PER_SHOT_SECONDS, clarity: true },
+                );
+                await updateAsset(asset.id, t.id, {
+                  url: concatUrl,
+                  status: "completed",
+                  mode: "sequence-concat",
+                  error: undefined,
+                  hidden: false,
+                  targetSeconds: parts.length * PRODUCT_PER_SHOT_SECONDS,
+                });
+                fixed += 1;
+                delivered = true;
+              } catch {
+                // fall through to single
+              }
+            }
+            if (!delivered) {
+              const best = parts[0]!;
+              let url = best.url;
+              try {
+                const { ensureClarityUrl } = await import("@/lib/ensure-clarity");
+                url = await ensureClarityUrl(best.url);
+              } catch {
+                // keep
+              }
+              await updateAsset(asset.id, t.id, {
+                url,
+                historyId: best.historyId,
+                status: "completed",
+                mode: "sequence-concat",
+                error:
+                  parts.length < Math.max(1, Math.round((asset.targetSeconds || 4) / 4))
+                    ? `اكتملت ${parts.length} لقطة — عُرض المتاح`
+                    : undefined,
+                hidden: false,
+                targetSeconds: parts.length * 4,
+              });
+              fixed += 1;
+            }
           }
         }
       }

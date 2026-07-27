@@ -26,11 +26,21 @@ export function remainingGenerateSeconds(
 }
 
 export function formatCountdownLabel(remainingSec: number): string {
-  if (remainingSec <= 0) return "جاري الإنهاء…";
+  if (remainingSec <= 0) return "يكتمل الآن…";
   const m = Math.floor(remainingSec / 60);
   const s = remainingSec % 60;
   if (m > 0) return `متبقي ${m}م ${s}ث`;
   return `متبقي ${s}ث`;
+}
+
+/** Overdue label after ETA — avoid endless "جاري الإنهاء" with no progress. */
+export function formatRunningStatusLabel(
+  remainingSec: number,
+  overdueForSec: number,
+): string {
+  if (remainingSec > 0) return formatCountdownLabel(remainingSec);
+  if (overdueForSec > 120) return "ما زال قيد المعالجة — حدّث الصفحة";
+  return "يكتمل الآن…";
 }
 
 /** Persist first-seen start times so Assets polls don't reset the countdown. */
