@@ -12,7 +12,7 @@ import { isBytePlusConfigured } from "@/lib/byteplus-ark";
 import { VERONIX_IMAGE_MODEL_ID } from "@/lib/byteplus-image";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 30;
 
 /** Product: Veronix video + VYRONIX image (BytePlus Seedream under the hood). */
 function productCatalog(video: CatalogModel[], image: CatalogModel[]) {

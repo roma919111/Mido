@@ -8,7 +8,6 @@ import {
 } from "@/lib/free-trial";
 import { setLiveCatalogCache } from "@/lib/model-catalog";
 import { loadSyncedCatalog } from "@/lib/openart-catalog-sync";
-import { OpenArtConfigError } from "@/lib/openart-mcp";
 
 export const runtime = "nodejs";
 
@@ -66,14 +65,26 @@ export async function POST(request: Request) {
       unitCredits: freeTrial ? 0 : q.unitCredits,
       freeTrial,
       pricingNote: freeTrial
-        ? `مجاني لأول مرة (مقدمة Veronix + ${FREE_VERONIX_DURATION_SECONDS} ثوانٍ · 480p مع صوت). السعر العادي بعد التجربة: ${q.totalCredits} كريدت (OpenArt × 1.8).`
+        ? `مجاني لأول مرة (مقدمة Veronix + ${FREE_VERONIX_DURATION_SECONDS} ثوانٍ · 480p مع صوت). السعر العادي بعد التجربة: ${q.totalCredits} كريدت.`
         : q.pricingNote,
     }));
     const totalCredits = quotes.reduce((sum, q) => sum + q.totalCredits, 0);
 
-    const allLive = quotes.every(
-      (q) => (q.source === "openart" || q.source === "openart-cache") && q.available,
+    const allReady = quotes.every(
+      (q) =>
+        q.available &&
+        (q.source === "cache" ||
+          q.source === "estimate" ||
+          q.source === "openart" ||
+          q.source === "openart-cache"),
     );
+    const source =
+      quotes.every((q) => q.source === "cache")
+        ? "cache"
+        : quotes.every((q) => q.source === "estimate")
+          ? "estimate"
+          : "mixed";
+
     return NextResponse.json({
       quotes,
       totalCredits,
@@ -81,27 +92,19 @@ export async function POST(request: Request) {
       freeTrial,
       freeVeronixUsed: Boolean(user?.freeVeronixUsed),
       multiplier: result.multiplier,
-      source: allLive
-        ? quotes.every((q) => q.source === "openart")
-          ? "openart"
-          : "openart-cache"
-        : "mixed",
-      liveOpenArt: allLive,
-      synced: allLive,
+      source,
+      liveOpenArt: false,
+      synced: allReady,
+      provider: "byteplus",
     });
   } catch (error) {
-    const needsOwnerSetup =
-      error instanceof OpenArtConfigError ||
-      (error instanceof Error &&
-        (/not connected|غير متصل|setup\/openart/i.test(error.message) ||
-          Boolean((error as { needsAuth?: boolean }).needsAuth)));
-
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : "Quote failed",
-        needsOwnerSetup,
+        needsOwnerSetup: false,
         synced: false,
         liveOpenArt: false,
+        provider: "byteplus",
       },
       { status: 422 },
     );

@@ -1,9 +1,8 @@
-import { callOpenArtTool, OpenArtConfigError, parseToolPayload } from "@/lib/openart-mcp";
 import { getActiveCatalog, getCatalogModel, resolveMcpModel } from "@/lib/model-catalog";
 import { audioParamForMcpModel, mapResolutionForMcpModel } from "@/lib/model-params";
 import { lookupCachedCost } from "@/lib/openart-cost-cache";
 
-/** Veronix wallet credits = OpenArt base credits × this fixed markup. */
+/** Veronix wallet credits = seeded base credits × this fixed markup. */
 export const VERONIX_CREDIT_MULTIPLIER = 1.8;
 
 /** Apply the platform markup to every model — no per-model exceptions. */
@@ -15,7 +14,7 @@ export function toVeronixCredits(openArtCredits: number): number {
 
 export function withMultiplierNote(note?: string): string {
   const base = note?.trim();
-  const tag = `Veronix price = OpenArt × ${VERONIX_CREDIT_MULTIPLIER}`;
+  const tag = `Veronix price = base × ${VERONIX_CREDIT_MULTIPLIER}`;
   if (!base) return tag;
   if (base.includes("× 1.8") || base.includes("×1.8") || base.includes(String(VERONIX_CREDIT_MULTIPLIER))) {
     return base;
@@ -48,12 +47,12 @@ export interface QuoteResult {
   available: boolean;
   config: Record<string, unknown>;
   pricingNote?: string;
-  source: "openart" | "openart-cache" | "estimate";
+  source: "cache" | "estimate";
   cached?: boolean;
 }
 
 export interface QuoteOptions {
-  /** Allow seeded/synced OpenArt cost cache when owner MCP is offline (UI only). */
+  /** Prefer seeded local cost cache (default true). */
   allowCache?: boolean;
 }
 
@@ -175,15 +174,14 @@ async function quoteFromCache(
     available: true,
     config: cached.config,
     pricingNote: withMultiplierNote(
-      cached.scaled
-        ? "Synced from OpenArt cost table (duration scaled)"
-        : "Synced from OpenArt cost table",
+      cached.scaled ? "Local cost table (duration scaled)" : "Local cost table",
     ),
-    source: "openart-cache",
+    source: "cache",
     cached: true,
   };
 }
 
+/** Local pricing only — never dials OpenArt MCP. */
 export async function quoteOpenArtCredits(
   input: QuoteInput,
   options: QuoteOptions = {},
@@ -195,123 +193,43 @@ export async function quoteOpenArtCredits(
   const mode = resolveMode(catalog, input);
   const params = buildParams(input, mcpModel);
 
-  if (!available) {
-    const openArtCredits = fallbackEstimate(input);
-    const totalCredits = toVeronixCredits(openArtCredits);
-    return {
-      modelId: input.modelId,
-      mcpModel,
-      mode,
-      totalCredits,
-      unitCredits: totalCredits,
-      openArtCredits,
-      multiplier: VERONIX_CREDIT_MULTIPLIER,
-      available: false,
-      config: params,
-      pricingNote: withMultiplierNote("Estimate for unavailable model"),
-      source: "estimate",
-    };
+  if (allowCache) {
+    const fromCache = await quoteFromCache(input, mcpModel, mode, params);
+    if (fromCache) {
+      return { ...fromCache, available: available || fromCache.available };
+    }
   }
 
-  // VYRONIX image (Seedream): prefer cache / fixed estimate — never block on OpenArt MCP.
+  const openArtCredits = fallbackEstimate(input);
+  const totalCredits = toVeronixCredits(openArtCredits);
   const isVyronixImage =
     input.media === "image" &&
     (input.modelId === "vyronix-image" || mcpModel.includes("seedream"));
-  if (isVyronixImage && allowCache) {
-    const fromCache = await quoteFromCache(input, mcpModel, mode, params);
-    if (fromCache) return fromCache;
-    const openArtCredits = fallbackEstimate(input);
-    const totalCredits = toVeronixCredits(openArtCredits);
-    return {
-      modelId: input.modelId,
-      mcpModel,
-      mode,
-      totalCredits,
-      unitCredits: totalCredits,
-      openArtCredits,
-      multiplier: VERONIX_CREDIT_MULTIPLIER,
-      available: true,
-      config: params,
-      pricingNote: withMultiplierNote("VYRONIX image studio (BytePlus)"),
-      source: "estimate",
-    };
-  }
+  const isVyronixVideo =
+    input.media === "video" &&
+    (input.modelId === "veronix" || mcpModel.includes("seedance"));
 
-  try {
-    const result = await callOpenArtTool("openart_model_cost", {
-      model: mcpModel,
-      mode,
-      params,
-    });
-    const payload = parseToolPayload(result);
-    if (result.isError) {
-      throw new Error(String(payload.error || payload.rawText || "Cost lookup failed"));
-    }
-
-    const items = (payload.items as Array<Record<string, unknown>> | undefined) ?? [];
-    const first = items[0] ?? payload;
-    const openArtCredits = Number(first.totalCredits ?? first.unitCredits ?? 0);
-    if (!Number.isFinite(openArtCredits) || openArtCredits <= 0) {
-      throw new Error("Invalid credit quote from OpenArt");
-    }
-
-    const veronixCredits = toVeronixCredits(openArtCredits);
-    const openArtUnit = Number(first.unitCredits ?? openArtCredits);
-    return {
-      modelId: input.modelId,
-      mcpModel,
-      mode,
-      totalCredits: veronixCredits,
-      unitCredits: toVeronixCredits(openArtUnit),
-      openArtCredits,
-      multiplier: VERONIX_CREDIT_MULTIPLIER,
-      available: true,
-      config: (first.config as Record<string, unknown>) ?? params,
-      pricingNote: withMultiplierNote(
-        typeof payload.pricingNote === "string" ? payload.pricingNote : undefined,
-      ),
-      source: "openart",
-    };
-  } catch (error) {
-    if (allowCache) {
-      const fromCache = await quoteFromCache(input, mcpModel, mode, params);
-      if (fromCache) return fromCache;
-    }
-
-    // BytePlus Seedream (VYRONIX image): bill from defaults even if OpenArt MCP is offline.
-    if (
-      input.media === "image" &&
-      (mcpModel.includes("seedream") || input.modelId === "vyronix-image")
-    ) {
-      const openArtCredits = fallbackEstimate(input);
-      const totalCredits = toVeronixCredits(openArtCredits);
-      return {
-        modelId: input.modelId,
-        mcpModel,
-        mode,
-        totalCredits,
-        unitCredits: totalCredits,
-        openArtCredits,
-        multiplier: VERONIX_CREDIT_MULTIPLIER,
-        available: true,
-        config: params,
-        pricingNote: withMultiplierNote("VYRONIX image studio (BytePlus)"),
-        source: "estimate",
-      };
-    }
-
-    const needsOwner =
-      error instanceof OpenArtConfigError ||
-      (error instanceof Error && /not connected|unauthorized|Reconnect/i.test(error.message));
-
-    throw new Error(
-      needsOwner
-        ? `تعذر مزامنة التكلفة مؤقتًا. حاول مرة أخرى.`
-        : error instanceof Error
-          ? `تعذر مزامنة تكلفة Veronix للموديل ${catalog?.name || mcpModel}: ${error.message}`
-          : `تعذر مزامنة تكلفة Veronix للموديل ${catalog?.name || mcpModel}`,
-    );
-  }
+  return {
+    modelId: input.modelId,
+    mcpModel,
+    mode,
+    totalCredits,
+    unitCredits: totalCredits,
+    openArtCredits,
+    multiplier: VERONIX_CREDIT_MULTIPLIER,
+    available,
+    config: params,
+    pricingNote: withMultiplierNote(
+      isVyronixImage
+        ? "VYRONIX image studio (BytePlus)"
+        : isVyronixVideo
+          ? "VYRONIX video studio (BytePlus)"
+          : available
+            ? "Local estimate"
+            : "Estimate for unavailable model",
+    ),
+    source: "estimate",
+  };
 }
 
 export async function quoteMultipleModels(

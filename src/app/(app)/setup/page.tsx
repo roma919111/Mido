@@ -11,11 +11,6 @@ const LINKS = [
     priority: true,
   },
   {
-    href: "/setup/openart",
-    title: "منصة التوليد",
-    body: "ربط حساب التوليد للمنصة (صور وفيديو).",
-  },
-  {
     href: "/setup/google",
     title: "Google Login",
     body: "تسجيل الدخول بحساب Google للزبائن.",

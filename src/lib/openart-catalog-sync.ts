@@ -482,35 +482,22 @@ export async function loadSyncedCatalog(): Promise<SyncedCatalogFile | null> {
   return null;
 }
 
-/** Return live synced catalog if present; otherwise sync now (best effort). */
+/** Return product catalog from disk cache or static defaults — never dials OpenArt. */
 export async function getLiveCatalog(options?: {
   forceSync?: boolean;
 }): Promise<SyncedCatalogFile & { syncedNow: boolean; live: boolean }> {
-  if (!options?.forceSync) {
-    const existing = await loadSyncedCatalog();
-    if (existing?.image.length && existing.video.length) {
-      const ageMs = Date.now() - Date.parse(existing.updatedAt || "");
-      if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs < 30 * 60 * 1000) {
-        return { ...existing, syncedNow: false, live: true };
-      }
-    }
+  void options;
+  const existing = await loadSyncedCatalog();
+  if (existing?.image.length && existing.video.length) {
+    return { ...existing, syncedNow: false, live: true };
   }
-
-  try {
-    const { catalog } = await syncOpenArtCatalogAndCosts();
-    return { ...catalog, syncedNow: true, live: true };
-  } catch {
-    const existing = await loadSyncedCatalog();
-    if (existing) return { ...existing, syncedNow: false, live: false };
-    // Static full catalog (live + coming soon) when OpenArt is offline.
-    const merged = mergeLiveIntoFullCatalog({ image: [], video: [] });
-    return {
-      updatedAt: new Date().toISOString(),
-      source: "openart_model_list",
-      image: merged.image,
-      video: merged.video,
-      syncedNow: false,
-      live: false,
-    };
-  }
+  const merged = mergeLiveIntoFullCatalog({ image: [], video: [] });
+  return {
+    updatedAt: new Date().toISOString(),
+    source: "openart_model_list",
+    image: merged.image,
+    video: merged.video,
+    syncedNow: false,
+    live: false,
+  };
 }
