@@ -348,10 +348,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               });
               setGenStartedAt(started);
               // Keep Generate unlocked for parallel jobs.
-              setStatus("توليد قيد المتابعة في Assets — يمكنك توليد فيديو جديد");
-              if (running.historyId) {
+              setStatus("توليد قيد المتابعة في Assets — يمكنك توليد جديد");
+              if (running.historyId || running.mediaType === "image") {
                 void pollPreview(
-                  running.historyId,
+                  running.historyId || "",
                   running.mediaType,
                   started,
                   false,
@@ -991,10 +991,12 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     assetId?: string,
   ) {
     for (let i = 0; i < PREVIEW_POLL_ATTEMPTS; i += 1) {
-      await new Promise((r) => setTimeout(r, PREVIEW_POLL_MS));
+      await new Promise((r) => setTimeout(r, mediaType === "image" ? 2500 : PREVIEW_POLL_MS));
       try {
-        const statusQs = new URLSearchParams({ historyId });
+        const statusQs = new URLSearchParams();
+        if (historyId) statusQs.set("historyId", historyId);
         if (assetId) statusQs.set("assetId", assetId);
+        if (!historyId && !assetId) return;
         const { res, data } = await fetchJson<{
           status?: string;
           urls?: string[];
@@ -1015,14 +1017,15 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 url: graded,
                 mediaType,
                 historyId,
+                assetId,
                 status: "completed",
               });
             } catch {
-              setPreview({ url, mediaType, historyId, status: "completed" });
+              setPreview({ url, mediaType, historyId, assetId, status: "completed" });
             }
             setStatus(null);
           } else {
-            setPreview({ url, mediaType, historyId, status: "completed" });
+            setPreview({ url, mediaType, historyId, assetId, status: "completed" });
             setStatus(null);
           }
           setGenStartedAt(null);
@@ -1030,7 +1033,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           return;
         }
         if (st === "FAILED" || st === "CANCELLED") {
-          setPreview({ url: "", mediaType, historyId, status: "failed" });
+          setPreview({ url: "", mediaType, historyId, assetId, status: "failed" });
           setError(data.error || "فشل التوليد");
           setGenStartedAt(null);
           await onUserRefresh().catch(() => undefined);
@@ -1038,11 +1041,17 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         }
         setPreview((prev) =>
           prev
-            ? { ...prev, status: "running", historyId: prev.historyId || historyId }
+            ? {
+                ...prev,
+                status: "running",
+                historyId: prev.historyId || historyId || undefined,
+                assetId: prev.assetId || assetId,
+              }
             : {
                 url: "",
                 mediaType,
-                historyId,
+                historyId: historyId || undefined,
+                assetId,
                 status: "running",
                 targetSeconds: countdownTargetSeconds,
               },
@@ -1056,8 +1065,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             targetSeconds: preview?.targetSeconds || countdownTargetSeconds,
           })}`,
         );
-        if (typeof data.pollAfterSeconds === "number" && data.pollAfterSeconds > 5) {
-          await new Promise((r) => setTimeout(r, Math.min(data.pollAfterSeconds! * 1000, 20000)));
+        if (typeof data.pollAfterSeconds === "number" && data.pollAfterSeconds > 2) {
+          await new Promise((r) =>
+            setTimeout(r, Math.min(data.pollAfterSeconds! * 1000, 20000)),
+          );
         }
       } catch {
         // Keep waiting — tunnel blips should not abort a long Seedance job.
@@ -1344,6 +1355,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       const historyId = ok?.historyId;
       const assetId = ok?.assetId;
       const brand = Boolean(data.freeTrial || ok?.needsBrandOutro);
+      const resultRunning = String(ok?.status || "").toLowerCase() === "running";
       if (firstUrl) {
         if (brand) {
           await applyBrandOutro({
@@ -1364,6 +1376,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               url: graded,
               mediaType: media,
               historyId,
+              assetId,
               status: "completed",
             });
           } catch (gradeErr) {
@@ -1371,6 +1384,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               url: firstUrl,
               mediaType: media,
               historyId,
+              assetId,
               status: "completed",
             });
             setError(
@@ -1385,12 +1399,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             url: firstUrl,
             mediaType: media,
             historyId,
+            assetId,
             status: "completed",
           });
           setStatus(null);
         }
         setGenStartedAt(null);
-      } else if (historyId) {
+      } else if (historyId || (assetId && (resultRunning || media === "image"))) {
         setPreview((prev) => ({
           url: "",
           mediaType: media,
@@ -1403,7 +1418,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           lockEtaStart(assetId, new Date(startedAt).toISOString());
         }
         setStatus("جاري التوليد…");
-        void pollPreview(historyId, media, startedAt, brand, assetId);
+        void pollPreview(historyId || "", media, startedAt, brand, assetId);
       } else {
         setStatus("تم إرسال الطلب — افتح Assets لمتابعة النتيجة");
         setGenStartedAt(null);
@@ -1856,11 +1871,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                       {countdownLabel}
                     </p>
                     <p className="px-6 text-center text-xs text-white/35">
-                      فيديو {countdownTargetSeconds}ث ≈{" "}
-                      {Math.ceil(
-                        estimateGenerateSeconds(countdownTargetSeconds) / 60,
-                      )}{" "}
-                      دقائق خلف الكواليس — لا تغلق التطبيق
+                      {preview?.mediaType === "image" || media === "image"
+                        ? "الصورة جاهزة خلال ثوانٍ — لا تغلق التطبيق"
+                        : `فيديو ${countdownTargetSeconds}ث ≈ ${Math.ceil(
+                            estimateGenerateSeconds(countdownTargetSeconds) / 60,
+                          )} دقائق خلف الكواليس — لا تغلق التطبيق`}
                     </p>
                   </>
                 ) : (

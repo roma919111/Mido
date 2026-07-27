@@ -117,7 +117,16 @@ export function veronixMediaSrc(input: {
   url?: string | null;
   mediaType?: "image" | "video";
 }): string | null {
-  return buildMediaApiPath(input, "stream") || input.url?.trim() || null;
+  const raw = input.url?.trim() || "";
+  // Images: load BytePlus/CDN URLs directly — mobile-stable (avoids long proxy streams).
+  if (input.mediaType === "image" && /^https?:\/\//i.test(raw)) {
+    try {
+      if (isAllowedMediaHost(new URL(raw).hostname)) return raw;
+    } catch {
+      // fall through to proxy
+    }
+  }
+  return buildMediaApiPath(input, "stream") || raw || null;
 }
 
 /** First-frame JPEG poster for video tiles / feed. */

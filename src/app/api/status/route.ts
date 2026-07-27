@@ -5,7 +5,7 @@ import {
   parseBytePlusHistoryId,
 } from "@/lib/byteplus-ark";
 import { getCurrentUser } from "@/lib/customer-auth";
-import { findAssetByHistoryId, updateAsset } from "@/lib/db";
+import { findAssetByHistoryId, findAssetById, updateAsset } from "@/lib/db";
 import { ensureClarityUrl } from "@/lib/ensure-clarity";
 import {
   callOpenArtTool,
@@ -22,6 +22,36 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const historyId = searchParams.get("historyId");
   const assetId = searchParams.get("assetId")?.trim() || "";
+
+  // Image studio (and any job without a provider history id): poll by assetId.
+  if (!historyId && assetId) {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json(
+        { error: "Login required", needsAuth: true },
+        { status: 401 },
+      );
+    }
+    const asset = await findAssetById(user.id, assetId);
+    if (!asset) {
+      return NextResponse.json({ error: "Asset not found" }, { status: 404 });
+    }
+    const status =
+      asset.status === "completed"
+        ? "COMPLETED"
+        : asset.status === "failed"
+          ? "FAILED"
+          : "RUNNING";
+    return NextResponse.json({
+      assetId,
+      status,
+      urls: asset.url ? [asset.url] : [],
+      live: true,
+      provider: asset.mediaType === "image" ? "byteplus" : "veronix",
+      pollAfterSeconds: status === "RUNNING" ? 3 : undefined,
+      error: status === "FAILED" ? asset.error || "Generation failed" : undefined,
+    });
+  }
 
   if (!historyId) {
     return NextResponse.json({ error: "historyId is required" }, { status: 400 });

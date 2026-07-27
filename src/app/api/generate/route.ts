@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { adjustCredits, createAsset, updateAsset, updateUser } from "@/lib/db";
 import { quoteOpenArtCredits } from "@/lib/credit-quote";
@@ -162,6 +162,9 @@ export async function POST(request: Request) {
         await adjustCredits(user.id, -totalCredits);
       }
 
+      // Mobile browsers often kill the tab if /api/create blocks 20–60s on Seedream.
+      // Default: return running asset immediately and finish in `after()`.
+      const waitNow = body.waitForResult === true;
       const results = [];
       for (const quote of billedQuotes) {
         const asset = await createAsset({
@@ -174,50 +177,77 @@ export async function POST(request: Request) {
           creditsUsed: quote.totalCredits,
           status: "running",
         });
-        try {
-          const refUrl = resolveImageReference(body.referenceImages);
-          const size =
-            body.resolution && /^(1K|2K|4K)$/i.test(body.resolution)
-              ? body.resolution.toUpperCase()
-              : "2K";
-          const created = await createBytePlusImage({
-            prompt,
-            size,
-            watermark: false,
-            referenceUrl: refUrl,
-          });
-          await updateAsset(asset.id, user.id, {
-            url: created.url,
-            status: "completed",
-            error: undefined,
+        const refUrl = resolveImageReference(body.referenceImages);
+        const size =
+          body.resolution && /^(1K|2K|4K)$/i.test(body.resolution)
+            ? body.resolution.toUpperCase()
+            : "2K";
+
+        const runImageJob = async () => {
+          try {
+            const created = await createBytePlusImage({
+              prompt,
+              size,
+              watermark: false,
+              referenceUrl: refUrl,
+            });
+            await updateAsset(asset.id, user.id, {
+              url: created.url,
+              status: "completed",
+              error: undefined,
+            });
+            return {
+              assetId: asset.id,
+              modelId: VERONIX_IMAGE_MODEL_ID,
+              status: "completed" as const,
+              urls: [created.url],
+              creditsUsed: quote.totalCredits,
+              freeTrial: false,
+              live: true,
+              provider: "byteplus",
+              tool: "byteplus_images_generations",
+              quote,
+            };
+          } catch (err) {
+            const msg =
+              err instanceof Error ? err.message : "Image generation failed";
+            if (quote.totalCredits > 0) {
+              await adjustCredits(user.id, quote.totalCredits).catch(
+                () => undefined,
+              );
+            }
+            await updateAsset(asset.id, user.id, {
+              status: "failed",
+              error: msg,
+            });
+            return {
+              assetId: asset.id,
+              modelId: VERONIX_IMAGE_MODEL_ID,
+              status: "failed" as const,
+              error: msg,
+              urls: [] as string[],
+              creditsUsed: 0,
+              quote,
+            };
+          }
+        };
+
+        if (waitNow) {
+          results.push(await runImageJob());
+        } else {
+          after(() => {
+            void runImageJob();
           });
           results.push({
             assetId: asset.id,
             modelId: VERONIX_IMAGE_MODEL_ID,
-            status: "completed",
-            urls: [created.url],
+            status: "running",
+            urls: [] as string[],
             creditsUsed: quote.totalCredits,
             freeTrial: false,
             live: true,
             provider: "byteplus",
             tool: "byteplus_images_generations",
-            quote,
-          });
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : "Image generation failed";
-          if (quote.totalCredits > 0) {
-            await adjustCredits(user.id, quote.totalCredits).catch(() => undefined);
-          }
-          await updateAsset(asset.id, user.id, {
-            status: "failed",
-            error: msg,
-          });
-          results.push({
-            assetId: asset.id,
-            modelId: VERONIX_IMAGE_MODEL_ID,
-            status: "failed",
-            error: msg,
-            creditsUsed: 0,
             quote,
           });
         }

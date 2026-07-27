@@ -180,11 +180,12 @@ export async function GET(request: Request) {
 
     const contentType =
       upstream.headers.get("content-type") ||
-      (source.mediaType === "video" ? "video/mp4" : "image/png");
+      (source.mediaType === "video" ? "video/mp4" : "image/jpeg");
 
+    const filename = source.mediaType === "video" ? "veronix.mp4" : "veronix.jpg";
     const headers: Record<string, string> = {
       "Content-Type": contentType,
-      "Content-Disposition": 'inline; filename="veronix.mp4"',
+      "Content-Disposition": `inline; filename="${filename}"`,
       "Cache-Control": "private, max-age=3600",
       "X-Content-Type-Options": "nosniff",
       "Accept-Ranges": upstream.headers.get("accept-ranges") || "bytes",

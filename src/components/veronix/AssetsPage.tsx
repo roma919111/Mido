@@ -502,17 +502,17 @@ function ImageTile({
               writeEditDraft({
                 prompt: prompt || item.prompt || "",
                 media: "image",
-                startFrame: src
+                startFrame: item.url
                   ? {
                       type: "image",
                       id: `edit-img-${item.id}`,
-                      url: src,
+                      url: item.url,
                       label: "edit-image",
                     }
                   : null,
                 sourceAssetId: item.id,
               });
-              router.push("/create/video?edit=1");
+              router.push("/create/image?edit=1");
             }}
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#22f0ff]"
           >

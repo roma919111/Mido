@@ -213,6 +213,30 @@ export async function quoteOpenArtCredits(
     };
   }
 
+  // VYRONIX image (Seedream): prefer cache / fixed estimate — never block on OpenArt MCP.
+  const isVyronixImage =
+    input.media === "image" &&
+    (input.modelId === "vyronix-image" || mcpModel.includes("seedream"));
+  if (isVyronixImage && allowCache) {
+    const fromCache = await quoteFromCache(input, mcpModel, mode, params);
+    if (fromCache) return fromCache;
+    const openArtCredits = fallbackEstimate(input);
+    const totalCredits = toVeronixCredits(openArtCredits);
+    return {
+      modelId: input.modelId,
+      mcpModel,
+      mode,
+      totalCredits,
+      unitCredits: totalCredits,
+      openArtCredits,
+      multiplier: VERONIX_CREDIT_MULTIPLIER,
+      available: true,
+      config: params,
+      pricingNote: withMultiplierNote("VYRONIX image studio (BytePlus)"),
+      source: "estimate",
+    };
+  }
+
   try {
     const result = await callOpenArtTool("openart_model_cost", {
       model: mcpModel,
