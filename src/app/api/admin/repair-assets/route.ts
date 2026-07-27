@@ -61,12 +61,12 @@ export async function POST(request: Request) {
       const assets = await listAssetsForAdmin(t.id, 80);
       let fixed = 0;
       let unhidden = 0;
-      let rehilddenParts = 0;
+      let rehiddenParts = 0;
       for (const asset of assets) {
         // Intermediate beats must stay hidden forever.
         if (asset.mode === "sequence-part" && asset.hidden !== true) {
           await updateAsset(asset.id, t.id, { hidden: true });
-          rehilddenParts += 1;
+          rehiddenParts += 1;
         }
         const bpId = parseBytePlusHistoryId(asset.historyId || "");
         if (bpId && (asset.status === "running" || !asset.url)) {
@@ -135,7 +135,7 @@ export async function POST(request: Request) {
         assets: assets.length,
         fixed,
         unhidden,
-        rehilddenParts,
+        rehiddenParts,
         sample: refreshed.slice(0, 12).map((a) => ({
           id: a.id,
           status: a.status,
