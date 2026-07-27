@@ -19,10 +19,18 @@ export async function register() {
   }
 
   try {
-    const { backupCustomerDb } = await import("@/lib/db-backup");
+    const { recoverDbFromBackupsIfNeeded, backupCustomerDb } = await import(
+      "@/lib/db-backup"
+    );
+    const recovered = await recoverDbFromBackupsIfNeeded();
+    if (recovered.recovered) {
+      console.info("[veronix] Customer DB recovered from backup:", recovered.detail);
+    }
     const backup = await backupCustomerDb("startup", { force: true });
     if (backup.ok) {
       console.info("[veronix] Customer DB backup ready");
+    } else if (backup.skipped) {
+      console.info("[veronix] Customer DB backup skipped:", backup.skipped);
     }
   } catch (error) {
     console.warn(

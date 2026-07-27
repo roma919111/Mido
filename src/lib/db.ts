@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -66,15 +66,41 @@ async function ensureDb(): Promise<DbShape> {
         : [],
     };
   } catch {
+    // Corrupt / missing — try richest backup before writing empty.
+    try {
+      const { listDbBackups, mergeDbFromBackup } = await import("@/lib/db-backup");
+      const backups = await listDbBackups();
+      const best = backups.find((b) => b.users > 0 || b.assets > 0);
+      if (best) {
+        await mergeDbFromBackup({ backupName: best.name, fullReplace: true });
+        const raw = await readFile(DB_FILE, "utf8");
+        const parsed = JSON.parse(raw) as DbShape;
+        return {
+          users: Array.isArray(parsed.users) ? parsed.users : [],
+          assets: Array.isArray(parsed.assets) ? parsed.assets : [],
+          processedCheckoutSessions: Array.isArray(parsed.processedCheckoutSessions)
+            ? parsed.processedCheckoutSessions
+            : [],
+        };
+      }
+    } catch {
+      // fall through to empty
+    }
     const empty: DbShape = { users: [], assets: [], processedCheckoutSessions: [] };
-    await writeFile(DB_FILE, JSON.stringify(empty, null, 2), "utf8");
+    await atomicWriteDb(empty);
     return empty;
   }
 }
 
-async function saveDb(db: DbShape): Promise<void> {
+async function atomicWriteDb(db: DbShape): Promise<void> {
   await mkdir(DATA_DIR, { recursive: true });
-  await writeFile(DB_FILE, JSON.stringify(db, null, 2), "utf8");
+  const tmp = path.join(DATA_DIR, `veronix-db.${process.pid}.${Date.now()}.tmp`);
+  await writeFile(tmp, JSON.stringify(db, null, 2), "utf8");
+  await rename(tmp, DB_FILE);
+}
+
+async function saveDb(db: DbShape): Promise<void> {
+  await atomicWriteDb(db);
   // Best-effort rotating snapshots — never block the write path on backup errors.
   void import("@/lib/db-backup")
     .then(({ backupCustomerDb }) => backupCustomerDb("save"))
