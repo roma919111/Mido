@@ -41,6 +41,10 @@ import { veronixDownloadPath, veronixMediaSrc } from "@/lib/media-proxy";
 import { clearEditDraft, readEditDraft } from "@/lib/edit-draft";
 import type { CustomerUser } from "./AppHeader";
 
+/** Catalog id for VYRONIX image studio (Seedream under the hood). */
+const VERONIX_IMAGE_MODEL_ID = "vyronix-image";
+const DEFAULT_IMAGE_RESOLUTION = "2K";
+
 /** Default paid length — familiar OpenArt default within 4–15s. */
 const DEFAULT_PAID_DURATION_SECONDS = 5;
 /** Paid Veronix duration window (slider steps by 1s). */
@@ -122,10 +126,16 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const [media, setMedia] = useState<"image" | "video">(lockedMedia || "video");
   const [imageModels, setImageModels] = useState<CatalogModel[]>(IMAGE_MODELS);
   const [videoModels, setVideoModels] = useState<CatalogModel[]>(VIDEO_MODELS);
-  const [selectedModelId, setSelectedModelId] = useState(VERONIX_MODEL_ID);
+  const [selectedModelId, setSelectedModelId] = useState(
+    lockedMedia === "image" ? VERONIX_IMAGE_MODEL_ID : VERONIX_MODEL_ID,
+  );
   const [prompt, setPrompt] = useState("");
-  const [aspectRatio, setAspectRatio] = useState<string>("16:9");
-  const [resolution, setResolution] = useState<string>(FREE_VERONIX_RESOLUTION);
+  const [aspectRatio, setAspectRatio] = useState<string>(
+    lockedMedia === "image" ? "1:1" : "16:9",
+  );
+  const [resolution, setResolution] = useState<string>(
+    lockedMedia === "image" ? DEFAULT_IMAGE_RESOLUTION : FREE_VERONIX_RESOLUTION,
+  );
   const [duration, setDuration] = useState<number>(FREE_VERONIX_DURATION_SECONDS);
   const [generateAudio, setGenerateAudio] = useState(false);
   const [freeTrial, setFreeTrial] = useState(false);
@@ -481,10 +491,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     if (media === "image") {
       const stillValid = imageModels.some((m) => m.id === selectedModelId && m.available);
       if (!stillValid) {
-        const firstLive = imageModels.find((m) => m.available)?.id || "nano-banana-2-lite";
+        const firstLive =
+          imageModels.find((m) => m.id === VERONIX_IMAGE_MODEL_ID && m.available)?.id ||
+          imageModels.find((m) => m.available)?.id ||
+          VERONIX_IMAGE_MODEL_ID;
         setSelectedModelId(firstLive);
       }
-      setAspectRatio("1:1");
+      setAspectRatio((prev) => (IMAGE_ASPECTS.includes(prev as (typeof IMAGE_ASPECTS)[number]) ? prev : "1:1"));
+      setResolution(DEFAULT_IMAGE_RESOLUTION);
     } else {
       const stillValid = videoModels.some((m) => m.id === selectedModelId && m.available);
       if (!stillValid) {
@@ -533,7 +547,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             media,
             mode,
             aspectRatio: media === "video" ? VIDEO_ASPECT : aspectRatio,
-            resolution: media === "video" ? resolution : undefined,
+            resolution:
+              media === "video" ? resolution : resolution || DEFAULT_IMAGE_RESOLUTION,
             duration: media === "video" ? duration : undefined,
             generateAudio: media === "video" ? generateAudio : undefined,
             multiShot: false,
@@ -560,12 +575,18 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         const live = Boolean(
           data.liveOpenArt ||
             data.synced ||
+            data.freeTrial ||
+            (media === "image" &&
+              quote?.available !== false &&
+              data.totalCredits != null) ||
             (quote?.available &&
               (quote.source === "openart" || quote.source === "openart-cache")),
         );
         setCreditLive(live);
         if (!live) {
           setQuoteError("لم تُزامن التكلفة بعد — اختر موديلًا متاحًا أو أعد المحاولة");
+        } else {
+          setQuoteError(null);
         }
       } catch (err) {
         if (!cancelled) {
@@ -1158,7 +1179,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         mode: input.mode,
         prompt: input.prompt,
         aspectRatio: media === "video" ? VIDEO_ASPECT : aspectRatio,
-        resolution: media === "video" ? resolution : undefined,
+        resolution:
+          media === "video" ? resolution : resolution || DEFAULT_IMAGE_RESOLUTION,
         duration: media === "video" ? input.duration : undefined,
         generateAudio: media === "video" ? generateAudio : undefined,
         startFrame: input.startFrame ?? null,
@@ -1521,7 +1543,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           <span className="font-normal text-white/45">(اختياري)</span>
         </p>
         <p className="mb-3 text-[11px] leading-relaxed text-white/40">
-          ارفع صور الشخصيات لتظهر بنفس الملامح في الفيديو (BytePlus Seedance).
+          {media === "image"
+            ? "ارفع صورة مرجعية اختيارية لتوجيه أسلوب الصورة."
+            : "ارفع صور الشخصيات لتظهر بنفس الملامح في الفيديو."}
         </p>
         <div className="flex flex-wrap gap-2">
           {refPreviews.map((src, i) => (

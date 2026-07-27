@@ -9,34 +9,64 @@ import {
 import { getLiveCatalog } from "@/lib/openart-catalog-sync";
 import { VERONIX_CREDIT_MULTIPLIER } from "@/lib/credit-quote";
 import { isBytePlusConfigured } from "@/lib/byteplus-ark";
+import { VERONIX_IMAGE_MODEL_ID } from "@/lib/byteplus-image";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
-/** Product: Veronix-only video catalog; image studio paused. */
+/** Product: Veronix video + VYRONIX image (BytePlus Seedream under the hood). */
 function productCatalog(video: CatalogModel[], image: CatalogModel[]) {
-  const veronix =
+  const veronixVideo =
     video.find((m) => m.id === VERONIX_MODEL_ID) ||
     VIDEO_MODELS.find((m) => m.id === VERONIX_MODEL_ID);
-  const videoOut: CatalogModel[] = veronix
+  const videoOut: CatalogModel[] = veronixVideo
     ? [
         {
-          ...veronix,
-          name: "Veronix",
+          ...veronixVideo,
+          name: "VYRONIX",
           available: true,
           badge: "حصري",
           tagline: isBytePlusConfigured()
             ? "تم إنشاؤه بواسطة VYRONIX"
-            : veronix.tagline,
+            : veronixVideo.tagline,
         },
       ]
     : VIDEO_MODELS.filter((m) => m.id === VERONIX_MODEL_ID).map((m) => ({
         ...m,
+        name: "VYRONIX",
         available: true,
       }));
 
-  // Image page paused until product re-enables it.
-  const imageOut = image.map((m) => ({ ...m, available: false }));
+  const veronixImage =
+    image.find((m) => m.id === VERONIX_IMAGE_MODEL_ID) ||
+    IMAGE_MODELS.find((m) => m.id === VERONIX_IMAGE_MODEL_ID) ||
+    IMAGE_MODELS.find((m) => m.id === "seedream-4-5");
+
+  const imageOut: CatalogModel[] = veronixImage
+    ? [
+        {
+          ...veronixImage,
+          id: VERONIX_IMAGE_MODEL_ID,
+          name: "VYRONIX",
+          available: isBytePlusConfigured(),
+          badge: "حصري",
+          tagline: "تم إنشاؤه بواسطة VYRONIX",
+          mcpId: veronixImage.mcpId || "byte-plus-seedream-4-5",
+          modes: ["text2image", "image2image"],
+        },
+      ]
+    : [
+        {
+          id: VERONIX_IMAGE_MODEL_ID,
+          name: "VYRONIX",
+          kind: "image" as const,
+          mcpId: "byte-plus-seedream-4-5",
+          modes: ["text2image", "image2image"],
+          badge: "حصري",
+          tagline: "تم إنشاؤه بواسطة VYRONIX",
+          available: isBytePlusConfigured(),
+        },
+      ];
 
   return { video: videoOut, image: imageOut };
 }
@@ -59,7 +89,7 @@ export async function GET(request: Request) {
       multiplier: VERONIX_CREDIT_MULTIPLIER,
       source: catalog.source,
       provider: isBytePlusConfigured() ? "byteplus" : "unconfigured",
-      imageStudioEnabled: false,
+      imageStudioEnabled: true,
     });
   } catch (error) {
     const shaped = productCatalog(VIDEO_MODELS, IMAGE_MODELS);
@@ -72,7 +102,7 @@ export async function GET(request: Request) {
       syncedNow: false,
       multiplier: VERONIX_CREDIT_MULTIPLIER,
       provider: isBytePlusConfigured() ? "byteplus" : "unconfigured",
-      imageStudioEnabled: false,
+      imageStudioEnabled: true,
       error: error instanceof Error ? error.message : "Catalog sync failed",
     });
   }

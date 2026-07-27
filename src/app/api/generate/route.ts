@@ -10,6 +10,11 @@ import {
   toBytePlusHistoryId,
   waitForBytePlusVideoTask,
 } from "@/lib/byteplus-ark";
+import {
+  createBytePlusImage,
+  resolveImageReference,
+  VERONIX_IMAGE_MODEL_ID,
+} from "@/lib/byteplus-image";
 import { stylizeReferenceImage } from "@/lib/reference-sanitize";
 import { ensureClarityUrl } from "@/lib/ensure-clarity";
 import {
@@ -67,7 +72,7 @@ export async function POST(request: Request) {
     if (!isBytePlusConfigured()) {
       return NextResponse.json(
         {
-          error: "توليد الفيديو عبر BytePlus غير مُعدّ على السيرفر (BYTEPLUS_API_KEY).",
+          error: "توليد الوسائط عبر BytePlus غير مُعدّ على السيرفر (BYTEPLUS_API_KEY).",
           provider: "byteplus",
           needsOwnerSetup: true,
         },
@@ -83,23 +88,159 @@ export async function POST(request: Request) {
     if (!prompt) {
       return NextResponse.json({ error: "prompt is required" }, { status: 400 });
     }
-    if (requestedMedia === "image") {
-      return NextResponse.json(
-        {
-          error: "توليد الصور متوقف مؤقتاً — استخدم استوديو الفيديو (Veronix).",
-          imageStudioEnabled: false,
-        },
-        { status: 403 },
-      );
-    }
-    const media = "video" as const;
     if (!modelIds.length) {
       return NextResponse.json({ error: "Select at least one model" }, { status: 400 });
     }
+
+    // ——— Image studio (VYRONIX / Seedream) ———
+    if (requestedMedia === "image") {
+      if (!modelIds.every((id) => id === VERONIX_IMAGE_MODEL_ID || id === "seedream-4-5")) {
+        return NextResponse.json(
+          { error: "موديل الصور المتاح حالياً هو VYRONIX فقط." },
+          { status: 422 },
+        );
+      }
+      const imageModelIds = modelIds.map(() => VERONIX_IMAGE_MODEL_ID);
+      const mode =
+        body.mode ||
+        resolveToolMode(
+          "image",
+          false,
+          Boolean(body.referenceImages?.length),
+        );
+
+      const quotes = [];
+      for (const modelId of imageModelIds) {
+        quotes.push(
+          await quoteOpenArtCredits(
+            {
+              modelId,
+              media: "image",
+              mode,
+              aspectRatio: body.aspectRatio || "1:1",
+              resolution: body.resolution || "2K",
+            },
+            { allowCache: true },
+          ),
+        );
+      }
+
+      const billedQuotes = quotes.map((q) => ({
+        ...q,
+        modelId: VERONIX_IMAGE_MODEL_ID,
+        freeTrial: false,
+      }));
+      const totalCredits = billedQuotes.reduce((s, q) => s + q.totalCredits, 0);
+      const listPrice = quotes.reduce((s, q) => s + q.totalCredits, 0);
+
+      if (user.credits <= 0) {
+        return NextResponse.json(
+          {
+            error: "رصيدك صفر. أضف كريدت أو رقِّ الباقة للمتابعة.",
+            needsPaywall: true,
+            credits: user.credits,
+            requiredCredits: listPrice,
+            quotes: billedQuotes,
+          },
+          { status: 402 },
+        );
+      }
+      if (user.credits < totalCredits) {
+        return NextResponse.json(
+          {
+            error: "رصيدك غير كافٍ. أضف كريدت أو رقِّ الباقة للمتابعة.",
+            needsPaywall: true,
+            credits: user.credits,
+            requiredCredits: totalCredits,
+            quotes: billedQuotes,
+          },
+          { status: 402 },
+        );
+      }
+
+      if (totalCredits > 0) {
+        await adjustCredits(user.id, -totalCredits);
+      }
+
+      const results = [];
+      for (const quote of billedQuotes) {
+        const asset = await createAsset({
+          userId: user.id,
+          mediaType: "image",
+          url: "",
+          prompt,
+          mode,
+          model: VERONIX_IMAGE_MODEL_ID,
+          creditsUsed: quote.totalCredits,
+          status: "running",
+        });
+        try {
+          const refUrl = resolveImageReference(body.referenceImages);
+          const size =
+            body.resolution && /^(1K|2K|4K)$/i.test(body.resolution)
+              ? body.resolution.toUpperCase()
+              : "2K";
+          const created = await createBytePlusImage({
+            prompt,
+            size,
+            watermark: false,
+            referenceUrl: refUrl,
+          });
+          await updateAsset(asset.id, user.id, {
+            url: created.url,
+            status: "completed",
+            error: undefined,
+          });
+          results.push({
+            assetId: asset.id,
+            modelId: VERONIX_IMAGE_MODEL_ID,
+            status: "completed",
+            urls: [created.url],
+            creditsUsed: quote.totalCredits,
+            freeTrial: false,
+            live: true,
+            provider: "byteplus",
+            tool: "byteplus_images_generations",
+            quote,
+          });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Image generation failed";
+          if (quote.totalCredits > 0) {
+            await adjustCredits(user.id, quote.totalCredits).catch(() => undefined);
+          }
+          await updateAsset(asset.id, user.id, {
+            status: "failed",
+            error: msg,
+          });
+          results.push({
+            assetId: asset.id,
+            modelId: VERONIX_IMAGE_MODEL_ID,
+            status: "failed",
+            error: msg,
+            creditsUsed: 0,
+            quote,
+          });
+        }
+      }
+
+      const { findUserById } = await import("@/lib/db");
+      const refreshed = await findUserById(user.id);
+      return NextResponse.json({
+        results,
+        freeTrial: false,
+        credits: refreshed?.credits ?? user.credits,
+        provider: "byteplus",
+        billing: "customer_wallet",
+        imageStudioEnabled: true,
+      });
+    }
+
+    // ——— Video studio (VYRONIX / Seedance) ———
+    const media = "video" as const;
     // Product: Veronix video only (other models hidden).
     if (!modelIds.every((id) => id === VERONIX_MODEL_ID)) {
       return NextResponse.json(
-        { error: "الموديل المتاح حالياً هو Veronix فقط." },
+        { error: "الموديل المتاح حالياً هو VYRONIX فقط." },
         { status: 422 },
       );
     }

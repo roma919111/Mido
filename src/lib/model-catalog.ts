@@ -195,20 +195,30 @@ export function resolutionLabel(value: string): string {
  * Live sync overlays form/pricing fields onto matching ids.
  */
 export const IMAGE_MODELS: CatalogModel[] = [
-  { id: "auto", name: "Auto", kind: "image", mcpId: "nano-banana-2-lite", modes: ["text2image", "image2image"], badge: "Auto", available: true },
-  { id: "gpt-image-2", name: "GPT Image 2", kind: "image", mcpId: "gpt-image-2", modes: ["text2image", "image2image"], available: true },
-  { id: "nano-banana-2-lite", name: "Nano Banana 2 Lite", kind: "image", mcpId: "nano-banana-2-lite", modes: ["text2image", "image2image"], available: true },
-  { id: "nano-banana-2", name: "Nano Banana 2", kind: "image", mcpId: "nano-banana-2", modes: ["text2image", "image2image"], available: true },
+  {
+    id: "vyronix-image",
+    name: "VYRONIX",
+    kind: "image",
+    mcpId: "byte-plus-seedream-4-5",
+    modes: ["text2image", "image2image"],
+    badge: "حصري",
+    tagline: "تم إنشاؤه بواسطة VYRONIX",
+    available: true,
+  },
+  { id: "auto", name: "Auto", kind: "image", mcpId: "nano-banana-2-lite", modes: ["text2image", "image2image"], badge: "Auto", available: false },
+  { id: "gpt-image-2", name: "GPT Image 2", kind: "image", mcpId: "gpt-image-2", modes: ["text2image", "image2image"], available: false },
+  { id: "nano-banana-2-lite", name: "Nano Banana 2 Lite", kind: "image", mcpId: "nano-banana-2-lite", modes: ["text2image", "image2image"], available: false },
+  { id: "nano-banana-2", name: "Nano Banana 2", kind: "image", mcpId: "nano-banana-2", modes: ["text2image", "image2image"], available: false },
   { id: "seedream-5-pro", name: "Seedream 5.0 Pro", kind: "image", available: false },
-  { id: "nano-banana-pro", name: "Nano Banana Pro", kind: "image", mcpId: "nano-banana-pro", modes: ["text2image", "image2image"], available: true },
+  { id: "nano-banana-pro", name: "Nano Banana Pro", kind: "image", mcpId: "nano-banana-pro", modes: ["text2image", "image2image"], available: false },
   { id: "recraft-v4", name: "Recraft V4", kind: "image", available: false },
   { id: "recraft", name: "Recraft (image & SVG generation model)", kind: "image", available: false },
   { id: "reve-2-1", name: "Reve 2.1", kind: "image", available: false },
   { id: "wan-2-7-image", name: "Wan 2.7", kind: "image", available: false },
   { id: "grok-imagine-image", name: "Grok Imagine", kind: "image", available: false },
-  { id: "seedream-5-lite", name: "Seedream 5.0 Lite", kind: "image", mcpId: "byte-plus-seedream-5-lite", modes: ["text2image", "image2image"], available: true },
-  { id: "seedream-4-5", name: "Seedream 4.5", kind: "image", mcpId: "byte-plus-seedream-4-5", modes: ["text2image", "image2image"], available: true },
-  { id: "kling-3-omni-image", name: "Kling 3.0 Omni", kind: "image", mcpId: "kling-3-omni", modes: ["text2image", "image2image"], available: true },
+  { id: "seedream-5-lite", name: "Seedream 5.0 Lite", kind: "image", mcpId: "byte-plus-seedream-5-lite", modes: ["text2image", "image2image"], available: false },
+  { id: "seedream-4-5", name: "Seedream 4.5", kind: "image", mcpId: "byte-plus-seedream-4-5", modes: ["text2image", "image2image"], available: false },
+  { id: "kling-3-omni-image", name: "Kling 3.0 Omni", kind: "image", mcpId: "kling-3-omni", modes: ["text2image", "image2image"], available: false },
   { id: "nano-banana", name: "Nano Banana", kind: "image", available: false },
   { id: "seedream-4", name: "Seedream 4.0", kind: "image", available: false },
   { id: "qwen-image-2", name: "Qwen Image 2", kind: "image", available: false },
@@ -256,12 +266,12 @@ function withFormFallback(model: CatalogModel): CatalogModel {
 const VIDEO_MODELS_BASE: CatalogModel[] = [
   {
     id: "seedance-2-mini",
-    name: "Veronix",
+    name: "VYRONIX",
     kind: "video",
     mcpId: "byte-plus-seedance-2-mini",
     modes: ["text2video", "image2video", "element2video"],
     badge: "حصري",
-    tagline: "موديل فيديو حصري — أول فيديو مجاني (مقدمة Veronix + 4 ثوانٍ · 480p)",
+    tagline: "تم إنشاؤه بواسطة VYRONIX — أول فيديو مجاني (مقدمة + 4 ثوانٍ · 480p)",
     available: true,
   },
   { id: "seedance-2", name: "Seedance 2.0", kind: "video", mcpId: "byte-plus-seedance-2", modes: ["text2video", "image2video", "element2video"], available: true },
@@ -367,7 +377,10 @@ export function getActiveCatalog(): {
 }
 
 export function getCatalogModel(id: string): CatalogModel | undefined {
-  return getActiveCatalog().all.find((m) => m.id === id);
+  return (
+    getActiveCatalog().all.find((m) => m.id === id) ||
+    ALL_MODELS.find((m) => m.id === id)
+  );
 }
 
 export function resolveMcpModel(model: CatalogModel): string {

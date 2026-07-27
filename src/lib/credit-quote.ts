@@ -254,6 +254,28 @@ export async function quoteOpenArtCredits(
       if (fromCache) return fromCache;
     }
 
+    // BytePlus Seedream (VYRONIX image): bill from defaults even if OpenArt MCP is offline.
+    if (
+      input.media === "image" &&
+      (mcpModel.includes("seedream") || input.modelId === "vyronix-image")
+    ) {
+      const openArtCredits = fallbackEstimate(input);
+      const totalCredits = toVeronixCredits(openArtCredits);
+      return {
+        modelId: input.modelId,
+        mcpModel,
+        mode,
+        totalCredits,
+        unitCredits: totalCredits,
+        openArtCredits,
+        multiplier: VERONIX_CREDIT_MULTIPLIER,
+        available: true,
+        config: params,
+        pricingNote: withMultiplierNote("VYRONIX image studio (BytePlus)"),
+        source: "estimate",
+      };
+    }
+
     const needsOwner =
       error instanceof OpenArtConfigError ||
       (error instanceof Error && /not connected|unauthorized|Reconnect/i.test(error.message));

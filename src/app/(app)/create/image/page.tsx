@@ -1,6 +1,5 @@
-import { redirect } from "next/navigation";
+import { CreatePage } from "@/components/veronix/CreatePage";
 
-/** Image studio paused — send users to Veronix video. */
 export default function CreateImagePage() {
-  redirect("/create/video");
+  return <CreatePage media="image" />;
 }

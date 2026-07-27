@@ -30,8 +30,8 @@ export function CreatePage({ media }: { media: "image" | "video" }) {
   const title = media === "video" ? "إنشاء فيديو" : "إنشاء صورة";
   const subtitle =
     media === "video"
-      ? "كل موديلات الفيديو المتزامنة — اختر موديلاً واحداً واكتب وصف المشهد والحركة."
-      : "كل موديلات الصور المتزامنة — اختر موديلاً واحداً واكتب وصف الصورة.";
+      ? "موديل VYRONIX للفيديو — اكتب وصف المشهد والحركة."
+      : "موديل VYRONIX للصور — اكتب وصف الصورة. بدون واترمارك.";
 
   return (
     <div className="relative min-h-screen bg-[#0b0d12] text-white">
