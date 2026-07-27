@@ -375,7 +375,10 @@ function ImageTile({ item }: { item: AssetItem }) {
   );
 }
 
-function useActiveSlide(containerRef: RefObject<HTMLElement | null>) {
+function useActiveSlide(
+  containerRef: RefObject<HTMLElement | null>,
+  itemCount: number,
+) {
   const [activeId, setActiveId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -399,10 +402,9 @@ function useActiveSlide(containerRef: RefObject<HTMLElement | null>) {
       { root, threshold: [0.35, 0.55, 0.75, 0.9] },
     );
     for (const slide of slides) observer.observe(slide);
-    // Seed first visible
     setActiveId(slides[0]?.getAttribute("data-asset-id") || null);
     return () => observer.disconnect();
-  }, [containerRef]);
+  }, [containerRef, itemCount]);
 
   return activeId;
 }
@@ -414,7 +416,6 @@ export function AssetsPage() {
   const [filter, setFilter] = useState<"video" | "image">("video");
   const [muted, setMuted] = useState(true);
   const feedRef = useRef<HTMLDivElement | null>(null);
-  const activeId = useActiveSlide(feedRef);
 
   const loadAssets = useCallback(async () => {
     const me = await fetchJson<{ user: CustomerUser | null }>("/api/auth/customer/me");
@@ -455,6 +456,7 @@ export function AssetsPage() {
 
   const videos = assets.filter((a) => a.mediaType === "video");
   const images = assets.filter((a) => a.mediaType === "image");
+  const activeId = useActiveSlide(feedRef, videos.length);
 
   if (filter === "video") {
     return (
