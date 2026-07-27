@@ -40,6 +40,58 @@ import type { CustomerUser } from "./AppHeader";
 /** Poll long enough for slow Seedance/OpenArt jobs (~15 min). */
 const PREVIEW_POLL_ATTEMPTS = 180;
 const PREVIEW_POLL_MS = 5000;
+const PREVIEW_SESSION_KEY = "veronix.create.preview.v1";
+
+type StudioPreview = {
+  url: string;
+  mediaType: "image" | "video";
+  historyId?: string;
+  status: "running" | "completed" | "failed";
+  freeTrial?: boolean;
+  assetId?: string;
+};
+
+function readStoredPreview(): {
+  preview: StudioPreview;
+  genStartedAt: number | null;
+} | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(PREVIEW_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as {
+      preview?: StudioPreview;
+      genStartedAt?: number | null;
+    };
+    if (!parsed.preview) return null;
+    return {
+      preview: parsed.preview,
+      genStartedAt:
+        typeof parsed.genStartedAt === "number" ? parsed.genStartedAt : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredPreview(
+  preview: StudioPreview | null,
+  genStartedAt: number | null,
+) {
+  if (typeof window === "undefined") return;
+  try {
+    if (!preview) {
+      sessionStorage.removeItem(PREVIEW_SESSION_KEY);
+      return;
+    }
+    sessionStorage.setItem(
+      PREVIEW_SESSION_KEY,
+      JSON.stringify({ preview, genStartedAt }),
+    );
+  } catch {
+    // ignore quota / private mode
+  }
+}
 
 const IMAGE_ASPECTS = ["1:1", "16:9", "9:16", "4:3", "3:4"] as const;
 const VIDEO_ASPECT = "16:9";
@@ -77,16 +129,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [platformReady, setPlatformReady] = useState<boolean | null>(null);
-  const [preview, setPreview] = useState<{
-    url: string;
-    mediaType: "image" | "video";
-    historyId?: string;
-    status: "running" | "completed" | "failed";
-    freeTrial?: boolean;
-  } | null>(null);
+  const [preview, setPreview] = useState<StudioPreview | null>(null);
   const [shareNote, setShareNote] = useState<string | null>(null);
   const [genStartedAt, setGenStartedAt] = useState<number | null>(null);
   const [elapsedSec, setElapsedSec] = useState(0);
+  const [previewHydrated, setPreviewHydrated] = useState(false);
   /** Final pose / entities from last enhance — used for sequential actions (ثم…). */
   const [promptSceneState, setPromptSceneState] = useState<SceneState | null>(null);
   const [enhancing, setEnhancing] = useState(false);
@@ -171,6 +218,82 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   useEffect(() => {
     if (lockedMedia) setMedia(lockedMedia);
   }, [lockedMedia]);
+
+  // Restore preview under Generate after navigating away (Home / Assets).
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const stored = readStoredPreview();
+      if (stored && !cancelled) {
+        setPreview(stored.preview);
+        setGenStartedAt(stored.genStartedAt);
+        if (stored.preview.status === "running") {
+          setGenerating(true);
+          setStatus("جاري التوليد…");
+        }
+      }
+      // Also resume from the latest running Assets job if session was cleared.
+      if ((!stored || stored.preview.status !== "running") && user) {
+        try {
+          const { res, data } = await fetchJson<{
+            assets?: Array<{
+              id: string;
+              url: string;
+              mediaType: "image" | "video";
+              historyId?: string;
+              status: string;
+              mode?: string;
+              createdAt?: string;
+            }>;
+          }>("/api/assets");
+          if (!cancelled && res.ok) {
+            const running = (data.assets || []).find(
+              (a) =>
+                a.status === "running" &&
+                a.mediaType === (lockedMedia || media) &&
+                a.mode !== "sequence-part",
+            );
+            if (running) {
+              const started = running.createdAt
+                ? new Date(running.createdAt).getTime()
+                : Date.now();
+              setPreview({
+                url: running.url || "",
+                mediaType: running.mediaType,
+                historyId: running.historyId,
+                status: "running",
+                assetId: running.id,
+              });
+              setGenStartedAt(started);
+              setGenerating(true);
+              setStatus("جاري التوليد…");
+              if (running.historyId) {
+                void pollPreview(
+                  running.historyId,
+                  running.mediaType,
+                  started,
+                  false,
+                  running.id,
+                );
+              }
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+      if (!cancelled) setPreviewHydrated(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hydrate once per mount/user
+  }, [user?.id, lockedMedia]);
+
+  useEffect(() => {
+    if (!previewHydrated) return;
+    writeStoredPreview(preview, genStartedAt);
+  }, [preview, genStartedAt, previewHydrated]);
 
   // Free first visit: lock Veronix defaults to 4s model / 480p (+ stock intro).
   useEffect(() => {

@@ -10,6 +10,7 @@ import {
   toBytePlusHistoryId,
   waitForBytePlusVideoTask,
 } from "@/lib/byteplus-ark";
+import { stylizeReferenceImage } from "@/lib/reference-sanitize";
 import {
   FREE_VERONIX_MODEL_DURATION_SECONDS,
   FREE_VERONIX_RESOLUTION,
@@ -218,7 +219,19 @@ export async function POST(request: Request) {
       });
 
       try {
-        const startUrl = resolvePublicMediaUrl(body.startFrame);
+        let startUrl = resolvePublicMediaUrl(body.startFrame);
+        // Creative pipeline: stylize real-photo start frames before Ark sees them
+        // to avoid InputImageSensitiveContentDetected / PrivacyInformation blocks.
+        if (startUrl) {
+          try {
+            startUrl = await stylizeReferenceImage(startUrl);
+          } catch (styleErr) {
+            console.warn(
+              "[veronix] proactive reference stylize skipped:",
+              styleErr instanceof Error ? styleErr.message : styleErr,
+            );
+          }
+        }
         const createInput = {
           prompt,
           duration: modelDuration,
@@ -226,6 +239,7 @@ export async function POST(request: Request) {
           generateAudio: freeTrial ? true : Boolean(body.generateAudio),
           watermark: false,
           startFrameUrl: startUrl,
+          imageRole: "first_frame" as const,
           resolution: uiResolution,
         };
         const created = await createBytePlusVideoTask(createInput);
@@ -276,7 +290,7 @@ export async function POST(request: Request) {
         }
 
         if (st === "FAILED") {
-          const errMsg =
+          const rawErr =
             typeof finished.error === "string"
               ? finished.error
               : finished.error && typeof finished.error === "object"
@@ -286,6 +300,11 @@ export async function POST(request: Request) {
                       "BytePlus generation failed",
                   )
                 : "BytePlus generation failed";
+          const errMsg = /InputImageSensitive|PrivacyInformation|real person/i.test(
+            rawErr,
+          )
+            ? "الصورة المرجعية رُفضت لأنها تبدو كشخص حقيقي. أعدنا معالجتها تلقائياً بأسلوب فني — إن استمر الرفض جرّب صورة مرسومة/AI أو ولّد بدون Start Frame."
+            : rawErr;
           await updateAsset(asset.id, user.id, {
             historyId,
             status: "failed",

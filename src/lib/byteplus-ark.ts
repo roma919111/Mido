@@ -3,6 +3,10 @@
  * Sole video provider for Veronix (seedance-2-mini). OpenArt is not used for generate.
  */
 
+import {
+  isInputImagePrivacyError,
+  stylizeReferenceImage,
+} from "@/lib/reference-sanitize";
 import type { VisualReference } from "@/lib/types";
 
 export const BYTEPLUS_TASK_PREFIX = "bp:";
@@ -70,6 +74,8 @@ export type BytePlusCreateInput = {
   /** Absolute http(s) or data: URL for first-frame / reference */
   startFrameUrl?: string | null;
   resolution?: string;
+  /** Ark image role — start frames should use first_frame */
+  imageRole?: "first_frame" | "reference_image";
 };
 
 export type BytePlusTask = {
@@ -115,76 +121,113 @@ export function resolvePublicMediaUrl(
   return null;
 }
 
-export async function createBytePlusVideoTask(
+function errorTextFromCreate(data: Record<string, unknown>, status: number): string {
+  const errObj = data.error as { message?: string; code?: string } | undefined;
+  const msg =
+    errObj?.message ||
+    (typeof data.message === "string" ? data.message : null) ||
+    `BytePlus create failed (${status})`;
+  const code = errObj?.code || "";
+  return code ? `${code}: ${msg}` : msg;
+}
+
+async function postCreateTask(payload: Record<string, unknown>) {
+  const res = await fetch(`${getBytePlusBaseUrl()}/contents/generations/tasks`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  const data = await parseJson(res);
+  return { res, data };
+}
+
+function buildCreatePayload(
   input: BytePlusCreateInput,
-): Promise<BytePlusTask> {
-  const content: ContentPart[] = [
-    { type: "text", text: input.prompt },
-  ];
-  if (input.startFrameUrl) {
+  opts?: { frameUrl?: string | null; imageRole?: string; generateAudio?: boolean },
+): Record<string, unknown> {
+  const frameUrl =
+    opts?.frameUrl !== undefined ? opts.frameUrl : input.startFrameUrl;
+  const content: ContentPart[] = [{ type: "text", text: input.prompt }];
+  if (frameUrl) {
     content.push({
       type: "image_url",
-      image_url: { url: input.startFrameUrl },
-      role: "reference_image",
+      image_url: { url: frameUrl },
+      // Seedance i2v expects first_frame for the opening still.
+      role: opts?.imageRole || input.imageRole || "first_frame",
     });
   }
-
   const duration = Math.max(4, Math.min(12, Math.round(input.duration)));
   const body: Record<string, unknown> = {
     model: getBytePlusModelId(),
     content,
-    generate_audio: Boolean(input.generateAudio),
+    generate_audio:
+      opts?.generateAudio !== undefined
+        ? opts.generateAudio
+        : Boolean(input.generateAudio),
     ratio: input.ratio || "16:9",
     duration,
     watermark: input.watermark === true,
   };
-  async function postCreate(payload: Record<string, unknown>) {
-    const res = await fetch(`${getBytePlusBaseUrl()}/contents/generations/tasks`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify(payload),
-    });
-    const data = await parseJson(res);
-    return { res, data };
-  }
+  if (input.resolution) body.resolution = input.resolution;
+  return body;
+}
 
-  let payload: Record<string, unknown> = input.resolution
-    ? { ...body, resolution: input.resolution }
-    : { ...body };
-
-  let { res, data } = await postCreate(payload);
+export async function createBytePlusVideoTask(
+  input: BytePlusCreateInput,
+): Promise<BytePlusTask> {
+  let payload = buildCreatePayload(input);
+  let { res, data } = await postCreateTask(payload);
 
   // Retry without resolution if the Ark build rejects the field.
   if (!res.ok && input.resolution) {
-    const errObj = data.error as { message?: string; code?: string } | undefined;
-    const msg = String(errObj?.message || data.message || "");
+    const msg = errorTextFromCreate(data, res.status);
     if (/resolution|unknown|invalid|not support/i.test(msg) || res.status === 400) {
-      payload = body;
-      ({ res, data } = await postCreate(payload));
+      const { resolution: _drop, ...rest } = payload;
+      payload = rest;
+      ({ res, data } = await postCreateTask(payload));
     }
   }
 
   // Sensitive-audio rejects are common — retry once muted so the clip still lands.
   if (!res.ok && payload.generate_audio === true) {
-    const errObj = data.error as { message?: string; code?: string } | undefined;
-    const code = String(errObj?.code || "");
-    const msg = String(errObj?.message || data.message || "");
-    if (
-      /OutputAudioSensitive|SensitiveContent|sensitive/i.test(`${code} ${msg}`)
-    ) {
+    const msg = errorTextFromCreate(data, res.status);
+    if (/OutputAudioSensitive|AudioSensitive/i.test(msg)) {
       payload = { ...payload, generate_audio: false };
-      ({ res, data } = await postCreate(payload));
+      ({ res, data } = await postCreateTask(payload));
+    }
+  }
+
+  // Real-person privacy block on the start frame — stylize creatively and retry.
+  if (!res.ok && input.startFrameUrl) {
+    const msg = errorTextFromCreate(data, res.status);
+    if (isInputImagePrivacyError(msg)) {
+      try {
+        const styled = await stylizeReferenceImage(input.startFrameUrl);
+        payload = buildCreatePayload(input, {
+          frameUrl: styled,
+          imageRole: "first_frame",
+          generateAudio: Boolean(payload.generate_audio),
+        });
+        ({ res, data } = await postCreateTask(payload));
+        // Last resort: keep motion from the prompt only (no still).
+        if (!res.ok && isInputImagePrivacyError(errorTextFromCreate(data, res.status))) {
+          payload = buildCreatePayload(input, {
+            frameUrl: null,
+            generateAudio: Boolean(payload.generate_audio),
+          });
+          ({ res, data } = await postCreateTask(payload));
+        }
+      } catch (styleErr) {
+        console.warn(
+          "[veronix] reference stylize failed:",
+          styleErr instanceof Error ? styleErr.message : styleErr,
+        );
+      }
     }
   }
 
   if (!res.ok) {
-    const errObj = data.error as { message?: string; code?: string } | undefined;
-    const msg =
-      errObj?.message ||
-      (typeof data.message === "string" ? data.message : null) ||
-      `BytePlus create failed (${res.status})`;
-    const code = errObj?.code || "";
-    throw new Error(code ? `${code}: ${msg}` : msg);
+    throw new Error(errorTextFromCreate(data, res.status));
   }
 
   const id = String(data.id || data.task_id || "");
@@ -263,14 +306,14 @@ function taskErrorText(task: BytePlusTask): string {
 
 /**
  * Poll a BytePlus task until it has a video URL, fails, or times out.
- * On sensitive-audio failure, retries once with generate_audio=false.
+ * Retries once for sensitive-audio and for real-person image privacy blocks.
  */
 export async function waitForBytePlusVideoTask(
   taskId: string,
   options?: {
     timeoutMs?: number;
     intervalMs?: number;
-    /** Original create input — needed to mute-retry on sensitive audio */
+    /** Original create input — needed for mute / privacy retries */
     retryInput?: BytePlusCreateInput;
   },
 ): Promise<BytePlusTask> {
@@ -279,6 +322,7 @@ export async function waitForBytePlusVideoTask(
   const started = Date.now();
   let currentId = taskId;
   let mutedRetryUsed = false;
+  let privacyRetryUsed = false;
 
   while (Date.now() - started < timeoutMs) {
     const task = await getBytePlusVideoTask(currentId);
@@ -300,6 +344,27 @@ export async function waitForBytePlusVideoTask(
         });
         currentId = retry.id;
         continue;
+      }
+      if (
+        !privacyRetryUsed &&
+        options?.retryInput?.startFrameUrl &&
+        isInputImagePrivacyError(err)
+      ) {
+        privacyRetryUsed = true;
+        try {
+          const styled = await stylizeReferenceImage(
+            options.retryInput.startFrameUrl,
+          );
+          const retry = await createBytePlusVideoTask({
+            ...options.retryInput,
+            startFrameUrl: styled,
+            imageRole: "first_frame",
+          });
+          currentId = retry.id;
+          continue;
+        } catch {
+          // Fall through — return original failure.
+        }
       }
       return task;
     }

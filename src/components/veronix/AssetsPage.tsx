@@ -21,6 +21,30 @@ interface AssetItem {
   error?: string;
 }
 
+function elapsedLabel(sec: number) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m > 0 ? `${m}م ${s}ث` : `${s}ث`;
+}
+
+function RunningTimer({ createdAt }: { createdAt: string }) {
+  const [sec, setSec] = useState(0);
+  useEffect(() => {
+    const started = new Date(createdAt).getTime();
+    const tick = () => {
+      setSec(Math.max(0, Math.floor((Date.now() - started) / 1000)));
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [createdAt]);
+  return (
+    <span className="text-2xl font-bold tabular-nums text-[#22f0ff]">
+      {elapsedLabel(sec)}
+    </span>
+  );
+}
+
 export function AssetsPage() {
   const [user, setUser] = useState<CustomerUser | null>(null);
   const [assets, setAssets] = useState<AssetItem[]>([]);
@@ -192,13 +216,16 @@ export function AssetsPage() {
                   }
                   return (
                     <div className="flex h-full flex-col items-center justify-center gap-2 px-3 text-center">
-                      <span className="text-sm font-semibold text-white">
+                      <span className="text-base font-semibold text-white">
                         {item.status === "running"
                           ? "جاري التوليد"
                           : item.status === "failed"
                             ? "فشل التوليد"
                             : item.status}
                       </span>
+                      {item.status === "running" && item.createdAt ? (
+                        <RunningTimer createdAt={item.createdAt} />
+                      ) : null}
                       {item.status === "running" && (
                         <span className="text-xs text-white/40">
                           فيديو واحد بالمدة المحددة…
