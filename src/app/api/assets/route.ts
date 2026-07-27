@@ -364,7 +364,7 @@ export async function GET() {
   }
 }
 
-/** Soft-delete an asset (hide from Assets feed). */
+/** Soft-delete an asset (permanent for the customer — not restored on login). */
 export async function DELETE(request: Request) {
   const user = await getCurrentUser();
   if (!user) {

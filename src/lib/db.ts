@@ -39,6 +39,11 @@ export interface AssetRecord {
   error?: string;
   /** Hidden intermediate multi-shot parts — final stitched clip stays visible */
   hidden?: boolean;
+  /**
+   * Customer deleted this asset from Assets.
+   * Must NEVER be cleared by orphan/recovery helpers (unlike `hidden`).
+   */
+  deletedAt?: string;
   /** Chosen output length (seconds) — drives generate ETA countdown in UI */
   targetSeconds?: number;
   /** Server-side multi-shot job plan / progress */
@@ -286,11 +291,18 @@ export async function updateAsset(
     const db = await ensureDb();
     const idx = db.assets.findIndex((a) => a.id === id && a.userId === userId);
     if (idx < 0) return null;
-    const next = { ...db.assets[idx]!, ...patch };
+    const prev = db.assets[idx]!;
+    const next = { ...prev, ...patch };
+    // Customer delete is sticky — never un-delete via sync/repair patches.
+    if (prev.deletedAt) {
+      next.deletedAt = prev.deletedAt;
+      next.hidden = true;
+    }
     // Promote finished multi-shot finals to the top so Assets shows them immediately.
     const becameVisibleFinal =
       next.status === "completed" &&
       next.hidden !== true &&
+      !next.deletedAt &&
       (next.mode === "sequence-concat" || Boolean(next.url));
     if (becameVisibleFinal && idx > 0) {
       db.assets.splice(idx, 1);
@@ -349,11 +361,13 @@ export async function listRunningMultiShotJobs(
 
 export async function listAssetsForUser(
   userId: string,
-  opts?: { includeHidden?: boolean },
+  opts?: { includeHidden?: boolean; includeDeleted?: boolean },
 ): Promise<AssetRecord[]> {
   const db = await ensureDb();
   return db.assets.filter((a) => {
     if (a.userId !== userId) return false;
+    // Customer-deleted assets stay gone unless an admin explicitly asks.
+    if (!opts?.includeDeleted && a.deletedAt) return false;
     // Intermediate multi-shot beats never appear in the Assets UI.
     if (!opts?.includeHidden && a.mode === "sequence-part") return false;
     if (opts?.includeHidden) return true;
@@ -361,7 +375,7 @@ export async function listAssetsForUser(
   });
 }
 
-/** Soft-delete (hide) one asset for the owning user. */
+/** Soft-delete an asset permanently for the owning user (survives login/recovery). */
 export async function deleteAssetForUser(
   userId: string,
   assetId: string,
@@ -370,7 +384,11 @@ export async function deleteAssetForUser(
     const db = await ensureDb();
     const i = db.assets.findIndex((a) => a.id === assetId && a.userId === userId);
     if (i < 0) return false;
-    db.assets[i] = { ...db.assets[i]!, hidden: true };
+    db.assets[i] = {
+      ...db.assets[i]!,
+      hidden: true,
+      deletedAt: new Date().toISOString(),
+    };
     await saveDb(db);
     return true;
   });
@@ -518,6 +536,7 @@ export async function recoverStuckSequencePending(
  * Unhide multi-shot parts that never got a stitched final video.
  * Keeps parts hidden when a sequence-concat exists shortly after, and while
  * generation/stitch may still be in flight (grace window).
+ * Never resurrects assets the customer deleted from Assets.
  */
 export async function recoverOrphanedHiddenAssets(
   userId: string,
@@ -525,7 +544,7 @@ export async function recoverOrphanedHiddenAssets(
   return withDbLock(async () => {
   const db = await ensureDb();
   const now = Date.now();
-  const mine = db.assets.filter((a) => a.userId === userId);
+  const mine = db.assets.filter((a) => a.userId === userId && !a.deletedAt);
   const concats = mine.filter(
     (a) =>
       a.hidden !== true &&
@@ -537,6 +556,8 @@ export async function recoverOrphanedHiddenAssets(
   for (let i = 0; i < db.assets.length; i += 1) {
     const a = db.assets[i]!;
     if (a.userId !== userId || a.hidden !== true) continue;
+    // Customer delete is permanent — do not unhide on login / Assets refresh.
+    if (a.deletedAt) continue;
     if (a.mediaType !== "video" || a.status !== "completed" || !a.url) continue;
     // Never surface intermediate beats in Assets — only the stitched final.
     if (a.mode === "sequence-part") continue;

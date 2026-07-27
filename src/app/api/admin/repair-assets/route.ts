@@ -117,6 +117,7 @@ export async function POST(request: Request) {
           }
         } else if (
           asset.hidden === true &&
+          !asset.deletedAt &&
           asset.status === "completed" &&
           asset.url &&
           asset.mode !== "sequence-part"
