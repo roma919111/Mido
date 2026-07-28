@@ -47,6 +47,111 @@ export async function POST(request: Request) {
     const body = (await request.json().catch(() => ({}))) as Body;
     const action = body.action || "status";
 
+    if (action === "analyze-refs") {
+      const { resolveGenerationFile } = await import("@/lib/veronix-outro");
+      const sharp = (await import("sharp")).default;
+      const { readFile } = await import("node:fs/promises");
+
+      const email = body.email?.trim().toLowerCase();
+      const paths: string[] = Array.isArray(body.paths) ? body.paths : [];
+      if (email) {
+        const user = await findUserByEmail(email);
+        if (!user) {
+          return NextResponse.json({ error: "user not found" }, { status: 404 });
+        }
+        const assets = await listAssetsForAdmin(user.id, 40);
+        for (const a of assets) {
+          for (const r of a.referenceImages || []) {
+            if (r?.url?.startsWith("/generations/") && !paths.includes(r.url)) {
+              paths.push(r.url);
+            }
+          }
+        }
+      }
+      if (!paths.length) {
+        return NextResponse.json({ error: "paths or email required" }, { status: 400 });
+      }
+
+      const reports = [];
+      for (const p of paths.slice(0, 24)) {
+        const filePath = resolveGenerationFile(p);
+        if (!filePath) {
+          reports.push({ path: p, error: "not found" });
+          continue;
+        }
+        try {
+          const bytes = await readFile(filePath);
+          const img = sharp(bytes).rotate();
+          const meta = await img.metadata();
+          const { data, info } = await img
+            .clone()
+            .resize(256, 256, { fit: "inside" })
+            .removeAlpha()
+            .raw()
+            .toBuffer({ resolveWithObject: true });
+          let sum = 0;
+          let sumSq = 0;
+          let lap = 0;
+          const w = info.width;
+          const h = info.height;
+          const n = w * h;
+          // grayscale luminance + Laplacian-ish sharpness proxy
+          const gray = new Float32Array(n);
+          for (let i = 0; i < n; i += 1) {
+            const r = data[i * 3]!;
+            const g = data[i * 3 + 1]!;
+            const b = data[i * 3 + 2]!;
+            const y = 0.299 * r + 0.587 * g + 0.114 * b;
+            gray[i] = y;
+            sum += y;
+            sumSq += y * y;
+          }
+          const mean = sum / n;
+          const variance = Math.max(0, sumSq / n - mean * mean);
+          for (let y = 1; y < h - 1; y += 1) {
+            for (let x = 1; x < w - 1; x += 1) {
+              const i = y * w + x;
+              const v =
+                -gray[i - w]! -
+                gray[i - 1]! +
+                4 * gray[i]! -
+                gray[i + 1]! -
+                gray[i + w]!;
+              lap += v * v;
+            }
+          }
+          const sharpness = lap / ((w - 2) * (h - 2));
+          // saturation proxy from RGB
+          let satSum = 0;
+          for (let i = 0; i < n; i += 1) {
+            const r = data[i * 3]!;
+            const g = data[i * 3 + 1]!;
+            const b = data[i * 3 + 2]!;
+            const mx = Math.max(r, g, b);
+            const mn = Math.min(r, g, b);
+            satSum += mx === 0 ? 0 : (mx - mn) / mx;
+          }
+          reports.push({
+            path: p,
+            bytes: bytes.length,
+            width: meta.width,
+            height: meta.height,
+            format: meta.format,
+            meanLuma: Math.round(mean * 10) / 10,
+            contrast: Math.round(Math.sqrt(variance) * 10) / 10,
+            sharpness: Math.round(sharpness * 10) / 10,
+            saturation: Math.round((satSum / n) * 1000) / 1000,
+          });
+        } catch (err) {
+          reports.push({
+            path: p,
+            error: err instanceof Error ? err.message : "analyze failed",
+          });
+        }
+      }
+      return NextResponse.json({ ok: true, count: reports.length, reports });
+    }
+
     if (action === "inspect") {
       const email = body.email?.trim().toLowerCase();
       if (!email) {

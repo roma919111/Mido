@@ -1,7 +1,11 @@
 /**
- * Soft cinematic / beauty grade for character stills.
- * Tuned from accepted Seedance refs (soft skin, film still) vs rejected
- * passport-sharp faces. NOT CGI/cartoon — closer to portrait beauty mode.
+ * Soft cinematic grade tuned from measured accepted vs rejected refs.
+ *
+ * Accepted (worked): ~496–1142px wide, normal portrait ratios, sat≈0.23
+ * Rejected (privacy): consistently 1440×3120 ultra-tall phone stills
+ *
+ * Strategy: crop ultra-tall shots to a face-forward 3:4, match accepted
+ * size band, light film desat — NOT CGI/cartoon.
  */
 
 import { spawn } from "node:child_process";
@@ -54,11 +58,10 @@ async function loadImageBytes(url: string): Promise<Buffer> {
 export type SoftGradeLevel = "generate" | "retry";
 
 /**
- * Portrait beauty / soft film grade.
- * Key anti-reject levers (from accepted vs rejected refs):
- * - moderate downscale (sharp high-res faces trigger "real person")
- * - skin soft without cartoon
- * - BytePlus requires both sides ≥ 300px — enforce min 320 after resize
+ * Match accepted Seedance stills:
+ * 1) Ultra-tall phone frames (h/w > 1.85) → top-weighted 3:4 crop (face zone)
+ * 2) Long side ≤ 1100 (accepted band), both sides ≥ 320 (BytePlus min 300)
+ * 3) Light film: sat≈0.9×, tiny soften — keep likeness, no CGI
  */
 export async function applySoftCinematicGrade(
   bytes: Buffer,
@@ -68,36 +71,51 @@ export async function applySoftCinematicGrade(
     opts?.level || (opts?.stronger ? "retry" : "generate");
   const retry = level === "retry";
 
-  // Keep portraits wide enough for BytePlus (min 300px). Very tall crops
-  // at 640px height could shrink width to ~295 — that rejects.
-  const edge = retry ? 900 : 1024;
+  const MAX_SIDE = retry ? 1000 : 1100;
   const MIN_SIDE = 320;
 
-  let buf = await sharp(bytes)
-    .rotate()
+  let img = sharp(bytes).rotate();
+  const meta = await img.metadata();
+  const w0 = meta.width || 0;
+  const h0 = meta.height || 0;
+
+  if (w0 > 0 && h0 > 0 && h0 / w0 > 1.85) {
+    // Rejected refs were 1440×3120. Crop to 3:4 from the upper body/face band.
+    const targetH = Math.round(w0 * (4 / 3));
+    const height = Math.min(h0, targetH);
+    // Bias crop upward (faces sit in the top half of full-body phone shots).
+    const top = Math.max(0, Math.round((h0 - height) * 0.12));
+    img = img.extract({
+      left: 0,
+      top: Math.min(top, Math.max(0, h0 - height)),
+      width: w0,
+      height,
+    });
+  }
+
+  let buf = await img
     .resize({
-      width: edge,
-      height: edge,
+      width: MAX_SIDE,
+      height: MAX_SIDE,
       fit: "inside",
       withoutEnlargement: true,
       kernel: sharp.kernel.lanczos3,
     })
     .modulate({
-      brightness: retry ? 1.06 : 1.04,
-      saturation: retry ? 0.84 : 0.88,
+      brightness: retry ? 1.03 : 1.02,
+      saturation: retry ? 0.88 : 0.9,
     })
-    .linear(retry ? 1.03 : 1.02, retry ? -3 : -2)
-    .median(retry ? 7 : 5)
-    .blur(retry ? 1.35 : 0.95)
-    .sharpen({ sigma: retry ? 0.28 : 0.35 })
-    .jpeg({ quality: retry ? 80 : 82, mozjpeg: true })
+    .linear(1.02, -2)
+    .median(retry ? 3 : 2)
+    .blur(retry ? 0.55 : 0.4)
+    .sharpen({ sigma: 0.4 })
+    .jpeg({ quality: 84, mozjpeg: true })
     .toBuffer();
 
-  const meta = await sharp(buf).metadata();
-  const w = meta.width || 0;
-  const h = meta.height || 0;
+  const outMeta = await sharp(buf).metadata();
+  const w = outMeta.width || 0;
+  const h = outMeta.height || 0;
   if (w > 0 && h > 0 && (w < MIN_SIDE || h < MIN_SIDE)) {
-    // Scale up so both sides are ≥ 320 (BytePlus InvalidParameter otherwise).
     buf = await sharp(buf)
       .resize({
         width: Math.max(MIN_SIDE, w),
@@ -105,16 +123,13 @@ export async function applySoftCinematicGrade(
         fit: "outside",
         withoutEnlargement: false,
       })
-      .jpeg({ quality: retry ? 80 : 82, mozjpeg: true })
+      .jpeg({ quality: 84, mozjpeg: true })
       .toBuffer();
   }
 
   return buf;
 }
 
-/**
- * Privacy retry: stronger portrait beauty (still not CGI).
- */
 export async function stylizeReferenceImage(sourceUrl: string): Promise<string> {
   const trimmed = sourceUrl.trim();
   if (!trimmed) throw new Error("Empty reference URL");
@@ -136,10 +151,8 @@ export async function stylizeReferenceImage(sourceUrl: string): Promise<string> 
       const styled = path.join(work, "styled.jpg");
       await writeFile(rawPath, await loadImageBytes(trimmed));
       const attempts = [
-        // Soft beauty film — downscale + gblur + mild desat (no CGI noise).
-        "scale=900:-2:flags=lanczos,eq=contrast=1.02:saturation=0.84:brightness=0.03,gblur=sigma=1.2,unsharp=3:3:0.25:3:3:0.0,format=yuvj420p",
-        "scale=900:-2:flags=lanczos,eq=saturation=0.88:brightness=0.02,gblur=sigma=0.9,format=yuvj420p",
-        "scale=900:-2,format=yuvj420p",
+        "scale=1100:-2:flags=lanczos,eq=saturation=0.9:brightness=0.02,gblur=sigma=0.45,format=yuvj420p",
+        "scale=1100:-2,format=yuvj420p",
       ];
       let ok = false;
       for (const vf of attempts) {
@@ -153,7 +166,7 @@ export async function stylizeReferenceImage(sourceUrl: string): Promise<string> 
             "-frames:v",
             "1",
             "-q:v",
-            "4",
+            "3",
             styled,
           ]);
           ok = true;
@@ -166,7 +179,10 @@ export async function stylizeReferenceImage(sourceUrl: string): Promise<string> 
       await copyFile(styled, outPublic);
       const st = await stat(outPublic);
       if (st.size < 400) throw new Error("Stylized reference too small");
-      const bytes = await readFile(outPublic);
+      // Guarantee BytePlus min width after ffmpeg scale.
+      let bytes = await readFile(outPublic);
+      bytes = await applySoftCinematicGrade(bytes, { level: "retry" });
+      await writeFile(outPublic, bytes);
       return `data:image/jpeg;base64,${bytes.toString("base64")}`;
     } finally {
       await rm(work, { recursive: true, force: true }).catch(() => undefined);
@@ -182,9 +198,6 @@ export function isInputImagePrivacyError(message: string): boolean {
 
 const CINEMA_MARK = "لقطة سينمائية ناعمة";
 
-/**
- * Privacy retry prompt: soft cinematic film still (matches accepted refs).
- */
 export function toSemiRealisticScenePrompt(prompt: string): string {
   const base = (prompt || "")
     .replace(/\n\n\(جارٍ توليد ودمج[\s\S]*$/u, "")
@@ -194,13 +207,11 @@ export function toSemiRealisticScenePrompt(prompt: string): string {
     .replace(/\n*cinematic CGI[^\n]*/gi, "")
     .trim();
   if (!base) {
-    return `${CINEMA_MARK}، إضاءة ناعمة، بشرة ناعمة، عمق ميدان سينمائي.`;
+    return `${CINEMA_MARK}، إضاءة ناعمة، عمق ميدان سينمائي.`;
   }
-  if (base.includes(CINEMA_MARK)) {
-    return base;
-  }
+  if (base.includes(CINEMA_MARK)) return base;
   return [
-    `${CINEMA_MARK} (soft cinematic film still), diffused lighting, soft skin, shallow depth of field.`,
+    `${CINEMA_MARK} (soft cinematic film still), diffused lighting, shallow depth of field.`,
     "Creative cinematic media — not a raw phone selfie or ID photo.",
     "",
     base,
