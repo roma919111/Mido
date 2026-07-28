@@ -7,6 +7,8 @@ import {
   ChevronDown,
   ImagePlus,
   Loader2,
+  Minus,
+  Plus,
   Sparkles,
   WandSparkles,
   X,
@@ -158,8 +160,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     Array<{ prompt: string; action: string }> | null
   >(null);
   const preview = jobs[0] ?? null;
-  const waitingResult =
-    generating || jobs.some((j) => j.status === "running");
+  const runningJobs = jobs.filter((j) => j.status === "running");
+  const waitingResult = generating || runningJobs.length > 0;
+  /** Block new batches until every in-flight video finishes (max 4 concurrent). */
+  const canStartNewBatch = !generating && runningJobs.length === 0;
   // Lock free-trial defaults only when the customer has no credits yet.
   // Users with a balance can run paid multi-shot (4s×N) without burning the
   // single free clip first — otherwise they only ever see one 4s video.
@@ -1335,6 +1339,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     setStatus(null);
     setShareNote(null);
 
+    if (!canStartNewBatch) {
+      setError(
+        `انتظر انتهاء الفيديوهات الجارية (${runningJobs.length}) قبل توليد دفعة جديدة — الحد الأقصى 4.`,
+      );
+      return;
+    }
+
     if (!user) {
       router.push(`/signup?next=${encodeURIComponent("/")}&paywall=1`);
       return;
@@ -2085,31 +2096,45 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             aria-label="عدد الفيديوهات"
           >
             <span className="text-[10px] font-semibold text-white/55">عدد</span>
-            <div className="flex items-center gap-1">
-              {([1, 2, 3, 4] as const).map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setOutputCount(n)}
-                  className={`flex h-9 w-9 items-center justify-center rounded-xl text-sm font-bold tabular-nums transition active:scale-95 ${
-                    outputCount === n
-                      ? "bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] text-white shadow-[0_0_0_1px_rgba(255,255,255,0.25)]"
-                      : "bg-white/8 text-white/70 hover:bg-white/12"
-                  }`}
-                  aria-pressed={outputCount === n}
-                  aria-label={`${n} فيديو`}
-                >
-                  {n}
-                </button>
-              ))}
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() =>
+                  setOutputCount((n) => Math.max(1, Math.min(4, n - 1)))
+                }
+                disabled={!canStartNewBatch || outputCount <= 1}
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-white transition active:scale-95 disabled:opacity-40"
+                aria-label="إنقاص العدد"
+              >
+                <Minus className="h-4 w-4" />
+              </button>
+              <span className="min-w-[1.75rem] text-center text-lg font-black tabular-nums text-white">
+                {outputCount}
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  setOutputCount((n) => Math.max(1, Math.min(4, n + 1)))
+                }
+                disabled={!canStartNewBatch || outputCount >= 4}
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-white transition active:scale-95 disabled:opacity-40"
+                aria-label="زيادة العدد"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
             </div>
+            <span className="text-[9px] text-white/40">حد أقصى 4</span>
           </div>
         ) : null}
 
         <button
           type="button"
           onClick={() => void handleGenerate()}
-          disabled={quoting || !selectedModel?.available}
+          disabled={
+            quoting ||
+            !selectedModel?.available ||
+            !canStartNewBatch
+          }
           className={`relative flex min-w-0 flex-1 items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-5 py-4 text-base font-bold text-white transition duration-150 enabled:active:scale-[0.97] enabled:active:brightness-110 disabled:opacity-70 ${
             genFlash
               ? "scale-[0.98] brightness-110 ring-2 ring-white/45"
@@ -2123,8 +2148,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           )}
           {quoting
             ? "يحسب السعر…"
-            : waitingResult || generating
-              ? "توليد فيديو جديد"
+            : !canStartNewBatch
+              ? `انتظر الانتهاء (${runningJobs.length})`
               : freeTrial
                 ? "Generate مجاني"
                 : outputCount > 1
@@ -2143,16 +2168,19 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       </div>
 
       {waitingResult ? (
-        <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-[#22f0ff]/25 bg-[#141821] px-4 py-5">
+        <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-[#22f0ff]/25 bg-[#141821] px-4 py-4">
           <GenerateClock
             startedAt={
               genStartedAt ||
-              jobs.find((j) => j.status === "running")?.startedAt ||
+              runningJobs[0]?.startedAt ||
               Date.now()
             }
             size="large"
           />
-          <p className="text-sm font-semibold text-white">جاري التوليد…</p>
+          <p className="text-sm font-semibold text-white">
+            جاري التوليد…
+            {runningJobs.length > 1 ? ` (${runningJobs.length})` : ""}
+          </p>
         </div>
       ) : null}
 
@@ -2160,6 +2188,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         jobs={jobs}
         prompt={prompt}
         onShare={(job) => void handleShare(job)}
+        onDelete={(job) =>
+          setJobs((prev) => prev.filter((j) => j.clientId !== job.clientId))
+        }
       />
       {shareNote ? (
         <p className="text-center text-xs text-[#22f0ff]">{shareNote}</p>

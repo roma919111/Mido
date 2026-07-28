@@ -160,7 +160,7 @@ body {
 }
 
 .vyronix-clock-hand {
-  animation: vyronix-clock-spin 0.5s linear infinite;
+  animation: vyronix-clock-spin 0.28s linear infinite;
 }
 
 select option {

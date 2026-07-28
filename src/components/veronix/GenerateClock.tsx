@@ -3,24 +3,31 @@
 import { useEffect, useState } from "react";
 
 /**
- * Visual stopwatch for generate UI.
- * Hand spins via CSS (GPU). Digits update every 250ms only.
+ * Compact stopwatch — seconds + centiseconds race upward (timer feel).
+ * Hand spins via CSS; only the digit label re-renders (~50ms).
  */
 
 function pad2(n: number) {
   return String(Math.max(0, Math.floor(n))).padStart(2, "0");
 }
 
-export function formatFastClock(displaySec: number): string {
-  const total = Math.max(0, Math.floor(displaySec));
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  return `${pad2(m)}:${pad2(s)}`;
+/** MM:SS.CS — centiseconds always visible and racing. */
+export function formatFastTimer(displaySec: number): string {
+  const totalCs = Math.max(0, Math.floor(displaySec * 100));
+  const cs = totalCs % 100;
+  const totalSec = Math.floor(totalCs / 100);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${pad2(m)}:${pad2(s)}.${pad2(cs)}`;
 }
 
+/**
+ * Accelerated timer: ~24 display-seconds per real second
+ * so seconds and centiseconds both feel like a racing countdown-to-ready.
+ */
 export function fastDisplaySeconds(startedAtMs: number, nowMs = Date.now()): number {
   const wallMs = Math.max(0, nowMs - startedAtMs);
-  return wallMs / (1000 / 12);
+  return wallMs / (1000 / 24);
 }
 
 type GenerateClockProps = {
@@ -37,71 +44,74 @@ export function GenerateClock({
   const safeStart =
     Number.isFinite(startedAt) && startedAt > 0 ? startedAt : Date.now();
   const [label, setLabel] = useState(() =>
-    formatFastClock(fastDisplaySeconds(safeStart)),
+    formatFastTimer(fastDisplaySeconds(safeStart)),
   );
 
   useEffect(() => {
     const tick = () =>
-      setLabel(formatFastClock(fastDisplaySeconds(safeStart)));
+      setLabel(formatFastTimer(fastDisplaySeconds(safeStart)));
     tick();
-    const id = window.setInterval(tick, 250);
+    // 50ms keeps CS digits racing without rebuilding the SVG face.
+    const id = window.setInterval(tick, 50);
     return () => window.clearInterval(id);
   }, [safeStart]);
 
   if (size === "compact") {
     return (
       <span
-        className={`inline-flex items-center gap-1.5 rounded-full border border-[#22f0ff]/35 bg-[#22f0ff]/10 px-2 py-0.5 ${className}`}
+        className={`inline-flex items-center gap-1 rounded-full border border-[#22f0ff]/35 bg-[#22f0ff]/10 px-1.5 py-0.5 ${className}`}
         aria-label={`عداد التوليد ${label}`}
       >
-        <span className="relative inline-flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-[#22f0ff]/80 bg-black/40">
+        <span className="relative inline-flex h-4 w-4 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-[#22f0ff]/80 bg-black/40">
           <span
-            className="vyronix-clock-hand absolute left-1/2 top-1/2 h-[8px] w-[1.5px] rounded-full bg-[#22f0ff]"
+            className="vyronix-clock-hand absolute left-1/2 top-1/2 h-[6px] w-[1.5px] rounded-full bg-[#22f0ff]"
             style={{ transformOrigin: "50% 100%" }}
           />
-          <span className="absolute h-1 w-1 rounded-full bg-white" />
+          <span className="absolute h-0.5 w-0.5 rounded-full bg-white" />
         </span>
-        <span className="font-mono text-xs font-bold tabular-nums tracking-wider text-[#22f0ff]">
+        <span className="font-mono text-[10px] font-bold tabular-nums tracking-tight text-[#22f0ff]">
           {label}
         </span>
       </span>
     );
   }
 
+  const dim = 96;
+
   return (
     <div
-      className={`flex flex-col items-center gap-2 ${className}`}
+      className={`flex flex-col items-center gap-1.5 ${className}`}
       aria-label={`عداد التوليد ${label}`}
     >
-      <div className="relative h-[140px] w-[140px]">
+      <div className="relative" style={{ width: dim, height: dim }}>
         <svg
-          width={140}
-          height={140}
-          viewBox="0 0 140 140"
-          className="drop-shadow-[0_0_14px_rgba(34,240,255,0.4)]"
+          width={dim}
+          height={dim}
+          viewBox="0 0 96 96"
+          className="drop-shadow-[0_0_10px_rgba(34,240,255,0.35)]"
         >
           <circle
-            cx="70"
-            cy="70"
-            r="63"
+            cx="48"
+            cy="48"
+            r="44"
             fill="rgba(0,0,0,0.55)"
             stroke="rgba(34,240,255,0.4)"
-            strokeWidth="2"
+            strokeWidth="1.5"
           />
           <circle
-            cx="70"
-            cy="70"
-            r="58"
+            cx="48"
+            cy="48"
+            r="40"
             fill="none"
             stroke="rgba(34,240,255,0.65)"
-            strokeWidth="3.5"
+            strokeWidth="2.5"
           />
           {Array.from({ length: 12 }).map((_, i) => {
             const a = ((i * 30 - 90) * Math.PI) / 180;
-            const x1 = 70 + Math.cos(a) * 56;
-            const y1 = 70 + Math.sin(a) * 56;
-            const x2 = 70 + Math.cos(a) * 46;
-            const y2 = 70 + Math.sin(a) * 46;
+            const x1 = 48 + Math.cos(a) * 38;
+            const y1 = 48 + Math.sin(a) * 38;
+            const x2 = 48 + Math.cos(a) * 32;
+            const y2 = 48 + Math.sin(a) * 32;
             return (
               <line
                 key={i}
@@ -110,24 +120,24 @@ export function GenerateClock({
                 x2={x2}
                 y2={y2}
                 stroke="rgba(34,240,255,0.85)"
-                strokeWidth={i % 3 === 0 ? 3 : 1.5}
+                strokeWidth={i % 3 === 0 ? 2 : 1}
                 strokeLinecap="round"
               />
             );
           })}
-          <circle cx="70" cy="70" r="5" fill="#22f0ff" />
+          <circle cx="48" cy="48" r="3.5" fill="#22f0ff" />
         </svg>
         <span
-          className="vyronix-clock-hand pointer-events-none absolute left-1/2 top-1/2 mt-[-42px] block h-[42px] w-[3px] rounded-full bg-[#22f0ff]"
+          className="vyronix-clock-hand pointer-events-none absolute left-1/2 top-1/2 mt-[-28px] block h-[28px] w-[2px] rounded-full bg-[#22f0ff]"
           style={{ transformOrigin: "50% 100%" }}
         />
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center pt-10">
-          <span className="rounded-lg bg-black/65 px-2.5 py-1 font-mono text-xl font-black tabular-nums tracking-widest text-[#22f0ff] ring-1 ring-[#22f0ff]/35">
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center pt-7">
+          <span className="rounded-md bg-black/70 px-1.5 py-0.5 font-mono text-sm font-black tabular-nums tracking-tight text-[#22f0ff] ring-1 ring-[#22f0ff]/35">
             {label}
           </span>
         </div>
       </div>
-      <p className="text-xs font-semibold text-white/75">عداد التوليد</p>
+      <p className="text-[10px] font-semibold text-white/70">عداد التوليد</p>
     </div>
   );
 }

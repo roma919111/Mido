@@ -2,35 +2,45 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  Download,
   Loader2,
-  Pause,
   Pencil,
-  Play,
   Share2,
+  Trash2,
 } from "lucide-react";
-import { veronixDownloadPath, veronixMediaSrc } from "@/lib/media-proxy";
+import { veronixMediaSrc } from "@/lib/media-proxy";
 import type { StudioJob } from "@/lib/studio-jobs";
 import { writeEditDraft } from "@/lib/edit-draft";
 import { fetchJson } from "@/lib/fetch-json";
 import { useRouter } from "next/navigation";
 import { GenerateClock } from "@/components/veronix/GenerateClock";
 
+function formatDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "0:00";
+  const total = Math.max(0, Math.floor(seconds));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 function ResultCard({
   job,
   prompt,
   onShare,
+  onDelete,
 }: {
   job: StudioJob;
   prompt: string;
   onShare: (job: StudioJob) => void;
+  onDelete: (job: StudioJob) => void;
 }) {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [playing, setPlaying] = useState(false);
-  const [downloading, setDownloading] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const [durationSec, setDurationSec] = useState(0);
+  const [showControls, setShowControls] = useState(true);
+  const hideTimer = useRef<number | null>(null);
   const waiting = job.status === "running";
   const failed = job.status === "failed";
   const clockStart =
@@ -54,40 +64,29 @@ function ResultCard({
         }) || job.url
       : null;
 
+  useEffect(() => {
+    return () => {
+      if (hideTimer.current) window.clearTimeout(hideTimer.current);
+    };
+  }, []);
+
+  const revealControls = () => {
+    setShowControls(true);
+    if (hideTimer.current) window.clearTimeout(hideTimer.current);
+    hideTimer.current = window.setTimeout(() => {
+      const el = videoRef.current;
+      if (el && !el.paused) setShowControls(false);
+    }, 2500);
+  };
+
   const togglePlay = () => {
     const el = videoRef.current;
     if (!el) return;
+    revealControls();
     if (el.paused) {
       void el.play().catch(() => undefined);
     } else {
       el.pause();
-    }
-  };
-
-  const handleDownload = async () => {
-    if (downloading || waiting || (!job.url && !job.historyId)) return;
-    setDownloading(true);
-    setNote("جاري التحضير…");
-    try {
-      const path = veronixDownloadPath({
-        historyId: job.historyId,
-        url: job.url,
-        mediaType: job.mediaType,
-      });
-      if (!path) throw new Error("الملف غير جاهز");
-      const res = await fetch(path, { credentials: "same-origin" });
-      if (!res.ok) throw new Error("تعذر التحميل");
-      const blob = await res.blob();
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = `veronix-${job.assetId || job.clientId}.${job.mediaType === "image" ? "jpg" : "mp4"}`;
-      a.click();
-      URL.revokeObjectURL(a.href);
-      setNote("بدأ التحميل");
-    } catch {
-      setNote("تعذر التحميل");
-    } finally {
-      setDownloading(false);
     }
   };
 
@@ -153,6 +152,23 @@ function ResultCard({
     }
   };
 
+  const handleDelete = async () => {
+    if (deleting || waiting) return;
+    setDeleting(true);
+    try {
+      if (job.assetId) {
+        await fetchJson(`/api/assets?id=${encodeURIComponent(job.assetId)}`, {
+          method: "DELETE",
+        });
+      }
+      onDelete(job);
+    } catch {
+      onDelete(job);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-[#141821]">
       <div className="flex items-center justify-between gap-1 border-b border-white/8 px-2 py-1.5">
@@ -173,24 +189,47 @@ function ResultCard({
               controls={false}
               controlsList="nodownload"
               className="h-full w-full object-contain"
-              onPlay={() => setPlaying(true)}
-              onPause={() => setPlaying(false)}
-              onEnded={() => setPlaying(false)}
+              onClick={togglePlay}
+              onLoadedMetadata={(e) => {
+                const d = e.currentTarget.duration;
+                if (Number.isFinite(d) && d > 0) setDurationSec(d);
+              }}
+              onPlay={() => {
+                setPlaying(true);
+                revealControls();
+              }}
+              onPause={() => {
+                setPlaying(false);
+                setShowControls(true);
+              }}
+              onEnded={() => {
+                setPlaying(false);
+                setShowControls(true);
+              }}
             />
-            <div className="absolute inset-x-0 bottom-2 z-20 flex justify-center">
-              <button
-                type="button"
-                onClick={togglePlay}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-black/55 text-white ring-1 ring-white/30 backdrop-blur-md transition hover:bg-black/70"
-                aria-label={playing ? "إيقاف مؤقت" : "تشغيل"}
-              >
-                {playing ? (
-                  <Pause className="h-4 w-4" fill="currentColor" />
-                ) : (
-                  <Play className="h-4 w-4 translate-x-0.5" fill="currentColor" />
-                )}
-              </button>
-            </div>
+            {/* Native-like: tap screen → play + duration at bottom */}
+            {showControls ? (
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex items-end justify-between bg-gradient-to-t from-black/75 via-black/25 to-transparent px-2.5 pb-2 pt-8">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    togglePlay();
+                  }}
+                  className="pointer-events-auto flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-black shadow"
+                  aria-label={playing ? "إيقاف مؤقت" : "تشغيل"}
+                >
+                  {playing ? (
+                    <span className="text-sm font-black">❚❚</span>
+                  ) : (
+                    <span className="translate-x-[1px] text-sm font-black">▶</span>
+                  )}
+                </button>
+                <span className="rounded bg-black/55 px-1.5 py-0.5 font-mono text-[11px] font-bold tabular-nums text-white">
+                  {formatDuration(durationSec)}
+                </span>
+              </div>
+            ) : null}
           </>
         ) : imgSrc ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -202,10 +241,9 @@ function ResultCard({
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-1 px-2 text-center">
             {waiting ? (
-              <div className="flex flex-col items-center gap-2">
-                <Loader2 className="h-7 w-7 animate-spin text-[#22f0ff]" />
-                <p className="text-sm font-semibold text-white">جاري التوليد</p>
-                <GenerateClock startedAt={clockStart} size="compact" />
+              <div className="flex flex-col items-center gap-1.5">
+                <GenerateClock startedAt={clockStart} size="large" />
+                <p className="text-xs font-semibold text-white/80">جاري التوليد</p>
               </div>
             ) : failed ? (
               <p className="text-[11px] font-semibold leading-snug text-rose-200">
@@ -222,47 +260,44 @@ function ResultCard({
         VYRONIX
       </div>
 
-      <div className="flex gap-1 p-1.5">
-        <button
-          type="button"
-          onClick={() => onShare(job)}
-          disabled={!job.url}
-          className="inline-flex flex-1 items-center justify-center gap-0.5 rounded-lg border border-white/15 bg-white/5 py-1.5 text-[10px] font-semibold text-white disabled:opacity-40"
-        >
-          <Share2 className="h-3 w-3 text-[#22f0ff]" />
-          Share
-        </button>
-        <button
-          type="button"
-          onClick={() => void handleDownload()}
-          disabled={waiting || downloading || (!job.url && !job.historyId)}
-          className="inline-flex flex-1 items-center justify-center gap-0.5 rounded-lg bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] py-1.5 text-[10px] font-semibold text-white disabled:opacity-40"
-        >
-          {downloading ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          ) : (
-            <Download className="h-3 w-3" />
-          )}
-          تحميل
-        </button>
+      {/* Clear action row: تعديل · شير · حذف */}
+      <div className="grid grid-cols-3 gap-1.5 p-2">
         <button
           type="button"
           onClick={() => void handleEdit()}
           disabled={waiting || editing}
-          className="inline-flex flex-1 items-center justify-center gap-0.5 rounded-lg border border-white/15 bg-white/5 py-1.5 text-[10px] font-semibold text-white disabled:opacity-40"
-          title="تعديل"
+          className="inline-flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-xl border border-white/20 bg-white/10 px-1 py-1.5 text-[11px] font-bold text-white disabled:opacity-40"
         >
           {editing ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
+            <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
-            <Pencil className="h-3 w-3" />
+            <Pencil className="h-4 w-4 text-[#22f0ff]" />
           )}
           تعديل
         </button>
+        <button
+          type="button"
+          onClick={() => onShare(job)}
+          disabled={!job.url}
+          className="inline-flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-xl border border-white/20 bg-white/10 px-1 py-1.5 text-[11px] font-bold text-white disabled:opacity-40"
+        >
+          <Share2 className="h-4 w-4 text-[#22f0ff]" />
+          شير
+        </button>
+        <button
+          type="button"
+          onClick={() => void handleDelete()}
+          disabled={waiting || deleting}
+          className="inline-flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-xl border border-rose-400/30 bg-rose-500/15 px-1 py-1.5 text-[11px] font-bold text-rose-100 disabled:opacity-40"
+        >
+          {deleting ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Trash2 className="h-4 w-4" />
+          )}
+          حذف
+        </button>
       </div>
-      {note ? (
-        <p className="px-2 pb-1.5 text-center text-[10px] text-[#22f0ff]">{note}</p>
-      ) : null}
     </div>
   );
 }
@@ -271,23 +306,25 @@ export function StudioResultGrid({
   jobs,
   prompt,
   onShare,
+  onDelete,
 }: {
   jobs: StudioJob[];
   prompt: string;
   onShare: (job: StudioJob) => void;
+  onDelete: (job: StudioJob) => void;
 }) {
   if (!jobs.length) return null;
   return (
     <div className="space-y-3">
       <p className="text-sm font-semibold text-white">معاينة النتيجة</p>
-      {/* Always 3 side-by-side slots per row (as requested). */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {jobs.map((job) => (
           <ResultCard
             key={job.clientId}
             job={job}
             prompt={prompt}
             onShare={onShare}
+            onDelete={onDelete}
           />
         ))}
       </div>
