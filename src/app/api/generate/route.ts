@@ -30,9 +30,8 @@ import {
 } from "@/lib/model-catalog";
 import { loadSyncedCatalog } from "@/lib/openart-catalog-sync";
 import {
-  isCharacterName,
-  normalizeCharacterName,
-  withModestWardrobeDirective,
+  buildSeedanceCharacterPrompt,
+  stripInternalPromptNotes,
 } from "@/lib/character-names";
 import type { VisualReference } from "@/lib/types";
 
@@ -54,25 +53,6 @@ function persistableReferenceImages(
       label: String(r.label || "").slice(0, 40),
     }));
   return kept.length ? kept : undefined;
-}
-
-function characterPromptAppendix(refs: VisualReference[]): string {
-  const lines = refs.map((r, i) => {
-    const tag = `@Image${i + 1}`;
-    const name = isCharacterName(r.label)
-      ? normalizeCharacterName(r.label)
-      : "";
-    return name
-      ? `- ${tag} = ONLY "${name}" — face/hair/skin from ${tag} only; never swap with another @Image`
-      : `- ${tag} = character ${i + 1} — face/hair/skin from ${tag} only; never swap`;
-  });
-  const antiSwap =
-    refs.length > 1
-      ? `IDENTITY LOCK: Do not swap faces/bodies between ${refs
-          .map((_, i) => `@Image${i + 1}`)
-          .join(" and ")}. Do not mirror identities.`
-      : `IDENTITY LOCK: Keep @Image1 identity consistent; do not replace with a different person.`;
-  return `\n\nUse these character references:\n${lines.join("\n")}\n${antiSwap}\nKeep a photoreal live-action look (not CGI or cartoon).`;
 }
 
 type GenBody = {
@@ -427,11 +407,12 @@ export async function POST(request: Request) {
         ? FREE_VERONIX_MODEL_DURATION_SECONDS
         : Math.min(bounds.max, Math.max(bounds.min, requestedDuration));
 
+      const cleanPrompt = stripInternalPromptNotes(prompt);
       const asset = await createAsset({
         userId: user.id,
         mediaType: media,
         url: "",
-        prompt,
+        prompt: cleanPrompt,
         // Tag intermediate beats so Assets recovery can treat them as stitch parts.
         mode: body.sequencePart ? "sequence-part" : mode,
         model: quote.modelId,
@@ -467,19 +448,16 @@ export async function POST(request: Request) {
           lastUrl = null;
         }
 
-        let finalPrompt = prompt;
-        if (
-          referenceUrls.length &&
-          !/Use these character references|IDENTITY LOCK|@Image1\s*=/.test(
-            finalPrompt,
-          )
-        ) {
-          finalPrompt = `${prompt.trim()}${characterPromptAppendix(keptRefs)}`;
-        }
-        // Behind-the-scenes wardrobe: scene-appropriate but non-revealing
-        // (avoids bikini/privacy rejects while keeping face identity from refs).
-        if (referenceUrls.length) {
-          finalPrompt = withModestWardrobeDirective(finalPrompt);
+        // API-only prompt with @ImageN — never written back to the asset.
+        const finalPrompt = referenceUrls.length
+          ? buildSeedanceCharacterPrompt(cleanPrompt, keptRefs)
+          : cleanPrompt;
+
+        if (referenceUrls.length === 0 && refList.length > 0) {
+          console.warn(
+            "[veronix] character refs uploaded but none resolved for BytePlus",
+            refList.map((r) => r.url?.slice(0, 48)),
+          );
         }
 
         const createInput = {

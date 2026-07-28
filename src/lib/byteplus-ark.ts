@@ -12,11 +12,32 @@ import { resolveGenerationFile } from "@/lib/veronix-outro";
 import type { VisualReference } from "@/lib/types";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import sharp from "sharp";
 
 export const BYTEPLUS_TASK_PREFIX = "bp:";
 
 const DEFAULT_BASE = "https://ark.ap-southeast.bytepluses.com/api/v3";
 const DEFAULT_MODEL = "dreamina-seedance-2-0-mini-260615";
+
+/** Compress stills so Seedance accepts them (large base64 bodies often fail silently). */
+async function toCompressedDataUrl(bytes: Buffer, mimeHint?: string): Promise<string> {
+  try {
+    const out = await sharp(bytes)
+      .rotate()
+      .resize({
+        width: 1280,
+        height: 1280,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .jpeg({ quality: 85, mozjpeg: true })
+      .toBuffer();
+    return `data:image/jpeg;base64,${out.toString("base64")}`;
+  } catch {
+    const mime = mimeHint || "image/jpeg";
+    return `data:${mime};base64,${bytes.toString("base64")}`;
+  }
+}
 
 export function getBytePlusApiKey(): string | undefined {
   return (
@@ -142,14 +163,28 @@ function mimeFromGenerationPath(filePath: string): string {
 
 /**
  * BytePlus cannot fetch private `/generations/*` files on our volume.
- * Convert local stills to data URLs; keep remote https / data as-is.
+ * Convert local stills to compressed data URLs; keep remote https as-is
+ * (unless they point at our own /generations host).
  */
 export async function ensureBytePlusMediaUrl(
   url: string | null | undefined,
 ): Promise<string | null> {
   if (!url?.trim()) return null;
   const trimmed = url.trim();
-  if (trimmed.startsWith("data:image/")) return trimmed;
+  if (trimmed.startsWith("data:image/")) {
+    // Re-compress oversized data URLs so the create payload stays under limits.
+    const m = /^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/i.exec(trimmed);
+    if (!m?.[2]) return trimmed;
+    try {
+      const raw = Buffer.from(m[2], "base64");
+      if (raw.length > 900_000) {
+        return await toCompressedDataUrl(raw, m[1]);
+      }
+    } catch {
+      // keep original
+    }
+    return trimmed;
+  }
   if (/^https?:\/\//i.test(trimmed)) {
     const base = process.env.APP_BASE_URL?.trim()?.replace(/\/+$/, "");
     // Our own /generations URLs are not publicly fetchable by BytePlus —
@@ -161,7 +196,7 @@ export async function ensureBytePlusMediaUrl(
       try {
         const bytes = await readFile(filePath);
         if (bytes.length < 32) return null;
-        return `data:${mimeFromGenerationPath(filePath)};base64,${bytes.toString("base64")}`;
+        return await toCompressedDataUrl(bytes, mimeFromGenerationPath(filePath));
       } catch {
         return null;
       }
@@ -175,8 +210,7 @@ export async function ensureBytePlusMediaUrl(
     try {
       const bytes = await readFile(filePath);
       if (bytes.length < 32) return null;
-      const mime = mimeFromGenerationPath(filePath);
-      return `data:${mime};base64,${bytes.toString("base64")}`;
+      return await toCompressedDataUrl(bytes, mimeFromGenerationPath(filePath));
     } catch {
       return null;
     }

@@ -3,6 +3,8 @@
  * in the address bar, download sheet, or video player source.
  */
 
+import { stripInternalPromptNotes } from "@/lib/character-names";
+
 const ALLOWED_HOST_SUFFIXES = [
   ".openart.ai",
   ".openart.com",
@@ -138,12 +140,10 @@ export function veronixPosterSrc(input: {
   return buildMediaApiPath({ ...input, mediaType: "video" }, "poster");
 }
 
-/** Strip internal multi-shot / ETA tags from the customer-facing prompt. */
+/** Strip internal multi-shot / ETA / binding tags from the customer-facing prompt. */
 export function cleanAssetPrompt(prompt: string | undefined | null): string {
   if (!prompt) return "";
-  return prompt
-    .replace(/\n\n\(جارٍ توليد ودمج[\s\S]*$/u, "")
-    .replace(/\n\n\(جاري توليد ودمج[\s\S]*$/u, "")
+  return stripInternalPromptNotes(prompt)
     .replace(/\n?Beat \d+ of \d+[^\n]*/gi, "")
     .replace(/\n?one shot only[^\n]*/gi, "")
     .replace(/\n?Continuation beat[^\n]*/gi, "")

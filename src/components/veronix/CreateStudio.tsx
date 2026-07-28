@@ -31,11 +31,11 @@ import type { VisualReference } from "@/lib/types";
 import type { SceneState } from "@/lib/prompt-enhance";
 import { fetchJson } from "@/lib/fetch-json";
 import {
-  appendCharacterLinkHint,
   isCharacterName,
   matchNamedCharacters,
   normalizeCharacterName,
   resolveCharacterRefsForPrompt,
+  stripInternalPromptNotes,
 } from "@/lib/character-names";
 import {
   estimateGenerateSeconds,
@@ -287,7 +287,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       // Still apply video drafts on video studio.
       if (lockedMedia !== "video") return;
     }
-    setPrompt(draft.prompt || "");
+    setPrompt(stripInternalPromptNotes(draft.prompt || ""));
 
     const chars = (draft.referenceImages || [])
       .filter((r) => r?.url)
@@ -1474,19 +1474,15 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           : "جاري التوليد…",
     );
     try {
-      // Sync character names onto refs so BytePlus gets labeled @ImageN identity.
+      // Sync names onto refs. Send the user's clean prompt only —
+      // Seedance @Image binding is applied server-side and never stored.
       const namedRefs = refs.map((r, i) => {
         const name = normalizeCharacterName(refNames[i] || "");
         return name ? { ...r, label: name } : r;
       });
       const linked = resolveCharacterRefsForPrompt(prompt.trim(), namedRefs);
       const activeRefs = linked.refs;
-      // Client hint for binding only — modest wardrobe is applied server-side.
-      const finalPrompt = appendCharacterLinkHint(
-        prompt.trim(),
-        linked.matched,
-        activeRefs,
-      );
+      const finalPrompt = prompt.trim();
       const mode =
         media === "image"
           ? activeRefs.length
