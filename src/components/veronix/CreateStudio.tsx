@@ -213,10 +213,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     !user?.freeVeronixUsed &&
     (user?.credits ?? 0) <= 0;
 
-  const linkedCharacters = useMemo(
-    () => matchNamedCharacters(prompt, refs),
-    [prompt, refs],
-  );
+  const linkedCharacters = useMemo(() => {
+    // Match against typed names (refNames), not upload filenames on refs.
+    const named = refs.map((r, i) => {
+      const name = normalizeCharacterName(refNames[i] || "");
+      return name ? { ...r, label: name } : r;
+    });
+    return matchNamedCharacters(prompt, named);
+  }, [prompt, refs, refNames]);
 
   const allModels = useMemo(
     () => [...imageModels, ...videoModels],
@@ -1887,7 +1891,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={c.url}
+                  src={veronixRefImageSrc(c.url) || c.url}
                   alt=""
                   className="h-4 w-4 rounded-full object-cover"
                 />

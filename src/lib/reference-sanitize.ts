@@ -56,9 +56,9 @@ export type SoftGradeLevel = "generate" | "retry";
 /**
  * Portrait beauty / soft film grade.
  * Key anti-reject levers (from accepted vs rejected refs):
- * - downscale hard (sharp high-res faces trigger "real person")
- * - skin smooth (median + blur) without cartoon edges
- * - mild film desat + soft lift
+ * - moderate downscale (sharp high-res faces trigger "real person")
+ * - skin soft without cartoon
+ * - BytePlus requires both sides ≥ 300px — enforce min 320 after resize
  */
 export async function applySoftCinematicGrade(
   bytes: Buffer,
@@ -68,10 +68,12 @@ export async function applySoftCinematicGrade(
     opts?.level || (opts?.stronger ? "retry" : "generate");
   const retry = level === "retry";
 
-  // 768 on generate / 640 on retry — passport sharpness is the main reject signal.
-  const edge = retry ? 640 : 768;
+  // Keep portraits wide enough for BytePlus (min 300px). Very tall crops
+  // at 640px height could shrink width to ~295 — that rejects.
+  const edge = retry ? 900 : 1024;
+  const MIN_SIDE = 320;
 
-  return sharp(bytes)
+  let buf = await sharp(bytes)
     .rotate()
     .resize({
       width: edge,
@@ -85,13 +87,29 @@ export async function applySoftCinematicGrade(
       saturation: retry ? 0.84 : 0.88,
     })
     .linear(retry ? 1.03 : 1.02, retry ? -3 : -2)
-    // Beauty soft: kill pore microcontrast (accepted refs look airbrushed).
     .median(retry ? 7 : 5)
     .blur(retry ? 1.35 : 0.95)
-    // Very light re-sharpen so face stays clear but not ID-photo crisp.
     .sharpen({ sigma: retry ? 0.28 : 0.35 })
     .jpeg({ quality: retry ? 80 : 82, mozjpeg: true })
     .toBuffer();
+
+  const meta = await sharp(buf).metadata();
+  const w = meta.width || 0;
+  const h = meta.height || 0;
+  if (w > 0 && h > 0 && (w < MIN_SIDE || h < MIN_SIDE)) {
+    // Scale up so both sides are ≥ 320 (BytePlus InvalidParameter otherwise).
+    buf = await sharp(buf)
+      .resize({
+        width: Math.max(MIN_SIDE, w),
+        height: Math.max(MIN_SIDE, h),
+        fit: "outside",
+        withoutEnlargement: false,
+      })
+      .jpeg({ quality: retry ? 80 : 82, mozjpeg: true })
+      .toBuffer();
+  }
+
+  return buf;
 }
 
 /**
@@ -119,9 +137,9 @@ export async function stylizeReferenceImage(sourceUrl: string): Promise<string> 
       await writeFile(rawPath, await loadImageBytes(trimmed));
       const attempts = [
         // Soft beauty film — downscale + gblur + mild desat (no CGI noise).
-        "scale=640:-2:flags=lanczos,eq=contrast=1.02:saturation=0.84:brightness=0.03,gblur=sigma=1.2,unsharp=3:3:0.25:3:3:0.0,format=yuvj420p",
-        "scale=640:-2:flags=lanczos,eq=saturation=0.88:brightness=0.02,gblur=sigma=0.9,format=yuvj420p",
-        "scale=640:-2,format=yuvj420p",
+        "scale=900:-2:flags=lanczos,eq=contrast=1.02:saturation=0.84:brightness=0.03,gblur=sigma=1.2,unsharp=3:3:0.25:3:3:0.0,format=yuvj420p",
+        "scale=900:-2:flags=lanczos,eq=saturation=0.88:brightness=0.02,gblur=sigma=0.9,format=yuvj420p",
+        "scale=900:-2,format=yuvj420p",
       ];
       let ok = false;
       for (const vf of attempts) {
