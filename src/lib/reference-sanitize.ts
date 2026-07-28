@@ -154,21 +154,21 @@ async function maxFaceBodyZoom(buf: Buffer): Promise<Buffer> {
 export async function toAiDigitalCharacterRender(bytes: Buffer): Promise<Buffer> {
   const { buf: sized, width: w, height: h } = await normalizeCanvas(bytes);
 
-  // 1–3) Digital aesthetic + extreme texture smooth + exaggerated definition.
-  // Flatten pores/noise, keep primary features (eyes/mouth/brows) via re-sharpen.
+  // 1–3) Digital aesthetic + texture smooth + definition.
+  // Milder grade (pre-strengthen) — keeps natural color that previously worked.
   const sculpted = await sharp(sized)
-    .median(13)
-    .blur(2.4)
-    .modulate({ brightness: 1.05, saturation: 1.28 })
-    .linear(1.2, -14)
-    .sharpen({ sigma: 1.55, m1: 2.0, m2: 0.55 })
+    .median(9)
+    .blur(1.6)
+    .modulate({ brightness: 1.04, saturation: 1.18 })
+    .linear(1.16, -12)
+    .sharpen({ sigma: 1.35, m1: 1.8, m2: 0.6 })
     .png()
     .toBuffer();
 
   // 4) Soft bloom lighting — digital glow on bright areas / edges.
   const glow = await sharp(sculpted)
-    .modulate({ brightness: 1.35 })
-    .blur(28)
+    .modulate({ brightness: 1.25 })
+    .blur(22)
     .png()
     .toBuffer();
   const bloomed = await sharp(sculpted)
@@ -178,8 +178,8 @@ export async function toAiDigitalCharacterRender(bytes: Buffer): Promise<Buffer>
 
   // 5) Digital background isolation — flat digital blur behind a soft subject mask.
   const bg = await sharp(bloomed)
-    .blur(40)
-    .modulate({ saturation: 0.75, brightness: 0.94 })
+    .blur(32)
+    .modulate({ saturation: 0.82, brightness: 0.96 })
     .png()
     .toBuffer();
 
@@ -210,9 +210,9 @@ export async function toAiDigitalCharacterRender(bytes: Buffer): Promise<Buffer>
 
   // 6) AI cinematic color grading — saturated digital film look.
   const graded = await sharp(isolated)
-    .modulate({ brightness: 1.04, saturation: 1.28 })
-    .linear(1.12, -10)
-    .tint({ r: 255, g: 240, b: 220 })
+    .modulate({ brightness: 1.03, saturation: 1.22 })
+    .linear(1.1, -8)
+    .tint({ r: 255, g: 244, b: 230 })
     .jpeg({ quality: 88, mozjpeg: true, chromaSubsampling: "4:4:4" })
     .toBuffer();
 
