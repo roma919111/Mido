@@ -1,6 +1,9 @@
 import { getActiveCatalog, getCatalogModel, resolveMcpModel } from "@/lib/model-catalog";
 import { audioParamForMcpModel, mapResolutionForMcpModel } from "@/lib/model-params";
-import { lookupCachedCost } from "@/lib/openart-cost-cache";
+import {
+  lookupCachedCost,
+  lookupDefaultCostSync,
+} from "@/lib/openart-cost-cache";
 
 /** Veronix wallet credits = seeded base credits × this fixed markup. */
 export const VERONIX_CREDIT_MULTIPLIER = 1.8;
@@ -140,27 +143,17 @@ function buildParams(
   };
 }
 
-async function quoteFromCache(
+function quoteResultFromCached(
   input: QuoteInput,
   mcpModel: string,
   mode: string,
-  params: Record<string, unknown>,
-): Promise<QuoteResult | null> {
-  const mappedRes =
-    typeof params.resolution === "string"
-      ? params.resolution
-      : mapResolutionForMcpModel(mcpModel, input.resolution);
-
-  const cached = await lookupCachedCost({
-    model: mcpModel,
-    mode,
-    resolution: mappedRes,
-    duration: input.duration,
-    generateAudio: input.generateAudio,
-    aspectRatio: input.aspectRatio,
-  });
-  if (!cached) return null;
-
+  cached: {
+    totalCredits: number;
+    config: Record<string, unknown>;
+    scaled: boolean;
+  },
+  available: boolean,
+): QuoteResult {
   const openArtCredits = cached.totalCredits;
   const totalCredits = toVeronixCredits(openArtCredits);
   return {
@@ -181,25 +174,13 @@ async function quoteFromCache(
   };
 }
 
-/** Local pricing only — never dials OpenArt MCP. */
-export async function quoteOpenArtCredits(
+function quoteEstimateResult(
   input: QuoteInput,
-  options: QuoteOptions = {},
-): Promise<QuoteResult> {
-  const allowCache = options.allowCache !== false;
-  const catalog = getCatalogModel(input.modelId);
-  const mcpModel = catalog ? resolveMcpModel(catalog) : input.modelId;
-  const available = Boolean(catalog?.available && catalog.mcpId);
-  const mode = resolveMode(catalog, input);
-  const params = buildParams(input, mcpModel);
-
-  if (allowCache) {
-    const fromCache = await quoteFromCache(input, mcpModel, mode, params);
-    if (fromCache) {
-      return { ...fromCache, available: available || fromCache.available };
-    }
-  }
-
+  mcpModel: string,
+  mode: string,
+  params: Record<string, unknown>,
+  available: boolean,
+): QuoteResult {
   const openArtCredits = fallbackEstimate(input);
   const totalCredits = toVeronixCredits(openArtCredits);
   const isVyronixImage =
@@ -207,7 +188,9 @@ export async function quoteOpenArtCredits(
     (input.modelId === "vyronix-image" || mcpModel.includes("seedream"));
   const isVyronixVideo =
     input.media === "video" &&
-    (input.modelId === "veronix" || mcpModel.includes("seedance"));
+    (input.modelId === "veronix" ||
+      input.modelId === "seedance-2-mini" ||
+      mcpModel.includes("seedance"));
 
   return {
     modelId: input.modelId,
@@ -230,6 +213,83 @@ export async function quoteOpenArtCredits(
     ),
     source: "estimate",
   };
+}
+
+async function quoteFromCache(
+  input: QuoteInput,
+  mcpModel: string,
+  mode: string,
+  params: Record<string, unknown>,
+): Promise<QuoteResult | null> {
+  const mappedRes =
+    typeof params.resolution === "string"
+      ? params.resolution
+      : mapResolutionForMcpModel(mcpModel, input.resolution);
+
+  const cached = await lookupCachedCost({
+    model: mcpModel,
+    mode,
+    resolution: mappedRes,
+    duration: input.duration,
+    generateAudio: input.generateAudio,
+    aspectRatio: input.aspectRatio,
+  });
+  if (!cached) return null;
+  return quoteResultFromCached(input, mcpModel, mode, cached, true);
+}
+
+/**
+ * Instant UI pricing from the seeded cost table (no network).
+ * Same formula as server cache/defaults — debit still happens only on Generate.
+ */
+export function quoteCreditsLocal(input: QuoteInput): QuoteResult {
+  const catalog = getCatalogModel(input.modelId);
+  const mcpModel = catalog ? resolveMcpModel(catalog) : input.modelId;
+  const available = Boolean(catalog?.available && catalog.mcpId);
+  const mode = resolveMode(catalog, input);
+  const params = buildParams(input, mcpModel);
+  const mappedRes =
+    typeof params.resolution === "string"
+      ? params.resolution
+      : mapResolutionForMcpModel(mcpModel, input.resolution);
+
+  const cached = lookupDefaultCostSync({
+    model: mcpModel,
+    mode,
+    resolution: mappedRes,
+    duration: input.duration,
+    generateAudio: input.generateAudio,
+    aspectRatio: input.aspectRatio,
+  });
+  if (cached) {
+    return {
+      ...quoteResultFromCached(input, mcpModel, mode, cached, available),
+      available: available || true,
+    };
+  }
+  return quoteEstimateResult(input, mcpModel, mode, params, available);
+}
+
+/** Local pricing only — never dials OpenArt MCP. */
+export async function quoteOpenArtCredits(
+  input: QuoteInput,
+  options: QuoteOptions = {},
+): Promise<QuoteResult> {
+  const allowCache = options.allowCache !== false;
+  const catalog = getCatalogModel(input.modelId);
+  const mcpModel = catalog ? resolveMcpModel(catalog) : input.modelId;
+  const available = Boolean(catalog?.available && catalog.mcpId);
+  const mode = resolveMode(catalog, input);
+  const params = buildParams(input, mcpModel);
+
+  if (allowCache) {
+    const fromCache = await quoteFromCache(input, mcpModel, mode, params);
+    if (fromCache) {
+      return { ...fromCache, available: available || fromCache.available };
+    }
+  }
+
+  return quoteEstimateResult(input, mcpModel, mode, params, available);
 }
 
 export async function quoteMultipleModels(

@@ -34,7 +34,9 @@ import {
   FREE_VERONIX_DURATION_SECONDS,
   FREE_VERONIX_RESOLUTION,
   VERONIX_MODEL_ID,
+  isFreeVeronixEligible,
 } from "@/lib/free-trial";
+import { quoteCreditsLocal } from "@/lib/credit-quote";
 import type { VisualReference } from "@/lib/types";
 import type { SceneState } from "@/lib/prompt-enhance";
 import { fetchJson } from "@/lib/fetch-json";
@@ -118,7 +120,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const [generateAudio, setGenerateAudio] = useState(false);
   /** OmarFX clarity grade — opt-in (slower). */
   const [applyClarity, setApplyClarity] = useState(false);
-  const [freeTrial, setFreeTrial] = useState(false);
   const [refs, setRefs] = useState<VisualReference[]>([]);
   const [refPreviews, setRefPreviews] = useState<string[]>([]);
   /** Display names aligned with refPreviews / refs (no @ needed in prompt). */
@@ -127,10 +128,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const [endFrame, setEndFrame] = useState<VisualReference | null>(null);
   const [startPreview, setStartPreview] = useState<string | null>(null);
   const [endPreview, setEndPreview] = useState<string | null>(null);
-  const [creditCost, setCreditCost] = useState<number | null>(null);
-  const [creditLive, setCreditLive] = useState(false);
-  const [quoteError, setQuoteError] = useState<string | null>(null);
-  const [quoting, setQuoting] = useState(false);
   const [generating, setGenerating] = useState(false);
   /** Brief flash so a second Generate tap feels pressed. */
   const [genFlash, setGenFlash] = useState(false);
@@ -185,10 +182,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const slotsLeft = Math.max(0, MAX_CONCURRENT - runningJobs.length);
   /** Can start more while under the concurrent cap (1 running → up to 3 more). */
   const canStartMore = !generating && slotsLeft > 0;
-  /** Exact count for this tap — never more than remaining slots. */
-  const requestCountPreview = freeTrial
-    ? 1
-    : Math.min(Math.max(1, Math.min(4, outputCount)), Math.max(slotsLeft, 1));
 
   /** Poll/status updates are non-urgent — keep typing/buttons responsive. */
   const setJobsDeferred = useCallback((updater: SetStateAction<StudioJob[]>) => {
@@ -204,6 +197,53 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     selectedModelId === VERONIX_MODEL_ID &&
     !user?.freeVeronixUsed &&
     (user?.credits ?? 0) <= 0;
+
+  /**
+   * Instant price from seeded cost table — no /api/credits/quote while sliding.
+   * Real wallet debit still happens only inside /api/generate.
+   */
+  const quoteMode =
+    media === "image"
+      ? refs.length
+        ? "image2image"
+        : "text2image"
+      : startFrame || refs.length
+        ? "image2video"
+        : "text2video";
+  const localQuote = useMemo(
+    () =>
+      quoteCreditsLocal({
+        modelId: selectedModelId,
+        media,
+        mode: quoteMode,
+        aspectRatio: media === "video" ? VIDEO_ASPECT : aspectRatio,
+        resolution:
+          media === "video" ? resolution : resolution || DEFAULT_IMAGE_RESOLUTION,
+        duration: media === "video" ? duration : undefined,
+        generateAudio: media === "video" ? generateAudio : undefined,
+      }),
+    [
+      selectedModelId,
+      media,
+      quoteMode,
+      aspectRatio,
+      resolution,
+      duration,
+      generateAudio,
+    ],
+  );
+  const freeTrial = isFreeVeronixEligible(user, {
+    modelId: selectedModelId,
+    media,
+    duration,
+    resolution,
+    multiShot: false,
+  });
+  const creditCost = freeTrial ? 0 : localQuote.totalCredits;
+  /** Exact count for this tap — never more than remaining slots. */
+  const requestCountPreview = freeTrial
+    ? 1
+    : Math.min(Math.max(1, Math.min(4, outputCount)), Math.max(slotsLeft, 1));
 
   const linkedCharacters = useMemo(() => {
     // Match against typed names (refNames), not upload filenames on refs.
@@ -606,110 +646,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- apply defaults only on media/catalog identity changes
   }, [media, imageModels, videoModels, selectedModelId, user?.freeVeronixUsed]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      if (!selectedModelId) return;
-      setQuoting(true);
-      setQuoteError(null);
-      try {
-        const mode =
-          media === "image"
-            ? refs.length
-              ? "image2image"
-              : "text2image"
-            : startFrame
-              ? "image2video"
-              : "text2video";
-        const { res, data } = await fetchJson<{
-          totalCredits: number;
-          listPriceCredits?: number;
-          freeTrial?: boolean;
-          liveOpenArt?: boolean;
-          synced?: boolean;
-          source?: string;
-          error?: string;
-          quotes?: Array<{ available?: boolean; source?: string; totalCredits?: number }>;
-        }>("/api/credits/quote", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            modelIds: [selectedModelId],
-            media,
-            mode,
-            aspectRatio: media === "video" ? VIDEO_ASPECT : aspectRatio,
-            resolution:
-              media === "video" ? resolution : resolution || DEFAULT_IMAGE_RESOLUTION,
-            duration: media === "video" ? duration : undefined,
-            generateAudio: media === "video" ? generateAudio : undefined,
-            multiShot: false,
-          }),
-        });
-        if (cancelled) return;
-        if (!res.ok) {
-          setCreditCost(null);
-          setCreditLive(false);
-          setFreeTrial(false);
-          throw new Error(data.error || "تعذر جلب سعر الكريدت");
-        }
-        const isFree =
-          Boolean(data.freeTrial) &&
-          (user?.credits ?? 0) <= 0 &&
-          !user?.freeVeronixUsed;
-        setFreeTrial(isFree);
-        const nextCost = data.totalCredits;
-
-        if (cancelled) return;
-        setShotHint(null);
-        setCreditCost(nextCost);
-        const quote = data.quotes?.[0];
-        const live = Boolean(
-          data.synced ||
-            data.freeTrial ||
-            data.totalCredits != null ||
-            (quote?.available &&
-              (quote.source === "cache" ||
-                quote.source === "estimate" ||
-                quote.source === "openart" ||
-                quote.source === "openart-cache")),
-        );
-        setCreditLive(live);
-        if (!live) {
-          setQuoteError("تعذر حساب التكلفة — أعد المحاولة");
-        } else {
-          setQuoteError(null);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setCreditLive(false);
-          setCreditCost(null);
-          setFreeTrial(false);
-          setShotHint(null);
-          setQuoteError(err instanceof Error ? err.message : "تعذر مزامنة تكلفة الكريدت");
-        }
-      } finally {
-        if (!cancelled) setQuoting(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    selectedModelId,
-    media,
-    aspectRatio,
-    resolution,
-    duration,
-    generateAudio,
-    refs.length,
-    startFrame,
-    user?.freeVeronixUsed,
-    user?.credits,
-    user?.id,
-    // Intentionally omit `prompt` — quote body does not use it, and
-    // re-quoting on every keystroke froze the Generate button / whole studio.
-  ]);
 
   async function fileToDataUrl(file: File): Promise<string> {
     const buf = await file.arrayBuffer();
@@ -1479,10 +1415,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       setError("هذا الموديل غير متاح للتوليد حاليًا. اختر موديلًا متاحًا.");
       return;
     }
-    if (creditCost == null || !creditLive) {
-      setError(quoteError || "انتظر حساب التكلفة قبل التوليد.");
-      return;
-    }
     // Exact selection: 1→1, 2→2… capped only by remaining concurrent slots.
     const requestCount = freeTrial
       ? 1
@@ -1491,7 +1423,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       setError("لديك 4 فيديوهات قيد التوليد — انتظر انتهاء أحدها.");
       return;
     }
-    const billedCost = freeTrial ? 0 : (creditCost || 0) * requestCount;
+    const billedCost = freeTrial ? 0 : creditCost * requestCount;
     if (!freeTrial && (user.credits <= 0 || user.credits < billedCost)) {
       setError("رصيدك غير كافٍ. أضف كريدت أو رقِّ الباقة للمتابعة.");
       router.push("/pricing?paywall=1");
@@ -1548,7 +1480,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       selectedModelId === VERONIX_MODEL_ID &&
       ((user.credits ?? 0) > 0 || Boolean(user.freeVeronixUsed))
     ) {
-      setFreeTrial(false);
       setMultiShotOn(false);
     }
 
@@ -2271,41 +2202,25 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         <button
           type="button"
           onClick={() => void handleGenerate()}
-          disabled={
-            quoting ||
-            !selectedModel?.available ||
-            !canStartMore
-          }
+          disabled={!selectedModel?.available || !canStartMore}
           className={`relative flex min-w-0 flex-1 items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-5 py-4 text-base font-bold text-white transition duration-150 enabled:active:scale-[0.97] enabled:active:brightness-110 disabled:opacity-70 ${
             genFlash
               ? "scale-[0.98] brightness-110 ring-2 ring-white/45"
               : ""
           }`}
         >
-          {quoting ? (
-            <Loader2 className="h-5 w-5 animate-spin" />
-          ) : (
-            <Sparkles className="h-5 w-5" />
-          )}
-          {quoting
-            ? "يحسب السعر…"
-            : !canStartMore
-              ? slotsLeft <= 0
-                ? "ممتلئ (4/4)"
-                : "جاري الإرسال…"
-              : freeTrial
-                ? "Generate مجاني"
-                : requestCountPreview > 1
-                  ? `Generate ×${requestCountPreview}`
-                  : "Generate"}
+          <Sparkles className="h-5 w-5" />
+          {!canStartMore
+            ? slotsLeft <= 0
+              ? "ممتلئ (4/4)"
+              : "جاري الإرسال…"
+            : freeTrial
+              ? "Generate مجاني"
+              : requestCountPreview > 1
+                ? `Generate ×${requestCountPreview}`
+                : "Generate"}
           <span className="rounded-full bg-black/20 px-2.5 py-0.5 text-xs tabular-nums">
-            {quoting
-              ? "…"
-              : creditLive && creditCost != null
-                ? freeTrial
-                  ? "مجاني"
-                  : `−${creditCost * (freeTrial ? 1 : requestCountPreview)}`
-                : "—"}
+            {freeTrial ? "مجاني" : `−${creditCost * requestCountPreview}`}
           </span>
         </button>
       </div>

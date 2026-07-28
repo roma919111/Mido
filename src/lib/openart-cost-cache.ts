@@ -108,20 +108,27 @@ function scoreMatch(
   return score;
 }
 
-export async function lookupCachedCost(wanted: {
+export type CostLookupWanted = {
   model: string;
   mode: string;
   resolution?: string;
   duration?: number;
   generateAudio?: boolean;
   aspectRatio?: string;
-}): Promise<{
+};
+
+export type CostLookupResult = {
   totalCredits: number;
   unitCredits: number;
   config: Record<string, unknown>;
   scaled: boolean;
-} | null> {
-  const items = await getCostCacheItems();
+};
+
+/** Shared matcher — used by server cache + client static table (same prices). */
+export function lookupCostFromItems(
+  items: CostCacheItem[],
+  wanted: CostLookupWanted,
+): CostLookupResult | null {
   let best: CostCacheItem | null = null;
   let bestScore = -1;
   for (const item of items) {
@@ -162,4 +169,21 @@ export async function lookupCachedCost(wanted: {
     },
     scaled,
   };
+}
+
+/**
+ * Instant client/server estimate from the seeded cost table (no disk / network).
+ * Same math as cache hits when `.data/openart-cost-cache.json` is empty.
+ */
+export function lookupDefaultCostSync(
+  wanted: CostLookupWanted,
+): CostLookupResult | null {
+  return lookupCostFromItems(OPENART_COST_DEFAULTS, wanted);
+}
+
+export async function lookupCachedCost(
+  wanted: CostLookupWanted,
+): Promise<CostLookupResult | null> {
+  const items = await getCostCacheItems();
+  return lookupCostFromItems(items, wanted);
 }
