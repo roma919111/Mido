@@ -10,7 +10,7 @@ import {
 import { expandShotsToBudget, shotBudgetFromDuration } from "@/lib/expand-shots";
 import { MAX_SHOTS, PRODUCT_PER_SHOT_SECONDS } from "@/lib/shot-plan";
 import { estimateGenerateSeconds } from "@/lib/generate-eta";
-import { resolvePublicMediaUrl } from "@/lib/byteplus-ark";
+import { ensureBytePlusRefUrl } from "@/lib/byteplus-ark";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -100,7 +100,7 @@ export async function POST(request: Request) {
     }
     shots = expandShotsToBudget(shots, budget);
 
-    const startFrameUrl = resolvePublicMediaUrl(body.startFrame || null);
+    const startFrameUrl = await ensureBytePlusRefUrl(body.startFrame || null);
 
     const asset = await startMultiShotJob({
       userId: user.id,

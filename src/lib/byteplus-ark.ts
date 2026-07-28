@@ -8,7 +8,10 @@ import {
   stylizeReferenceImage,
   toSemiRealisticScenePrompt,
 } from "@/lib/reference-sanitize";
+import { resolveGenerationFile } from "@/lib/veronix-outro";
 import type { VisualReference } from "@/lib/types";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 
 export const BYTEPLUS_TASK_PREFIX = "bp:";
 
@@ -127,6 +130,68 @@ export function resolvePublicMediaUrl(
   const base = process.env.APP_BASE_URL?.trim()?.replace(/\/+$/, "");
   if (base && url.startsWith("/")) return `${base}${url}`;
   return null;
+}
+
+function mimeFromGenerationPath(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === ".png") return "image/png";
+  if (ext === ".webp") return "image/webp";
+  if (ext === ".gif") return "image/gif";
+  return "image/jpeg";
+}
+
+/**
+ * BytePlus cannot fetch private `/generations/*` files on our volume.
+ * Convert local stills to data URLs; keep remote https / data as-is.
+ */
+export async function ensureBytePlusMediaUrl(
+  url: string | null | undefined,
+): Promise<string | null> {
+  if (!url?.trim()) return null;
+  const trimmed = url.trim();
+  if (trimmed.startsWith("data:image/")) return trimmed;
+  if (/^https?:\/\//i.test(trimmed)) {
+    const base = process.env.APP_BASE_URL?.trim()?.replace(/\/+$/, "");
+    // Our own /generations URLs are not publicly fetchable by BytePlus —
+    // rewrite to a data URL from disk.
+    if (base && trimmed.startsWith(`${base}/generations/`)) {
+      const localPath = trimmed.slice(base.length);
+      const filePath = resolveGenerationFile(localPath);
+      if (!filePath) return null;
+      try {
+        const bytes = await readFile(filePath);
+        if (bytes.length < 32) return null;
+        return `data:${mimeFromGenerationPath(filePath)};base64,${bytes.toString("base64")}`;
+      } catch {
+        return null;
+      }
+    }
+    return trimmed;
+  }
+
+  if (trimmed.startsWith("/generations/")) {
+    const filePath = resolveGenerationFile(trimmed);
+    if (!filePath) return null;
+    try {
+      const bytes = await readFile(filePath);
+      if (bytes.length < 32) return null;
+      const mime = mimeFromGenerationPath(filePath);
+      return `data:${mime};base64,${bytes.toString("base64")}`;
+    } catch {
+      return null;
+    }
+  }
+
+  const base = process.env.APP_BASE_URL?.trim()?.replace(/\/+$/, "");
+  if (base && trimmed.startsWith("/")) return `${base}${trimmed}`;
+  return null;
+}
+
+export async function ensureBytePlusRefUrl(
+  ref: VisualReference | null | undefined,
+): Promise<string | null> {
+  if (!ref?.url?.trim()) return null;
+  return ensureBytePlusMediaUrl(ref.url);
 }
 
 function errorTextFromCreate(data: Record<string, unknown>, status: number): string {

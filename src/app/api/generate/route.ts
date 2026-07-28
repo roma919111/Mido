@@ -6,7 +6,7 @@ import {
   createBytePlusVideoTask,
   isBytePlusConfigured,
   mapBytePlusStatus,
-  resolvePublicMediaUrl,
+  ensureBytePlusRefUrl,
   toBytePlusHistoryId,
   waitForBytePlusVideoTask,
 } from "@/lib/byteplus-ark";
@@ -177,7 +177,7 @@ export async function POST(request: Request) {
           creditsUsed: quote.totalCredits,
           status: "running",
         });
-        const refUrl = resolveImageReference(body.referenceImages);
+        const refUrl = await resolveImageReference(body.referenceImages);
         const size =
           body.resolution && /^(1K|2K|4K)$/i.test(body.resolution)
             ? body.resolution.toUpperCase()
@@ -396,11 +396,11 @@ export async function POST(request: Request) {
         const refList = Array.isArray(body.referenceImages)
           ? body.referenceImages
           : [];
-        let startUrl = resolvePublicMediaUrl(body.startFrame);
-        let lastUrl = resolvePublicMediaUrl(body.endFrame);
-        let referenceUrls = refList
-          .map((r) => resolvePublicMediaUrl(r))
-          .filter((u): u is string => Boolean(u));
+        let startUrl = await ensureBytePlusRefUrl(body.startFrame);
+        let lastUrl = await ensureBytePlusRefUrl(body.endFrame);
+        let referenceUrls = (
+          await Promise.all(refList.map((r) => ensureBytePlusRefUrl(r)))
+        ).filter((u): u is string => Boolean(u));
 
         // Seedance: first/last XOR reference_image.
         // «رفع الشخصيات» → reference_image (do NOT stylize upfront — keeps likeness).

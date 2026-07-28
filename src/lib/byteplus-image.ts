@@ -6,7 +6,7 @@ import {
   getBytePlusApiKey,
   getBytePlusBaseUrl,
   isBytePlusConfigured,
-  resolvePublicMediaUrl,
+  ensureBytePlusRefUrl,
 } from "@/lib/byteplus-ark";
 import type { VisualReference } from "@/lib/types";
 
@@ -136,12 +136,12 @@ export async function createBytePlusImage(
 }
 
 /** Resolve first usable character/ref still for optional i2i. */
-export function resolveImageReference(
+export async function resolveImageReference(
   refs: VisualReference[] | undefined | null,
-): string | null {
+): Promise<string | null> {
   if (!refs?.length) return null;
   for (const ref of refs) {
-    const url = resolvePublicMediaUrl(ref);
+    const url = await ensureBytePlusRefUrl(ref);
     if (url) return url;
   }
   return null;
