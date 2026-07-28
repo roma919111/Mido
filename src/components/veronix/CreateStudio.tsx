@@ -5,10 +5,8 @@ import { useRouter } from "next/navigation";
 import {
   Camera,
   ChevronDown,
-  Download,
   ImagePlus,
   Loader2,
-  Share2,
   Sparkles,
   WandSparkles,
   X,
@@ -39,13 +37,21 @@ import {
 } from "@/lib/character-names";
 import {
   estimateGenerateSeconds,
-  formatStudioCountdownLabel,
   inferTargetSecondsFromAsset,
   lockEtaStart,
   remainingGenerateSeconds,
+  formatStudioCountdownLabel,
 } from "@/lib/generate-eta";
-import { veronixDownloadPath, veronixMediaSrc, veronixRefImageSrc } from "@/lib/media-proxy";
+import { veronixRefImageSrc } from "@/lib/media-proxy";
 import { clearEditDraft, readEditDraft } from "@/lib/edit-draft";
+import {
+  newStudioClientId,
+  patchJob,
+  readStoredJobs,
+  writeStoredJobs,
+  type StudioJob,
+} from "@/lib/studio-jobs";
+import { StudioResultGrid } from "@/components/veronix/StudioResultGrid";
 import type { CustomerUser } from "./AppHeader";
 
 /** Catalog id for VYRONIX image studio (Seedream under the hood). */
@@ -61,62 +67,8 @@ const PAID_DURATION_MAX = 15;
 /** Poll long enough for a slow Seedance beat (~6–7 min). */
 const PREVIEW_POLL_ATTEMPTS = 80;
 const PREVIEW_POLL_MS = 5000;
-const PREVIEW_SESSION_KEY = "veronix.create.preview.v1";
-/** Drop restored "running" previews that outlived the job (no server progress). */
+/** Drop restored "running" jobs that outlived the job (no server progress). */
 const STALE_RUNNING_GRACE_MS = 12 * 60 * 1000;
-
-type StudioPreview = {
-  url: string;
-  mediaType: "image" | "video";
-  historyId?: string;
-  status: "running" | "completed" | "failed";
-  freeTrial?: boolean;
-  assetId?: string;
-  /** Output length chosen by the customer — drives countdown ETA */
-  targetSeconds?: number;
-};
-
-function readStoredPreview(): {
-  preview: StudioPreview;
-  genStartedAt: number | null;
-} | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = sessionStorage.getItem(PREVIEW_SESSION_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as {
-      preview?: StudioPreview;
-      genStartedAt?: number | null;
-    };
-    if (!parsed.preview) return null;
-    return {
-      preview: parsed.preview,
-      genStartedAt:
-        typeof parsed.genStartedAt === "number" ? parsed.genStartedAt : null,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function writeStoredPreview(
-  preview: StudioPreview | null,
-  genStartedAt: number | null,
-) {
-  if (typeof window === "undefined") return;
-  try {
-    if (!preview) {
-      sessionStorage.removeItem(PREVIEW_SESSION_KEY);
-      return;
-    }
-    sessionStorage.setItem(
-      PREVIEW_SESSION_KEY,
-      JSON.stringify({ preview, genStartedAt }),
-    );
-  } catch {
-    // ignore quota / private mode
-  }
-}
 
 const IMAGE_ASPECTS = ["1:1", "16:9", "9:16", "4:3", "3:4"] as const;
 const VIDEO_ASPECT = "16:9";
@@ -164,14 +116,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   /** Brief flash so a second Generate tap feels pressed. */
   const [genFlash, setGenFlash] = useState(false);
   /** How many videos to generate in one tap (1–4). */
-  const [outputCount, setOutputCount] = useState(1);
+  const [outputCount, setOutputCount] = useState(3);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [platformReady, setPlatformReady] = useState<boolean | null>(null);
-  const [preview, setPreview] = useState<StudioPreview | null>(null);
+  const [jobs, setJobs] = useState<StudioJob[]>([]);
   const [shareNote, setShareNote] = useState<string | null>(null);
   const [genStartedAt, setGenStartedAt] = useState<number | null>(null);
-  const [remainingSec, setRemainingSec] = useState(0);
   const [multiProgress, setMultiProgress] = useState<{
     partCount: number;
     shotCount: number;
@@ -203,7 +154,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const [plannedShots, setPlannedShots] = useState<
     Array<{ prompt: string; action: string }> | null
   >(null);
-  const waitingResult = generating || preview?.status === "running";
+  const preview = jobs[0] ?? null;
+  const waitingResult =
+    generating || jobs.some((j) => j.status === "running");
   // Lock free-trial defaults only when the customer has no credits yet.
   // Users with a balance can run paid multi-shot (4s×N) without burning the
   // single free clip first — otherwise they only ever see one 4s video.
@@ -343,39 +296,28 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     clearEditDraft();
   }, [lockedMedia]);
 
-  // Restore preview under Generate after navigating away (Home / Assets).
+  // Restore result cards under Generate after navigating away (Home / Assets).
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const stored = readStoredPreview();
-      let restoredRunning = false;
+      const stored = readStoredJobs().filter((j) => {
+        if (j.status !== "running") return true;
+        const started = j.startedAt ?? 0;
+        const target = j.targetSeconds || (media === "video" ? duration : 4);
+        const etaMs = estimateGenerateSeconds(target, j.mediaType) * 1000;
+        // Keep long-running jobs; only drop extreme ghosts.
+        return !(started > 0 && Date.now() - started > etaMs + STALE_RUNNING_GRACE_MS);
+      });
 
-      if (stored && !cancelled) {
-        const target =
-          stored.preview.targetSeconds ||
-          (media === "video" ? duration : 4);
-        const etaMs = estimateGenerateSeconds(target) * 1000;
-        const started = stored.genStartedAt ?? 0;
-        const stale =
-          stored.preview.status === "running" &&
-          started > 0 &&
-          Date.now() - started > etaMs + STALE_RUNNING_GRACE_MS;
-
-        if (stale) {
-          // Ghost "جاري الإنهاء…" after a dead multi-shot — clear it.
-          writeStoredPreview(null, null);
-        } else {
-          setPreview(stored.preview);
-          setGenStartedAt(stored.genStartedAt);
-          if (stored.preview.status === "running") {
-            restoredRunning = true;
-            // Do NOT lock Generate — user can start another video.
-            setStatus("توليد سابق يُتابع في Assets — يمكنك توليد فيديو جديد");
-          }
+      if (!cancelled && stored.length) {
+        setJobs(stored);
+        const running = stored.find((j) => j.status === "running");
+        if (running?.startedAt) setGenStartedAt(running.startedAt);
+        if (running) {
+          setStatus("توليد سابق يُتابع — يمكنك توليد فيديو جديد");
         }
       }
 
-      // Resume from a live Assets job, or clear a ghost running preview.
       if (user) {
         try {
           const { res, data } = await fetchJson<{
@@ -389,47 +331,82 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               createdAt?: string;
               prompt?: string;
               targetSeconds?: number;
+              error?: string;
             }>;
           }>("/api/assets");
           if (!cancelled && res.ok) {
-            const running = (data.assets || []).find(
+            const assets = (data.assets || []).filter(
               (a) =>
-                a.status === "running" &&
                 a.mediaType === (lockedMedia || media) &&
                 a.mode !== "sequence-part",
             );
-            if (running) {
-              const targetSeconds = inferTargetSecondsFromAsset(running);
-              const started = lockEtaStart(running.id, running.createdAt);
-              setPreview({
-                url: running.url || "",
-                mediaType: running.mediaType,
-                historyId: running.historyId,
-                status: "running",
-                assetId: running.id,
-                targetSeconds,
+            const byId = new Map(assets.map((a) => [a.id, a]));
+
+            setJobs((prev) => {
+              let next = prev.map((j) => {
+                if (!j.assetId) return j;
+                const a = byId.get(j.assetId);
+                if (!a) return j;
+                const status =
+                  a.status === "completed" ||
+                  a.status === "failed" ||
+                  a.status === "running"
+                    ? (a.status as StudioJob["status"])
+                    : j.status;
+                return {
+                  ...j,
+                  url: a.url || j.url,
+                  historyId: a.historyId || j.historyId,
+                  status,
+                  error: a.error || j.error,
+                  targetSeconds:
+                    j.targetSeconds || inferTargetSecondsFromAsset(a),
+                  startedAt:
+                    j.startedAt ||
+                    (a.createdAt
+                      ? lockEtaStart(a.id, a.createdAt)
+                      : j.startedAt),
+                };
               });
-              setGenStartedAt(started);
-              // Keep Generate unlocked for parallel jobs.
-              setStatus("توليد قيد المتابعة في Assets — يمكنك توليد جديد");
-              if (running.historyId || running.mediaType === "image") {
-                const resumeId = ++genRunIdRef.current;
-                void pollPreview(
-                  running.historyId || "",
-                  running.mediaType,
-                  started,
-                  false,
-                  running.id,
-                  resumeId,
-                );
+
+              // Attach live running jobs that aren't already on the grid.
+              for (const a of assets) {
+                if (a.status !== "running") continue;
+                if (next.some((j) => j.assetId === a.id)) continue;
+                const started = lockEtaStart(a.id, a.createdAt);
+                next = [
+                  {
+                    clientId: newStudioClientId(),
+                    url: a.url || "",
+                    mediaType: a.mediaType,
+                    historyId: a.historyId,
+                    status: "running",
+                    assetId: a.id,
+                    targetSeconds: inferTargetSecondsFromAsset(a),
+                    startedAt: started,
+                  },
+                  ...next,
+                ];
               }
-            } else if (restoredRunning) {
-              // Session said running but Assets has nothing — abandon ghost UI.
-              setPreview(null);
-              setGenStartedAt(null);
-              setGenerating(false);
-              setStatus(null);
-              writeStoredPreview(null, null);
+              return next.slice(0, 12);
+            });
+
+            // Resume polling for running jobs that have ids.
+            const resumeTargets = assets.filter((a) => a.status === "running");
+            for (const running of resumeTargets) {
+              if (!(running.historyId || running.mediaType === "image")) continue;
+              const started = lockEtaStart(running.id, running.createdAt);
+              setGenStartedAt(started);
+              setStatus("توليد قيد المتابعة — يمكنك توليد جديد");
+              const resumeId = ++genRunIdRef.current;
+              void pollPreview(
+                running.historyId || "",
+                running.mediaType,
+                started,
+                false,
+                running.id,
+                resumeId,
+              );
             }
           }
         } catch {
@@ -446,8 +423,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
   useEffect(() => {
     if (!previewHydrated) return;
-    writeStoredPreview(preview, genStartedAt);
-  }, [preview, genStartedAt, previewHydrated]);
+    writeStoredJobs(jobs);
+  }, [jobs, previewHydrated]);
 
   // Free first visit: lock Veronix defaults to 4s model / 480p (+ stock intro).
   useEffect(() => {
@@ -461,57 +438,16 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   useEffect(() => {
     if (media !== "video" || !selectedModel || freeSettingsLocked) return;
     // Never reset the slider mid-generate (e.g. catalog refresh was wiping 32s → 8s).
-    if (generating || preview?.status === "running") return;
+    if (generating || jobs.some((j) => j.status === "running")) return;
     applyVideoModelDefaults(selectedModel);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- apply when model identity changes
-  }, [media, selectedModelId, freeSettingsLocked, selectedModel?.mcpId, generating, preview?.status]);
+  }, [media, selectedModelId, freeSettingsLocked, selectedModel?.mcpId, generating, jobs]);
 
   const countdownTargetSeconds =
     preview?.targetSeconds ||
     (media === "video"
       ? Math.min(sliderMax, Math.max(sliderMin, duration))
       : 1);
-  const countdownMedia = media;
-  const countdownOverdueSec =
-    waitingResult && genStartedAt != null && remainingSec <= 0
-      ? Math.max(
-          0,
-          Math.floor((Date.now() - genStartedAt) / 1000) -
-            estimateGenerateSeconds(countdownTargetSeconds, countdownMedia),
-        )
-      : 0;
-  const countdownLabel = formatStudioCountdownLabel({
-    remainingSec,
-    targetSeconds: countdownTargetSeconds,
-    partCount: multiProgress?.partCount,
-    shotCount: multiProgress?.shotCount,
-    overdueForSec: countdownOverdueSec,
-    media: countdownMedia,
-  });
-
-  useEffect(() => {
-    if (!waitingResult || genStartedAt == null) {
-      if (!waitingResult) {
-        setRemainingSec(
-          estimateGenerateSeconds(countdownTargetSeconds, countdownMedia),
-        );
-      }
-      return;
-    }
-    const tick = () => {
-      setRemainingSec(
-        remainingGenerateSeconds(
-          genStartedAt,
-          countdownTargetSeconds,
-          Date.now(),
-          countdownMedia,
-        ),
-      );
-    };
-    tick();
-    const id = window.setInterval(tick, 1000);
-    return () => window.clearInterval(id);
-  }, [waitingResult, genStartedAt, countdownTargetSeconds, countdownMedia]);
 
   useEffect(() => {
     let cancelled = false;
@@ -935,7 +871,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       if (!res.ok) throw new Error(data.error || "Enhance failed");
       const next = (data.enhanced || "").trim();
       if (!next) throw new Error("لم يتم إنشاء وصف محسّن");
-      // Full replace — English translate + AI polish (familiar flow).
+      // Full replace — English translate + AI cinematic polish.
       setPrompt(next);
       setPlannedShots(null);
       setShotHint(null);
@@ -943,17 +879,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
       if (data.needsVisionKey) {
         setStatus(
-          "التحسين تم بدون قراءة ملابس الصورة — أضف OPENAI_API_KEY أو GEMINI_API_KEY على السيرفر لاستبدال الأنثى/الرجل بالمواصفات",
-        );
-      } else if (uniqueUrls.length && !data.visionUsed) {
-        setStatus(
-          "تم تحسين الوصف · ترجمة إنجليزية ثم AI Polish",
+          "التحسين تم بالإنجليزية بدون قراءة ملابس الصورة — أضف OPENAI_API_KEY أو GEMINI_API_KEY على السيرفر",
         );
       } else {
-        const bits = ["تم تحسين الوصف"];
-        if (data.visionUsed) bits.push("مع استبدال الشخصيات بمواصفات الصورة");
+        const bits = ["تم تحسين الوصف بالإنجليزية"];
+        if (data.visionUsed) bits.push("مع مواصفات الشخصيات من الصورة");
         if (data.chained) bits.push("وتسلسل من الحالة السابقة");
-        bits.push("ترجمة إنجليزية ثم AI Polish");
+        bits.push("مع محسنات الذكاء الاصطناعي");
         setStatus(bits.join(" · "));
       }
     } catch (err) {
@@ -1005,25 +937,37 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     historyId?: string;
     assetId?: string;
     mediaType: "image" | "video";
+    clientId?: string;
   }) {
+    const match = {
+      clientId: input.clientId,
+      assetId: input.assetId,
+      historyId: input.historyId,
+    };
     if (input.mediaType !== "video") {
-      setPreview({
-        url: input.url,
-        mediaType: input.mediaType,
-        historyId: input.historyId,
-        status: "completed",
-        freeTrial: true,
-      });
+      setJobs((prev) =>
+        patchJob(prev, match, {
+          url: input.url,
+          mediaType: input.mediaType,
+          historyId: input.historyId,
+          assetId: input.assetId,
+          status: "completed",
+          freeTrial: true,
+        }),
+      );
       return;
     }
     setStatus("جاري إضافة مقدمة Veronix…");
-    setPreview({
-      url: "",
-      mediaType: "video",
-      historyId: input.historyId,
-      status: "running",
-      freeTrial: true,
-    });
+    setJobs((prev) =>
+      patchJob(prev, match, {
+        url: "",
+        mediaType: "video",
+        historyId: input.historyId,
+        assetId: input.assetId,
+        status: "running",
+        freeTrial: true,
+      }),
+    );
 
     let lastError: Error | null = null;
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -1041,13 +985,16 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           },
         );
         if (!res.ok || !data.url) throw new Error(data.error || "تعذر تجهيز الفيديو");
-        setPreview({
-          url: data.url,
-          mediaType: "video",
-          historyId: input.historyId,
-          status: "completed",
-          freeTrial: true,
-        });
+        setJobs((prev) =>
+          patchJob(prev, match, {
+            url: data.url!,
+            mediaType: "video",
+            historyId: input.historyId,
+            assetId: input.assetId,
+            status: "completed",
+            freeTrial: true,
+          }),
+        );
         setStatus(null);
         return;
       } catch (err) {
@@ -1056,28 +1003,19 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       }
     }
 
-    setPreview({
-      url: "",
-      mediaType: "video",
-      historyId: input.historyId,
-      status: "failed",
-      freeTrial: true,
-    });
+    setJobs((prev) =>
+      patchJob(prev, match, {
+        url: "",
+        mediaType: "video",
+        historyId: input.historyId,
+        assetId: input.assetId,
+        status: "failed",
+        freeTrial: true,
+        error: lastError?.message || "تعذر عرض الفيديو بعد التوليد",
+      }),
+    );
     setError(lastError?.message || "تعذر عرض الفيديو بعد التوليد");
     setStatus(null);
-  }
-
-  function handleFreeTrialPlay(event: React.SyntheticEvent<HTMLVideoElement>) {
-    // Free-trial Play → registration so the customer can watch it from their account.
-    if (!preview?.freeTrial) return;
-    if (user) return;
-    event.preventDefault();
-    try {
-      event.currentTarget.pause();
-    } catch {
-      // ignore
-    }
-    router.push(`/signup?next=${encodeURIComponent("/assets")}`);
   }
 
   /** Await a single OpenArt history until a media URL is ready (multi-shot). */
@@ -1125,13 +1063,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     startedAt: number,
     brandOutro: boolean,
     assetId?: string,
-    runId?: number,
+    _runId?: number,
+    clientId?: string,
   ) {
-    const stillMine = () =>
-      runId == null || genRunIdRef.current === runId;
+    // Always patch by assetId/clientId so parallel jobs keep updating
+    // even after the user starts another Generate.
+    const match = { clientId, assetId, historyId: historyId || undefined };
     for (let i = 0; i < PREVIEW_POLL_ATTEMPTS; i += 1) {
       await new Promise((r) => setTimeout(r, mediaType === "image" ? 2500 : PREVIEW_POLL_MS));
-      if (!stillMine()) return;
       try {
         const statusQs = new URLSearchParams();
         if (historyId) statusQs.set("historyId", historyId);
@@ -1145,33 +1084,53 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           creditsRefunded?: boolean;
           pollAfterSeconds?: number;
         }>(`/api/status?${statusQs.toString()}`);
-        if (!stillMine()) return;
         if (!res.ok) continue;
         const st = String(data.status || "").toUpperCase();
         const url = data.urls?.[0];
         if (url) {
-          if (!stillMine()) return;
           if (brandOutro) {
-            await applyBrandOutro({ url, historyId, assetId, mediaType });
+            await applyBrandOutro({
+              url,
+              historyId,
+              assetId,
+              mediaType,
+              clientId,
+            });
           } else if (mediaType === "video") {
             if (applyClarity) setStatus("تحسين الوضوح…");
             try {
               const graded = await finalizePaidVideo({ url, historyId, assetId });
-              if (!stillMine()) return;
-              setPreview({
-                url: graded,
+              setJobs((prev) =>
+                patchJob(prev, match, {
+                  url: graded,
+                  mediaType,
+                  historyId,
+                  assetId,
+                  status: "completed",
+                }),
+              );
+            } catch {
+              setJobs((prev) =>
+                patchJob(prev, match, {
+                  url,
+                  mediaType,
+                  historyId,
+                  assetId,
+                  status: "completed",
+                }),
+              );
+            }
+            setStatus(null);
+          } else {
+            setJobs((prev) =>
+              patchJob(prev, match, {
+                url,
                 mediaType,
                 historyId,
                 assetId,
                 status: "completed",
-              });
-            } catch {
-              if (!stillMine()) return;
-              setPreview({ url, mediaType, historyId, assetId, status: "completed" });
-            }
-            setStatus(null);
-          } else {
-            setPreview({ url, mediaType, historyId, assetId, status: "completed" });
+              }),
+            );
             setStatus(null);
           }
           setGenStartedAt(null);
@@ -1179,57 +1138,38 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           return;
         }
         if (st === "FAILED" || st === "CANCELLED") {
-          if (!stillMine()) return;
-          setPreview({ url: "", mediaType, historyId, assetId, status: "failed" });
           const failMsg =
             data.creditsRefunded || data.note
               ? data.error?.includes("تم استرجاع")
                 ? data.error
                 : `${data.error || "فشل التوليد"}\nفشل التوليد · تم استرجاع الكريديت`
               : data.error || "فشل التوليد";
+          setJobs((prev) =>
+            patchJob(prev, match, {
+              url: "",
+              mediaType,
+              historyId,
+              assetId,
+              status: "failed",
+              error: failMsg,
+            }),
+          );
           setError(failMsg);
           setGenStartedAt(null);
           await onUserRefresh().catch(() => undefined);
           return;
         }
-        if (!stillMine()) return;
-        setPreview((prev) => {
-          if (
-            prev?.assetId &&
-            assetId &&
-            prev.assetId !== assetId &&
-            prev.status === "running"
-          ) {
-            return prev;
-          }
-          return prev
-            ? {
-                ...prev,
-                status: "running",
-                historyId: historyId || prev.historyId || undefined,
-                assetId: assetId || prev.assetId,
-              }
-            : {
-                url: "",
-                mediaType,
-                historyId: historyId || undefined,
-                assetId,
-                status: "running",
-                targetSeconds: countdownTargetSeconds,
-              };
-        });
-        setStatus(
-          `جاري التوليد… ${formatStudioCountdownLabel({
-            remainingSec: remainingGenerateSeconds(
-              startedAt,
-              preview?.targetSeconds || countdownTargetSeconds,
-              Date.now(),
-              mediaType,
-            ),
-            targetSeconds: preview?.targetSeconds || countdownTargetSeconds,
-            media: mediaType,
-          })}`,
+        setJobs((prev) =>
+          patchJob(prev, match, {
+            status: "running",
+            historyId: historyId || undefined,
+            assetId,
+            mediaType,
+            startedAt,
+            targetSeconds: countdownTargetSeconds,
+          }),
         );
+        setStatus("جاري التوليد…");
         if (typeof data.pollAfterSeconds === "number" && data.pollAfterSeconds > 2) {
           await new Promise((r) =>
             setTimeout(r, Math.min(data.pollAfterSeconds! * 1000, 20000)),
@@ -1239,13 +1179,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         // Keep waiting — tunnel blips should not abort a long Seedance job.
       }
     }
-    if (!stillMine()) return;
     setStatus("ما زال التوليد جاريًا — افتح Assets لمتابعة النتيجة");
     await onUserRefresh().catch(() => undefined);
   }
 
-  async function handleShare() {
-    if (!preview?.url) return;
+  async function handleShare(job?: StudioJob | null) {
+    const target = job || preview;
+    if (!target?.url) return;
     setShareNote(null);
     const shareUrl =
       typeof window !== "undefined" ? `${window.location.origin}/assets` : "/assets";
@@ -1266,61 +1206,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         setShareNote("تم نسخ رابط المشاركة");
       } catch {
         setShareNote("تعذر المشاركة — انسخ الرابط يدوياً");
-      }
-    }
-  }
-
-  async function handleDownload() {
-    if (!preview?.url && !preview?.historyId) {
-      setShareNote("انتظر اكتمال الفيديو ثم حمّل");
-      return;
-    }
-    if (preview.status === "running") {
-      setShareNote("الفيديو ما زال يُولَّد — التحميل بعد الاكتمال");
-      return;
-    }
-    setShareNote("جاري التحضير للتحميل…");
-    const path = veronixDownloadPath({
-      historyId: preview.historyId,
-      url: preview.url,
-      mediaType: preview.mediaType,
-    });
-    if (!path) {
-      setShareNote("الملف غير جاهز للتحميل");
-      return;
-    }
-    try {
-      const res = await fetch(path, { credentials: "same-origin" });
-      if (!res.ok) {
-        const errText = await res.text().catch(() => "");
-        throw new Error(errText || `download failed (${res.status})`);
-      }
-      const blob = await res.blob();
-      if (!blob.size) throw new Error("empty file");
-      const ext = preview.mediaType === "video" ? "mp4" : "png";
-      const objectUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = objectUrl;
-      a.download = `veronix-${Date.now()}.${ext}`;
-      a.rel = "noopener";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 2_000);
-      setShareNote("بدأ التحميل");
-    } catch {
-      // Navigate same-origin with attachment header (works when blob path fails on iOS).
-      try {
-        const a = document.createElement("a");
-        a.href = path;
-        a.download = `veronix-${Date.now()}.${preview.mediaType === "video" ? "mp4" : "png"}`;
-        a.rel = "noopener";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setShareNote("بدأ التحميل");
-      } catch {
-        setShareNote("تعذر التحميل — افتح Assets وحاول من هناك");
       }
     }
   }
@@ -1424,7 +1309,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     setError(null);
     setStatus(null);
     setShareNote(null);
-    setPreview(null);
 
     if (!user) {
       router.push(`/signup?next=${encodeURIComponent("/")}&paywall=1`);
@@ -1456,8 +1340,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       return;
     }
 
-    // New run id — previous in-flight generate keeps going in Assets but
-    // stops updating this studio preview.
+    // New run id — previous jobs keep polling independently by assetId.
     const runId = ++genRunIdRef.current;
     const stillMine = () => genRunIdRef.current === runId;
 
@@ -1466,16 +1349,21 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       media === "video"
         ? Math.min(sliderMax, Math.max(sliderMin, duration))
         : 1;
-    setGenerating(true);
-    setGenStartedAt(startedAt);
-    setRemainingSec(estimateGenerateSeconds(outputTargetSeconds, media));
-    setMultiProgress(null);
-    setPreview({
+    const placeholders: StudioJob[] = Array.from({ length: requestCount }, () => ({
+      clientId: newStudioClientId(),
       url: "",
       mediaType: media,
-      status: "running",
+      status: "running" as const,
       targetSeconds: outputTargetSeconds,
-    });
+      startedAt,
+      prompt: prompt.trim(),
+    }));
+    setGenerating(true);
+    setGenStartedAt(startedAt);
+    setMultiProgress(null);
+    // Append new cards — keep previous results on the grid.
+    setJobs((prev) => [...placeholders, ...prev].slice(0, 12));
+
     // Paid Veronix: clear free-trial lock so the chosen 4–15s clip is billed.
     if (
       media === "video" &&
@@ -1494,8 +1382,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           : "جاري التوليد…",
     );
     try {
-      // Sync names onto refs. Send the user's clean prompt only —
-      // Seedance @Image binding is applied server-side and never stored.
       const namedRefs = refs.map((r, i) => {
         const name = normalizeCharacterName(refNames[i] || "");
         return name ? { ...r, label: name } : r;
@@ -1516,7 +1402,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         prompt: finalPrompt,
         mode,
         duration,
-        // Character refs win on the server (XOR). Keep startFrame only when no chars.
         startFrame: activeRefs.length ? null : startFrame,
         endFrame: activeRefs.length ? null : endFrame,
         referenceImages: activeRefs,
@@ -1534,106 +1419,189 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         router.push("/pricing?paywall=1");
         return;
       }
-      if (!res.ok) throw new Error(data.error || "فشل التوليد");
-
-      const failed = data.results?.find((r) => r.error);
-      if (failed?.error) {
-        const msg =
-          failed.note || (failed.creditsRefunded && failed.creditsRefunded > 0)
-            ? failed.error.includes("تم استرجاع")
-              ? failed.error
-              : `${failed.error}\nفشل التوليد · تم استرجاع الكريديت`
-            : failed.error;
-        setError(msg);
-        setGenStartedAt(null);
-        return;
+      if (!res.ok) {
+        setJobs((prev) =>
+          prev.map((j) =>
+            placeholders.some((p) => p.clientId === j.clientId)
+              ? {
+                  ...j,
+                  status: "failed" as const,
+                  error: data.error || "فشل التوليد",
+                }
+              : j,
+          ),
+        );
+        throw new Error(data.error || "فشل التوليد");
       }
 
-      const okResults = (data.results || []).filter((r) => !r.error);
-      const ok = okResults[0];
-      const firstUrl = ok?.urls?.[0] || "";
-      const historyId = ok?.historyId;
-      const assetId = ok?.assetId;
-      const brand = Boolean(data.freeTrial || ok?.needsBrandOutro);
-      const resultRunning = String(ok?.status || "").toLowerCase() === "running";
-      const extraCount = Math.max(0, okResults.length - 1);
-      if (firstUrl) {
-        if (brand) {
-          await applyBrandOutro({
-            url: firstUrl,
-            historyId,
-            assetId,
-            mediaType: media,
-          });
-        } else if (media === "video") {
-          if (applyClarity) setStatus("تحسين الوضوح…");
-          try {
-            const graded = await finalizePaidVideo({
-              url: firstUrl,
-              historyId,
-              assetId,
-            });
-            if (!stillMine()) return;
-            setPreview({
-              url: graded,
-              mediaType: media,
-              historyId,
-              assetId,
-              status: "completed",
-            });
-          } catch (gradeErr) {
-            if (!stillMine()) return;
-            setPreview({
-              url: firstUrl,
-              mediaType: media,
-              historyId,
-              assetId,
-              status: "completed",
-            });
-            setError(
-              gradeErr instanceof Error
-                ? gradeErr.message
-                : "تعذر تطبيق فلتر الوضوح — عُرض الفيديو الأصلي",
-            );
-          }
-          setStatus(
-            extraCount > 0
-              ? `اكتمل فيديو — و${extraCount} أخرى في Assets`
-              : null,
+      const results = data.results || [];
+      let anyRunning = false;
+      let completedCount = 0;
+      let failedCount = 0;
+
+      for (let i = 0; i < Math.max(results.length, placeholders.length); i += 1) {
+        const placeholder = placeholders[i];
+        const result = results[i];
+        if (!placeholder) continue;
+
+        if (!result) {
+          setJobs((prev) =>
+            patchJob(
+              prev,
+              { clientId: placeholder.clientId },
+              { status: "failed", error: "لم يُرجع السيرفر نتيجة لهذه الخانة" },
+            ),
           );
-        } else {
-          setPreview({
-            url: firstUrl,
-            mediaType: media,
-            historyId,
-            assetId,
-            status: "completed",
-          });
-          setStatus(
-            extraCount > 0
-              ? `اكتملت صورة — و${extraCount} أخرى في Assets`
-              : null,
-          );
+          failedCount += 1;
+          continue;
         }
-        setGenStartedAt(null);
-      } else if (historyId || (assetId && (resultRunning || media === "image"))) {
-        setPreview((prev) => ({
-          url: "",
-          mediaType: media,
-          historyId,
-          status: "running",
-          assetId: assetId || prev?.assetId,
-          targetSeconds: prev?.targetSeconds ?? outputTargetSeconds,
-        }));
+
+        if (result.error) {
+          const msg =
+            result.note || (result.creditsRefunded && result.creditsRefunded > 0)
+              ? result.error.includes("تم استرجاع")
+                ? result.error
+                : `${result.error}\nفشل التوليد · تم استرجاع الكريديت`
+              : result.error;
+          setJobs((prev) =>
+            patchJob(
+              prev,
+              { clientId: placeholder.clientId },
+              {
+                status: "failed",
+                error: msg,
+                assetId: result.assetId,
+                historyId: result.historyId,
+              },
+            ),
+          );
+          failedCount += 1;
+          setError(msg);
+          continue;
+        }
+
+        const firstUrl = result.urls?.[0] || "";
+        const historyId = result.historyId;
+        const assetId = result.assetId;
+        const brand = Boolean(data.freeTrial || result.needsBrandOutro);
+        const resultRunning =
+          String(result.status || "").toLowerCase() === "running";
+
         if (assetId) {
           lockEtaStart(assetId, new Date(startedAt).toISOString());
         }
+
+        if (firstUrl) {
+          if (brand) {
+            await applyBrandOutro({
+              url: firstUrl,
+              historyId,
+              assetId,
+              mediaType: media,
+              clientId: placeholder.clientId,
+            });
+          } else if (media === "video") {
+            let finalUrl = firstUrl;
+            if (applyClarity) {
+              setStatus("تحسين الوضوح…");
+              try {
+                finalUrl = await finalizePaidVideo({
+                  url: firstUrl,
+                  historyId,
+                  assetId,
+                });
+              } catch {
+                // keep original
+              }
+            }
+            if (!stillMine()) return;
+            setJobs((prev) =>
+              patchJob(
+                prev,
+                { clientId: placeholder.clientId },
+                {
+                  url: finalUrl,
+                  mediaType: media,
+                  historyId,
+                  assetId,
+                  status: "completed",
+                },
+              ),
+            );
+          } else {
+            setJobs((prev) =>
+              patchJob(
+                prev,
+                { clientId: placeholder.clientId },
+                {
+                  url: firstUrl,
+                  mediaType: media,
+                  historyId,
+                  assetId,
+                  status: "completed",
+                },
+              ),
+            );
+          }
+          completedCount += 1;
+        } else if (historyId || (assetId && (resultRunning || media === "image"))) {
+          anyRunning = true;
+          setJobs((prev) =>
+            patchJob(
+              prev,
+              { clientId: placeholder.clientId },
+              {
+                url: "",
+                mediaType: media,
+                historyId,
+                assetId,
+                status: "running",
+                targetSeconds: outputTargetSeconds,
+                startedAt,
+              },
+            ),
+          );
+          void pollPreview(
+            historyId || "",
+            media,
+            startedAt,
+            brand,
+            assetId,
+            runId,
+            placeholder.clientId,
+          );
+        } else {
+          setJobs((prev) =>
+            patchJob(
+              prev,
+              { clientId: placeholder.clientId },
+              {
+                status: "failed",
+                error: "تعذر متابعة التوليد — افتح Assets",
+                assetId,
+                historyId,
+              },
+            ),
+          );
+          failedCount += 1;
+        }
+      }
+
+      if (anyRunning) {
         setStatus(
           requestCount > 1
-            ? `جاري توليد ${requestCount} فيديوهات… الباقي يظهر في Assets`
+            ? `جاري توليد ${requestCount} فيديوهات…`
             : "جاري التوليد…",
         );
-        void pollPreview(historyId || "", media, startedAt, brand, assetId, runId);
+      } else if (completedCount > 0) {
+        setStatus(
+          completedCount > 1
+            ? `اكتمل ${completedCount} ${media === "video" ? "فيديوهات" : "صور"}`
+            : null,
+        );
+        setGenStartedAt(null);
+      } else if (failedCount > 0) {
+        setGenStartedAt(null);
       } else {
         setStatus("تم إرسال الطلب — افتح Assets لمتابعة النتيجة");
         setGenStartedAt(null);
@@ -1644,13 +1612,25 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       if (!stillMine()) return;
       setError(err instanceof Error ? err.message : "فشل التوليد");
       setGenStartedAt(null);
+      setJobs((prev) =>
+        prev.map((j) =>
+          placeholders.some((p) => p.clientId === j.clientId) &&
+          j.status === "running"
+            ? {
+                ...j,
+                status: "failed" as const,
+                error: err instanceof Error ? err.message : "فشل التوليد",
+              }
+            : j,
+        ),
+      );
     } finally {
       if (stillMine()) setGenerating(false);
     }
   }
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-4 px-3 pb-8 pt-4 sm:px-6" dir="rtl">
+    <div className="mx-auto w-full max-w-6xl space-y-4 px-3 pb-8 pt-4 sm:px-6" dir="rtl">
       {platformReady === false && (
         <div className="rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-50">
           التوليد غير مُعدّ على السيرفر. يلزم ضبط{" "}
@@ -2137,117 +2117,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         </button>
       </div>
 
-      {(preview || waitingResult) && (
-        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141821]">
-          <div className="flex items-center justify-between border-b border-white/8 px-4 py-3">
-            <p className="text-sm font-semibold text-white">معاينة النتيجة</p>
-            {waitingResult && (
-              <span className="inline-flex items-center gap-1 text-xs tabular-nums text-[#22f0ff]">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                جاري التوليد · {countdownLabel}
-              </span>
-            )}
-          </div>
-          <div className="relative aspect-video bg-black/50">
-            {preview?.url && preview.mediaType === "video" ? (
-              <video
-                key={preview.url}
-                src={
-                  veronixMediaSrc({
-                    historyId: preview.historyId,
-                    url: preview.url,
-                    mediaType: "video",
-                  }) || undefined
-                }
-                controls
-                playsInline
-                controlsList="nodownload"
-                onPlay={handleFreeTrialPlay}
-                className="h-full w-full object-contain"
-              />
-            ) : preview?.url && preview.mediaType === "image" ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={
-                  veronixMediaSrc({
-                    historyId: preview.historyId,
-                    url: preview.url,
-                    mediaType: "image",
-                  }) || preview.url
-                }
-                alt="preview"
-                className="h-full w-full object-contain"
-              />
-            ) : (
-              <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-white/40">
-                {waitingResult ? (
-                  <>
-                    <Loader2 className="h-8 w-8 animate-spin text-[#22f0ff]" />
-                    <p className="text-lg font-semibold tracking-wide text-white">
-                      جاري التوليد
-                    </p>
-                    <p className="max-w-sm px-4 text-center text-xl font-bold tabular-nums text-[#22f0ff] sm:text-2xl">
-                      {countdownLabel}
-                    </p>
-                    <p className="px-6 text-center text-xs text-white/35">
-                      {preview?.mediaType === "image" || media === "image"
-                        ? "الصورة عادة جاهزة خلال ~30 ثانية — لا تغلق التطبيق"
-                        : `فيديو ${countdownTargetSeconds}ث ≈ ${Math.ceil(
-                            estimateGenerateSeconds(countdownTargetSeconds, "video") / 60,
-                          )} دقائق خلف الكواليس — لا تغلق التطبيق`}
-                    </p>
-                  </>
-                ) : (
-                  "لا توجد معاينة بعد"
-                )}
-              </div>
-            )}
-            {waitingResult && preview?.url && (
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/55">
-                <Loader2 className="h-8 w-8 animate-spin text-[#22f0ff]" />
-                <p className="mt-2 text-lg font-semibold text-white">جاري التوليد</p>
-                <p className="mt-1 max-w-sm px-4 text-center text-xl font-bold tabular-nums text-[#22f0ff]">
-                  {countdownLabel}
-                </p>
-              </div>
-            )}
-          </div>
-          <div className="border-t border-white/8 px-4 py-2 text-center text-[11px] text-white/45">
-            تم إنشاؤه بواسطة VYRONIX
-          </div>
-          {preview?.freeTrial ? (
-            <div className="border-t border-amber-500/20 bg-amber-500/10 px-4 py-2 text-center text-[11px] text-amber-100/90">
-              تجربة مجانية · مقدمة Veronix + 4 ثوانٍ · 480p · مع صوت
-            </div>
-          ) : null}
-          <div className="flex gap-2 p-3">
-            <button
-              type="button"
-              onClick={() => void handleShare()}
-              disabled={!preview?.url}
-              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 py-3 text-sm font-semibold text-white disabled:opacity-40"
-            >
-              <Share2 className="h-4 w-4 text-[#22f0ff]" />
-              Share
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleDownload()}
-              disabled={
-                preview?.status === "running" ||
-                (!preview?.url && !preview?.historyId)
-              }
-              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] py-3 text-sm font-semibold text-white disabled:opacity-40"
-            >
-              <Download className="h-4 w-4" />
-              Download
-            </button>
-          </div>
-          {shareNote && (
-            <p className="px-4 pb-3 text-center text-xs text-[#22f0ff]">{shareNote}</p>
-          )}
-        </div>
-      )}
+      <StudioResultGrid
+        jobs={jobs}
+        prompt={prompt}
+        onShare={(job) => void handleShare(job)}
+      />
+      {shareNote ? (
+        <p className="text-center text-xs text-[#22f0ff]">{shareNote}</p>
+      ) : null}
 
       {error && error.includes("تم استرجاع") ? (
         <div

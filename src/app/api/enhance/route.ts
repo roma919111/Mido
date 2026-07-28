@@ -6,7 +6,8 @@ import {
   type SceneState,
 } from "@/lib/prompt-enhance";
 import {
-  polishPromptEnglish,
+  enhanceToEnglishCinematic,
+  isMostlyEnglish,
   translatePromptToEnglish,
 } from "@/lib/prompt-translate";
 import type { GenerationMode } from "@/lib/types";
@@ -38,10 +39,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T
 }
 
 /**
- * Familiar enhance flow:
- * 1) Translate speech/prompt → English
- * 2) Optional vision grounding from refs
- * 3) AI Polish into one cinematic English description
+ * Improve Description:
+ * 1) Optional vision grounding from refs
+ * 2) Translate + AI cinematic polish → English only
  */
 export async function POST(request: Request) {
   try {
@@ -55,89 +55,123 @@ export async function POST(request: Request) {
     const imageUrls = Array.isArray(body.imageUrls)
       ? body.imageUrls
           .filter((u): u is string => typeof u === "string" && Boolean(u.trim()))
-          // Skip huge data URLs — they hang vision and mobile clients.
           .filter((u) => !(u.startsWith("data:") && u.length > 400_000))
           .slice(0, 2)
       : [];
 
     const isVideo = String(mode).includes("video");
 
-    // Step 1 — translate to English (image + video). Soft timeout.
-    const englishSource = await withTimeout(
-      translatePromptToEnglish(prompt),
-      12_000,
-      prompt,
-    );
-
+    // Vision / context grounding (may keep Arabic coreIdea briefly).
     const result = await withTimeout(
-      enhancePromptWithContext(englishSource, String(mode), {
+      enhancePromptWithContext(prompt, String(mode), {
         imageUrls,
         previousState: body.previousState || null,
         forceChain: Boolean(body.forceChain),
       }),
       20_000,
       {
-        enhanced: enhancePrompt(englishSource, String(mode)),
+        enhanced: enhancePrompt(prompt, String(mode)),
         finalState: {
           arabic: /[\u0600-\u06FF]/.test(prompt),
           entities: [],
           finalPose: "",
-          lastAction: englishSource,
+          lastAction: prompt,
           updatedAt: new Date().toISOString(),
         },
         visionUsed: false,
         needsVisionKey: false,
         chained: false,
         entityBrief: "",
-        coreIdea: englishSource,
+        coreIdea: prompt,
       },
     );
 
-    const enhancedFull =
-      result.enhanced || enhancePrompt(englishSource, String(mode));
+    const sourceForPolish = (result.coreIdea || prompt).trim();
 
-    // Step 2 — AI Polish into one customer-facing English prompt.
-    const polished = await withTimeout(
-      polishPromptEnglish(result.coreIdea || englishSource, {
+    // Translate + AI enhance into one English cinematic prompt.
+    const cinematic = await withTimeout(
+      enhanceToEnglishCinematic(sourceForPolish, {
         entities: result.finalState?.entities,
         setting: result.finalState?.setting,
         media: isVideo ? "video" : "image",
       }),
-      15_000,
-      "",
+      28_000,
+      {
+        prompt: "",
+        translated: false,
+        providerOk: false,
+      },
     );
-    const enhanced = (polished || enhancedFull).trim();
+
+    let enhanced = (cinematic.prompt || "").trim();
+
+    // Hard guarantee: if still not English, force translate then polish again.
+    if (!enhanced || !isMostlyEnglish(enhanced)) {
+      const englishSource = await withTimeout(
+        translatePromptToEnglish(sourceForPolish),
+        14_000,
+        sourceForPolish,
+      );
+      const retry = await withTimeout(
+        enhanceToEnglishCinematic(englishSource, {
+          entities: result.finalState?.entities,
+          setting: result.finalState?.setting,
+          media: isVideo ? "video" : "image",
+        }),
+        20_000,
+        { prompt: englishSource, translated: false, providerOk: false },
+      );
+      enhanced = (retry.prompt || englishSource || sourceForPolish).trim();
+    }
+
+    if (!enhanced) {
+      return NextResponse.json(
+        { error: "لم يتم إنشاء وصف محسّن — أعد المحاولة" },
+        { status: 502 },
+      );
+    }
+
+    if (!isMostlyEnglish(enhanced)) {
+      return NextResponse.json(
+        {
+          error:
+            "تعذر ترجمة الوصف إلى الإنجليزية. تأكد من تفعيل مفتاح Gemini أو OpenAI على السيرفر ثم أعد المحاولة.",
+        },
+        { status: 503 },
+      );
+    }
 
     return NextResponse.json({
       original: prompt,
-      english: englishSource,
+      english: enhanced,
       enhanced,
-      enhancedFull,
+      enhancedFull: result.enhanced || enhanced,
       coreIdea: result.coreIdea,
       finalState: result.finalState,
       visionUsed: result.visionUsed,
       needsVisionKey: result.needsVisionKey,
       chained: result.chained,
       entityBrief: result.entityBrief,
+      translated: true,
       multiShot: false,
       shotCount: 1,
       shotReason: null,
       shots: [
         {
           index: 0,
-          action: result.coreIdea || englishSource,
+          action: result.coreIdea || prompt,
           prompt: enhanced,
         },
       ],
       variants: [
         enhanced,
         enhancePromptVariant(
-          result.coreIdea || englishSource,
+          enhanced,
           String(mode),
           "Emphasize mood and texture",
         ),
         enhancePromptVariant(
-          result.coreIdea || englishSource,
+          enhanced,
           String(mode),
           "Emphasize motion and action",
         ),

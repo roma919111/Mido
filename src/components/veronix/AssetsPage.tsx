@@ -15,11 +15,10 @@ import { BottomNav } from "./BottomNav";
 import { fetchJson } from "@/lib/fetch-json";
 import {
   clearEtaStart,
-  estimateGenerateSeconds,
-  formatStudioCountdownLabel,
+  elapsedGenerateSeconds,
+  formatElapsedClock,
   inferTargetSecondsFromAsset,
   lockEtaStart,
-  remainingGenerateSeconds,
 } from "@/lib/generate-eta";
 import { writeEditDraft } from "@/lib/edit-draft";
 import {
@@ -48,39 +47,28 @@ type AssetItem = CachedAssetItem;
 function RunningCountdown({
   assetId,
   createdAt,
-  targetSeconds,
 }: {
   assetId: string;
   createdAt: string;
   targetSeconds: number;
 }) {
-  const [remaining, setRemaining] = useState(() => {
+  const [elapsed, setElapsed] = useState(() => {
     const started = lockEtaStart(assetId, createdAt);
-    return remainingGenerateSeconds(started, targetSeconds);
+    return elapsedGenerateSeconds(started);
   });
-  const [overdue, setOverdue] = useState(0);
 
   useEffect(() => {
     const started = lockEtaStart(assetId, createdAt);
-    const eta = estimateGenerateSeconds(targetSeconds);
-    const tick = () => {
-      const rem = remainingGenerateSeconds(started, targetSeconds);
-      setRemaining(rem);
-      const elapsed = Math.max(0, Math.floor((Date.now() - started) / 1000));
-      setOverdue(Math.max(0, elapsed - eta));
-    };
+    const tick = () => setElapsed(elapsedGenerateSeconds(started));
     tick();
-    const id = window.setInterval(tick, 1000);
+    // Fast upward seconds clock (not a countdown).
+    const id = window.setInterval(tick, 100);
     return () => window.clearInterval(id);
-  }, [assetId, createdAt, targetSeconds]);
+  }, [assetId, createdAt]);
 
   return (
-    <span className="max-w-[16rem] text-center text-sm font-bold tabular-nums text-[#22f0ff] sm:text-base">
-      {formatStudioCountdownLabel({
-        remainingSec: remaining,
-        targetSeconds,
-        overdueForSec: overdue,
-      })}
+    <span className="max-w-[16rem] text-center text-2xl font-bold tabular-nums tracking-wider text-[#22f0ff] sm:text-3xl">
+      {formatElapsedClock(elapsed)}
     </span>
   );
 }
@@ -410,21 +398,21 @@ function FeedVideoSlide({
             }`}
           />
 
-          {/* Duration + Play / Pause */}
-          <div className="absolute left-1/2 top-[42%] z-30 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-2">
+          {/* Duration + Play / Pause — bottom of the frame (not center) */}
+          <div className="absolute inset-x-0 bottom-28 z-30 flex flex-col items-center gap-2 sm:bottom-32">
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 togglePlay();
               }}
-              className="flex h-16 w-16 items-center justify-center rounded-full bg-black/45 text-white ring-1 ring-white/35 backdrop-blur-md transition hover:bg-black/55"
+              className="flex h-14 w-14 items-center justify-center rounded-full bg-black/45 text-white ring-1 ring-white/35 backdrop-blur-md transition hover:bg-black/55"
               aria-label={playing ? "إيقاف مؤقت" : "تشغيل"}
             >
               {playing ? (
-                <Pause className="h-7 w-7" fill="currentColor" />
+                <Pause className="h-6 w-6" fill="currentColor" />
               ) : (
-                <Play className="h-7 w-7 translate-x-0.5" fill="currentColor" />
+                <Play className="h-6 w-6 translate-x-0.5" fill="currentColor" />
               )}
             </button>
             <span className="rounded-full bg-black/55 px-2.5 py-1 text-xs font-bold tabular-nums text-white ring-1 ring-white/20 backdrop-blur-md">
@@ -481,7 +469,7 @@ function FeedVideoSlide({
               e.stopPropagation();
               void handleEdit();
             }}
-            disabled={editing || item.status !== "completed"}
+            disabled={editing || item.status === "running"}
             className="flex h-12 w-12 items-center justify-center rounded-full bg-white/12 text-white ring-1 ring-white/25 backdrop-blur-md disabled:opacity-40"
             aria-label="تعديل"
           >

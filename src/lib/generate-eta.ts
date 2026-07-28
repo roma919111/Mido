@@ -43,6 +43,23 @@ export function remainingGenerateSeconds(
   return Math.max(0, eta - elapsed);
 }
 
+/** Wall-clock seconds elapsed since generate started (counts upward). */
+export function elapsedGenerateSeconds(
+  startedAtMs: number,
+  nowMs = Date.now(),
+): number {
+  if (!Number.isFinite(startedAtMs) || startedAtMs <= 0) return 0;
+  return Math.max(0, Math.floor((nowMs - startedAtMs) / 1000));
+}
+
+/** MM:SS upward clock for generate UI (not a countdown). */
+export function formatElapsedClock(elapsedSec: number): string {
+  const total = Math.max(0, Math.floor(elapsedSec));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
 export function formatCountdownLabel(remainingSec: number): string {
   if (remainingSec <= 0) return "ما زال قيد التوليد…";
   const m = Math.floor(remainingSec / 60);
