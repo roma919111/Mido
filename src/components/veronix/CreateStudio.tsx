@@ -159,6 +159,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [quoting, setQuoting] = useState(false);
   const [generating, setGenerating] = useState(false);
+  /** Brief flash so a second Generate tap feels pressed. */
+  const [genFlash, setGenFlash] = useState(false);
+  /** How many videos to generate in one tap (1–4). */
+  const [outputCount, setOutputCount] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [platformReady, setPlatformReady] = useState<boolean | null>(null);
@@ -365,12 +369,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               // Keep Generate unlocked for parallel jobs.
               setStatus("توليد قيد المتابعة في Assets — يمكنك توليد جديد");
               if (running.historyId || running.mediaType === "image") {
+                const resumeId = ++genRunIdRef.current;
                 void pollPreview(
                   running.historyId || "",
                   running.mediaType,
                   started,
                   false,
                   running.id,
+                  resumeId,
                 );
               }
             } else if (restoredRunning) {
@@ -1074,9 +1080,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     startedAt: number,
     brandOutro: boolean,
     assetId?: string,
+    runId?: number,
   ) {
+    const stillMine = () =>
+      runId == null || genRunIdRef.current === runId;
     for (let i = 0; i < PREVIEW_POLL_ATTEMPTS; i += 1) {
       await new Promise((r) => setTimeout(r, mediaType === "image" ? 2500 : PREVIEW_POLL_MS));
+      if (!stillMine()) return;
       try {
         const statusQs = new URLSearchParams();
         if (historyId) statusQs.set("historyId", historyId);
@@ -1090,16 +1100,19 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           creditsRefunded?: boolean;
           pollAfterSeconds?: number;
         }>(`/api/status?${statusQs.toString()}`);
+        if (!stillMine()) return;
         if (!res.ok) continue;
         const st = String(data.status || "").toUpperCase();
         const url = data.urls?.[0];
         if (url) {
+          if (!stillMine()) return;
           if (brandOutro) {
             await applyBrandOutro({ url, historyId, assetId, mediaType });
           } else if (mediaType === "video") {
             setStatus("تحسين الوضوح والفلتر…");
             try {
               const graded = await finalizePaidVideo({ url, historyId, assetId });
+              if (!stillMine()) return;
               setPreview({
                 url: graded,
                 mediaType,
@@ -1108,6 +1121,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 status: "completed",
               });
             } catch {
+              if (!stillMine()) return;
               setPreview({ url, mediaType, historyId, assetId, status: "completed" });
             }
             setStatus(null);
@@ -1120,6 +1134,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           return;
         }
         if (st === "FAILED" || st === "CANCELLED") {
+          if (!stillMine()) return;
           setPreview({ url: "", mediaType, historyId, assetId, status: "failed" });
           const failMsg =
             data.creditsRefunded || data.note
@@ -1132,13 +1147,22 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           await onUserRefresh().catch(() => undefined);
           return;
         }
-        setPreview((prev) =>
-          prev
+        if (!stillMine()) return;
+        setPreview((prev) => {
+          if (
+            prev?.assetId &&
+            assetId &&
+            prev.assetId !== assetId &&
+            prev.status === "running"
+          ) {
+            return prev;
+          }
+          return prev
             ? {
                 ...prev,
                 status: "running",
-                historyId: prev.historyId || historyId || undefined,
-                assetId: prev.assetId || assetId,
+                historyId: historyId || prev.historyId || undefined,
+                assetId: assetId || prev.assetId,
               }
             : {
                 url: "",
@@ -1147,8 +1171,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 assetId,
                 status: "running",
                 targetSeconds: countdownTargetSeconds,
-              },
-        );
+              };
+        });
         setStatus(
           `جاري التوليد… ${formatStudioCountdownLabel({
             remainingSec: remainingGenerateSeconds(
@@ -1170,6 +1194,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         // Keep waiting — tunnel blips should not abort a long Seedance job.
       }
     }
+    if (!stillMine()) return;
     setStatus("ما زال التوليد جاريًا — افتح Assets لمتابعة النتيجة");
     await onUserRefresh().catch(() => undefined);
   }
@@ -1264,6 +1289,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     /** Hide intermediate multi-shot clips from Assets */
     sequencePart?: boolean;
     referenceImages?: VisualReference[];
+    count?: number;
   }) {
     const { res, data } = await fetchJson<{
       error?: string;
@@ -1298,6 +1324,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         referenceImages: input.referenceImages ?? refs,
         waitForResult: false,
         sequencePart: Boolean(input.sequencePart),
+        count: Math.min(4, Math.max(1, Math.floor(input.count || 1))),
       }),
     });
     return { res, data };
@@ -1346,6 +1373,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   }
 
   async function handleGenerate() {
+    setGenFlash(true);
+    window.setTimeout(() => setGenFlash(false), 220);
     setError(null);
     setStatus(null);
     setShareNote(null);
@@ -1367,7 +1396,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       setError(quoteError || "انتظر حساب التكلفة قبل التوليد.");
       return;
     }
-    if (!freeTrial && (user.credits <= 0 || user.credits < creditCost)) {
+    const requestCount = freeTrial
+      ? 1
+      : Math.min(4, Math.max(1, Math.floor(outputCount) || 1));
+    const billedCost = freeTrial ? 0 : (creditCost || 0) * requestCount;
+    if (!freeTrial && (user.credits <= 0 || user.credits < billedCost)) {
       setError("رصيدك غير كافٍ. أضف كريدت أو رقِّ الباقة للمتابعة.");
       router.push("/pricing?paywall=1");
       return;
@@ -1410,7 +1443,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     setStatus(
       freeTrial
         ? "جاري توليد فيديوك المجاني…"
-        : "جاري التوليد…",
+        : requestCount > 1
+          ? `جاري توليد ${requestCount} فيديوهات…`
+          : "جاري التوليد…",
     );
     try {
       // Single-clip path (images, free trial, or one action)
@@ -1433,7 +1468,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         startFrame,
         endFrame,
         referenceImages: activeRefs,
+        count: requestCount,
       });
+
+      if (!stillMine()) return;
 
       if (res.status === 401 || data.needsAuth) {
         router.push(`/signup?next=${encodeURIComponent("/")}&paywall=1`);
@@ -1459,12 +1497,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         return;
       }
 
-      const ok = data.results?.find((r) => !r.error);
+      const okResults = (data.results || []).filter((r) => !r.error);
+      const ok = okResults[0];
       const firstUrl = ok?.urls?.[0] || "";
       const historyId = ok?.historyId;
       const assetId = ok?.assetId;
       const brand = Boolean(data.freeTrial || ok?.needsBrandOutro);
       const resultRunning = String(ok?.status || "").toLowerCase() === "running";
+      const extraCount = Math.max(0, okResults.length - 1);
       if (firstUrl) {
         if (brand) {
           await applyBrandOutro({
@@ -1481,6 +1521,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               historyId,
               assetId,
             });
+            if (!stillMine()) return;
             setPreview({
               url: graded,
               mediaType: media,
@@ -1489,6 +1530,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               status: "completed",
             });
           } catch (gradeErr) {
+            if (!stillMine()) return;
             setPreview({
               url: firstUrl,
               mediaType: media,
@@ -1502,7 +1544,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 : "تعذر تطبيق فلتر الوضوح — عُرض الفيديو الأصلي",
             );
           }
-          setStatus(null);
+          setStatus(
+            extraCount > 0
+              ? `اكتمل فيديو — و${extraCount} أخرى في Assets`
+              : null,
+          );
         } else {
           setPreview({
             url: firstUrl,
@@ -1511,7 +1557,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             assetId,
             status: "completed",
           });
-          setStatus(null);
+          setStatus(
+            extraCount > 0
+              ? `اكتملت صورة — و${extraCount} أخرى في Assets`
+              : null,
+          );
         }
         setGenStartedAt(null);
       } else if (historyId || (assetId && (resultRunning || media === "image"))) {
@@ -1526,8 +1576,12 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         if (assetId) {
           lockEtaStart(assetId, new Date(startedAt).toISOString());
         }
-        setStatus("جاري التوليد…");
-        void pollPreview(historyId || "", media, startedAt, brand, assetId);
+        setStatus(
+          requestCount > 1
+            ? `جاري توليد ${requestCount} فيديوهات… الباقي يظهر في Assets`
+            : "جاري التوليد…",
+        );
+        void pollPreview(historyId || "", media, startedAt, brand, assetId, runId);
       } else {
         setStatus("تم إرسال الطلب — افتح Assets لمتابعة النتيجة");
         setGenStartedAt(null);
@@ -1535,6 +1589,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
       await onUserRefresh();
     } catch (err) {
+      if (!stillMine()) return;
       setError(err instanceof Error ? err.message : "فشل التوليد");
       setGenStartedAt(null);
     } finally {
@@ -1945,36 +2000,71 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         )}
       </div>
 
-      <button
-        type="button"
-        onClick={() => void handleGenerate()}
-        disabled={quoting || !selectedModel?.available}
-        className="relative z-20 flex w-full items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-5 py-4 text-base font-bold text-white disabled:opacity-70"
-      >
-        {quoting ? (
-          <Loader2 className="h-5 w-5 animate-spin" />
-        ) : generating ? (
-          <Sparkles className="h-5 w-5" />
-        ) : (
-          <Sparkles className="h-5 w-5" />
-        )}
-        {quoting
-          ? "يحسب السعر…"
-          : generating
-            ? "توليد فيديو جديد"
-            : freeTrial
-              ? "Generate مجاني"
-              : "Generate"}
-        <span className="rounded-full bg-black/20 px-2.5 py-0.5 text-xs tabular-nums">
+      <div className="relative z-20 flex items-stretch gap-2" dir="rtl">
+        {!freeTrial ? (
+          <div
+            className="flex shrink-0 flex-col items-center justify-center gap-1 rounded-2xl border border-white/12 bg-[#141821] px-2.5 py-2"
+            aria-label="عدد الفيديوهات"
+          >
+            <span className="text-[10px] font-semibold text-white/55">عدد</span>
+            <div className="flex items-center gap-1">
+              {([1, 2, 3, 4] as const).map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setOutputCount(n)}
+                  className={`flex h-9 w-9 items-center justify-center rounded-xl text-sm font-bold tabular-nums transition active:scale-95 ${
+                    outputCount === n
+                      ? "bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] text-white shadow-[0_0_0_1px_rgba(255,255,255,0.25)]"
+                      : "bg-white/8 text-white/70 hover:bg-white/12"
+                  }`}
+                  aria-pressed={outputCount === n}
+                  aria-label={`${n} فيديو`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        <button
+          type="button"
+          onClick={() => void handleGenerate()}
+          disabled={quoting || !selectedModel?.available}
+          className={`relative flex min-w-0 flex-1 items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-5 py-4 text-base font-bold text-white transition duration-150 enabled:active:scale-[0.97] enabled:active:brightness-110 disabled:opacity-70 ${
+            genFlash || generating
+              ? "scale-[0.98] brightness-110 ring-2 ring-white/45"
+              : ""
+          }`}
+        >
+          {quoting || generating ? (
+            <Loader2 className="h-5 w-5 animate-spin" />
+          ) : (
+            <Sparkles className="h-5 w-5" />
+          )}
           {quoting
-            ? "…"
-            : creditLive && creditCost != null
-              ? freeTrial
-                ? "مجاني"
-                : `−${creditCost}`
-              : "—"}
-        </span>
-      </button>
+            ? "يحسب السعر…"
+            : generating
+              ? "جاري الإرسال…"
+              : waitingResult
+                ? "توليد فيديو جديد"
+                : freeTrial
+                  ? "Generate مجاني"
+                  : outputCount > 1
+                    ? `Generate ×${outputCount}`
+                    : "Generate"}
+          <span className="rounded-full bg-black/20 px-2.5 py-0.5 text-xs tabular-nums">
+            {quoting
+              ? "…"
+              : creditLive && creditCost != null
+                ? freeTrial
+                  ? "مجاني"
+                  : `−${creditCost * (freeTrial ? 1 : outputCount)}`
+                : "—"}
+          </span>
+        </button>
+      </div>
 
       {(preview || waitingResult) && (
         <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141821]">

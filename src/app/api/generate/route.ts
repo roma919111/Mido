@@ -48,6 +48,8 @@ type GenBody = {
   waitForResult?: boolean;
   /** Intermediate multi-shot clip — hidden from Assets; final stitch is shown */
   sequencePart?: boolean;
+  /** How many variants to generate (same prompt/model). Max 4. */
+  count?: number;
 };
 
 function resolveToolMode(media: "image" | "video", hasStart: boolean, hasRefs: boolean) {
@@ -84,6 +86,10 @@ export async function POST(request: Request) {
     const prompt = body.prompt?.trim();
     const requestedMedia = body.media ?? "video";
     const modelIds = [...new Set(body.modelIds?.filter(Boolean) ?? [])].slice(0, 4);
+    const variantCount = Math.min(
+      4,
+      Math.max(1, Math.floor(Number(body.count) || 1)),
+    );
 
     if (!prompt) {
       return NextResponse.json({ error: "prompt is required" }, { status: 400 });
@@ -100,7 +106,7 @@ export async function POST(request: Request) {
           { status: 422 },
         );
       }
-      const imageModelIds = modelIds.map(() => VERONIX_IMAGE_MODEL_ID);
+      const imageModelIds = Array.from({ length: variantCount }, () => VERONIX_IMAGE_MODEL_ID);
       const mode =
         body.mode ||
         resolveToolMode(
@@ -279,26 +285,30 @@ export async function POST(request: Request) {
 
     // Pricing may still use the cached OpenArt cost table; generation is BytePlus only.
     const quotes = [];
-    for (const modelId of modelIds) {
-      quotes.push(
-        await quoteOpenArtCredits(
-          {
-            modelId,
-            media,
-            mode,
-            aspectRatio: body.aspectRatio,
-            resolution: body.resolution,
-            duration: body.duration,
-            generateAudio: body.generateAudio,
-          },
-          { allowCache: true },
-        ),
-      );
+    for (let v = 0; v < variantCount; v += 1) {
+      for (const modelId of modelIds) {
+        quotes.push(
+          await quoteOpenArtCredits(
+            {
+              modelId,
+              media,
+              mode,
+              aspectRatio: body.aspectRatio,
+              resolution: body.resolution,
+              duration: body.duration,
+              generateAudio: body.generateAudio,
+            },
+            { allowCache: true },
+          ),
+        );
+      }
     }
 
     // Free trial: stock Veronix intro + 4s Seedance clip (480p), once per account.
     // Never apply to multi-shot sequence parts (each beat is also 4s).
+    // Free trial is a single clip only.
     const freeTrial =
+      variantCount === 1 &&
       modelIds.length === 1 &&
       isFreeVeronixEligible(user, {
         modelId: modelIds[0],
