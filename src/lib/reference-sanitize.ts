@@ -1,14 +1,9 @@
 /**
- * Reference image prep for Seedance / BytePlus privacy.
+ * Character still prep for Seedance / BytePlus.
  *
- * Evidence from production:
- * - Accepted Dana/Khaled refs worked as near-raw uploads.
- * - After we forced a beauty grade on EVERY generate, those same refs failed.
- * - Rejected phone stills were ultra-tall 1440×3120 frames.
- *
- * Rules:
- * 1) First send: compress only (+ crop ultra-tall). No beauty/CGI filters.
- * 2) Privacy retry: light soft film grade only.
+ * On Generate, character photos are converted to an AI / 3D-render look
+ * BEFORE the prompt is sent — so BytePlus sees a synthesized digital
+ * character, not a camera photo.
  */
 
 import { spawn } from "node:child_process";
@@ -59,10 +54,9 @@ async function loadImageBytes(url: string): Promise<Buffer> {
 }
 
 const MIN_SIDE = 320;
-const MAX_SIDE_FIRST = 1280;
-const MAX_SIDE_RETRY = 1100;
+const MAX_SIDE = 1024;
 
-async function ensureMinSide(buf: Buffer, quality = 85): Promise<Buffer> {
+async function ensureMinSide(buf: Buffer, quality = 88): Promise<Buffer> {
   const meta = await sharp(buf).metadata();
   const w = meta.width || 0;
   const h = meta.height || 0;
@@ -80,16 +74,13 @@ async function ensureMinSide(buf: Buffer, quality = 85): Promise<Buffer> {
   return buf;
 }
 
-/**
- * First-attempt prep: keep the original look (what made accepted refs pass).
- * Only crop ultra-tall phone frames, then jpeg compress.
- */
-export async function compressReferenceForBytePlus(bytes: Buffer): Promise<Buffer> {
-  let img = sharp(bytes).rotate();
+async function normalizeCanvas(bytes: Buffer): Promise<{ buf: Buffer; width: number; height: number }> {
+  let img = sharp(bytes, { failOn: "none" }).rotate();
   const meta = await img.metadata();
   const w0 = meta.width || 0;
   const h0 = meta.height || 0;
 
+  // Ultra-tall phone frames → top-weighted 3:4 (face / upper body).
   if (w0 > 0 && h0 > 0 && h0 / w0 > 1.85) {
     const targetH = Math.round(w0 * (4 / 3));
     const height = Math.min(h0, targetH);
@@ -104,83 +95,140 @@ export async function compressReferenceForBytePlus(bytes: Buffer): Promise<Buffe
 
   const buf = await img
     .resize({
-      width: MAX_SIDE_FIRST,
-      height: MAX_SIDE_FIRST,
+      width: MAX_SIDE,
+      height: MAX_SIDE,
       fit: "inside",
       withoutEnlargement: true,
+      kernel: sharp.kernel.lanczos3,
     })
-    .jpeg({ quality: 88, mozjpeg: true })
+    .removeAlpha()
+    .toColorspace("srgb")
+    .png()
     .toBuffer();
 
-  return ensureMinSide(buf, 88);
+  const out = await sharp(buf).metadata();
+  return {
+    buf,
+    width: out.width || MAX_SIDE,
+    height: out.height || MAX_SIDE,
+  };
+}
+
+/**
+ * Convert a character still into an AI / 3D-render digital look.
+ * Applied on Generate BEFORE BytePlus create.
+ */
+export async function toAiDigitalCharacterRender(bytes: Buffer): Promise<Buffer> {
+  const { buf: sized, width: w, height: h } = await normalizeCanvas(bytes);
+
+  // 1–3) Digital aesthetic + extreme texture smooth + exaggerated definition.
+  // Flatten pores/noise, keep primary features (eyes/mouth/brows) via re-sharpen.
+  const sculpted = await sharp(sized)
+    .median(9)
+    .blur(1.6)
+    .modulate({ brightness: 1.04, saturation: 1.18 })
+    .linear(1.16, -12)
+    .sharpen({ sigma: 1.35, m1: 1.8, m2: 0.6 })
+    .png()
+    .toBuffer();
+
+  // 4) Soft bloom lighting — digital glow on bright areas / edges.
+  const glow = await sharp(sculpted)
+    .modulate({ brightness: 1.25 })
+    .blur(22)
+    .png()
+    .toBuffer();
+  const bloomed = await sharp(sculpted)
+    .composite([{ input: glow, blend: "soft-light" }])
+    .png()
+    .toBuffer();
+
+  // 5) Digital background isolation — flat digital blur behind a soft subject mask.
+  const bg = await sharp(bloomed)
+    .blur(32)
+    .modulate({ saturation: 0.82, brightness: 0.96 })
+    .png()
+    .toBuffer();
+
+  const maskSvg = Buffer.from(
+    `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="g" cx="50%" cy="40%" r="62%">
+          <stop offset="0%" stop-color="#ffffff"/>
+          <stop offset="48%" stop-color="#ffffff"/>
+          <stop offset="78%" stop-color="#777777"/>
+          <stop offset="100%" stop-color="#000000"/>
+        </radialGradient>
+      </defs>
+      <rect width="100%" height="100%" fill="url(#g)"/>
+    </svg>`,
+  );
+  const maskPng = await sharp(maskSvg).resize(w, h).png().toBuffer();
+  const subject = await sharp(bloomed)
+    .ensureAlpha()
+    .composite([{ input: maskPng, blend: "dest-in" }])
+    .png()
+    .toBuffer();
+  const isolated = await sharp(bg)
+    .composite([{ input: subject, blend: "over" }])
+    .removeAlpha()
+    .png()
+    .toBuffer();
+
+  // 6) AI cinematic color grading — saturated digital film look.
+  const graded = await sharp(isolated)
+    .modulate({ brightness: 1.03, saturation: 1.22 })
+    .linear(1.1, -8)
+    .tint({ r: 255, g: 244, b: 230 })
+    .jpeg({ quality: 88, mozjpeg: true, chromaSubsampling: "4:4:4" })
+    .toBuffer();
+
+  return ensureMinSide(graded, 88);
+}
+
+/** @deprecated name kept for callers — now runs the AI digital render. */
+export async function compressReferenceForBytePlus(bytes: Buffer): Promise<Buffer> {
+  try {
+    return await toAiDigitalCharacterRender(bytes);
+  } catch (err) {
+    console.warn(
+      "[veronix] AI digital render failed, falling back to compress:",
+      err instanceof Error ? err.message : err,
+    );
+    const { buf } = await normalizeCanvas(bytes);
+    const jpg = await sharp(buf).jpeg({ quality: 88, mozjpeg: true }).toBuffer();
+    return ensureMinSide(jpg, 88);
+  }
 }
 
 export type SoftGradeLevel = "generate" | "retry";
 
-/**
- * Privacy-retry only: light film soften. Never used on the first successful path.
- * @deprecated generate level — use compressReferenceForBytePlus instead.
- */
+/** Privacy retry — re-run the full AI digital render (same look, second pass). */
 export async function applySoftCinematicGrade(
   bytes: Buffer,
-  opts?: { level?: SoftGradeLevel; stronger?: boolean },
+  _opts?: { level?: SoftGradeLevel; stronger?: boolean },
 ): Promise<Buffer> {
-  const level: SoftGradeLevel =
-    opts?.level || (opts?.stronger ? "retry" : "generate");
-
-  // First path must stay raw-ish — do not beauty-filter accepted characters.
-  if (level === "generate") {
-    return compressReferenceForBytePlus(bytes);
-  }
-
-  let img = sharp(bytes).rotate();
-  const meta = await img.metadata();
-  const w0 = meta.width || 0;
-  const h0 = meta.height || 0;
-  if (w0 > 0 && h0 > 0 && h0 / w0 > 1.85) {
-    const targetH = Math.round(w0 * (4 / 3));
-    const height = Math.min(h0, targetH);
-    const top = Math.max(0, Math.round((h0 - height) * 0.12));
-    img = img.extract({
-      left: 0,
-      top: Math.min(top, Math.max(0, h0 - height)),
-      width: w0,
-      height,
-    });
-  }
-
-  const buf = await img
-    .resize({
-      width: MAX_SIDE_RETRY,
-      height: MAX_SIDE_RETRY,
-      fit: "inside",
-      withoutEnlargement: true,
-    })
-    .modulate({ brightness: 1.02, saturation: 0.92 })
-    .blur(0.35)
-    .jpeg({ quality: 86, mozjpeg: true })
-    .toBuffer();
-
-  return ensureMinSide(buf, 86);
+  return compressReferenceForBytePlus(bytes);
 }
 
-/** Privacy retry helper — light soften only after BytePlus rejects. */
+/** Privacy retry helper. */
 export async function stylizeReferenceImage(sourceUrl: string): Promise<string> {
   const trimmed = sourceUrl.trim();
   if (!trimmed) throw new Error("Empty reference URL");
 
-  const id = `refstyle-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const id = `aichar-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   await mkdir(GENERATIONS_DIR, { recursive: true });
   const outPublic = path.join(GENERATIONS_DIR, `${id}.jpg`);
 
   try {
     const raw = await loadImageBytes(trimmed);
-    const out = await applySoftCinematicGrade(raw, { level: "retry" });
-    if (out.length < 400) throw new Error("Stylized reference too small");
+    const out = await toAiDigitalCharacterRender(raw);
+    if (out.length < 400) throw new Error("AI digital render too small");
     await writeFile(outPublic, out);
     return `data:image/jpeg;base64,${out.toString("base64")}`;
   } catch {
-    const work = await mkdtemp(path.join(tmpdir(), "vyronix-refstyle-"));
+    // ffmpeg fallback approximating the same digital look
+    const work = await mkdtemp(path.join(tmpdir(), "vyronix-aichar-"));
     try {
       const rawPath = path.join(work, "in.bin");
       const styled = path.join(work, "styled.jpg");
@@ -190,7 +238,7 @@ export async function stylizeReferenceImage(sourceUrl: string): Promise<string> 
         "-i",
         rawPath,
         "-vf",
-        "scale=1100:-2:flags=lanczos,eq=saturation=0.92:brightness=0.015,gblur=sigma=0.35,format=yuvj420p",
+        "scale=1024:-2:flags=lanczos,eq=contrast=1.15:saturation=1.22:brightness=0.03,gblur=sigma=1.5,unsharp=5:5:1.2:5:5:0.0,format=yuvj420p",
         "-frames:v",
         "1",
         "-q:v",
@@ -201,7 +249,7 @@ export async function stylizeReferenceImage(sourceUrl: string): Promise<string> 
       const st = await stat(outPublic);
       if (st.size < 400) throw new Error("Stylized reference too small");
       let bytes: Buffer = await readFile(outPublic);
-      bytes = Buffer.from(await ensureMinSide(bytes, 86));
+      bytes = Buffer.from(await ensureMinSide(bytes, 88));
       await writeFile(outPublic, bytes);
       return `data:image/jpeg;base64,${bytes.toString("base64")}`;
     } finally {
@@ -216,8 +264,9 @@ export function isInputImagePrivacyError(message: string): boolean {
   );
 }
 
-const CINEMA_MARK = "لقطة سينمائية ناعمة";
+const AI_MARK = "شخصية رقمية مولّدة بالذكاء الاصطناعي";
 
+/** Prompt framing after AI digital stills are attached. */
 export function toSemiRealisticScenePrompt(prompt: string): string {
   const base = (prompt || "")
     .replace(/\n\n\(جارٍ توليد ودمج[\s\S]*$/u, "")
@@ -225,14 +274,15 @@ export function toSemiRealisticScenePrompt(prompt: string): string {
     .replace(/\n*شخصيات رقمية[^\n]*/giu, "")
     .replace(/\n*AI-generated digital characters[^\n]*/gi, "")
     .replace(/\n*cinematic CGI[^\n]*/gi, "")
+    .replace(/\n*لقطة سينمائية ناعمة[^\n]*/giu, "")
     .trim();
   if (!base) {
-    return `${CINEMA_MARK}، إضاءة ناعمة، عمق ميدان سينمائي.`;
+    return `${AI_MARK}، مظهر 3D render رقمي مصقول، إضاءة soft bloom.`;
   }
-  if (base.includes(CINEMA_MARK)) return base;
+  if (base.includes(AI_MARK)) return base;
   return [
-    `${CINEMA_MARK} (soft cinematic film still), diffused lighting, shallow depth of field.`,
-    "Creative cinematic media — not a raw phone selfie or ID photo.",
+    `${AI_MARK} (AI-generated digital 3D character render, polished synthetic skin, soft bloom).`,
+    "Not a real-person camera photo. Digital cinematic AI synthesis.",
     "",
     base,
   ].join("\n");

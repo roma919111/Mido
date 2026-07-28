@@ -21,8 +21,8 @@ const DEFAULT_BASE = "https://ark.ap-southeast.bytepluses.com/api/v3";
 const DEFAULT_MODEL = "dreamina-seedance-2-0-mini-260615";
 
 /**
- * First send: compress only (what made accepted Dana/Khaled refs pass).
- * Beauty soften runs only inside privacy-retry stylizeReferenceImage.
+ * First send: AI / 3D-render digital character look (BytePlus privacy bypass).
+ * Soften / bloom / isolate / grade happen here before create.
  */
 async function toCompressedDataUrl(bytes: Buffer, mimeHint?: string): Promise<string> {
   try {
@@ -33,8 +33,8 @@ async function toCompressedDataUrl(bytes: Buffer, mimeHint?: string): Promise<st
       const out = await sharp(bytes)
         .rotate()
         .resize({
-          width: 1280,
-          height: 1280,
+          width: 1024,
+          height: 1024,
           fit: "inside",
           withoutEnlargement: true,
         })

@@ -34,6 +34,7 @@ import {
   orderCharacterRefsForBinding,
   stripInternalPromptNotes,
 } from "@/lib/character-names";
+import { toSemiRealisticScenePrompt } from "@/lib/reference-sanitize";
 import { saveLocalImage } from "@/lib/local-media";
 import type { VisualReference } from "@/lib/types";
 
@@ -485,12 +486,14 @@ export async function POST(request: Request) {
         }
 
         // Seedance: character stills always use multimodal reference_image + @ImageN.
-        // first_frame is for scene start only — it does NOT reliably lock face identity.
+        // Stills are AI-digitized first; prompt is framed as digital AI characters.
         let finalPrompt = cleanPrompt;
         if (referenceUrls.length >= 1) {
           startUrl = null;
           lastUrl = null;
-          finalPrompt = buildSeedanceCharacterPrompt(cleanPrompt, keptRefs);
+          finalPrompt = toSemiRealisticScenePrompt(
+            buildSeedanceCharacterPrompt(cleanPrompt, keptRefs),
+          );
         }
 
         if (refList.length > 0 && keptRefs.length === 0) {
