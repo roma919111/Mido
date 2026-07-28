@@ -40,6 +40,7 @@ import {
   warmAssetPosters,
   type CachedAssetItem,
 } from "@/lib/assets-cache";
+import { displayBytePlusAssetError } from "@/lib/byteplus-errors";
 import type { VisualReference } from "@/lib/types";
 
 type AssetItem = CachedAssetItem;
@@ -588,8 +589,8 @@ function FeedVideoSlide({
             <p className="mt-1 text-sm text-white/50">بدون وصف</p>
           )}
           {item.error ? (
-            <p className="mt-1 whitespace-pre-line text-xs text-rose-300">
-              {item.error}
+            <p className="mt-1 whitespace-pre-line text-xs font-medium leading-relaxed text-rose-300">
+              {displayBytePlusAssetError(item.error)}
             </p>
           ) : null}
         </div>

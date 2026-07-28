@@ -93,7 +93,7 @@ async function normalizeCanvas(bytes: Buffer): Promise<{ buf: Buffer; width: num
     });
   }
 
-  const buf = await img
+  let buf = await img
     .resize({
       width: MAX_SIDE,
       height: MAX_SIDE,
@@ -106,12 +106,45 @@ async function normalizeCanvas(bytes: Buffer): Promise<{ buf: Buffer; width: num
     .png()
     .toBuffer();
 
+  // Max face+body zoom: tight upper-center crop, then scale back up to fill frame.
+  buf = await maxFaceBodyZoom(buf);
+
   const out = await sharp(buf).metadata();
   return {
     buf,
     width: out.width || MAX_SIDE,
     height: out.height || MAX_SIDE,
   };
+}
+
+/**
+ * Zoom so face + body fill the frame as much as possible (tight portrait crop).
+ * Keeps upper bias for faces; scales back to original canvas size.
+ */
+async function maxFaceBodyZoom(buf: Buffer): Promise<Buffer> {
+  const meta = await sharp(buf).metadata();
+  const w = meta.width || 0;
+  const h = meta.height || 0;
+  if (w < MIN_SIDE || h < MIN_SIDE) return buf;
+
+  // Keep ~68% of the frame → ~1.47× zoom on face/body.
+  const zoomKeep = 0.68;
+  const cropW = Math.max(MIN_SIDE, Math.round(w * zoomKeep));
+  const cropH = Math.max(MIN_SIDE, Math.round(h * zoomKeep));
+  const left = Math.max(0, Math.round((w - cropW) / 2));
+  // Bias upward so head/torso stay in frame.
+  const top = Math.max(0, Math.min(Math.round((h - cropH) * 0.14), h - cropH));
+
+  return sharp(buf)
+    .extract({ left, top, width: cropW, height: cropH })
+    .resize({
+      width: w,
+      height: h,
+      fit: "fill",
+      kernel: sharp.kernel.lanczos3,
+    })
+    .png()
+    .toBuffer();
 }
 
 /**

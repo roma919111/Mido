@@ -505,10 +505,25 @@ function sleep(ms: number) {
 }
 
 function taskErrorText(task: BytePlusTask): string {
-  if (typeof task.error === "string") return task.error;
+  if (typeof task.error === "string" && task.error.trim()) return task.error;
   if (task.error && typeof task.error === "object") {
-    return String(task.error.message || task.error.code || "");
+    const msg = String(task.error.message || task.error.code || "").trim();
+    if (msg) return msg;
   }
+  const raw = task.raw as
+    | {
+        error?: { message?: string; code?: string } | string;
+        message?: string;
+      }
+    | undefined;
+  if (raw?.error) {
+    if (typeof raw.error === "string" && raw.error.trim()) return raw.error;
+    if (typeof raw.error === "object") {
+      const msg = String(raw.error.message || raw.error.code || "").trim();
+      if (msg) return msg;
+    }
+  }
+  if (typeof raw?.message === "string" && raw.message.trim()) return raw.message;
   return "";
 }
 
