@@ -1,58 +1,24 @@
 import { getActiveCatalog, getCatalogModel, resolveMcpModel } from "@/lib/model-catalog";
 import { audioParamForMcpModel, mapResolutionForMcpModel } from "@/lib/model-params";
+import { lookupCachedCost } from "@/lib/openart-cost-cache";
 import {
-  lookupCachedCost,
-  lookupDefaultCostSync,
-} from "@/lib/openart-cost-cache";
+  VERONIX_CREDIT_MULTIPLIER,
+  toVeronixCredits,
+  withMultiplierNote,
+  type QuoteInput,
+  type QuoteResult,
+} from "@/lib/credit-multiplier";
 
-/** Veronix wallet credits = seeded base credits × this fixed markup. */
-export const VERONIX_CREDIT_MULTIPLIER = 1.8;
+export {
+  VERONIX_CREDIT_MULTIPLIER,
+  toVeronixCredits,
+  withMultiplierNote,
+  type QuoteInput,
+  type QuoteResult,
+} from "@/lib/credit-multiplier";
 
-/** Apply the platform markup to every model — no per-model exceptions. */
-export function toVeronixCredits(openArtCredits: number): number {
-  const base = Number(openArtCredits);
-  if (!Number.isFinite(base) || base <= 0) return 1;
-  return Math.max(1, Math.round(base * VERONIX_CREDIT_MULTIPLIER));
-}
-
-export function withMultiplierNote(note?: string): string {
-  const base = note?.trim();
-  const tag = `Veronix price = base × ${VERONIX_CREDIT_MULTIPLIER}`;
-  if (!base) return tag;
-  if (base.includes("× 1.8") || base.includes("×1.8") || base.includes(String(VERONIX_CREDIT_MULTIPLIER))) {
-    return base;
-  }
-  return `${base} · ${tag}`;
-}
-
-export interface QuoteInput {
-  modelId: string;
-  media: "image" | "video";
-  mode: string;
-  aspectRatio?: string;
-  resolution?: string;
-  duration?: number;
-  imageCount?: number;
-  videoCount?: number;
-  generateAudio?: boolean;
-}
-
-export interface QuoteResult {
-  modelId: string;
-  mcpModel: string;
-  mode: string;
-  /** Final Veronix wallet debit (OpenArt × 1.8). */
-  totalCredits: number;
-  unitCredits: number;
-  /** Raw OpenArt credits before markup (for audit / UI transparency). */
-  openArtCredits: number;
-  multiplier: number;
-  available: boolean;
-  config: Record<string, unknown>;
-  pricingNote?: string;
-  source: "cache" | "estimate";
-  cached?: boolean;
-}
+/** Re-export client-safe local quote for server callers that want sync pricing. */
+export { quoteCreditsLocal } from "@/lib/credit-quote-local";
 
 export interface QuoteOptions {
   /** Prefer seeded local cost cache (default true). */
@@ -91,7 +57,6 @@ function buildParams(
   mcpModel: string,
 ): Record<string, unknown> {
   if (input.media === "image") {
-    // GPT Image uses resolutionTier + quality; others accept resolution / aspect only.
     if (mcpModel.includes("gpt-image")) {
       return {
         imageCount: input.imageCount ?? 1,
@@ -126,7 +91,6 @@ function buildParams(
     mcpModel,
     input.resolution || catalog?.resolutionDefault || "720p",
   );
-  // Models without a resolution control (e.g. Gemini) omit the field entirely.
   const hasResolutionControl = Array.isArray(catalog?.resolutions)
     ? catalog.resolutions.length > 0
     : Boolean(resolution);
@@ -152,7 +116,6 @@ function quoteResultFromCached(
     config: Record<string, unknown>;
     scaled: boolean;
   },
-  available: boolean,
 ): QuoteResult {
   const openArtCredits = cached.totalCredits;
   const totalCredits = toVeronixCredits(openArtCredits);
@@ -235,39 +198,7 @@ async function quoteFromCache(
     aspectRatio: input.aspectRatio,
   });
   if (!cached) return null;
-  return quoteResultFromCached(input, mcpModel, mode, cached, true);
-}
-
-/**
- * Instant UI pricing from the seeded cost table (no network).
- * Same formula as server cache/defaults — debit still happens only on Generate.
- */
-export function quoteCreditsLocal(input: QuoteInput): QuoteResult {
-  const catalog = getCatalogModel(input.modelId);
-  const mcpModel = catalog ? resolveMcpModel(catalog) : input.modelId;
-  const available = Boolean(catalog?.available && catalog.mcpId);
-  const mode = resolveMode(catalog, input);
-  const params = buildParams(input, mcpModel);
-  const mappedRes =
-    typeof params.resolution === "string"
-      ? params.resolution
-      : mapResolutionForMcpModel(mcpModel, input.resolution);
-
-  const cached = lookupDefaultCostSync({
-    model: mcpModel,
-    mode,
-    resolution: mappedRes,
-    duration: input.duration,
-    generateAudio: input.generateAudio,
-    aspectRatio: input.aspectRatio,
-  });
-  if (cached) {
-    return {
-      ...quoteResultFromCached(input, mcpModel, mode, cached, available),
-      available: available || true,
-    };
-  }
-  return quoteEstimateResult(input, mcpModel, mode, params, available);
+  return quoteResultFromCached(input, mcpModel, mode, cached);
 }
 
 /** Local pricing only — never dials OpenArt MCP. */

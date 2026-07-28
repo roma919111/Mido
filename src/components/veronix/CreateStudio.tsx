@@ -36,7 +36,7 @@ import {
   VERONIX_MODEL_ID,
   isFreeVeronixEligible,
 } from "@/lib/free-trial";
-import { quoteCreditsLocal } from "@/lib/credit-quote";
+import { quoteCreditsLocal } from "@/lib/credit-quote-local";
 import type { VisualReference } from "@/lib/types";
 import type { SceneState } from "@/lib/prompt-enhance";
 import { fetchJson } from "@/lib/fetch-json";
