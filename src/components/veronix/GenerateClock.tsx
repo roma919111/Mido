@@ -1,17 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef } from "react";
 
 /**
- * Compact stopwatch — seconds + centiseconds race upward (timer feel).
- * Hand spins via CSS; only the digit label re-renders (~50ms).
+ * Lightweight stopwatch — updates digits via DOM (no React re-render storm).
+ * Hand spins with CSS. Safe with many cards / Chrome main thread.
  */
 
 function pad2(n: number) {
   return String(Math.max(0, Math.floor(n))).padStart(2, "0");
 }
 
-/** MM:SS.CS — centiseconds always visible and racing. */
 export function formatFastTimer(displaySec: number): string {
   const totalCs = Math.max(0, Math.floor(displaySec * 100));
   const cs = totalCs % 100;
@@ -21,13 +20,10 @@ export function formatFastTimer(displaySec: number): string {
   return `${pad2(m)}:${pad2(s)}.${pad2(cs)}`;
 }
 
-/**
- * Accelerated timer: ~24 display-seconds per real second
- * so seconds and centiseconds both feel like a racing countdown-to-ready.
- */
+/** ~20 display-seconds per real second (racing timer feel). */
 export function fastDisplaySeconds(startedAtMs: number, nowMs = Date.now()): number {
   const wallMs = Math.max(0, nowMs - startedAtMs);
-  return wallMs / (1000 / 24);
+  return wallMs / (1000 / 20);
 }
 
 type GenerateClockProps = {
@@ -41,26 +37,45 @@ export function GenerateClock({
   size = "large",
   className = "",
 }: GenerateClockProps) {
+  const labelRef = useRef<HTMLSpanElement>(null);
   const safeStart =
     Number.isFinite(startedAt) && startedAt > 0 ? startedAt : Date.now();
-  const [label, setLabel] = useState(() =>
-    formatFastTimer(fastDisplaySeconds(safeStart)),
-  );
 
   useEffect(() => {
-    const tick = () =>
-      setLabel(formatFastTimer(fastDisplaySeconds(safeStart)));
-    tick();
-    // 50ms keeps CS digits racing without rebuilding the SVG face.
-    const id = window.setInterval(tick, 50);
-    return () => window.clearInterval(id);
+    let cancelled = false;
+    let lastShown = "";
+
+    const paint = () => {
+      if (cancelled || !labelRef.current) return;
+      if (typeof document !== "undefined" && document.hidden) return;
+      const next = formatFastTimer(fastDisplaySeconds(safeStart));
+      if (next !== lastShown) {
+        lastShown = next;
+        labelRef.current.textContent = next;
+      }
+    };
+
+    paint();
+    // Direct DOM writes — do NOT call setState (avoids freezing CreateStudio).
+    const id = window.setInterval(paint, 80);
+    const onVis = () => {
+      if (!document.hidden) paint();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, [safeStart]);
+
+  const initial = formatFastTimer(fastDisplaySeconds(safeStart));
 
   if (size === "compact") {
     return (
       <span
         className={`inline-flex items-center gap-1 rounded-full border border-[#22f0ff]/35 bg-[#22f0ff]/10 px-1.5 py-0.5 ${className}`}
-        aria-label={`عداد التوليد ${label}`}
+        aria-live="off"
       >
         <span className="relative inline-flex h-4 w-4 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-[#22f0ff]/80 bg-black/40">
           <span
@@ -69,24 +84,22 @@ export function GenerateClock({
           />
           <span className="absolute h-0.5 w-0.5 rounded-full bg-white" />
         </span>
-        <span className="font-mono text-[10px] font-bold tabular-nums tracking-tight text-[#22f0ff]">
-          {label}
+        <span
+          ref={labelRef}
+          className="font-mono text-[10px] font-bold tabular-nums tracking-tight text-[#22f0ff]"
+        >
+          {initial}
         </span>
       </span>
     );
   }
 
-  const dim = 96;
-
   return (
-    <div
-      className={`flex flex-col items-center gap-1.5 ${className}`}
-      aria-label={`عداد التوليد ${label}`}
-    >
-      <div className="relative" style={{ width: dim, height: dim }}>
+    <div className={`flex flex-col items-center gap-1.5 ${className}`}>
+      <div className="relative h-24 w-24">
         <svg
-          width={dim}
-          height={dim}
+          width={96}
+          height={96}
           viewBox="0 0 96 96"
           className="drop-shadow-[0_0_10px_rgba(34,240,255,0.35)]"
         >
@@ -108,17 +121,13 @@ export function GenerateClock({
           />
           {Array.from({ length: 12 }).map((_, i) => {
             const a = ((i * 30 - 90) * Math.PI) / 180;
-            const x1 = 48 + Math.cos(a) * 38;
-            const y1 = 48 + Math.sin(a) * 38;
-            const x2 = 48 + Math.cos(a) * 32;
-            const y2 = 48 + Math.sin(a) * 32;
             return (
               <line
                 key={i}
-                x1={x1}
-                y1={y1}
-                x2={x2}
-                y2={y2}
+                x1={48 + Math.cos(a) * 38}
+                y1={48 + Math.sin(a) * 38}
+                x2={48 + Math.cos(a) * 32}
+                y2={48 + Math.sin(a) * 32}
                 stroke="rgba(34,240,255,0.85)"
                 strokeWidth={i % 3 === 0 ? 2 : 1}
                 strokeLinecap="round"
@@ -132,8 +141,11 @@ export function GenerateClock({
           style={{ transformOrigin: "50% 100%" }}
         />
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center pt-7">
-          <span className="rounded-md bg-black/70 px-1.5 py-0.5 font-mono text-sm font-black tabular-nums tracking-tight text-[#22f0ff] ring-1 ring-[#22f0ff]/35">
-            {label}
+          <span
+            ref={labelRef}
+            className="rounded-md bg-black/70 px-1.5 py-0.5 font-mono text-sm font-black tabular-nums tracking-tight text-[#22f0ff] ring-1 ring-[#22f0ff]/35"
+          >
+            {initial}
           </span>
         </div>
       </div>

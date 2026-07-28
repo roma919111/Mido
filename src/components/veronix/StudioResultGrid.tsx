@@ -157,8 +157,10 @@ function ResultCard({
     setDeleting(true);
     try {
       if (job.assetId) {
-        await fetchJson(`/api/assets?id=${encodeURIComponent(job.assetId)}`, {
+        await fetchJson(`/api/assets`, {
           method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: job.assetId }),
         });
       }
       onDelete(job);

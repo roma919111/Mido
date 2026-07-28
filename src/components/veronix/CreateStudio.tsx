@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Camera,
@@ -430,7 +430,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
   useEffect(() => {
     if (!previewHydrated) return;
-    const t = window.setTimeout(() => writeStoredJobs(jobs), 400);
+    const t = window.setTimeout(() => writeStoredJobs(jobs), 1200);
     return () => window.clearTimeout(t);
   }, [jobs, previewHydrated]);
 
@@ -1239,6 +1239,15 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     }
   }
 
+  const handleShareJob = useCallback((job: StudioJob) => {
+    void handleShare(job);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- stable grid callback
+  }, [prompt, preview]);
+
+  const handleDeleteJob = useCallback((job: StudioJob) => {
+    setJobs((prev) => prev.filter((j) => j.clientId !== job.clientId));
+  }, []);
+
   async function createOneClip(input: {
     prompt: string;
     mode: string;
@@ -1399,6 +1408,22 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     setMultiProgress(null);
     // Append new cards — keep previous results on the grid.
     setJobs((prev) => [...placeholders, ...prev].slice(0, 12));
+    setStatus(
+      freeTrial
+        ? "جاري توليد فيديوك المجاني…"
+        : requestCount > 1
+          ? `جاري توليد ${requestCount} فيديوهات…`
+          : "جاري التوليد…",
+    );
+
+    // Yield to the browser so the clock + cards paint before the network call
+    // (prevents Chrome main-thread freeze on Generate tap).
+    await new Promise<void>((resolve) => {
+      window.requestAnimationFrame(() => {
+        window.setTimeout(resolve, 0);
+      });
+    });
+    if (!stillMine()) return;
 
     // Paid Veronix: clear free-trial lock so the chosen 4–15s clip is billed.
     if (
@@ -1410,13 +1435,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       setMultiShotOn(false);
     }
 
-    setStatus(
-      freeTrial
-        ? "جاري توليد فيديوك المجاني…"
-        : requestCount > 1
-          ? `جاري توليد ${requestCount} فيديوهات…`
-          : "جاري التوليد…",
-    );
     try {
       const namedRefs = refs.map((r, i) => {
         const name = normalizeCharacterName(refNames[i] || "");
@@ -2187,10 +2205,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       <StudioResultGrid
         jobs={jobs}
         prompt={prompt}
-        onShare={(job) => void handleShare(job)}
-        onDelete={(job) =>
-          setJobs((prev) => prev.filter((j) => j.clientId !== job.clientId))
-        }
+        onShare={handleShareJob}
+        onDelete={handleDeleteJob}
       />
       {shareNote ? (
         <p className="text-center text-xs text-[#22f0ff]">{shareNote}</p>
