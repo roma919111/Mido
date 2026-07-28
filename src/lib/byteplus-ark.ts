@@ -19,9 +19,10 @@ export const BYTEPLUS_TASK_PREFIX = "bp:";
 const DEFAULT_BASE = "https://ark.ap-southeast.bytepluses.com/api/v3";
 const DEFAULT_MODEL = "dreamina-seedance-2-0-mini-260615";
 
-/** Compress stills so Seedance accepts them (large base64 bodies often fail silently). */
+/** Compress + light soft-render so Seedance privacy is less likely to flag "real person". */
 async function toCompressedDataUrl(bytes: Buffer, mimeHint?: string): Promise<string> {
   try {
+    // One sharp pass only (resize + mild grade) — typically <300ms, no ffmpeg spawn.
     const out = await sharp(bytes)
       .rotate()
       .resize({
@@ -30,7 +31,12 @@ async function toCompressedDataUrl(bytes: Buffer, mimeHint?: string): Promise<st
         fit: "inside",
         withoutEnlargement: true,
       })
-      .jpeg({ quality: 85, mozjpeg: true })
+      // Soft cinematic grade: keep likeness, nudge away from passport-photo realism.
+      .modulate({ brightness: 1.02, saturation: 1.1 })
+      .linear(1.05, -6)
+      .blur(0.35)
+      .sharpen({ sigma: 0.55 })
+      .jpeg({ quality: 82, mozjpeg: true })
       .toBuffer();
     return `data:image/jpeg;base64,${out.toString("base64")}`;
   } catch {
@@ -163,8 +169,9 @@ function mimeFromGenerationPath(filePath: string): string {
 
 /**
  * BytePlus cannot fetch private `/generations/*` files on our volume.
- * Convert local stills to compressed data URLs; keep remote https as-is
- * (unless they point at our own /generations host).
+ * Convert local stills to compressed data URLs with a light soft-render grade
+ * (same sharp pass as resize — no extra delay beyond normal prep).
+ * Remote https kept as-is unless they point at our own /generations host.
  */
 export async function ensureBytePlusMediaUrl(
   url: string | null | undefined,
@@ -172,18 +179,15 @@ export async function ensureBytePlusMediaUrl(
   if (!url?.trim()) return null;
   const trimmed = url.trim();
   if (trimmed.startsWith("data:image/")) {
-    // Re-compress oversized data URLs so the create payload stays under limits.
     const m = /^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/i.exec(trimmed);
     if (!m?.[2]) return trimmed;
     try {
       const raw = Buffer.from(m[2], "base64");
-      if (raw.length > 900_000) {
-        return await toCompressedDataUrl(raw, m[1]);
-      }
+      // Always light-grade character/data stills before Seedance (fast sharp pass).
+      return await toCompressedDataUrl(raw, m[1]);
     } catch {
-      // keep original
+      return trimmed;
     }
-    return trimmed;
   }
   if (/^https?:\/\//i.test(trimmed)) {
     const base = process.env.APP_BASE_URL?.trim()?.replace(/\/+$/, "");
