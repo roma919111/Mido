@@ -1,11 +1,14 @@
 /**
- * Soft cinematic grade tuned from measured accepted vs rejected refs.
+ * Reference image prep for Seedance / BytePlus privacy.
  *
- * Accepted (worked): ~496–1142px wide, normal portrait ratios, sat≈0.23
- * Rejected (privacy): consistently 1440×3120 ultra-tall phone stills
+ * Evidence from production:
+ * - Accepted Dana/Khaled refs worked as near-raw uploads.
+ * - After we forced a beauty grade on EVERY generate, those same refs failed.
+ * - Rejected phone stills were ultra-tall 1440×3120 frames.
  *
- * Strategy: crop ultra-tall shots to a face-forward 3:4, match accepted
- * size band, light film desat — NOT CGI/cartoon.
+ * Rules:
+ * 1) First send: compress only (+ crop ultra-tall). No beauty/CGI filters.
+ * 2) Privacy retry: light soft film grade only.
  */
 
 import { spawn } from "node:child_process";
@@ -55,35 +58,41 @@ async function loadImageBytes(url: string): Promise<Buffer> {
   return buf;
 }
 
-export type SoftGradeLevel = "generate" | "retry";
+const MIN_SIDE = 320;
+const MAX_SIDE_FIRST = 1280;
+const MAX_SIDE_RETRY = 1100;
+
+async function ensureMinSide(buf: Buffer, quality = 85): Promise<Buffer> {
+  const meta = await sharp(buf).metadata();
+  const w = meta.width || 0;
+  const h = meta.height || 0;
+  if (w > 0 && h > 0 && (w < MIN_SIDE || h < MIN_SIDE)) {
+    return sharp(buf)
+      .resize({
+        width: Math.max(MIN_SIDE, w),
+        height: Math.max(MIN_SIDE, h),
+        fit: "outside",
+        withoutEnlargement: false,
+      })
+      .jpeg({ quality, mozjpeg: true })
+      .toBuffer();
+  }
+  return buf;
+}
 
 /**
- * Match accepted Seedance stills:
- * 1) Ultra-tall phone frames (h/w > 1.85) → top-weighted 3:4 crop (face zone)
- * 2) Long side ≤ 1100 (accepted band), both sides ≥ 320 (BytePlus min 300)
- * 3) Light film: sat≈0.9×, tiny soften — keep likeness, no CGI
+ * First-attempt prep: keep the original look (what made accepted refs pass).
+ * Only crop ultra-tall phone frames, then jpeg compress.
  */
-export async function applySoftCinematicGrade(
-  bytes: Buffer,
-  opts?: { level?: SoftGradeLevel; stronger?: boolean },
-): Promise<Buffer> {
-  const level: SoftGradeLevel =
-    opts?.level || (opts?.stronger ? "retry" : "generate");
-  const retry = level === "retry";
-
-  const MAX_SIDE = retry ? 1000 : 1100;
-  const MIN_SIDE = 320;
-
+export async function compressReferenceForBytePlus(bytes: Buffer): Promise<Buffer> {
   let img = sharp(bytes).rotate();
   const meta = await img.metadata();
   const w0 = meta.width || 0;
   const h0 = meta.height || 0;
 
   if (w0 > 0 && h0 > 0 && h0 / w0 > 1.85) {
-    // Rejected refs were 1440×3120. Crop to 3:4 from the upper body/face band.
     const targetH = Math.round(w0 * (4 / 3));
     const height = Math.min(h0, targetH);
-    // Bias crop upward (faces sit in the top half of full-body phone shots).
     const top = Math.max(0, Math.round((h0 - height) * 0.12));
     img = img.extract({
       left: 0,
@@ -93,43 +102,69 @@ export async function applySoftCinematicGrade(
     });
   }
 
-  let buf = await img
+  const buf = await img
     .resize({
-      width: MAX_SIDE,
-      height: MAX_SIDE,
+      width: MAX_SIDE_FIRST,
+      height: MAX_SIDE_FIRST,
       fit: "inside",
       withoutEnlargement: true,
-      kernel: sharp.kernel.lanczos3,
     })
-    .modulate({
-      brightness: retry ? 1.03 : 1.02,
-      saturation: retry ? 0.88 : 0.9,
-    })
-    .linear(1.02, -2)
-    .median(retry ? 3 : 2)
-    .blur(retry ? 0.55 : 0.4)
-    .sharpen({ sigma: 0.4 })
-    .jpeg({ quality: 84, mozjpeg: true })
+    .jpeg({ quality: 88, mozjpeg: true })
     .toBuffer();
 
-  const outMeta = await sharp(buf).metadata();
-  const w = outMeta.width || 0;
-  const h = outMeta.height || 0;
-  if (w > 0 && h > 0 && (w < MIN_SIDE || h < MIN_SIDE)) {
-    buf = await sharp(buf)
-      .resize({
-        width: Math.max(MIN_SIDE, w),
-        height: Math.max(MIN_SIDE, h),
-        fit: "outside",
-        withoutEnlargement: false,
-      })
-      .jpeg({ quality: 84, mozjpeg: true })
-      .toBuffer();
-  }
-
-  return buf;
+  return ensureMinSide(buf, 88);
 }
 
+export type SoftGradeLevel = "generate" | "retry";
+
+/**
+ * Privacy-retry only: light film soften. Never used on the first successful path.
+ * @deprecated generate level — use compressReferenceForBytePlus instead.
+ */
+export async function applySoftCinematicGrade(
+  bytes: Buffer,
+  opts?: { level?: SoftGradeLevel; stronger?: boolean },
+): Promise<Buffer> {
+  const level: SoftGradeLevel =
+    opts?.level || (opts?.stronger ? "retry" : "generate");
+
+  // First path must stay raw-ish — do not beauty-filter accepted characters.
+  if (level === "generate") {
+    return compressReferenceForBytePlus(bytes);
+  }
+
+  let img = sharp(bytes).rotate();
+  const meta = await img.metadata();
+  const w0 = meta.width || 0;
+  const h0 = meta.height || 0;
+  if (w0 > 0 && h0 > 0 && h0 / w0 > 1.85) {
+    const targetH = Math.round(w0 * (4 / 3));
+    const height = Math.min(h0, targetH);
+    const top = Math.max(0, Math.round((h0 - height) * 0.12));
+    img = img.extract({
+      left: 0,
+      top: Math.min(top, Math.max(0, h0 - height)),
+      width: w0,
+      height,
+    });
+  }
+
+  const buf = await img
+    .resize({
+      width: MAX_SIDE_RETRY,
+      height: MAX_SIDE_RETRY,
+      fit: "inside",
+      withoutEnlargement: true,
+    })
+    .modulate({ brightness: 1.02, saturation: 0.92 })
+    .blur(0.35)
+    .jpeg({ quality: 86, mozjpeg: true })
+    .toBuffer();
+
+  return ensureMinSide(buf, 86);
+}
+
+/** Privacy retry helper — light soften only after BytePlus rejects. */
 export async function stylizeReferenceImage(sourceUrl: string): Promise<string> {
   const trimmed = sourceUrl.trim();
   if (!trimmed) throw new Error("Empty reference URL");
@@ -150,38 +185,23 @@ export async function stylizeReferenceImage(sourceUrl: string): Promise<string> 
       const rawPath = path.join(work, "in.bin");
       const styled = path.join(work, "styled.jpg");
       await writeFile(rawPath, await loadImageBytes(trimmed));
-      const attempts = [
-        "scale=1100:-2:flags=lanczos,eq=saturation=0.9:brightness=0.02,gblur=sigma=0.45,format=yuvj420p",
-        "scale=1100:-2,format=yuvj420p",
-      ];
-      let ok = false;
-      for (const vf of attempts) {
-        try {
-          await run("ffmpeg", [
-            "-y",
-            "-i",
-            rawPath,
-            "-vf",
-            vf,
-            "-frames:v",
-            "1",
-            "-q:v",
-            "3",
-            styled,
-          ]);
-          ok = true;
-          break;
-        } catch {
-          // next
-        }
-      }
-      if (!ok) throw new Error("Unable to stylize reference image");
+      await run("ffmpeg", [
+        "-y",
+        "-i",
+        rawPath,
+        "-vf",
+        "scale=1100:-2:flags=lanczos,eq=saturation=0.92:brightness=0.015,gblur=sigma=0.35,format=yuvj420p",
+        "-frames:v",
+        "1",
+        "-q:v",
+        "3",
+        styled,
+      ]);
       await copyFile(styled, outPublic);
       const st = await stat(outPublic);
       if (st.size < 400) throw new Error("Stylized reference too small");
-      // Guarantee BytePlus min width after ffmpeg scale.
       let bytes: Buffer = await readFile(outPublic);
-      bytes = Buffer.from(await applySoftCinematicGrade(bytes, { level: "retry" }));
+      bytes = Buffer.from(await ensureMinSide(bytes, 86));
       await writeFile(outPublic, bytes);
       return `data:image/jpeg;base64,${bytes.toString("base64")}`;
     } finally {

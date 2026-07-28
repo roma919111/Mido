@@ -4,7 +4,7 @@
  */
 
 import {
-  applySoftCinematicGrade,
+  compressReferenceForBytePlus,
   isInputImagePrivacyError,
   stylizeReferenceImage,
   toSemiRealisticScenePrompt,
@@ -20,22 +20,25 @@ export const BYTEPLUS_TASK_PREFIX = "bp:";
 const DEFAULT_BASE = "https://ark.ap-southeast.bytepluses.com/api/v3";
 const DEFAULT_MODEL = "dreamina-seedance-2-0-mini-260615";
 
-/** Compress + soft cinematic beauty grade (accepted-ref look, not CGI). */
+/**
+ * First send: compress only (what made accepted Dana/Khaled refs pass).
+ * Beauty soften runs only inside privacy-retry stylizeReferenceImage.
+ */
 async function toCompressedDataUrl(bytes: Buffer, mimeHint?: string): Promise<string> {
   try {
-    const out = await applySoftCinematicGrade(bytes, { level: "generate" });
+    const out = await compressReferenceForBytePlus(bytes);
     return `data:image/jpeg;base64,${out.toString("base64")}`;
   } catch {
     try {
       const out = await sharp(bytes)
         .rotate()
         .resize({
-          width: 768,
-          height: 768,
+          width: 1280,
+          height: 1280,
           fit: "inside",
           withoutEnlargement: true,
         })
-        .jpeg({ quality: 82, mozjpeg: true })
+        .jpeg({ quality: 88, mozjpeg: true })
         .toBuffer();
       return `data:image/jpeg;base64,${out.toString("base64")}`;
     } catch {
