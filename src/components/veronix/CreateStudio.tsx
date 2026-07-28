@@ -70,8 +70,12 @@ const PAID_DURATION_MAX = 15;
 /** Poll long enough for a slow Seedance beat (~6–7 min). */
 const PREVIEW_POLL_ATTEMPTS = 80;
 const PREVIEW_POLL_MS = 5000;
-/** Hard wall-clock stop for a single generate job (real seconds). */
-const MAX_GENERATE_WALL_MS = 180_000;
+/**
+ * Hard wall-clock stop per generate job (real seconds from THIS Generate tap).
+ * Seedance 4–15s clips commonly need several minutes — 180s was too short
+ * and also falsely tripped on stale localStorage "running" cards.
+ */
+const MAX_GENERATE_WALL_MS = 10 * 60 * 1000;
 /** Drop restored "running" jobs that outlived the job (no server progress). */
 const STALE_RUNNING_GRACE_MS = 12 * 60 * 1000;
 /** Deduplicate concurrent status pollers (hydrate + generate). */
@@ -319,12 +323,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       const stored = readStoredJobs().map((j) => {
         if (j.status !== "running") return j;
         const started = j.startedAt ?? 0;
+        // Drop stale running ghosts — do NOT show a fake "180s timeout" card.
         if (started > 0 && Date.now() - started >= MAX_GENERATE_WALL_MS) {
-          return {
-            ...j,
-            status: "failed" as const,
-            error: "انتهت المهلة (180 ثانية) — تم إيقاف التوليد تلقائياً",
-          };
+          return null;
         }
         const target = j.targetSeconds || (media === "video" ? duration : 4);
         const etaMs = estimateGenerateSeconds(target, j.mediaType) * 1000;
@@ -399,6 +400,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 if (a.status !== "running") continue;
                 if (next.some((j) => j.assetId === a.id)) continue;
                 const started = lockEtaStart(a.id, a.createdAt);
+                // Skip ancient server "running" ghosts — avoid false timeout cards.
+                if (Date.now() - started >= MAX_GENERATE_WALL_MS) continue;
                 next = [
                   {
                     clientId: newStudioClientId(),
@@ -417,7 +420,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             });
 
             // Resume polling for running jobs that have ids.
-            const resumeTargets = assets.filter((a) => a.status === "running");
+            const resumeTargets = assets.filter((a) => {
+              if (a.status !== "running") return false;
+              const started = lockEtaStart(a.id, a.createdAt);
+              return Date.now() - started < MAX_GENERATE_WALL_MS;
+            });
             for (const running of resumeTargets) {
               if (!(running.historyId || running.mediaType === "image")) continue;
               const started = lockEtaStart(running.id, running.createdAt);
@@ -458,7 +465,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     setOutputCount((n) => Math.min(Math.max(1, n), slotsLeft));
   }, [slotsLeft]);
 
-  // Force-stop any job that exceeds 180 real seconds.
+  // Force-stop only jobs whose own startedAt (from THIS Generate tap) exceeded the wall limit.
   useEffect(() => {
     if (!runningJobs.length) return;
     const tick = () => {
@@ -468,7 +475,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         const next = prev.map((j) => {
           if (j.status !== "running") return j;
           const started = j.startedAt || 0;
-          if (!(started > 0) || now - started < MAX_GENERATE_WALL_MS) return j;
+          // Missing/corrupt start → don't fake a timeout; wait for poll/server.
+          if (!(started > 0) || started > now) return j;
+          if (now - started < MAX_GENERATE_WALL_MS) return j;
           changed = true;
           if (j.assetId) activePreviewPolls.delete(j.assetId);
           if (j.historyId) activePreviewPolls.delete(j.historyId);
@@ -476,14 +485,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           return {
             ...j,
             status: "failed" as const,
-            error: "انتهت المهلة (180 ثانية) — تم إيقاف التوليد تلقائياً",
+            error: "انتهت المهلة (10 دقائق) — تم إيقاف التوليد تلقائياً",
           };
         });
         return changed ? next : prev;
       });
     };
     tick();
-    const id = window.setInterval(tick, 2000);
+    const id = window.setInterval(tick, 5000);
     return () => window.clearInterval(id);
   }, [runningJobs.length]);
 
@@ -1139,10 +1148,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         setJobs((prev) =>
           patchJob(prev, match, {
             status: "failed",
-            error: "انتهت المهلة (180 ثانية) — تم إيقاف التوليد تلقائياً",
+            error: "انتهت المهلة (10 دقائق) — تم إيقاف التوليد تلقائياً",
           }),
         );
-        setError("انتهت المهلة (180 ثانية) — تم إيقاف التوليد تلقائياً");
+        setError("انتهت المهلة (10 دقائق) — تم إيقاف التوليد تلقائياً");
         setGenStartedAt(null);
         return;
       }
