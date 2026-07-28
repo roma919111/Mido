@@ -44,8 +44,9 @@ export function matchNamedCharacters(
 
   for (const item of named) {
     if (used.has(item.ref.id)) continue;
+    // Allow an optional Arabic و glued to the name (ومحمد).
     const pattern = new RegExp(
-      `(^|[^\\p{L}\\p{N}_])${escapeRegExp(item.name)}(?=[^\\p{L}\\p{N}_]|$)`,
+      `(?:^|[^\\p{L}\\p{N}_]|و)${escapeRegExp(item.name)}(?=[^\\p{L}\\p{N}_]|$)`,
       "iu",
     );
     if (pattern.test(text)) {

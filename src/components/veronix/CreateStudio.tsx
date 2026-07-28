@@ -1642,8 +1642,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         </p>
         <div className="flex flex-wrap gap-3">
           {refPreviews.map((src, i) => (
-            <div key={`${src}-${i}`} className="w-20 space-y-1.5">
-              <div className="relative h-16 w-20 overflow-hidden rounded-xl">
+            <div
+              key={`${src}-${i}`}
+              className="w-[5.5rem] space-y-1.5 rounded-2xl border border-white/10 bg-black/25 p-1.5"
+            >
+              <div className="relative h-16 w-full overflow-hidden rounded-xl">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={src} alt="" className="h-full w-full object-cover" />
                 <button
@@ -1662,38 +1665,44 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                   <X className="h-3 w-3" />
                 </button>
               </div>
-              <input
-                type="text"
-                value={refNames[i] || ""}
-                onChange={(e) => {
-                  const value = normalizeCharacterName(e.target.value);
-                  setRefNames((prev) => {
-                    const next = [...prev];
-                    while (next.length <= i) next.push("");
-                    next[i] = value;
-                    return next;
-                  });
-                  setRefs((prev) =>
-                    prev.map((ref, idx) =>
-                      idx === i
-                        ? {
-                            ...ref,
-                            label: value || ref.label || "reference",
-                          }
-                        : ref,
-                    ),
-                  );
-                }}
-                placeholder={`اسم ${i + 1}`}
-                className="w-full rounded-lg border border-white/10 bg-black/35 px-1.5 py-1 text-center text-[11px] text-white outline-none placeholder:text-white/30"
-                dir="rtl"
-                maxLength={40}
-              />
+              <label className="block space-y-0.5" dir="rtl">
+                <span className="block text-center text-[10px] font-semibold text-[#22f0ff]">
+                  اسم الشخصية
+                </span>
+                <input
+                  type="text"
+                  value={refNames[i] || ""}
+                  onChange={(e) => {
+                    const value = normalizeCharacterName(e.target.value);
+                    setRefNames((prev) => {
+                      const next = [...prev];
+                      while (next.length <= i) next.push("");
+                      next[i] = value;
+                      return next;
+                    });
+                    setRefs((prev) =>
+                      prev.map((ref, idx) =>
+                        idx === i
+                          ? {
+                              ...ref,
+                              label: value || ref.label || "reference",
+                            }
+                          : ref,
+                      ),
+                    );
+                  }}
+                  placeholder="مثال: محمد"
+                  className="w-full rounded-lg border border-[#22f0ff]/35 bg-black/50 px-1.5 py-1.5 text-center text-xs font-semibold text-white outline-none placeholder:font-normal placeholder:text-white/35 focus:border-[#22f0ff]"
+                  maxLength={40}
+                  autoComplete="off"
+                />
+              </label>
             </div>
           ))}
           {refPreviews.length < 4 && (
-            <label className="flex h-16 w-16 cursor-pointer flex-col items-center justify-center rounded-xl border border-white/15 text-white/60">
+            <label className="flex h-[7.25rem] w-[5.5rem] cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border border-dashed border-white/20 text-white/60">
               <ImagePlus className="h-5 w-5" />
+              <span className="text-[10px]">إضافة</span>
               <input
                 type="file"
                 accept="image/*"
