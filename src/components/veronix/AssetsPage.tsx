@@ -15,8 +15,6 @@ import { BottomNav } from "./BottomNav";
 import { fetchJson } from "@/lib/fetch-json";
 import {
   clearEtaStart,
-  elapsedGenerateSeconds,
-  formatElapsedClock,
   inferTargetSecondsFromAsset,
   lockEtaStart,
 } from "@/lib/generate-eta";
@@ -41,6 +39,7 @@ import {
 } from "@/lib/assets-cache";
 import { displayBytePlusAssetError } from "@/lib/byteplus-errors";
 import type { VisualReference } from "@/lib/types";
+import { GenerateClock } from "@/components/veronix/GenerateClock";
 
 type AssetItem = CachedAssetItem;
 
@@ -52,25 +51,8 @@ function RunningCountdown({
   createdAt: string;
   targetSeconds: number;
 }) {
-  const [elapsed, setElapsed] = useState(() => {
-    const started = lockEtaStart(assetId, createdAt);
-    return elapsedGenerateSeconds(started);
-  });
-
-  useEffect(() => {
-    const started = lockEtaStart(assetId, createdAt);
-    const tick = () => setElapsed(elapsedGenerateSeconds(started));
-    tick();
-    // Fast upward seconds clock (not a countdown).
-    const id = window.setInterval(tick, 100);
-    return () => window.clearInterval(id);
-  }, [assetId, createdAt]);
-
-  return (
-    <span className="max-w-[16rem] text-center text-2xl font-bold tabular-nums tracking-wider text-[#22f0ff] sm:text-3xl">
-      {formatElapsedClock(elapsed)}
-    </span>
-  );
+  const started = lockEtaStart(assetId, createdAt);
+  return <GenerateClock startedAt={started} size="large" />;
 }
 
 async function captureVideoFrame(

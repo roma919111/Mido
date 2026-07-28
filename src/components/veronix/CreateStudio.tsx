@@ -52,6 +52,7 @@ import {
   type StudioJob,
 } from "@/lib/studio-jobs";
 import { StudioResultGrid } from "@/components/veronix/StudioResultGrid";
+import { GenerateClock } from "@/components/veronix/GenerateClock";
 import type { CustomerUser } from "./AppHeader";
 
 /** Catalog id for VYRONIX image studio (Seedream under the hood). */
@@ -115,8 +116,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const [generating, setGenerating] = useState(false);
   /** Brief flash so a second Generate tap feels pressed. */
   const [genFlash, setGenFlash] = useState(false);
-  /** How many videos to generate in one tap (1–4). */
-  const [outputCount, setOutputCount] = useState(3);
+  /** How many videos to generate in one tap (1–4). Grid shows up to 3 per row. */
+  const [outputCount, setOutputCount] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [platformReady, setPlatformReady] = useState<boolean | null>(null);
@@ -2116,6 +2117,20 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           </span>
         </button>
       </div>
+
+      {waitingResult ? (
+        <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-[#22f0ff]/25 bg-[#141821] px-4 py-5">
+          <GenerateClock
+            startedAt={
+              genStartedAt ||
+              jobs.find((j) => j.status === "running")?.startedAt ||
+              Date.now()
+            }
+            size="large"
+          />
+          <p className="text-sm font-semibold text-white">جاري التوليد…</p>
+        </div>
+      ) : null}
 
       <StudioResultGrid
         jobs={jobs}

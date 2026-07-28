@@ -9,33 +9,12 @@ import {
   Play,
   Share2,
 } from "lucide-react";
-import {
-  elapsedGenerateSeconds,
-  formatElapsedClock,
-} from "@/lib/generate-eta";
 import { veronixDownloadPath, veronixMediaSrc } from "@/lib/media-proxy";
 import type { StudioJob } from "@/lib/studio-jobs";
 import { writeEditDraft } from "@/lib/edit-draft";
 import { fetchJson } from "@/lib/fetch-json";
 import { useRouter } from "next/navigation";
-
-/** Fast upward seconds clock — ticks every 100ms for lively motion. */
-function FastElapsedClock({ startedAt }: { startedAt: number }) {
-  const [elapsed, setElapsed] = useState(() =>
-    elapsedGenerateSeconds(startedAt),
-  );
-  useEffect(() => {
-    const tick = () => setElapsed(elapsedGenerateSeconds(startedAt));
-    tick();
-    const id = window.setInterval(tick, 100);
-    return () => window.clearInterval(id);
-  }, [startedAt]);
-  return (
-    <span className="inline-block min-w-[4.5ch] font-bold tabular-nums tracking-wider text-[#22f0ff] transition-transform duration-100">
-      {formatElapsedClock(elapsed)}
-    </span>
-  );
-}
+import { GenerateClock } from "@/components/veronix/GenerateClock";
 
 function ResultCard({
   job,
@@ -54,6 +33,10 @@ function ResultCard({
   const [note, setNote] = useState<string | null>(null);
   const waiting = job.status === "running";
   const failed = job.status === "failed";
+  const clockStart =
+    typeof job.startedAt === "number" && job.startedAt > 0
+      ? job.startedAt
+      : Date.now();
   const src =
     job.url && job.mediaType === "video"
       ? veronixMediaSrc({
@@ -171,17 +154,12 @@ function ResultCard({
   };
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141821]">
-      <div className="flex items-center justify-between border-b border-white/8 px-3 py-2">
-        <p className="text-xs font-semibold text-white/80">
+    <div className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-[#141821]">
+      <div className="flex items-center justify-between gap-1 border-b border-white/8 px-2 py-1.5">
+        <p className="truncate text-[11px] font-semibold text-white/80">
           {waiting ? "جاري التوليد" : failed ? "فشل التوليد" : "جاهز"}
         </p>
-        {waiting && job.startedAt ? (
-          <span className="inline-flex items-center gap-1.5 text-xs">
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-[#22f0ff]" />
-            <FastElapsedClock startedAt={job.startedAt} />
-          </span>
-        ) : null}
+        {waiting ? <GenerateClock startedAt={clockStart} size="compact" /> : null}
       </div>
 
       <div className="relative aspect-video bg-black/50">
@@ -199,18 +177,17 @@ function ResultCard({
               onPause={() => setPlaying(false)}
               onEnded={() => setPlaying(false)}
             />
-            {/* Play control at the bottom — not centered */}
-            <div className="absolute inset-x-0 bottom-3 z-20 flex justify-center">
+            <div className="absolute inset-x-0 bottom-2 z-20 flex justify-center">
               <button
                 type="button"
                 onClick={togglePlay}
-                className="flex h-11 w-11 items-center justify-center rounded-full bg-black/55 text-white ring-1 ring-white/30 backdrop-blur-md transition hover:bg-black/70"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-black/55 text-white ring-1 ring-white/30 backdrop-blur-md transition hover:bg-black/70"
                 aria-label={playing ? "إيقاف مؤقت" : "تشغيل"}
               >
                 {playing ? (
-                  <Pause className="h-5 w-5" fill="currentColor" />
+                  <Pause className="h-4 w-4" fill="currentColor" />
                 ) : (
-                  <Play className="h-5 w-5 translate-x-0.5" fill="currentColor" />
+                  <Play className="h-4 w-4 translate-x-0.5" fill="currentColor" />
                 )}
               </button>
             </div>
@@ -223,72 +200,64 @@ function ResultCard({
             className="h-full w-full object-contain"
           />
         ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-2 px-3 text-center text-sm text-white/40">
+          <div className="flex h-full flex-col items-center justify-center gap-1 px-2 text-center">
             {waiting ? (
-              <>
-                <Loader2 className="h-7 w-7 animate-spin text-[#22f0ff]" />
-                <p className="text-base font-semibold text-white">جاري التوليد</p>
-                {job.startedAt ? (
-                  <p className="text-2xl font-bold">
-                    <FastElapsedClock startedAt={job.startedAt} />
-                  </p>
-                ) : null}
-              </>
+              <GenerateClock startedAt={clockStart} size="large" />
             ) : failed ? (
-              <p className="text-sm font-semibold text-rose-200">
+              <p className="text-[11px] font-semibold leading-snug text-rose-200">
                 {job.error || "فشل التوليد"}
               </p>
             ) : (
-              "لا توجد معاينة بعد"
+              <p className="text-xs text-white/40">لا توجد معاينة بعد</p>
             )}
           </div>
         )}
       </div>
 
-      <div className="border-t border-white/8 px-3 py-1.5 text-center text-[10px] text-white/45">
-        تم إنشاؤه بواسطة VYRONIX
+      <div className="border-t border-white/8 px-2 py-1 text-center text-[9px] text-white/45">
+        VYRONIX
       </div>
 
-      <div className="flex gap-1.5 p-2">
+      <div className="flex gap-1 p-1.5">
         <button
           type="button"
           onClick={() => onShare(job)}
           disabled={!job.url}
-          className="inline-flex flex-1 items-center justify-center gap-1 rounded-xl border border-white/15 bg-white/5 py-2 text-[11px] font-semibold text-white disabled:opacity-40"
+          className="inline-flex flex-1 items-center justify-center gap-0.5 rounded-lg border border-white/15 bg-white/5 py-1.5 text-[10px] font-semibold text-white disabled:opacity-40"
         >
-          <Share2 className="h-3.5 w-3.5 text-[#22f0ff]" />
+          <Share2 className="h-3 w-3 text-[#22f0ff]" />
           Share
         </button>
         <button
           type="button"
           onClick={() => void handleDownload()}
           disabled={waiting || downloading || (!job.url && !job.historyId)}
-          className="inline-flex flex-1 items-center justify-center gap-1 rounded-xl bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] py-2 text-[11px] font-semibold text-white disabled:opacity-40"
+          className="inline-flex flex-1 items-center justify-center gap-0.5 rounded-lg bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] py-1.5 text-[10px] font-semibold text-white disabled:opacity-40"
         >
           {downloading ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <Loader2 className="h-3 w-3 animate-spin" />
           ) : (
-            <Download className="h-3.5 w-3.5" />
+            <Download className="h-3 w-3" />
           )}
-          Download
+          تحميل
         </button>
         <button
           type="button"
           onClick={() => void handleEdit()}
           disabled={waiting || editing}
-          className="inline-flex flex-1 items-center justify-center gap-1 rounded-xl border border-white/15 bg-white/5 py-2 text-[11px] font-semibold text-white disabled:opacity-40"
+          className="inline-flex flex-1 items-center justify-center gap-0.5 rounded-lg border border-white/15 bg-white/5 py-1.5 text-[10px] font-semibold text-white disabled:opacity-40"
           title="تعديل"
         >
           {editing ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <Loader2 className="h-3 w-3 animate-spin" />
           ) : (
-            <Pencil className="h-3.5 w-3.5" />
+            <Pencil className="h-3 w-3" />
           )}
           تعديل
         </button>
       </div>
       {note ? (
-        <p className="px-3 pb-2 text-center text-[10px] text-[#22f0ff]">{note}</p>
+        <p className="px-2 pb-1.5 text-center text-[10px] text-[#22f0ff]">{note}</p>
       ) : null}
     </div>
   );
@@ -307,7 +276,8 @@ export function StudioResultGrid({
   return (
     <div className="space-y-3">
       <p className="text-sm font-semibold text-white">معاينة النتيجة</p>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {/* Always 3 side-by-side slots per row (as requested). */}
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
         {jobs.map((job) => (
           <ResultCard
             key={job.clientId}
