@@ -527,23 +527,45 @@ export async function waitForBytePlusVideoTask(
       }
       if (
         !privacyRetryUsed &&
-        options?.retryInput?.startFrameUrl &&
+        options?.retryInput &&
         isInputImagePrivacyError(err)
       ) {
         privacyRetryUsed = true;
         const semiPrompt = toSemiRealisticScenePrompt(options.retryInput.prompt);
         try {
-          const styled = await stylizeReferenceImage(
-            options.retryInput.startFrameUrl,
-          );
-          const retry = await createBytePlusVideoTask({
-            ...options.retryInput,
-            prompt: semiPrompt,
-            startFrameUrl: styled,
-            imageRole: "first_frame",
-          });
-          currentId = retry.id;
-          continue;
+          if (options.retryInput.startFrameUrl) {
+            const styled = await stylizeReferenceImage(
+              options.retryInput.startFrameUrl,
+            );
+            const retry = await createBytePlusVideoTask({
+              ...options.retryInput,
+              prompt: semiPrompt,
+              startFrameUrl: styled,
+              referenceImageUrls: [],
+              imageRole: "first_frame",
+            });
+            currentId = retry.id;
+            continue;
+          }
+          if (options.retryInput.referenceImageUrls?.length) {
+            const styledRefs: string[] = [];
+            for (const u of options.retryInput.referenceImageUrls) {
+              try {
+                styledRefs.push(await stylizeReferenceImage(u));
+              } catch {
+                styledRefs.push(u);
+              }
+            }
+            const retry = await createBytePlusVideoTask({
+              ...options.retryInput,
+              prompt: semiPrompt,
+              startFrameUrl: undefined,
+              referenceImageUrls: styledRefs,
+              imageRole: "reference_image",
+            });
+            currentId = retry.id;
+            continue;
+          }
         } catch {
           // Fall through to drop-frame retry.
         }
@@ -551,13 +573,19 @@ export async function waitForBytePlusVideoTask(
       if (
         !privacyDropUsed &&
         options?.retryInput &&
-        isInputImagePrivacyError(err)
+        isInputImagePrivacyError(err) &&
+        // Only drop stills as last resort when we already tried a soft retry
+        // OR there were no refs to preserve.
+        (privacyRetryUsed ||
+          (!options.retryInput.referenceImageUrls?.length &&
+            !options.retryInput.startFrameUrl))
       ) {
         privacyDropUsed = true;
         const retry = await createBytePlusVideoTask({
           ...options.retryInput,
           prompt: toSemiRealisticScenePrompt(options.retryInput.prompt),
           startFrameUrl: undefined,
+          referenceImageUrls: [],
           imageRole: undefined,
           generateAudio: false,
         });

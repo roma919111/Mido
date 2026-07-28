@@ -59,41 +59,38 @@ export function matchNamedCharacters(
 
 /**
  * Refs to send for generation:
- * - If the prompt mentions named characters → those + any unnamed refs
- * - Otherwise → all refs (current behavior)
+ * Always keep every uploaded character still — names only drive identity hints.
+ * (Dropping unmentioned named refs was stripping identity from the model.)
  */
 export function resolveCharacterRefsForPrompt(
   prompt: string,
   refs: VisualReference[],
 ): { refs: VisualReference[]; matched: VisualReference[] } {
   const matched = matchNamedCharacters(prompt, refs);
-  if (!matched.length) {
-    return { refs, matched: [] };
-  }
-  const matchedIds = new Set(matched.map((r) => r.id));
-  const unnamed = refs.filter((r) => !isCharacterName(r.label));
-  const merged = [...matched];
-  for (const r of unnamed) {
-    if (!matchedIds.has(r.id)) merged.push(r);
-  }
-  return { refs: merged, matched };
+  return { refs, matched };
 }
 
 /** Soft identity hint appended for the model when names are linked. */
 export function appendCharacterLinkHint(
   prompt: string,
   matched: VisualReference[],
+  allRefs: VisualReference[] = matched,
 ): string {
-  if (!matched.length) return prompt;
-  const names = matched
-    .map((r) => normalizeCharacterName(r.label))
-    .filter(Boolean);
-  if (!names.length) return prompt;
-  const list = names.map((n) => `"${n}"`).join("، ");
-  const hint =
-    names.length === 1
-      ? `\n\n(الشخصية ${list} يجب أن تطابق صورة المرجع المرفقة تمامًا.)`
-      : `\n\n(الشخصيات ${list} يجب أن تطابق صور المراجع المرفقة تمامًا.)`;
-  if (prompt.includes("يجب أن تطابق صورة")) return prompt;
+  const refs = allRefs.length ? allRefs : matched;
+  if (!refs.length) return prompt;
+  if (prompt.includes("@Image1") || prompt.includes("Use these character references")) {
+    return prompt;
+  }
+
+  const lines = refs.map((r, i) => {
+    const tag = `@Image${i + 1}`;
+    const name = isCharacterName(r.label)
+      ? normalizeCharacterName(r.label)
+      : "";
+    return name
+      ? `- ${tag} is "${name}" — match this person's face, hair, skin, and wardrobe exactly`
+      : `- ${tag} — match this reference appearance exactly`;
+  });
+  const hint = `\n\nUse these character references:\n${lines.join("\n")}\nKeep a photoreal live-action look (not CGI). Keep identity consistent across the shot.`;
   return `${prompt.trim()}${hint}`;
 }

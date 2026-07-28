@@ -188,13 +188,21 @@ async function syncRunningAssets(userId: string) {
                   : asset.mode === "sequence-part"
                     ? PRODUCT_PER_SHOT_SECONDS
                     : 8;
-              // Rewrite as semi-realistic cinematic scene (no real-person photo intent).
+              const charRefs = (
+                Array.isArray(asset.referenceImages) ? asset.referenceImages : []
+              )
+                .map((r) => r?.url)
+                .filter((u): u is string => Boolean(u))
+                .slice(0, 4);
+              // Keep character stills when possible — prompt-only drops identity.
               const retry = await createBytePlusVideoTask({
                 prompt: toSemiRealisticScenePrompt(asset.prompt),
                 duration,
                 ratio: "16:9",
                 generateAudio: false,
                 watermark: false,
+                referenceImageUrls: charRefs.length ? charRefs : undefined,
+                imageRole: charRefs.length ? "reference_image" : undefined,
               });
               await updateAsset(asset.id, userId, {
                 historyId: toBytePlusHistoryId(retry.id),

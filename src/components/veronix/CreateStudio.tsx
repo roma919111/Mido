@@ -279,7 +279,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     if (lockedMedia) setMedia(lockedMedia);
   }, [lockedMedia]);
 
-  // Assets → Edit: restore prompt + start frame into the studio.
+  // Assets → Edit: restore prompt + character images (+ optional start frame).
   useEffect(() => {
     const draft = readEditDraft();
     if (!draft) return;
@@ -288,14 +288,40 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       if (lockedMedia !== "video") return;
     }
     setPrompt(draft.prompt || "");
-    if (draft.startFrame?.url) {
+
+    const chars = (draft.referenceImages || [])
+      .filter((r) => r?.url)
+      .slice(0, 4);
+    if (chars.length) {
+      setRefs(chars);
+      setRefPreviews(chars.map((r) => r.url));
+      setRefNames(
+        chars.map((r) =>
+          isCharacterName(r.label) ? normalizeCharacterName(r.label) : "",
+        ),
+      );
+      // Keep start frame for composition only when no characters —
+      // Seedance XOR would otherwise drop character refs.
+      if (draft.startFrame?.url && chars.length === 0) {
+        setStartFrame(draft.startFrame);
+        setStartPreview(draft.startFrame.url);
+      } else {
+        setStartFrame(null);
+        setStartPreview(null);
+      }
+      setStatus(
+        `تم تحميل الوصف و${chars.length} شخصية للتعديل — عدّل ثم Generate`,
+      );
+    } else if (draft.startFrame?.url) {
       setStartFrame(draft.startFrame);
       setStartPreview(draft.startFrame.url);
       setRefs([]);
       setRefPreviews([]);
       setRefNames([]);
+      setStatus("تم تحميل الوصف والإطار للتعديل — أضف شخصيات إن رغبت ثم Generate");
+    } else {
+      setStatus("تم تحميل الوصف للتعديل — عدّل ثم Generate");
     }
-    setStatus("تم تحميل الوصف والصورة للتعديل — عدّل ثم Generate");
     clearEditDraft();
   }, [lockedMedia]);
 
@@ -1448,16 +1474,24 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           : "جاري التوليد…",
     );
     try {
-      // Single-clip path (images, free trial, or one action)
-      const linked = resolveCharacterRefsForPrompt(prompt.trim(), refs);
+      // Sync character names onto refs so BytePlus gets labeled @ImageN identity.
+      const namedRefs = refs.map((r, i) => {
+        const name = normalizeCharacterName(refNames[i] || "");
+        return name ? { ...r, label: name } : r;
+      });
+      const linked = resolveCharacterRefsForPrompt(prompt.trim(), namedRefs);
       const activeRefs = linked.refs;
-      const finalPrompt = appendCharacterLinkHint(prompt.trim(), linked.matched);
+      const finalPrompt = appendCharacterLinkHint(
+        prompt.trim(),
+        linked.matched,
+        activeRefs,
+      );
       const mode =
         media === "image"
           ? activeRefs.length
             ? "image2image"
             : "text2image"
-          : startFrame || activeRefs.length
+          : activeRefs.length || startFrame
             ? "image2video"
             : "text2video";
 
@@ -1465,8 +1499,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         prompt: finalPrompt,
         mode,
         duration,
-        startFrame,
-        endFrame,
+        // Character refs win on the server (XOR). Keep startFrame only when no chars.
+        startFrame: activeRefs.length ? null : startFrame,
+        endFrame: activeRefs.length ? null : endFrame,
         referenceImages: activeRefs,
         count: requestCount,
       });

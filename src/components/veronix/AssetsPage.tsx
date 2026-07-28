@@ -262,6 +262,18 @@ function FeedVideoSlide({
         prompt: prompt || item.prompt || "",
         media: "video",
         startFrame,
+        referenceImages:
+          Array.isArray(item.referenceImages) && item.referenceImages.length
+            ? item.referenceImages.slice(0, 4)
+            : startFrame
+              ? [
+                  {
+                    ...startFrame,
+                    id: `edit-char-${item.id}`,
+                    label: "من المشهد",
+                  },
+                ]
+              : [],
         sourceAssetId: item.id,
       });
       router.push("/create/video?edit=1");
@@ -614,6 +626,19 @@ function ImageTile({
                       label: "edit-image",
                     }
                   : null,
+                referenceImages:
+                  Array.isArray(item.referenceImages) && item.referenceImages.length
+                    ? item.referenceImages.slice(0, 4)
+                    : item.url
+                      ? [
+                          {
+                            type: "image",
+                            id: `edit-img-ref-${item.id}`,
+                            url: item.url,
+                            label: "من الصورة",
+                          },
+                        ]
+                      : [],
                 sourceAssetId: item.id,
               });
               router.push("/create/image?edit=1");

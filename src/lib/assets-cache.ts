@@ -16,6 +16,7 @@ export type CachedAssetItem = {
   historyId?: string;
   error?: string;
   targetSeconds?: number;
+  referenceImages?: import("@/lib/types").VisualReference[];
 };
 
 type AssetsCachePayload = {

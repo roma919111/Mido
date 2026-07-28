@@ -1,5 +1,6 @@
 /**
- * Hand-off from Assets Edit → CreateStudio (prompt + optional start frame).
+ * Hand-off from Assets Edit → CreateStudio
+ * (prompt + character refs + optional start frame).
  */
 
 import type { VisualReference } from "@/lib/types";
@@ -10,6 +11,8 @@ export type CreateEditDraft = {
   prompt: string;
   media: "video" | "image";
   startFrame?: VisualReference | null;
+  /** Character stills (+ names in `label`) restored into Create */
+  referenceImages?: VisualReference[];
   sourceAssetId?: string;
 };
 

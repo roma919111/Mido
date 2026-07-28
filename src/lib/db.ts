@@ -48,6 +48,11 @@ export interface AssetRecord {
   targetSeconds?: number;
   /** Server-side multi-shot job plan / progress */
   jobMeta?: import("@/lib/multi-shot-job").MultiShotJobMeta;
+  /**
+   * Character / reference stills used for this generation.
+   * Restored by Assets → Edit so the customer can tweak without re-uploading.
+   */
+  referenceImages?: import("@/lib/types").VisualReference[];
   createdAt: string;
 }
 
@@ -274,6 +279,9 @@ export async function createAsset(
           ? Math.round(input.targetSeconds)
           : undefined,
       jobMeta: input.jobMeta,
+      referenceImages: Array.isArray(input.referenceImages)
+        ? input.referenceImages.slice(0, 4)
+        : undefined,
       createdAt: new Date().toISOString(),
     };
     db.assets.unshift(asset);

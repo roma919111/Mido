@@ -29,9 +29,44 @@ import {
   setLiveCatalogCache,
 } from "@/lib/model-catalog";
 import { loadSyncedCatalog } from "@/lib/openart-catalog-sync";
+import {
+  isCharacterName,
+  normalizeCharacterName,
+} from "@/lib/character-names";
+import type { VisualReference } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
+
+function persistableReferenceImages(
+  refs: VisualReference[] | undefined,
+): VisualReference[] | undefined {
+  if (!Array.isArray(refs) || !refs.length) return undefined;
+  const kept = refs
+    .filter((r) => r && typeof r.url === "string" && r.url.length > 0)
+    .filter((r) => !r.url.startsWith("blob:"))
+    .slice(0, 4)
+    .map((r) => ({
+      type: "image" as const,
+      id: String(r.id || `ref-${Math.random().toString(36).slice(2, 8)}`),
+      url: r.url,
+      label: String(r.label || "").slice(0, 40),
+    }));
+  return kept.length ? kept : undefined;
+}
+
+function characterPromptAppendix(refs: VisualReference[]): string {
+  const lines = refs.map((r, i) => {
+    const tag = `@Image${i + 1}`;
+    const name = isCharacterName(r.label)
+      ? normalizeCharacterName(r.label)
+      : "";
+    return name
+      ? `- ${tag} is "${name}" — match this person's face, hair, skin tone, and wardrobe exactly`
+      : `- ${tag} — match this reference appearance exactly`;
+  });
+  return `\n\nUse these character references:\n${lines.join("\n")}\nKeep a photoreal live-action look (not CGI or cartoon). Keep identity consistent across the shot.`;
+}
 
 type GenBody = {
   modelIds?: string[];
@@ -398,34 +433,39 @@ export async function POST(request: Request) {
         // Intermediate beats never appear in Assets — only the stitched final.
         hidden: Boolean(body.sequencePart),
         targetSeconds: modelDuration,
+        referenceImages: persistableReferenceImages(
+          Array.isArray(body.referenceImages) ? body.referenceImages : undefined,
+        ),
       });
 
       try {
-        const refList = Array.isArray(body.referenceImages)
-          ? body.referenceImages
-          : [];
+        const refList = (
+          Array.isArray(body.referenceImages) ? body.referenceImages : []
+        ).filter((r): r is VisualReference => Boolean(r?.url));
         let startUrl = await ensureBytePlusRefUrl(body.startFrame);
         let lastUrl = await ensureBytePlusRefUrl(body.endFrame);
-        let referenceUrls = (
-          await Promise.all(refList.map((r) => ensureBytePlusRefUrl(r)))
-        ).filter((u): u is string => Boolean(u));
+        const keptRefs: VisualReference[] = [];
+        const referenceUrls: string[] = [];
+        for (const r of refList.slice(0, 4)) {
+          const u = await ensureBytePlusRefUrl(r);
+          if (!u) continue;
+          keptRefs.push(r);
+          referenceUrls.push(u);
+        }
 
         // Seedance: first/last XOR reference_image.
-        // Keep photoreal stills as-is. Privacy retries (if any) live in createBytePlusVideoTask.
-        if (startUrl) {
-          referenceUrls = [];
-        } else if (referenceUrls.length) {
+        // Character identity wins — if refs exist, use multimodal refs (drop start/end).
+        if (referenceUrls.length) {
           startUrl = null;
           lastUrl = null;
         }
 
-        // Seedance multimodal: cite @Image1… so character refs are actually used.
         let finalPrompt = prompt;
-        if (referenceUrls.length) {
-          const tags = referenceUrls
-            .map((_, i) => `@Image${i + 1}`)
-            .join(", ");
-          finalPrompt = `${prompt.trim()}\n\nCharacters: match appearance and wardrobe from ${tags}. Keep a photoreal live-action look (not CGI or cartoon). Keep identity consistent across the shot.`;
+        if (
+          referenceUrls.length &&
+          !/Use these character references|@Image1/.test(finalPrompt)
+        ) {
+          finalPrompt = `${prompt.trim()}${characterPromptAppendix(keptRefs)}`;
         }
 
         const createInput = {
@@ -449,6 +489,7 @@ export async function POST(request: Request) {
           url: "",
           status: "running",
           hidden: Boolean(body.sequencePart),
+          referenceImages: persistableReferenceImages(refList),
         });
 
         /**
