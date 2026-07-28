@@ -1,6 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+  startTransition,
+  type SetStateAction,
+} from "react";
 import { useRouter } from "next/navigation";
 import {
   Camera,
@@ -166,8 +174,12 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     Array<{ prompt: string; action: string }> | null
   >(null);
   const preview = jobs[0] ?? null;
-  const runningJobs = jobs.filter((j) => j.status === "running");
-  const waitingResult = generating || runningJobs.length > 0;
+  const runningJobs = useMemo(
+    () => jobs.filter((j) => j.status === "running"),
+    [jobs],
+  );
+  const hasRunningJobs = runningJobs.length > 0;
+  const waitingResult = generating || hasRunningJobs;
   /** Concurrent cap: at most 4 running videos total. */
   const MAX_CONCURRENT = 4;
   const slotsLeft = Math.max(0, MAX_CONCURRENT - runningJobs.length);
@@ -177,6 +189,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const requestCountPreview = freeTrial
     ? 1
     : Math.min(Math.max(1, Math.min(4, outputCount)), Math.max(slotsLeft, 1));
+
+  /** Poll/status updates are non-urgent — keep typing/buttons responsive. */
+  const setJobsDeferred = useCallback((updater: SetStateAction<StudioJob[]>) => {
+    startTransition(() => {
+      setJobs(updater);
+    });
+  }, []);
   // Lock free-trial defaults only when the customer has no credits yet.
   // Users with a balance can run paid multi-shot (4s×N) without burning the
   // single free clip first — otherwise they only ever see one 4s video.
@@ -470,7 +489,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     if (!runningJobs.length) return;
     const tick = () => {
       const now = Date.now();
-      setJobs((prev) => {
+      setJobsDeferred((prev) => {
         let changed = false;
         const next = prev.map((j) => {
           if (j.status !== "running") return j;
@@ -508,10 +527,17 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   useEffect(() => {
     if (media !== "video" || !selectedModel || freeSettingsLocked) return;
     // Never reset the slider mid-generate (e.g. catalog refresh was wiping 32s → 8s).
-    if (generating || jobs.some((j) => j.status === "running")) return;
+    if (generating || hasRunningJobs) return;
     applyVideoModelDefaults(selectedModel);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- apply when model identity changes
-  }, [media, selectedModelId, freeSettingsLocked, selectedModel?.mcpId, generating, jobs]);
+  }, [
+    media,
+    selectedModelId,
+    freeSettingsLocked,
+    selectedModel?.mcpId,
+    generating,
+    hasRunningJobs,
+  ]);
 
   const countdownTargetSeconds =
     preview?.targetSeconds ||
@@ -522,7 +548,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      // Fast path first so the picker never opens empty while sync runs.
       try {
         const { data } = await fetchJson<{
           image: CatalogModel[];
@@ -533,19 +558,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         if (data.video?.length) setVideoModels(data.video);
       } catch {
         // Keep static catalog already in state.
-      }
-
-      // Background catalog refresh (local/static only — no OpenArt).
-      try {
-        const { data } = await fetchJson<{
-          image: CatalogModel[];
-          video: CatalogModel[];
-        }>("/api/models");
-        if (cancelled) return;
-        if (data.image?.length) setImageModels(data.image);
-        if (data.video?.length) setVideoModels(data.video);
-      } catch {
-        // Keep whatever we already have.
       }
     })();
     return () => {
@@ -695,9 +707,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     user?.freeVeronixUsed,
     user?.credits,
     user?.id,
-    prompt,
-    multiShotOn,
-    promptSceneState,
+    // Intentionally omit `prompt` — quote body does not use it, and
+    // re-quoting on every keystroke froze the Generate button / whole studio.
   ]);
 
   async function fileToDataUrl(file: File): Promise<string> {
@@ -1145,7 +1156,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     try {
     for (let i = 0; i < PREVIEW_POLL_ATTEMPTS; i += 1) {
       if (Date.now() - startedAt >= MAX_GENERATE_WALL_MS) {
-        setJobs((prev) =>
+        setJobsDeferred((prev) =>
           patchJob(prev, match, {
             status: "failed",
             error: "انتهت المهلة (10 دقائق) — تم إيقاف التوليد تلقائياً",
@@ -1185,7 +1196,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             if (applyClarity) setStatus("تحسين الوضوح…");
             try {
               const graded = await finalizePaidVideo({ url, historyId, assetId });
-              setJobs((prev) =>
+              setJobsDeferred((prev) =>
                 patchJob(prev, match, {
                   url: graded,
                   mediaType,
@@ -1195,7 +1206,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 }),
               );
             } catch {
-              setJobs((prev) =>
+              setJobsDeferred((prev) =>
                 patchJob(prev, match, {
                   url,
                   mediaType,
@@ -1207,7 +1218,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             }
             setStatus(null);
           } else {
-            setJobs((prev) =>
+            setJobsDeferred((prev) =>
               patchJob(prev, match, {
                 url,
                 mediaType,
@@ -1229,7 +1240,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 ? data.error
                 : `${data.error || "فشل التوليد"}\nفشل التوليد · تم استرجاع الكريديت`
               : data.error || "فشل التوليد";
-          setJobs((prev) =>
+          setJobsDeferred((prev) =>
             patchJob(prev, match, {
               url: "",
               mediaType,
@@ -1245,7 +1256,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           return;
         }
         // Avoid re-rendering the whole studio when nothing meaningful changed.
-        setJobs((prev) => {
+        setJobsDeferred((prev) => {
           const cur = prev.find(
             (j) =>
               (match.clientId && j.clientId === match.clientId) ||
@@ -1313,9 +1324,35 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   }
 
   const handleShareJob = useCallback((job: StudioJob) => {
-    void handleShare(job);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- stable grid callback
-  }, [prompt, preview]);
+    void (async () => {
+      if (!job.url) return;
+      setShareNote(null);
+      const shareUrl =
+        typeof window !== "undefined"
+          ? `${window.location.origin}/assets`
+          : "/assets";
+      const text = job.prompt || "Generated with Veronix.ai";
+      try {
+        if (navigator.share) {
+          await navigator.share({
+            title: "Veronix.ai",
+            text,
+            url: shareUrl,
+          });
+          return;
+        }
+        await navigator.clipboard.writeText(shareUrl);
+        setShareNote("تم نسخ رابط المشاركة");
+      } catch {
+        try {
+          await navigator.clipboard.writeText(shareUrl);
+          setShareNote("تم نسخ رابط المشاركة");
+        } catch {
+          setShareNote("تعذر المشاركة — انسخ الرابط يدوياً");
+        }
+      }
+    })();
+  }, []);
 
   const handleDeleteJob = useCallback((job: StudioJob) => {
     setJobs((prev) => prev.filter((j) => j.clientId !== job.clientId));
@@ -2292,7 +2329,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
       <StudioResultGrid
         jobs={jobs}
-        prompt={prompt}
         onShare={handleShareJob}
         onDelete={handleDeleteJob}
       />

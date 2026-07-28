@@ -43,6 +43,7 @@ export function VeronixApp() {
                 muted
                 loop
                 playsInline
+                preload="metadata"
                 poster="/promo/poster.jpg"
                 aria-label="Veronix.ai promotional action film"
               >

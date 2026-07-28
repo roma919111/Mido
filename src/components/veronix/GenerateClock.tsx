@@ -57,7 +57,7 @@ export function GenerateClock({
 
     paint();
     // Direct DOM writes — do NOT call setState (avoids freezing CreateStudio).
-    const id = window.setInterval(paint, 80);
+    const id = window.setInterval(paint, 120);
     const onVis = () => {
       if (!document.hidden) paint();
     };

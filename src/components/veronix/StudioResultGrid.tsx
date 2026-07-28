@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import {
   Loader2,
   Pencil,
@@ -22,14 +22,26 @@ function formatDuration(seconds: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-function ResultCard({
+function jobVisualEqual(a: StudioJob, b: StudioJob): boolean {
+  return (
+    a.clientId === b.clientId &&
+    a.status === b.status &&
+    a.url === b.url &&
+    a.mediaType === b.mediaType &&
+    a.historyId === b.historyId &&
+    a.assetId === b.assetId &&
+    a.error === b.error &&
+    a.startedAt === b.startedAt &&
+    a.prompt === b.prompt
+  );
+}
+
+const ResultCard = memo(function ResultCard({
   job,
-  prompt,
   onShare,
   onDelete,
 }: {
   job: StudioJob;
-  prompt: string;
   onShare: (job: StudioJob) => void;
   onDelete: (job: StudioJob) => void;
 }) {
@@ -100,7 +112,7 @@ function ResultCard({
         url: string;
         label: string;
       }> = [];
-      let editPrompt = job.prompt || prompt || "";
+      let editPrompt = job.prompt || "";
 
       if (job.assetId) {
         try {
@@ -188,6 +200,7 @@ function ResultCard({
               key={src}
               src={src}
               playsInline
+              preload="metadata"
               controls={false}
               controlsList="nodownload"
               className="h-full w-full object-contain"
@@ -302,16 +315,18 @@ function ResultCard({
       </div>
     </div>
   );
-}
+}, (prev, next) =>
+  jobVisualEqual(prev.job, next.job) &&
+  prev.onShare === next.onShare &&
+  prev.onDelete === next.onDelete,
+);
 
-export function StudioResultGrid({
+export const StudioResultGrid = memo(function StudioResultGrid({
   jobs,
-  prompt,
   onShare,
   onDelete,
 }: {
   jobs: StudioJob[];
-  prompt: string;
   onShare: (job: StudioJob) => void;
   onDelete: (job: StudioJob) => void;
 }) {
@@ -324,7 +339,6 @@ export function StudioResultGrid({
           <ResultCard
             key={job.clientId}
             job={job}
-            prompt={prompt}
             onShare={onShare}
             onDelete={onDelete}
           />
@@ -332,4 +346,4 @@ export function StudioResultGrid({
       </div>
     </div>
   );
-}
+});
