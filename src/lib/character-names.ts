@@ -21,6 +21,60 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** Lightweight Arabic → Latin aliases for matching English prompts only. */
+const ARABIC_NAME_ALIASES: Record<string, string[]> = {
+  محمد: ["mohammed", "mohamed", "muhammad", "mohammad"],
+  أحمد: ["ahmed", "ahmad"],
+  محمود: ["mahmoud", "mahmud"],
+  علي: ["ali"],
+  حسن: ["hassan", "hasan"],
+  حسين: ["hussein", "hussain", "hosein"],
+  خالد: ["khaled", "khalid"],
+  عمر: ["omar", "umar"],
+  يوسف: ["youssef", "yousef", "yusuf", "joseph"],
+  إبراهيم: ["ibrahim", "ebrahem"],
+  سارة: ["sara", "sarah"],
+  فاطمة: ["fatima", "fatema"],
+  نورة: ["noura", "nora", "norah"],
+  مريم: ["mariam", "maryam", "mary"],
+  ليلى: ["layla", "leila", "laila"],
+  نور: ["noor", "nour", "nur"],
+  ريان: ["rayan", "ryan"],
+  ليان: ["layan"],
+  جود: ["joud", "jud"],
+};
+
+function nameAliases(name: string): string[] {
+  const n = normalizeCharacterName(name);
+  if (!n) return [];
+  const lower = n.toLowerCase();
+  const out = new Set<string>([n, lower]);
+  const mapped = ARABIC_NAME_ALIASES[n];
+  if (mapped) for (const a of mapped) out.add(a);
+  // Also reverse: English label → keep as-is for Arabic prompts
+  for (const [ar, aliases] of Object.entries(ARABIC_NAME_ALIASES)) {
+    if (aliases.some((a) => a === lower)) {
+      out.add(ar);
+      for (const a of aliases) out.add(a);
+    }
+  }
+  return [...out];
+}
+
+function nameMentionIndex(prompt: string, name: string): number {
+  const aliases = nameAliases(name);
+  let best = -1;
+  for (const alias of aliases) {
+    const pattern = new RegExp(
+      `(?:^|[^\\p{L}\\p{N}_]|و)${escapeRegExp(alias)}(?=[^\\p{L}\\p{N}_]|$)`,
+      "iu",
+    );
+    const m = pattern.exec(prompt || "");
+    if (m && (best < 0 || m.index < best)) best = m.index;
+  }
+  return best;
+}
+
 export function matchNamedCharacters(
   prompt: string,
   refs: VisualReference[],
@@ -39,25 +93,12 @@ export function matchNamedCharacters(
 
   for (const item of named) {
     if (used.has(item.ref.id)) continue;
-    const pattern = new RegExp(
-      `(?:^|[^\\p{L}\\p{N}_]|و)${escapeRegExp(item.name)}(?=[^\\p{L}\\p{N}_]|$)`,
-      "iu",
-    );
-    if (pattern.test(text)) {
+    if (nameMentionIndex(text, item.name) >= 0) {
       matched.push(item.ref);
       used.add(item.ref.id);
     }
   }
   return matched;
-}
-
-function nameMentionIndex(prompt: string, name: string): number {
-  const pattern = new RegExp(
-    `(?:^|[^\\p{L}\\p{N}_]|و)${escapeRegExp(name)}(?=[^\\p{L}\\p{N}_]|$)`,
-    "iu",
-  );
-  const m = pattern.exec(prompt || "");
-  return m ? m.index : -1;
 }
 
 /** Named chars first (prompt order), then other refs — stable @ImageN order. */
@@ -85,6 +126,7 @@ export function resolveCharacterRefsForPrompt(
   refs: VisualReference[],
 ): { refs: VisualReference[]; matched: VisualReference[] } {
   const matched = matchNamedCharacters(prompt, refs);
+  // Always keep every uploaded still — ByteDance needs the images attached.
   return { refs: orderCharacterRefsForBinding(prompt, refs), matched };
 }
 
@@ -98,10 +140,18 @@ export function stripInternalPromptNotes(prompt: string): string {
   text = text.replace(/\nWARDROBE POLICY[\s\S]*$/i, "");
   text = text.replace(/\nIDENTITY LOCK:[\s\S]*$/i, "");
   text = text.replace(/\n\n@Image\d+ is[\s\S]*$/i, "");
-  // Leading Seedance binding lines we may prepend server-side
   text = text.replace(/^(?:@Image\d+[^\n]*\n)+/gim, "");
+  text = text.replace(
+    /\n*If any reference shows bikini[\s\S]*?change clothing only\./gi,
+    "",
+  );
   text = text.replace(/\n*Dress characters in modest[^\n]*/gi, "");
+  text = text.replace(/\n*Modest clothes that fit[^\n]*/gi, "");
+  text = text.replace(/\n*Keep faces matching[^\n]*/gi, "");
+  text = text.replace(/\n*The person in the first frame is[^\n]*/gi, "");
+  text = text.replace(/\n*Keep the same face as the first frame[^\n]*/gi, "");
   text = text.replace(/\n*Match faces from @Image[^\n]*/gi, "");
+  text = text.replace(/\n*Appearances locked to @Image[^\n]*/gi, "");
   text = text.replace(/\n\n\(الشخصي[^\n]*المرفقة تمامًا\.\)/g, "");
   text = text.replace(/\n\n\(جارٍ توليد ودمج[\s\S]*$/u, "");
   text = text.replace(/\n\n\(جاري توليد ودمج[\s\S]*$/u, "");
@@ -112,8 +162,9 @@ const MODEST_WARDROBE =
   "If any reference shows bikini, swimsuit, lingerie, underwear, or nudity, dress that person in modest casual clothes that fit the scene (full top + pants or dress). Keep the same face, hair, and skin — change clothing only.";
 
 /**
- * Seedance API prompt only (never store on asset).
- * Replaces each character name in the scene with `@ImageN (Name)`.
+ * ByteDance Seedance API prompt (never stored on asset).
+ * Always tags every uploaded still as @ImageN — required for identity.
+ * Keeps the user's Arabic/English name as-is; also swaps EN aliases in-scene.
  */
 export function buildSeedanceCharacterPrompt(
   userPrompt: string,
@@ -135,13 +186,21 @@ export function buildSeedanceCharacterPrompt(
   for (const { i, name } of named) {
     const tag = `@Image${i + 1}`;
     if (scene.includes(tag)) continue;
-    const pattern = new RegExp(
-      `(^|[^\\p{L}\\p{N}_]|و)(${escapeRegExp(name)})(?=[^\\p{L}\\p{N}_]|$)`,
-      "giu",
-    );
-    scene = scene.replace(pattern, `$1${tag} ($2)`);
+    const aliases = nameAliases(name).sort((a, b) => b.length - a.length);
+    for (const alias of aliases) {
+      const pattern = new RegExp(
+        `(^|[^\\p{L}\\p{N}_]|و)(${escapeRegExp(alias)})(?=[^\\p{L}\\p{N}_]|$)`,
+        "giu",
+      );
+      if (!pattern.test(scene)) continue;
+      // Reset lastIndex after test()
+      pattern.lastIndex = 0;
+      scene = scene.replace(pattern, `$1${tag}`);
+      break;
+    }
   }
 
+  // ByteDance rule: every reference_image must be cited with @ImageN.
   const intro = ordered
     .map((r, i) => {
       const tag = `@Image${i + 1}`;
@@ -149,15 +208,18 @@ export function buildSeedanceCharacterPrompt(
         ? normalizeCharacterName(r.label)
         : "";
       return name
-        ? `${tag} is "${name}" — use this face only for ${name}.`
+        ? `${tag} is "${name}" — use only this face for ${name}.`
         : `${tag} is character ${i + 1} — keep this face.`;
     })
     .join(" ");
 
   const tags = ordered.map((_, i) => `@Image${i + 1}`).join(", ");
-  return [intro, scene, `Keep faces matching ${tags}.`, MODEST_WARDROBE].join(
-    "\n",
-  );
+  return [
+    intro,
+    scene,
+    `Appearances locked to ${tags}; do not blend faces between them.`,
+    MODEST_WARDROBE,
+  ].join("\n");
 }
 
 /** Single-character path (first_frame) — strongest identity lock on Seedance mini. */
@@ -196,6 +258,6 @@ export function appendCharacterLinkHint(
 /** @deprecated */
 export function withModestWardrobeDirective(prompt: string): string {
   const base = stripInternalPromptNotes(prompt);
-  if (!base || /modest clothes that fit/i.test(base)) return base;
-  return `${base}\nModest clothes that fit the scene.`;
+  if (!base || /modest casual clothes/i.test(base)) return base;
+  return `${base}\n${MODEST_WARDROBE}`;
 }

@@ -91,14 +91,17 @@ async function stitchPendingJobs(userId: string) {
     if (urls.length === 1 && ageMs < Math.max(etaMs, 90_000)) continue;
 
     try {
+      const wantClarity = pending.preferClarity === true;
       let finalUrl: string;
       if (urls.length >= 2) {
         finalUrl = await concatVideos(urls, {
           maxSecondsPerClip: PRODUCT_PER_SHOT_SECONDS,
-          clarity: true,
+          clarity: wantClarity,
         });
       } else {
-        finalUrl = await ensureClarityUrl(urls[0]!);
+        finalUrl = wantClarity
+          ? await ensureClarityUrl(urls[0]!)
+          : urls[0]!;
       }
       await updateAsset(pending.id, userId, {
         url: finalUrl,
@@ -152,8 +155,12 @@ async function syncRunningAssets(userId: string) {
               // keep remote URL
             }
           }
-          // Visible finals always get clarity; parts stay raw for stitch.
-          if (finalUrl && asset.mode !== "sequence-part") {
+          // Visible finals: clarity only when customer opted in.
+          if (
+            finalUrl &&
+            asset.mode !== "sequence-part" &&
+            asset.preferClarity
+          ) {
             finalUrl = await ensureClarityUrl(finalUrl);
           }
           await updateAsset(asset.id, userId, {
@@ -281,7 +288,7 @@ async function syncRunningAssets(userId: string) {
     }
   }
 
-  // Lazy clarity grade for visible completed videos still on raw CDN / ungraded parts.
+  // Lazy clarity only for videos the customer opted into.
   for (const asset of latest
     .filter(
       (a) =>
@@ -289,6 +296,7 @@ async function syncRunningAssets(userId: string) {
         a.mediaType === "video" &&
         a.mode !== "sequence-part" &&
         a.hidden !== true &&
+        a.preferClarity === true &&
         needsClarityGrade(a.url),
     )
     .slice(0, 4)) {

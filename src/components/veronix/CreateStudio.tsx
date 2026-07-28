@@ -145,6 +145,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   );
   const [duration, setDuration] = useState<number>(FREE_VERONIX_DURATION_SECONDS);
   const [generateAudio, setGenerateAudio] = useState(false);
+  /** OmarFX clarity grade — opt-in (slower). */
+  const [applyClarity, setApplyClarity] = useState(false);
   const [freeTrial, setFreeTrial] = useState(false);
   const [refs, setRefs] = useState<VisualReference[]>([]);
   const [refPreviews, setRefPreviews] = useState<string[]>([]);
@@ -310,12 +312,24 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           : `تم تحميل ${chars.length} شخصية — تأكد أن الأسماء مذكورة في الوصف ثم Generate`,
       );
     } else if (draft.startFrame?.url) {
-      setStartFrame(draft.startFrame);
-      setStartPreview(draft.startFrame.url);
-      setRefs([]);
-      setRefPreviews([]);
-      setRefNames([]);
-      setStatus("تم تحميل الوصف والإطار — أضف شخصيات بأسماء للتعرّف الأفضل");
+      // Always map edit stills into character slots (never Start Frame).
+      const frame = draft.startFrame;
+      setRefs([
+        {
+          ...frame,
+          id: frame.id || `edit-char-${Date.now()}`,
+          label: isCharacterName(frame.label) ? frame.label : "",
+        },
+      ]);
+      setRefPreviews([frame.url]);
+      setRefNames([
+        isCharacterName(frame.label) ? normalizeCharacterName(frame.label) : "",
+      ]);
+      setStartFrame(null);
+      setStartPreview(null);
+      setStatus(
+        "تم تحميل صورة للتعديل في خانة الشخصيات — سمِّها واذكر الاسم في الوصف",
+      );
     } else {
       setStatus("تم تحميل الوصف للتعديل — عدّل ثم Generate");
     }
@@ -953,12 +967,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     }
   }
 
-  /** Cache remotely + apply clarity grade for a stable local preview URL. */
+  /** Cache remotely; apply clarity grade only when the customer opted in. */
   async function finalizePaidVideo(input: {
     url: string;
     historyId?: string;
     assetId?: string;
   }): Promise<string> {
+    if (!applyClarity) return input.url;
     const { res, data } = await fetchJson<{ error?: string; url?: string }>(
       "/api/media/cache",
       {
@@ -1132,7 +1147,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           if (brandOutro) {
             await applyBrandOutro({ url, historyId, assetId, mediaType });
           } else if (mediaType === "video") {
-            setStatus("تحسين الوضوح والفلتر…");
+            if (applyClarity) setStatus("تحسين الوضوح…");
             try {
               const graded = await finalizePaidVideo({ url, historyId, assetId });
               if (!stillMine()) return;
@@ -1342,6 +1357,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           media === "video" ? resolution : resolution || DEFAULT_IMAGE_RESOLUTION,
         duration: media === "video" ? input.duration : undefined,
         generateAudio: media === "video" ? generateAudio : undefined,
+        clarity: media === "video" ? applyClarity : undefined,
         startFrame: input.startFrame ?? null,
         endFrame: input.endFrame ?? null,
         referenceImages: input.referenceImages ?? refs,
@@ -1543,7 +1559,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             mediaType: media,
           });
         } else if (media === "video") {
-          setStatus("تحسين الوضوح والفلتر…");
+          if (applyClarity) setStatus("تحسين الوضوح…");
           try {
             const graded = await finalizePaidVideo({
               url: firstUrl,
@@ -2035,6 +2051,17 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 لا يتوفر خيار صوت منفصل لهذا الموديل
               </p>
             )}
+            {!freeSettingsLocked ? (
+              <label className="mt-2 flex items-center gap-2 text-sm text-white/70">
+                <input
+                  type="checkbox"
+                  checked={applyClarity}
+                  onChange={(e) => setApplyClarity(e.target.checked)}
+                />
+                تحسين الوضوح
+                <span className="text-[10px] text-white/40">(اختياري · أبطأ قليلاً)</span>
+              </label>
+            ) : null}
           </div>
         )}
       </div>

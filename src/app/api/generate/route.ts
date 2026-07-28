@@ -74,6 +74,8 @@ type GenBody = {
   sequencePart?: boolean;
   /** How many variants to generate (same prompt/model). Max 4. */
   count?: number;
+  /** Customer opted into OmarFX clarity grade (slower). Default false. */
+  clarity?: boolean;
 };
 
 function resolveToolMode(media: "image" | "video", hasStart: boolean, hasRefs: boolean) {
@@ -114,6 +116,7 @@ export async function POST(request: Request) {
       4,
       Math.max(1, Math.floor(Number(body.count) || 1)),
     );
+    const preferClarity = body.clarity === true;
 
     if (!prompt) {
       return NextResponse.json({ error: "prompt is required" }, { status: 400 });
@@ -426,6 +429,7 @@ export async function POST(request: Request) {
         referenceImages: persistableReferenceImages(
           Array.isArray(body.referenceImages) ? body.referenceImages : undefined,
         ),
+        preferClarity,
       });
 
       try {
@@ -516,16 +520,18 @@ export async function POST(request: Request) {
         const videoUrl = finished.content?.video_url || "";
 
         if (videoUrl) {
-          // Visible finals get clarity grade; sequence parts stay raw for stitch.
-          const finalUrl = body.sequencePart
-            ? videoUrl
-            : await ensureClarityUrl(videoUrl);
+          // Clarity only when the customer opted in (keeps Assets/generate fast).
+          const finalUrl =
+            body.sequencePart || !preferClarity
+              ? videoUrl
+              : await ensureClarityUrl(videoUrl);
           await updateAsset(asset.id, user.id, {
             historyId,
             url: finalUrl,
             status: "completed",
             error: undefined,
             hidden: Boolean(body.sequencePart),
+            preferClarity,
           });
           results.push({
             assetId: asset.id,
@@ -536,6 +542,7 @@ export async function POST(request: Request) {
             creditsUsed: quote.totalCredits,
             freeTrial,
             needsBrandOutro: freeTrial,
+            preferClarity,
             live: true,
             provider: "byteplus",
             tool: "byteplus_contents_generations",

@@ -23,6 +23,8 @@ type StartBody = {
   duration?: number;
   resolution?: string;
   generateAudio?: boolean;
+  /** Customer opted into OmarFX clarity grade on the final stitch. */
+  clarity?: boolean;
   startFrame?: import("@/lib/types").VisualReference | null;
 };
 
@@ -110,6 +112,7 @@ export async function POST(request: Request) {
       startFrameUrl,
       resolution: body.resolution || "720p",
       generateAudio: Boolean(body.generateAudio),
+      preferClarity: body.clarity === true,
     });
 
     // Continue all beats in the Node process after the response — required for

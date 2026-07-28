@@ -53,6 +53,8 @@ export interface AssetRecord {
    * Restored by Assets → Edit so the customer can tweak without re-uploading.
    */
   referenceImages?: import("@/lib/types").VisualReference[];
+  /** Customer opted into OmarFX clarity grade for this video. */
+  preferClarity?: boolean;
   createdAt: string;
 }
 
@@ -282,6 +284,7 @@ export async function createAsset(
       referenceImages: Array.isArray(input.referenceImages)
         ? input.referenceImages.slice(0, 4)
         : undefined,
+      preferClarity: Boolean(input.preferClarity),
       createdAt: new Date().toISOString(),
     };
     db.assets.unshift(asset);

@@ -84,6 +84,7 @@ export async function startMultiShotJob(input: {
   startFrameUrl?: string | null;
   resolution?: string;
   generateAudio?: boolean;
+  preferClarity?: boolean;
 }): Promise<AssetRecord> {
   const budget = shotBudgetFromDuration(input.durationSec, MAX_SHOTS);
   const shots = expandShotsToBudget(input.shots, budget);
@@ -114,6 +115,7 @@ export async function startMultiShotJob(input: {
     hidden: false,
     targetSeconds,
     jobMeta: meta,
+    preferClarity: Boolean(input.preferClarity),
   });
 }
 
@@ -529,13 +531,16 @@ async function finalizeMultiShotJob(
   }
 
   try {
+    const wantClarity = pending.preferClarity === true;
     let finalUrl: string;
     if (meta.partUrls.length === 1) {
-      finalUrl = await ensureClarityUrl(meta.partUrls[0]!);
+      finalUrl = wantClarity
+        ? await ensureClarityUrl(meta.partUrls[0]!)
+        : meta.partUrls[0]!;
     } else {
       finalUrl = await concatVideos(meta.partUrls, {
         maxSecondsPerClip: meta.perShotSeconds,
-        clarity: true,
+        clarity: wantClarity,
       });
     }
     const actualSeconds = meta.partUrls.length * meta.perShotSeconds;

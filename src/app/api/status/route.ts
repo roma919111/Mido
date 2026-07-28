@@ -103,7 +103,11 @@ export async function GET(request: Request) {
         const existing = byHistory;
         const keepHidden = existing?.mode === "sequence-part";
         if (urls[0]) {
-          const graded = keepHidden ? urls[0] : await ensureClarityUrl(urls[0]);
+          const wantClarity = Boolean(existing?.preferClarity);
+          const graded =
+            keepHidden || !wantClarity
+              ? urls[0]
+              : await ensureClarityUrl(urls[0]);
           await updateAsset(targetId, user.id, {
             historyId,
             url: graded,

@@ -282,7 +282,7 @@ function FeedVideoSlide({
       writeEditDraft({
         prompt: prompt || item.prompt || "",
         media: "video",
-        startFrame: characters.length ? null : startFrame,
+        startFrame: null,
         referenceImages: characters,
         sourceAssetId: item.id,
       });
