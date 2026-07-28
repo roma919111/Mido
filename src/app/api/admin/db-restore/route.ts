@@ -23,10 +23,13 @@ type Body = {
     | "auto"
     | "advance-multi"
     | "promote-finals"
-    | "inspect";
+    | "inspect"
+    | "analyze-refs";
   email?: string;
   backupName?: string;
   fullReplace?: boolean;
+  /** Optional explicit /generations paths to analyze */
+  paths?: string[];
 };
 
 /**
