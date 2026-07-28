@@ -70,6 +70,8 @@ const PAID_DURATION_MAX = 15;
 /** Poll long enough for a slow Seedance beat (~6–7 min). */
 const PREVIEW_POLL_ATTEMPTS = 80;
 const PREVIEW_POLL_MS = 5000;
+/** Hard wall-clock stop for a single generate job (real seconds). */
+const MAX_GENERATE_WALL_MS = 180_000;
 /** Drop restored "running" jobs that outlived the job (no server progress). */
 const STALE_RUNNING_GRACE_MS = 12 * 60 * 1000;
 /** Deduplicate concurrent status pollers (hydrate + generate). */
@@ -162,8 +164,15 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const preview = jobs[0] ?? null;
   const runningJobs = jobs.filter((j) => j.status === "running");
   const waitingResult = generating || runningJobs.length > 0;
-  /** Block new batches until every in-flight video finishes (max 4 concurrent). */
-  const canStartNewBatch = !generating && runningJobs.length === 0;
+  /** Concurrent cap: at most 4 running videos total. */
+  const MAX_CONCURRENT = 4;
+  const slotsLeft = Math.max(0, MAX_CONCURRENT - runningJobs.length);
+  /** Can start more while under the concurrent cap (1 running → up to 3 more). */
+  const canStartMore = !generating && slotsLeft > 0;
+  /** Exact count for this tap — never more than remaining slots. */
+  const requestCountPreview = freeTrial
+    ? 1
+    : Math.min(Math.max(1, Math.min(4, outputCount)), Math.max(slotsLeft, 1));
   // Lock free-trial defaults only when the customer has no credits yet.
   // Users with a balance can run paid multi-shot (4s×N) without burning the
   // single free clip first — otherwise they only ever see one 4s video.
@@ -307,21 +316,30 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const stored = readStoredJobs().filter((j) => {
-        if (j.status !== "running") return true;
+      const stored = readStoredJobs().map((j) => {
+        if (j.status !== "running") return j;
         const started = j.startedAt ?? 0;
+        if (started > 0 && Date.now() - started >= MAX_GENERATE_WALL_MS) {
+          return {
+            ...j,
+            status: "failed" as const,
+            error: "انتهت المهلة (180 ثانية) — تم إيقاف التوليد تلقائياً",
+          };
+        }
         const target = j.targetSeconds || (media === "video" ? duration : 4);
         const etaMs = estimateGenerateSeconds(target, j.mediaType) * 1000;
-        // Keep long-running jobs; only drop extreme ghosts.
-        return !(started > 0 && Date.now() - started > etaMs + STALE_RUNNING_GRACE_MS);
-      });
+        if (started > 0 && Date.now() - started > etaMs + STALE_RUNNING_GRACE_MS) {
+          return null;
+        }
+        return j;
+      }).filter((j): j is NonNullable<typeof j> => Boolean(j));
 
       if (!cancelled && stored.length) {
         setJobs(stored);
         const running = stored.find((j) => j.status === "running");
         if (running?.startedAt) setGenStartedAt(running.startedAt);
         if (running) {
-          setStatus("توليد سابق يُتابع — يمكنك توليد فيديو جديد");
+          setStatus("توليد سابق يُتابع — يمكنك توليد المزيد ضمن حد 4");
         }
       }
 
@@ -433,6 +451,41 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     const t = window.setTimeout(() => writeStoredJobs(jobs), 1200);
     return () => window.clearTimeout(t);
   }, [jobs, previewHydrated]);
+
+  // Keep +/- within remaining concurrent slots (e.g. 1 running → max selectable 3).
+  useEffect(() => {
+    if (slotsLeft <= 0) return;
+    setOutputCount((n) => Math.min(Math.max(1, n), slotsLeft));
+  }, [slotsLeft]);
+
+  // Force-stop any job that exceeds 180 real seconds.
+  useEffect(() => {
+    if (!runningJobs.length) return;
+    const tick = () => {
+      const now = Date.now();
+      setJobs((prev) => {
+        let changed = false;
+        const next = prev.map((j) => {
+          if (j.status !== "running") return j;
+          const started = j.startedAt || 0;
+          if (!(started > 0) || now - started < MAX_GENERATE_WALL_MS) return j;
+          changed = true;
+          if (j.assetId) activePreviewPolls.delete(j.assetId);
+          if (j.historyId) activePreviewPolls.delete(j.historyId);
+          if (j.clientId) activePreviewPolls.delete(j.clientId);
+          return {
+            ...j,
+            status: "failed" as const,
+            error: "انتهت المهلة (180 ثانية) — تم إيقاف التوليد تلقائياً",
+          };
+        });
+        return changed ? next : prev;
+      });
+    };
+    tick();
+    const id = window.setInterval(tick, 2000);
+    return () => window.clearInterval(id);
+  }, [runningJobs.length]);
 
   // Free first visit: lock Veronix defaults to 4s model / 480p (+ stock intro).
   useEffect(() => {
@@ -1082,6 +1135,17 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     const match = { clientId, assetId, historyId: historyId || undefined };
     try {
     for (let i = 0; i < PREVIEW_POLL_ATTEMPTS; i += 1) {
+      if (Date.now() - startedAt >= MAX_GENERATE_WALL_MS) {
+        setJobs((prev) =>
+          patchJob(prev, match, {
+            status: "failed",
+            error: "انتهت المهلة (180 ثانية) — تم إيقاف التوليد تلقائياً",
+          }),
+        );
+        setError("انتهت المهلة (180 ثانية) — تم إيقاف التوليد تلقائياً");
+        setGenStartedAt(null);
+        return;
+      }
       await new Promise((r) => setTimeout(r, mediaType === "image" ? 2500 : PREVIEW_POLL_MS));
       try {
         const statusQs = new URLSearchParams();
@@ -1348,9 +1412,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     setStatus(null);
     setShareNote(null);
 
-    if (!canStartNewBatch) {
+    if (!canStartMore) {
       setError(
-        `انتظر انتهاء الفيديوهات الجارية (${runningJobs.length}) قبل توليد دفعة جديدة — الحد الأقصى 4.`,
+        slotsLeft <= 0
+          ? "لديك 4 فيديوهات قيد التوليد — انتظر انتهاء أحدها قبل توليد المزيد."
+          : "التوليد جارٍ — انتظر لحظة ثم أعد المحاولة.",
       );
       return;
     }
@@ -1371,9 +1437,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       setError(quoteError || "انتظر حساب التكلفة قبل التوليد.");
       return;
     }
+    // Exact selection: 1→1, 2→2… capped only by remaining concurrent slots.
     const requestCount = freeTrial
       ? 1
-      : Math.min(4, Math.max(1, Math.floor(outputCount) || 1));
+      : Math.min(slotsLeft, Math.max(1, Math.min(4, Math.floor(outputCount) || 1)));
+    if (requestCount < 1) {
+      setError("لديك 4 فيديوهات قيد التوليد — انتظر انتهاء أحدها.");
+      return;
+    }
     const billedCost = freeTrial ? 0 : (creditCost || 0) * requestCount;
     if (!freeTrial && (user.credits <= 0 || user.credits < billedCost)) {
       setError("رصيدك غير كافٍ. أضف كريدت أو رقِّ الباقة للمتابعة.");
@@ -2118,9 +2189,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               <button
                 type="button"
                 onClick={() =>
-                  setOutputCount((n) => Math.max(1, Math.min(4, n - 1)))
+                  setOutputCount((n) => Math.max(1, n - 1))
                 }
-                disabled={!canStartNewBatch || outputCount <= 1}
+                disabled={outputCount <= 1}
                 className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-white transition active:scale-95 disabled:opacity-40"
                 aria-label="إنقاص العدد"
               >
@@ -2132,16 +2203,22 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               <button
                 type="button"
                 onClick={() =>
-                  setOutputCount((n) => Math.max(1, Math.min(4, n + 1)))
+                  setOutputCount((n) =>
+                    Math.min(Math.max(slotsLeft, 1), Math.min(4, n + 1)),
+                  )
                 }
-                disabled={!canStartNewBatch || outputCount >= 4}
+                disabled={outputCount >= Math.min(4, Math.max(slotsLeft, 1))}
                 className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-white transition active:scale-95 disabled:opacity-40"
                 aria-label="زيادة العدد"
               >
                 <Plus className="h-4 w-4" />
               </button>
             </div>
-            <span className="text-[9px] text-white/40">حد أقصى 4</span>
+            <span className="text-[9px] text-white/40">
+              {slotsLeft < 4
+                ? `متبقي ${slotsLeft} من 4`
+                : "حد أقصى 4 معاً"}
+            </span>
           </div>
         ) : null}
 
@@ -2151,7 +2228,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           disabled={
             quoting ||
             !selectedModel?.available ||
-            !canStartNewBatch
+            !canStartMore
           }
           className={`relative flex min-w-0 flex-1 items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-5 py-4 text-base font-bold text-white transition duration-150 enabled:active:scale-[0.97] enabled:active:brightness-110 disabled:opacity-70 ${
             genFlash
@@ -2166,12 +2243,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           )}
           {quoting
             ? "يحسب السعر…"
-            : !canStartNewBatch
-              ? `انتظر الانتهاء (${runningJobs.length})`
+            : !canStartMore
+              ? slotsLeft <= 0
+                ? "ممتلئ (4/4)"
+                : "جاري الإرسال…"
               : freeTrial
                 ? "Generate مجاني"
-                : outputCount > 1
-                  ? `Generate ×${outputCount}`
+                : requestCountPreview > 1
+                  ? `Generate ×${requestCountPreview}`
                   : "Generate"}
           <span className="rounded-full bg-black/20 px-2.5 py-0.5 text-xs tabular-nums">
             {quoting
@@ -2179,7 +2258,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               : creditLive && creditCost != null
                 ? freeTrial
                   ? "مجاني"
-                  : `−${creditCost * (freeTrial ? 1 : outputCount)}`
+                  : `−${creditCost * (freeTrial ? 1 : requestCountPreview)}`
                 : "—"}
           </span>
         </button>
@@ -2197,7 +2276,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           />
           <p className="text-sm font-semibold text-white">
             جاري التوليد…
-            {runningJobs.length > 1 ? ` (${runningJobs.length})` : ""}
+            {runningJobs.length > 0 ? ` (${runningJobs.length}/${MAX_CONCURRENT})` : ""}
           </p>
         </div>
       ) : null}
