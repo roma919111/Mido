@@ -7,7 +7,7 @@ import {
   Share2,
   Trash2,
 } from "lucide-react";
-import { veronixMediaSrc } from "@/lib/media-proxy";
+import { veronixMediaSrc, veronixPosterSrc } from "@/lib/media-proxy";
 import type { StudioJob } from "@/lib/studio-jobs";
 import { writeEditDraft } from "@/lib/edit-draft";
 import { fetchJson } from "@/lib/fetch-json";
@@ -67,6 +67,13 @@ const ResultCard = memo(function ResultCard({
           mediaType: "video",
         })
       : null;
+  const posterSrc =
+    job.url && job.mediaType === "video"
+      ? veronixPosterSrc({
+          historyId: job.historyId,
+          url: job.url,
+        })
+      : null;
   const imgSrc =
     job.url && job.mediaType === "image"
       ? veronixMediaSrc({
@@ -75,6 +82,16 @@ const ResultCard = memo(function ResultCard({
           mediaType: "image",
         }) || job.url
       : null;
+
+  // Only attach video src after the user taps play — avoids N parallel proxy loads.
+  const [mediaArmed, setMediaArmed] = useState(false);
+
+  useEffect(() => {
+    setMediaArmed(false);
+    setPlaying(false);
+    setDurationSec(0);
+    setShowControls(true);
+  }, [src]);
 
   useEffect(() => {
     return () => {
@@ -92,6 +109,19 @@ const ResultCard = memo(function ResultCard({
   };
 
   const togglePlay = () => {
+    if (!mediaArmed) {
+      setMediaArmed(true);
+      // Play after src mounts on next paint.
+      window.requestAnimationFrame(() => {
+        window.setTimeout(() => {
+          const el = videoRef.current;
+          if (!el) return;
+          revealControls();
+          void el.play().catch(() => undefined);
+        }, 40);
+      });
+      return;
+    }
     const el = videoRef.current;
     if (!el) return;
     revealControls();
@@ -195,15 +225,28 @@ const ResultCard = memo(function ResultCard({
       <div className="relative aspect-video bg-black/50">
         {src ? (
           <>
+            {posterSrc && !mediaArmed ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={posterSrc}
+                alt=""
+                decoding="async"
+                loading="lazy"
+                className="absolute inset-0 h-full w-full object-contain"
+              />
+            ) : null}
             <video
               ref={videoRef}
               key={src}
-              src={src}
+              src={mediaArmed ? src : undefined}
+              poster={posterSrc || undefined}
               playsInline
-              preload="metadata"
+              preload="none"
               controls={false}
               controlsList="nodownload"
-              className="h-full w-full object-contain"
+              className={`h-full w-full object-contain ${
+                mediaArmed ? "relative" : "absolute inset-0 opacity-0"
+              }`}
               onClick={togglePlay}
               onLoadedMetadata={(e) => {
                 const d = e.currentTarget.duration;

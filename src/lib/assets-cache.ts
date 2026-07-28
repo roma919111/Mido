@@ -88,7 +88,7 @@ export function clearAssetsCache(): void {
 export function warmAssetPosters(
   assets: CachedAssetItem[],
   buildPoster: (item: CachedAssetItem) => string | null,
-  limit = 3,
+  limit = 1,
 ): void {
   if (typeof window === "undefined") return;
   const videos = assets
@@ -101,11 +101,14 @@ export function warmAssetPosters(
     )
     .slice(0, limit);
 
-  for (const item of videos) {
-    const poster = buildPoster(item);
-    if (!poster) continue;
-    const img = new Image();
-    img.decoding = "async";
-    img.src = poster;
-  }
+  // Stagger so poster generation does not compete with the active video stream.
+  videos.forEach((item, i) => {
+    window.setTimeout(() => {
+      const poster = buildPoster(item);
+      if (!poster) return;
+      const img = new Image();
+      img.decoding = "async";
+      img.src = poster;
+    }, i * 700);
+  });
 }

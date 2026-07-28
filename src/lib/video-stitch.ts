@@ -252,12 +252,89 @@ export async function extractLastFrameJpeg(sourceUrl: string): Promise<Buffer> {
   }
 }
 
-/** First-frame JPEG for Assets posters / Edit start-frame. */
+/** First-frame JPEG for Assets posters / Edit start-frame.
+ * Prefer seeking without downloading the whole MP4 (remote URL or local file).
+ */
 export async function extractFirstFrameJpeg(sourceUrl: string): Promise<Buffer> {
   const work = await mkdtemp(path.join(tmpdir(), "vyronix-poster-"));
-  const videoPath = path.join(work, "in.mp4");
   const framePath = path.join(work, "frame.jpg");
   try {
+    // 1) Local generations path / file:// — seek on disk, no full copy.
+    const localPath = (() => {
+      if (sourceUrl.startsWith("file://")) {
+        return sourceUrl.replace(/^file:\/\//, "");
+      }
+      if (sourceUrl.startsWith("/generations/")) {
+        return resolveGenerationFile(sourceUrl);
+      }
+      return null;
+    })();
+    if (localPath) {
+      await run("ffmpeg", [
+        "-y",
+        "-ss",
+        "0.05",
+        "-i",
+        localPath,
+        "-frames:v",
+        "1",
+        "-q:v",
+        "3",
+        framePath,
+      ]);
+      const buf = await readFile(framePath);
+      if (buf.length < 200) throw new Error("Poster frame too small");
+      return buf;
+    }
+
+    // 2) Remote HTTPS — let ffmpeg pull only what it needs (no full arrayBuffer).
+    if (/^https?:\/\//i.test(sourceUrl)) {
+      try {
+        await run("ffmpeg", [
+          "-y",
+          "-ss",
+          "0.05",
+          "-i",
+          sourceUrl,
+          "-frames:v",
+          "1",
+          "-q:v",
+          "3",
+          framePath,
+        ]);
+        const buf = await readFile(framePath);
+        if (buf.length >= 200) return buf;
+      } catch {
+        // Fall through to partial Range fetch.
+      }
+
+      // 3) Partial Range (~2MB) — enough for many MP4 first frames.
+      try {
+        const partial = path.join(work, "partial.mp4");
+        const ok = await downloadPartialToFile(sourceUrl, partial, 2 * 1024 * 1024);
+        if (ok) {
+          await run("ffmpeg", [
+            "-y",
+            "-ss",
+            "0.05",
+            "-i",
+            partial,
+            "-frames:v",
+            "1",
+            "-q:v",
+            "3",
+            framePath,
+          ]);
+          const buf = await readFile(framePath);
+          if (buf.length >= 200) return buf;
+        }
+      } catch {
+        // Last resort: full download.
+      }
+    }
+
+    // 4) Full materialize (legacy / stubborn CDNs).
+    const videoPath = path.join(work, "in.mp4");
     await materializeVideo(sourceUrl, videoPath);
     try {
       await run("ffmpeg", [
@@ -280,6 +357,33 @@ export async function extractFirstFrameJpeg(sourceUrl: string): Promise<Buffer> 
     return buf;
   } finally {
     await rm(work, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+/** Download at most `maxBytes` via HTTP Range (best-effort). */
+async function downloadPartialToFile(
+  url: string,
+  dest: string,
+  maxBytes: number,
+): Promise<boolean> {
+  try {
+    const res = await fetch(url, {
+      redirect: "follow",
+      headers: {
+        Accept: "video/mp4,video/*,*/*;q=0.8",
+        Range: `bytes=0-${Math.max(0, maxBytes - 1)}`,
+        "User-Agent":
+          "Mozilla/5.0 (compatible; VyronixVideoStitch/1.2; +https://vyronix.app)",
+        Referer: "https://vyronix.app/",
+      },
+    });
+    if (!(res.ok || res.status === 206)) return false;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length < 1000) return false;
+    await writeFile(dest, buf);
+    return true;
+  } catch {
+    return false;
   }
 }
 

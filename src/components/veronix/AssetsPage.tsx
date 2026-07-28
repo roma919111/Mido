@@ -356,7 +356,7 @@ function FeedVideoSlide({
             playsInline
             loop
             muted={muted}
-            preload={active ? "auto" : loadMedia ? "metadata" : "none"}
+            preload={active || loadMedia ? "metadata" : "none"}
             controls={false}
             controlsList="nodownload"
             onLoadedMetadata={(e) => {
@@ -787,8 +787,15 @@ export function AssetsPage() {
       await listPromise;
       if (cancelled) return;
       setLoading(false);
-      // Background sync only — never block the first paint.
-      void loadAssets({ sync: true });
+      // Background sync only when something may still be generating —
+      // avoid heavy stitch/clarity work on every Assets open.
+      const cachedNow = readAssetsCache() || [];
+      const needsSync = cachedNow.some(
+        (a) => a.status === "running" || a.status === "pending",
+      );
+      if (needsSync) {
+        void loadAssets({ sync: true });
+      }
     })();
     return () => {
       cancelled = true;
