@@ -70,6 +70,8 @@ const PREVIEW_POLL_ATTEMPTS = 80;
 const PREVIEW_POLL_MS = 5000;
 /** Drop restored "running" jobs that outlived the job (no server progress). */
 const STALE_RUNNING_GRACE_MS = 12 * 60 * 1000;
+/** Deduplicate concurrent status pollers (hydrate + generate). */
+const activePreviewPolls = new Set<string>();
 
 const IMAGE_ASPECTS = ["1:1", "16:9", "9:16", "4:3", "3:4"] as const;
 const VIDEO_ASPECT = "16:9";
@@ -424,7 +426,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
   useEffect(() => {
     if (!previewHydrated) return;
-    writeStoredJobs(jobs);
+    const t = window.setTimeout(() => writeStoredJobs(jobs), 400);
+    return () => window.clearTimeout(t);
   }, [jobs, previewHydrated]);
 
   // Free first visit: lock Veronix defaults to 4s model / 480p (+ stock intro).
@@ -1067,9 +1070,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     _runId?: number,
     clientId?: string,
   ) {
-    // Always patch by assetId/clientId so parallel jobs keep updating
-    // even after the user starts another Generate.
+    const pollKey = assetId || historyId || clientId || "";
+    if (!pollKey) return;
+    if (activePreviewPolls.has(pollKey)) return;
+    activePreviewPolls.add(pollKey);
+
     const match = { clientId, assetId, historyId: historyId || undefined };
+    try {
     for (let i = 0; i < PREVIEW_POLL_ATTEMPTS; i += 1) {
       await new Promise((r) => setTimeout(r, mediaType === "image" ? 2500 : PREVIEW_POLL_MS));
       try {
@@ -1160,20 +1167,34 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           await onUserRefresh().catch(() => undefined);
           return;
         }
-        setJobs((prev) =>
-          patchJob(prev, match, {
+        // Avoid re-rendering the whole studio when nothing meaningful changed.
+        setJobs((prev) => {
+          const cur = prev.find(
+            (j) =>
+              (match.clientId && j.clientId === match.clientId) ||
+              (match.assetId && j.assetId === match.assetId) ||
+              (match.historyId && j.historyId === match.historyId),
+          );
+          if (
+            cur &&
+            cur.status === "running" &&
+            (cur.historyId || "") === (historyId || "") &&
+            (cur.assetId || "") === (assetId || "")
+          ) {
+            return prev;
+          }
+          return patchJob(prev, match, {
             status: "running",
             historyId: historyId || undefined,
             assetId,
             mediaType,
             startedAt,
             targetSeconds: countdownTargetSeconds,
-          }),
-        );
-        setStatus("جاري التوليد…");
+          });
+        });
         if (typeof data.pollAfterSeconds === "number" && data.pollAfterSeconds > 2) {
           await new Promise((r) =>
-            setTimeout(r, Math.min(data.pollAfterSeconds! * 1000, 20000)),
+            setTimeout(r, Math.min(data.pollAfterSeconds! * 1000, 12_000)),
           );
         }
       } catch {
@@ -1182,6 +1203,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     }
     setStatus("ما زال التوليد جاريًا — افتح Assets لمتابعة النتيجة");
     await onUserRefresh().catch(() => undefined);
+    } finally {
+      activePreviewPolls.delete(pollKey);
+    }
   }
 
   async function handleShare(job?: StudioJob | null) {

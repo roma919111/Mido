@@ -4,9 +4,7 @@ import { useEffect, useState } from "react";
 
 /**
  * Visual stopwatch for generate UI.
- * - Circular clock face (شكل ساعة)
- * - Counts UP (not countdown)
- * - Display seconds advance ~12× wall time so motion feels very fast
+ * Hand spins via CSS (GPU). Digits update every 250ms only.
  */
 
 function pad2(n: number) {
@@ -20,16 +18,13 @@ export function formatFastClock(displaySec: number): string {
   return `${pad2(m)}:${pad2(s)}`;
 }
 
-/** Accelerated upward seconds from a wall-clock start. */
 export function fastDisplaySeconds(startedAtMs: number, nowMs = Date.now()): number {
   const wallMs = Math.max(0, nowMs - startedAtMs);
-  // ~12 display-seconds per real second.
   return wallMs / (1000 / 12);
 }
 
 type GenerateClockProps = {
   startedAt: number;
-  /** large = card center, compact = header chip */
   size?: "large" | "compact";
   className?: string;
 };
@@ -39,20 +34,19 @@ export function GenerateClock({
   size = "large",
   className = "",
 }: GenerateClockProps) {
-  const [now, setNow] = useState(() => Date.now());
+  const safeStart =
+    Number.isFinite(startedAt) && startedAt > 0 ? startedAt : Date.now();
+  const [label, setLabel] = useState(() =>
+    formatFastClock(fastDisplaySeconds(safeStart)),
+  );
 
   useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 50);
+    const tick = () =>
+      setLabel(formatFastClock(fastDisplaySeconds(safeStart)));
+    tick();
+    const id = window.setInterval(tick, 250);
     return () => window.clearInterval(id);
-  }, []);
-
-  const safeStart =
-    Number.isFinite(startedAt) && startedAt > 0 ? startedAt : now;
-  const display = fastDisplaySeconds(safeStart, now);
-  const whole = Math.floor(display);
-  const frac = display - whole;
-  const handDeg = (whole % 60) * 6 + frac * 6;
-  const label = formatFastClock(whole);
+  }, [safeStart]);
 
   if (size === "compact") {
     return (
@@ -60,13 +54,10 @@ export function GenerateClock({
         className={`inline-flex items-center gap-1.5 rounded-full border border-[#22f0ff]/35 bg-[#22f0ff]/10 px-2 py-0.5 ${className}`}
         aria-label={`عداد التوليد ${label}`}
       >
-        <span className="relative inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-[#22f0ff]/80 bg-black/40">
+        <span className="relative inline-flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-[#22f0ff]/80 bg-black/40">
           <span
-            className="absolute left-1/2 top-1/2 h-[8px] w-[1.5px] rounded-full bg-[#22f0ff]"
-            style={{
-              transformOrigin: "50% 100%",
-              transform: `translate(-50%, -100%) rotate(${handDeg}deg)`,
-            }}
+            className="vyronix-clock-hand absolute left-1/2 top-1/2 h-[8px] w-[1.5px] rounded-full bg-[#22f0ff]"
+            style={{ transformOrigin: "50% 100%" }}
           />
           <span className="absolute h-1 w-1 rounded-full bg-white" />
         </span>
@@ -77,49 +68,40 @@ export function GenerateClock({
     );
   }
 
-  const dim = 140;
-  const cx = dim / 2;
-  const cy = dim / 2;
-  const r = 58;
-  const handLen = 42;
-  const rad = ((handDeg - 90) * Math.PI) / 180;
-  const hx = cx + Math.cos(rad) * handLen;
-  const hy = cy + Math.sin(rad) * handLen;
-
   return (
     <div
       className={`flex flex-col items-center gap-2 ${className}`}
       aria-label={`عداد التوليد ${label}`}
     >
-      <div className="relative" style={{ width: dim, height: dim }}>
+      <div className="relative h-[140px] w-[140px]">
         <svg
-          width={dim}
-          height={dim}
-          viewBox={`0 0 ${dim} ${dim}`}
+          width={140}
+          height={140}
+          viewBox="0 0 140 140"
           className="drop-shadow-[0_0_14px_rgba(34,240,255,0.4)]"
         >
           <circle
-            cx={cx}
-            cy={cy}
-            r={r + 5}
+            cx="70"
+            cy="70"
+            r="63"
             fill="rgba(0,0,0,0.55)"
             stroke="rgba(34,240,255,0.4)"
             strokeWidth="2"
           />
           <circle
-            cx={cx}
-            cy={cy}
-            r={r}
+            cx="70"
+            cy="70"
+            r="58"
             fill="none"
             stroke="rgba(34,240,255,0.65)"
             strokeWidth="3.5"
           />
           {Array.from({ length: 12 }).map((_, i) => {
             const a = ((i * 30 - 90) * Math.PI) / 180;
-            const x1 = cx + Math.cos(a) * (r - 2);
-            const y1 = cy + Math.sin(a) * (r - 2);
-            const x2 = cx + Math.cos(a) * (r - 12);
-            const y2 = cy + Math.sin(a) * (r - 12);
+            const x1 = 70 + Math.cos(a) * 56;
+            const y1 = 70 + Math.sin(a) * 56;
+            const x2 = 70 + Math.cos(a) * 46;
+            const y2 = 70 + Math.sin(a) * 46;
             return (
               <line
                 key={i}
@@ -133,17 +115,12 @@ export function GenerateClock({
               />
             );
           })}
-          <line
-            x1={cx}
-            y1={cy}
-            x2={hx}
-            y2={hy}
-            stroke="#22f0ff"
-            strokeWidth="3"
-            strokeLinecap="round"
-          />
-          <circle cx={cx} cy={cy} r="5" fill="#22f0ff" />
+          <circle cx="70" cy="70" r="5" fill="#22f0ff" />
         </svg>
+        <span
+          className="vyronix-clock-hand pointer-events-none absolute left-1/2 top-1/2 mt-[-42px] block h-[42px] w-[3px] rounded-full bg-[#22f0ff]"
+          style={{ transformOrigin: "50% 100%" }}
+        />
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center pt-10">
           <span className="rounded-lg bg-black/65 px-2.5 py-1 font-mono text-xl font-black tabular-nums tracking-widest text-[#22f0ff] ring-1 ring-[#22f0ff]/35">
             {label}

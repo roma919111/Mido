@@ -150,6 +150,19 @@ body {
   }
 }
 
+@keyframes vyronix-clock-spin {
+  from {
+    transform: translateX(-50%) rotate(0deg);
+  }
+  to {
+    transform: translateX(-50%) rotate(360deg);
+  }
+}
+
+.vyronix-clock-hand {
+  animation: vyronix-clock-spin 0.5s linear infinite;
+}
+
 select option {
   background: #12151c;
   color: #f3f5f7;

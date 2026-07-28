@@ -433,6 +433,10 @@ export async function POST(request: Request) {
     }
 
     const results = [];
+    // Persist character refs once — not once per variant (was repeating heavy I/O).
+    const sharedSavedRefs = await persistableReferenceImages(
+      Array.isArray(body.referenceImages) ? body.referenceImages : undefined,
+    );
     for (const quote of billedQuotes) {
       const catalog = getCatalogModel(quote.modelId);
       const uiResolution = freeTrial
@@ -445,9 +449,7 @@ export async function POST(request: Request) {
         : Math.min(bounds.max, Math.max(bounds.min, requestedDuration));
 
       const cleanPrompt = stripInternalPromptNotes(prompt);
-      const savedRefs = await persistableReferenceImages(
-        Array.isArray(body.referenceImages) ? body.referenceImages : undefined,
-      );
+      const savedRefs = sharedSavedRefs;
       const asset = await createAsset({
         userId: user.id,
         mediaType: media,
@@ -534,11 +536,29 @@ export async function POST(request: Request) {
         });
 
         /**
-         * CreateStudio sends waitForResult:false. We still do a short poll
-         * (~90s) so typical 4s→~55s jobs finish in-request and privacy/mute
-         * retries can run. Avoid the old 200–240s wait that blew Railway
-         * maxDuration and left multi-shot cards stuck for 30+ minutes.
+         * When CreateStudio sends waitForResult:false, return `running` as soon
+         * as the BytePlus task id is persisted. Waiting ~90s *per variant* made
+         * multi-generate hang the UI for minutes and blow Railway maxDuration.
+         * Client + Assets poll finish the job.
          */
+        if (body.waitForResult !== true && !body.sequencePart) {
+          results.push({
+            assetId: asset.id,
+            modelId: quote.modelId,
+            historyId,
+            status: "running",
+            urls: [] as string[],
+            creditsUsed: quote.totalCredits,
+            freeTrial,
+            needsBrandOutro: freeTrial,
+            live: true,
+            provider: "byteplus",
+            tool: "byteplus_contents_generations",
+            quote,
+          });
+          continue;
+        }
+
         const waitMs = body.waitForResult === true ? 240_000 : 90_000;
         const finished = await waitForBytePlusVideoTask(created.id, {
           timeoutMs: body.sequencePart

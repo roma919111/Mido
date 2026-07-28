@@ -202,7 +202,11 @@ function ResultCard({
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-1 px-2 text-center">
             {waiting ? (
-              <GenerateClock startedAt={clockStart} size="large" />
+              <div className="flex flex-col items-center gap-2">
+                <Loader2 className="h-7 w-7 animate-spin text-[#22f0ff]" />
+                <p className="text-sm font-semibold text-white">جاري التوليد</p>
+                <GenerateClock startedAt={clockStart} size="compact" />
+              </div>
             ) : failed ? (
               <p className="text-[11px] font-semibold leading-snug text-rose-200">
                 {job.error || "فشل التوليد"}
