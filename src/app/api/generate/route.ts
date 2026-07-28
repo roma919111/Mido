@@ -35,6 +35,7 @@ import {
   stripInternalPromptNotes,
 } from "@/lib/character-names";
 import { toSemiRealisticScenePrompt } from "@/lib/reference-sanitize";
+import { translateBytePlusError } from "@/lib/byteplus-errors";
 import { saveLocalImage } from "@/lib/local-media";
 import type { VisualReference } from "@/lib/types";
 
@@ -484,6 +485,11 @@ export async function POST(request: Request) {
           keptRefs.push(r);
           referenceUrls.push(u);
         }
+        if (referenceUrls.length) {
+          console.info(
+            `[veronix] character refs AI-filtered before BytePlus: ${referenceUrls.length}/${orderedRefList.length}`,
+          );
+        }
 
         // Seedance: character stills always use multimodal reference_image + @ImageN.
         // Stills are AI-digitized first; prompt is framed as digital AI characters.
@@ -591,11 +597,7 @@ export async function POST(request: Request) {
                       "BytePlus generation failed",
                   )
                 : "BytePlus generation failed";
-          const errMsg = /InputImageSensitive|PrivacyInformation|real person/i.test(
-            rawErr,
-          )
-            ? "الصورة المرجعية رُفضت من BytePlus. أعدنا المحاولة تلقائياً — إن فشل استخدم نفس أسلوب الصور التي قُبلت سابقًا (وليست لقطة هاتف طويلة). تم استرجاع الكريديت."
-            : rawErr;
+          const errMsg = translateBytePlusError(rawErr);
           if (freeTrial) {
             await updateAsset(asset.id, user.id, {
               historyId,
@@ -654,9 +656,7 @@ export async function POST(request: Request) {
         });
       } catch (err) {
         const raw = err instanceof Error ? err.message : "BytePlus generation failed";
-        const message = /InputImageSensitive|PrivacyInformation|real person/i.test(raw)
-          ? "الصورة المرجعية رُفضت من BytePlus. أعدنا المحاولة تلقائياً — إن فشل استخدم نفس أسلوب الصور التي قُبلت سابقًا (وليست لقطة هاتف طويلة). تم استرجاع الكريديت."
-          : raw;
+        const message = translateBytePlusError(raw);
         console.error("[veronix] BytePlus generation failed (no OpenArt fallback):", raw);
         if (freeTrial) {
           await updateAsset(asset.id, user.id, {

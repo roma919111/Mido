@@ -8,6 +8,7 @@ import { getCurrentUser } from "@/lib/customer-auth";
 import { findAssetByHistoryId, findAssetById, updateAsset } from "@/lib/db";
 import { ensureClarityUrl } from "@/lib/ensure-clarity";
 import { refundFailedAssetCredits } from "@/lib/credit-refund";
+import { translateBytePlusError } from "@/lib/byteplus-errors";
 
 export const runtime = "nodejs";
 
@@ -94,7 +95,9 @@ export async function GET(request: Request) {
 
     const user = await getCurrentUser().catch(() => null);
     let creditsRefunded = false;
-    let failureError = errMsg || "BytePlus generation failed";
+    let failureError = errMsg
+      ? translateBytePlusError(errMsg)
+      : "فشل التوليد من BytePlus لسبب غير معروف.";
 
     if (user && (urls[0] || status === "FAILED")) {
       const byHistory = await findAssetByHistoryId(user.id, historyId);
@@ -120,7 +123,7 @@ export async function GET(request: Request) {
           const refund = await refundFailedAssetCredits({
             userId: user.id,
             assetId: targetId,
-            errorMessage: errMsg || "BytePlus generation failed",
+            errorMessage: failureError,
           });
           if (keepHidden) {
             await updateAsset(targetId, user.id, { hidden: true }).catch(() => null);

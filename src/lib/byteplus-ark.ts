@@ -27,8 +27,18 @@ const DEFAULT_MODEL = "dreamina-seedance-2-0-mini-260615";
 async function toCompressedDataUrl(bytes: Buffer, mimeHint?: string): Promise<string> {
   try {
     const out = await compressReferenceForBytePlus(bytes);
+    console.info(
+      "[veronix] AI digital character filter applied before BytePlus",
+      `inBytes=${bytes.length}`,
+      `outBytes=${out.length}`,
+      `mime=${mimeHint || "image/jpeg"}`,
+    );
     return `data:image/jpeg;base64,${out.toString("base64")}`;
-  } catch {
+  } catch (err) {
+    console.warn(
+      "[veronix] AI digital character filter failed:",
+      err instanceof Error ? err.message : err,
+    );
     try {
       const out = await sharp(bytes)
         .rotate()

@@ -17,6 +17,7 @@ import {
 import { PRODUCT_PER_SHOT_SECONDS } from "@/lib/shot-plan";
 import { VERONIX_MODEL_ID } from "@/lib/free-trial";
 import { toSemiRealisticScenePrompt } from "@/lib/reference-sanitize";
+import { translateBytePlusError } from "@/lib/byteplus-errors";
 import { ensureClarityUrl, needsClarityGrade } from "@/lib/ensure-clarity";
 import { refundFailedAssetCredits } from "@/lib/credit-refund";
 import { concatVideos } from "@/lib/video-stitch";
@@ -170,19 +171,20 @@ async function syncRunningAssets(userId: string) {
             hidden: asset.mode === "sequence-part" ? true : asset.hidden === true,
           });
         } else if (status === "FAILED") {
-          const errMsg =
+          const rawErr =
             typeof task.error === "string"
               ? task.error
               : task.error && typeof task.error === "object"
                 ? String(task.error.message || task.error.code || "BytePlus generation failed")
                 : "BytePlus generation failed";
+          const errMsg = translateBytePlusError(rawErr);
           const alreadyMuted = Boolean(asset.error?.includes("[muted-retry]"));
           const alreadyPrivacy = Boolean(asset.error?.includes("[privacy-retry]"));
           const sensitive = /OutputAudioSensitive|SensitiveContent|sensitive/i.test(
-            errMsg,
+            rawErr,
           );
           const privacy = /InputImageSensitive|PrivacyInformation|real person/i.test(
-            errMsg,
+            rawErr,
           );
           if (privacy && !alreadyPrivacy && asset.prompt?.trim()) {
             try {
@@ -216,7 +218,7 @@ async function syncRunningAssets(userId: string) {
                 status: "running",
                 url: "",
                 error:
-                  "[privacy-retry] أُعيد تنعيم سينمائي خفيف للصور والوصف وأُعيد التوليد",
+                  "[privacy-retry] أُعيد تطبيق فلتر AI الرقمي على الشخصيات وأُعيد التوليد",
                 hidden: asset.mode === "sequence-part" ? true : false,
               });
               continue;
