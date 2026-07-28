@@ -15,7 +15,6 @@ import {
   resolveImageReference,
   VERONIX_IMAGE_MODEL_ID,
 } from "@/lib/byteplus-image";
-import { stylizeReferenceImage } from "@/lib/reference-sanitize";
 import { ensureClarityUrl } from "@/lib/ensure-clarity";
 import {
   FREE_VERONIX_MODEL_DURATION_SECONDS,
@@ -403,24 +402,9 @@ export async function POST(request: Request) {
         ).filter((u): u is string => Boolean(u));
 
         // Seedance: first/last XOR reference_image.
-        // «رفع الشخصيات» → reference_image (do NOT stylize upfront — keeps likeness).
+        // Keep photoreal stills as-is. Privacy retries (if any) live in createBytePlusVideoTask.
         if (startUrl) {
           referenceUrls = [];
-          try {
-            startUrl = await stylizeReferenceImage(startUrl);
-          } catch (styleErr) {
-            console.warn(
-              "[veronix] start-frame stylize skipped:",
-              styleErr instanceof Error ? styleErr.message : styleErr,
-            );
-          }
-          if (lastUrl) {
-            try {
-              lastUrl = await stylizeReferenceImage(lastUrl);
-            } catch {
-              // keep original last frame
-            }
-          }
         } else if (referenceUrls.length) {
           startUrl = null;
           lastUrl = null;
@@ -432,7 +416,7 @@ export async function POST(request: Request) {
           const tags = referenceUrls
             .map((_, i) => `@Image${i + 1}`)
             .join(", ");
-          finalPrompt = `${prompt.trim()}\n\nCharacters: match appearance and wardrobe from ${tags}. Keep identity consistent across the shot.`;
+          finalPrompt = `${prompt.trim()}\n\nCharacters: match appearance and wardrobe from ${tags}. Keep a photoreal live-action look (not CGI or cartoon). Keep identity consistent across the shot.`;
         }
 
         const createInput = {

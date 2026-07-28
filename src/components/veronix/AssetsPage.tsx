@@ -163,18 +163,20 @@ function FeedVideoSlide({
     if (!el || !canPlay) return;
     el.muted = muted;
     if (active) {
+      // Don't keep the slide black if loadeddata is slow/missing on mobile.
+      const revealTimer = window.setTimeout(() => setVideoReady(true), 1200);
       const play = el.play();
       if (play && typeof play.catch === "function") {
         play.catch(() => undefined);
       }
-    } else {
-      el.pause();
-      setVideoReady(false);
-      try {
-        el.currentTime = 0;
-      } catch {
-        // ignore
-      }
+      return () => window.clearTimeout(revealTimer);
+    }
+    el.pause();
+    setVideoReady(false);
+    try {
+      el.currentTime = 0;
+    } catch {
+      // ignore
     }
   }, [active, muted, canPlay, src]);
 
@@ -301,17 +303,21 @@ function FeedVideoSlide({
           ) : null}
           <video
             ref={videoRef}
-            src={active ? src || undefined : undefined}
+            src={active || loadMedia ? src || undefined : undefined}
             poster={!posterFailed && poster ? poster : undefined}
             playsInline
             loop
             muted={muted}
-            preload={active ? "metadata" : "none"}
+            preload={active ? "auto" : loadMedia ? "metadata" : "none"}
             controls={false}
             controlsList="nodownload"
             onLoadedData={() => setVideoReady(true)}
-            onWaiting={() => setVideoReady(false)}
+            onCanPlay={() => setVideoReady(true)}
             onPlaying={() => setVideoReady(true)}
+            onError={() => {
+              // Keep poster visible; allow retry when user scrolls back.
+              setVideoReady(false);
+            }}
             className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-200 ${
               active && videoReady ? "opacity-100" : "opacity-0"
             }`}

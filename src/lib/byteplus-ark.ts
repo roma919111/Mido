@@ -308,6 +308,8 @@ export async function createBytePlusVideoTask(
   }
 
   // If multimodal reference_image is rejected, fall back to first character as first_frame.
+  // Do NOT treat generic "invalid" / image_url fetch errors as multimodal failures —
+  // those need a real media-url fix, not a CGI privacy rewrite.
   if (
     !res.ok &&
     input.referenceImageUrls?.length &&
@@ -315,8 +317,8 @@ export async function createBytePlusVideoTask(
   ) {
     const msg = errorTextFromCreate(data, res.status);
     if (
-      /reference_image|role|not support|invalid|multimodal|content/i.test(msg) ||
-      res.status === 400
+      /reference_image|role.*not support|multimodal|does not support/i.test(msg) &&
+      !/image_url|resource not found|not valid/i.test(msg)
     ) {
       const first = input.referenceImageUrls[0]!;
       payload = buildCreatePayload(
@@ -332,8 +334,8 @@ export async function createBytePlusVideoTask(
     }
   }
 
-  // Real-person privacy block on stills — rewrite as semi-realistic
-  // scene + stylize; last resort drop images entirely.
+  // Privacy block: prefer keeping photoreal refs. Try prompt-only rewrite first,
+  // then a light grade — avoid heavy CGI stylize that changes identity.
   const hasImages = Boolean(
     input.startFrameUrl || (input.referenceImageUrls && input.referenceImageUrls.length),
   );
@@ -345,32 +347,46 @@ export async function createBytePlusVideoTask(
         prompt: toSemiRealisticScenePrompt(input.prompt),
       };
       try {
-        if (input.startFrameUrl) {
-          const styled = await stylizeReferenceImage(input.startFrameUrl);
-          payload = buildCreatePayload(rewritten, {
-            frameUrl: styled,
-            lastFrameUrl: input.lastFrameUrl || null,
-            referenceUrls: [],
-            imageRole: "first_frame",
-            generateAudio: Boolean(payload.generate_audio),
-          });
-        } else {
-          const styledRefs: string[] = [];
-          for (const u of input.referenceImageUrls || []) {
-            try {
-              styledRefs.push(await stylizeReferenceImage(u));
-            } catch {
-              styledRefs.push(u);
-            }
-          }
-          payload = buildCreatePayload(rewritten, {
-            frameUrl: null,
-            referenceUrls: styledRefs,
-            generateAudio: Boolean(payload.generate_audio),
-          });
-        }
+        // 1) Same photos + photoreal cinematic prompt
+        payload = buildCreatePayload(rewritten, {
+          frameUrl: input.startFrameUrl || null,
+          lastFrameUrl: input.lastFrameUrl || null,
+          referenceUrls: input.startFrameUrl ? [] : input.referenceImageUrls || [],
+          imageRole: input.startFrameUrl ? "first_frame" : "reference_image",
+          generateAudio: Boolean(payload.generate_audio),
+        });
         ({ res, data } = await postCreateTask(payload));
-        // Last resort: keep motion from the rewritten prompt only (no still).
+
+        // 2) Light grade only if still blocked
+        if (!res.ok && isInputImagePrivacyError(errorTextFromCreate(data, res.status))) {
+          if (input.startFrameUrl) {
+            const styled = await stylizeReferenceImage(input.startFrameUrl);
+            payload = buildCreatePayload(rewritten, {
+              frameUrl: styled,
+              lastFrameUrl: input.lastFrameUrl || null,
+              referenceUrls: [],
+              imageRole: "first_frame",
+              generateAudio: Boolean(payload.generate_audio),
+            });
+          } else {
+            const styledRefs: string[] = [];
+            for (const u of input.referenceImageUrls || []) {
+              try {
+                styledRefs.push(await stylizeReferenceImage(u));
+              } catch {
+                styledRefs.push(u);
+              }
+            }
+            payload = buildCreatePayload(rewritten, {
+              frameUrl: null,
+              referenceUrls: styledRefs,
+              generateAudio: Boolean(payload.generate_audio),
+            });
+          }
+          ({ res, data } = await postCreateTask(payload));
+        }
+
+        // 3) Last resort: prompt only (no stills)
         if (!res.ok && isInputImagePrivacyError(errorTextFromCreate(data, res.status))) {
           payload = buildCreatePayload(rewritten, {
             frameUrl: null,
@@ -382,20 +398,9 @@ export async function createBytePlusVideoTask(
         }
       } catch (styleErr) {
         console.warn(
-          "[veronix] reference stylize failed:",
+          "[veronix] privacy retry failed:",
           styleErr instanceof Error ? styleErr.message : styleErr,
         );
-        try {
-          payload = buildCreatePayload(rewritten, {
-            frameUrl: null,
-            lastFrameUrl: null,
-            referenceUrls: [],
-            generateAudio: false,
-          });
-          ({ res, data } = await postCreateTask(payload));
-        } catch {
-          // fall through to throw below
-        }
       }
     }
   }

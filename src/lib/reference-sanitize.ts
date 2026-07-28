@@ -70,12 +70,12 @@ export async function stylizeReferenceImage(sourceUrl: string): Promise<string> 
     const styled = path.join(work, "styled.jpg");
     await downloadImage(trimmed, raw);
 
-    // Soft CGI / illustrated look: denoise → grade → light blur → film grain.
-    // Keeps composition while reducing "real photograph of a person" signals.
+    // Soft photoreal grade — keep likeness; avoid heavy CGI/cartoon look.
+    // Only used when BytePlus privacy filters reject raw photos.
     const attempts = [
-      "scale=1024:-2:flags=lanczos,hqdn3d=6:4:8:6,eq=contrast=1.28:saturation=1.45:brightness=0.02:gamma=1.08,unsharp=5:5:1.8:5:5:0.4,gblur=sigma=0.7,noise=alls=18:allf=t+u,format=yuvj420p",
-      "scale=1024:-2:flags=lanczos,eq=contrast=1.2:saturation=1.35,gblur=sigma=1.1,noise=alls=22:allf=t,format=yuvj420p",
-      "scale=768:-2,format=yuvj420p",
+      "scale=1280:-2:flags=lanczos,eq=contrast=1.05:saturation=1.06:brightness=0.01,unsharp=3:3:0.4:3:3:0.0,format=yuvj420p",
+      "scale=1024:-2:flags=lanczos,eq=contrast=1.08:saturation=1.08,format=yuvj420p",
+      "scale=1024:-2,format=yuvj420p",
     ];
 
     let ok = false;
@@ -135,25 +135,25 @@ export function isInputImagePrivacyError(message: string): boolean {
   );
 }
 
-const SEMI_REAL_MARK = "مشهد سينمائي شبه واقعي";
+const SEMI_REAL_MARK = "لقطة سينمائية واقعية";
 
 /**
- * When BytePlus rejects a start-frame as a real person, rewrite the prompt as a
- * semi-realistic cinematic/CGI scene so the retry is creative media — not a photo.
+ * When BytePlus rejects a still as a real person, keep a photoreal live-action
+ * look (not cartoon/CGI) while framing it as creative cinematic footage.
  */
 export function toSemiRealisticScenePrompt(prompt: string): string {
   const base = (prompt || "")
     .replace(/\n\n\(جارٍ توليد ودمج[\s\S]*$/u, "")
     .trim();
   if (!base) {
-    return `${SEMI_REAL_MARK} بأسلوب CGI فني، إضاءة سينمائية، تفاصيل واضحة، ليس صورة فوتوغرافية لشخص حقيقي.`;
+    return `${SEMI_REAL_MARK}، إضاءة طبيعية، تفاصيل بشرة واقعية، حركة طبيعية.`;
   }
-  if (base.includes(SEMI_REAL_MARK) || /شبه\s*واقعي/u.test(base)) {
+  if (base.includes(SEMI_REAL_MARK) || /لقطة سينمائية واقعية|live-?action|photoreal/i.test(base)) {
     return base;
   }
   return [
-    `${SEMI_REAL_MARK} بأسلوب CGI / رسم رقمي عالي الجودة (ليست صورة كاميرا لشخص حقيقي).`,
-    "إضاءة سينمائية، ملمس جلدي ناعم مرسوم، ألوان غنية، حركة طبيعية سلسة.",
+    `${SEMI_REAL_MARK} (live-action photoreal)، كاميرا سينمائية، إضاءة طبيعية.`,
+    "تفاصيل بشرة وملابس واقعية، بدون مظهر كرتوني أو CGI أو رسم رقمي.",
     "",
     base,
   ].join("\n");
