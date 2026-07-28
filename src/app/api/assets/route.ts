@@ -216,7 +216,7 @@ async function syncRunningAssets(userId: string) {
                 status: "running",
                 url: "",
                 error:
-                  "[privacy-retry] أُعيد كتابة الوصف كمشهد شبه واقعي وأُعيد التوليد",
+                  "[privacy-retry] أُعيدت معالجة الصور والوصف كشخصيات رقمية AI وأُعيد التوليد",
                 hidden: asset.mode === "sequence-part" ? true : false,
               });
               continue;

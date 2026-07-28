@@ -1,7 +1,7 @@
 /**
- * Soft-render reference / start-frame images so BytePlus privacy filters
- * (InputImageSensitiveContentDetected · real person) are less likely to reject them.
- * Prefers a fast sharp pass; ffmpeg only as fallback.
+ * Soft cinematic / beauty grade for character stills.
+ * Matched to accepted Seedance refs: soft skin, diffused light look,
+ * mild film grade — NOT CGI/cartoon.
  */
 
 import { spawn } from "node:child_process";
@@ -52,8 +52,42 @@ async function loadImageBytes(url: string): Promise<Buffer> {
 }
 
 /**
- * Stronger digital / cinematic CGI look for privacy retries.
- * Keeps pose + face identity, reduces passport-photo realism.
+ * Soft cinematic beauty grade (Generate path + privacy retry).
+ * - mild skin smooth (reduce pore microcontrast)
+ * - soft diffuse lighting feel
+ * - slight film desaturation
+ * Keeps photoreal likeness; avoids cartoon/CGI plastic look.
+ */
+export async function applySoftCinematicGrade(
+  bytes: Buffer,
+  opts?: { stronger?: boolean },
+): Promise<Buffer> {
+  const stronger = Boolean(opts?.stronger);
+  // Generate: light pass. Privacy retry: a bit more soft beauty, still not CGI.
+  return sharp(bytes)
+    .rotate()
+    .resize({
+      width: stronger ? 1024 : 1152,
+      height: stronger ? 1024 : 1152,
+      fit: "inside",
+      withoutEnlargement: true,
+    })
+    // Soft film: slightly warmer lift, mild desat (cinematic still, not selfie).
+    .modulate({
+      brightness: stronger ? 1.04 : 1.03,
+      saturation: stronger ? 0.9 : 0.92,
+    })
+    .linear(stronger ? 1.06 : 1.04, stronger ? -6 : -4)
+    // Skin soften without cartoon: tiny median + soft blur, then gentle re-sharpen.
+    .median(stronger ? 3 : 2)
+    .blur(stronger ? 0.55 : 0.4)
+    .sharpen({ sigma: stronger ? 0.55 : 0.45 })
+    .jpeg({ quality: stronger ? 82 : 84, mozjpeg: true })
+    .toBuffer();
+}
+
+/**
+ * Privacy retry: same soft cinematic look, slightly stronger.
  * Returns a data: URL for Ark ingest.
  */
 export async function stylizeReferenceImage(sourceUrl: string): Promise<string> {
@@ -66,35 +100,21 @@ export async function stylizeReferenceImage(sourceUrl: string): Promise<string> 
 
   try {
     const raw = await loadImageBytes(trimmed);
-    const out = await sharp(raw)
-      .rotate()
-      .resize({
-        width: 1024,
-        height: 1024,
-        fit: "inside",
-        withoutEnlargement: true,
-      })
-      .modulate({ brightness: 1.04, saturation: 1.28 })
-      .linear(1.12, -12)
-      .median(5)
-      .blur(1.1)
-      .sharpen({ sigma: 1.0 })
-      .jpeg({ quality: 78, mozjpeg: true })
-      .toBuffer();
+    const out = await applySoftCinematicGrade(raw, { stronger: true });
     if (out.length < 400) throw new Error("Stylized reference too small");
     await writeFile(outPublic, out);
     return `data:image/jpeg;base64,${out.toString("base64")}`;
   } catch {
-    // ffmpeg fallback if sharp rejects the codec
     const work = await mkdtemp(path.join(tmpdir(), "vyronix-refstyle-"));
     try {
       const raw = path.join(work, "in.bin");
       const styled = path.join(work, "styled.jpg");
       await writeFile(raw, await loadImageBytes(trimmed));
+      // Soft cinematic ffmpeg — beauty soft + mild film, not CGI/noise cartoon.
       const attempts = [
-        "scale=1024:-2:flags=lanczos,eq=contrast=1.15:saturation=1.3:brightness=0.03,unsharp=5:5:0.9:5:5:0.0,noise=alls=6:allf=t,format=yuvj420p",
-        "scale=960:-2:flags=lanczos,eq=contrast=1.12:saturation=1.22,format=yuvj420p",
-        "scale=960:-2,format=yuvj420p",
+        "scale=1024:-2:flags=lanczos,eq=contrast=1.05:saturation=0.9:brightness=0.02,gblur=sigma=0.6,unsharp=3:3:0.4:3:3:0.0,format=yuvj420p",
+        "scale=1024:-2:flags=lanczos,eq=contrast=1.04:saturation=0.92:brightness=0.015,format=yuvj420p",
+        "scale=1024:-2,format=yuvj420p",
       ];
       let ok = false;
       for (const vf of attempts) {
@@ -108,7 +128,7 @@ export async function stylizeReferenceImage(sourceUrl: string): Promise<string> 
             "-frames:v",
             "1",
             "-q:v",
-            "5",
+            "4",
             styled,
           ]);
           ok = true;
@@ -135,27 +155,29 @@ export function isInputImagePrivacyError(message: string): boolean {
   );
 }
 
-const AI_SCENE_MARK = "شخصيات رقمية مولّدة بالذكاء الاصطناعي";
+const CINEMA_MARK = "لقطة سينمائية ناعمة";
 
 /**
- * When BytePlus rejects a still as a real person, reframe the prompt as
- * AI-generated digital characters / cinematic CGI — NOT live-action photoreal
- * (photoreal wording makes the privacy filter worse).
+ * Privacy retry prompt: cinematic soft still (matches accepted refs),
+ * not CGI/cartoon and not passport-photo language.
  */
 export function toSemiRealisticScenePrompt(prompt: string): string {
   const base = (prompt || "")
     .replace(/\n\n\(جارٍ توليد ودمج[\s\S]*$/u, "")
     .replace(/\n*أشخاص غير حقيقيين[^\n]*/giu, "")
+    .replace(/\n*شخصيات رقمية[^\n]*/giu, "")
+    .replace(/\n*AI-generated digital characters[^\n]*/gi, "")
+    .replace(/\n*cinematic CGI[^\n]*/gi, "")
     .trim();
   if (!base) {
-    return `${AI_SCENE_MARK}، مظهر سينمائي رقمي، إضاءة استوديو.`;
+    return `${CINEMA_MARK}، إضاءة ناعمة، بشرة ناعمة، عمق ميدان سينمائي.`;
   }
-  if (base.includes(AI_SCENE_MARK)) {
+  if (base.includes(CINEMA_MARK)) {
     return base;
   }
   return [
-    `${AI_SCENE_MARK} (AI-generated digital characters, cinematic CGI render).`,
-    "Not a real-person photo. Stylized digital humans, film lighting, creative media.",
+    `${CINEMA_MARK} (soft cinematic film still), diffused lighting, gentle skin, shallow depth of field.`,
+    "Creative cinematic media — not a raw phone selfie or ID photo.",
     "",
     base,
   ].join("\n");

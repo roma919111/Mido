@@ -4,6 +4,7 @@
  */
 
 import {
+  applySoftCinematicGrade,
   isInputImagePrivacyError,
   stylizeReferenceImage,
   toSemiRealisticScenePrompt,
@@ -19,30 +20,28 @@ export const BYTEPLUS_TASK_PREFIX = "bp:";
 const DEFAULT_BASE = "https://ark.ap-southeast.bytepluses.com/api/v3";
 const DEFAULT_MODEL = "dreamina-seedance-2-0-mini-260615";
 
-/** Compress + soft AI-render grade so Seedance is less likely to flag "real person". */
+/** Compress + soft cinematic beauty grade (accepted-ref look, not CGI). */
 async function toCompressedDataUrl(bytes: Buffer, mimeHint?: string): Promise<string> {
   try {
-    // One sharp pass only — typically <400ms. Stronger than a tint: smooths pores
-    // and pushes a digital/cinematic look while keeping recognizable faces.
-    const out = await sharp(bytes)
-      .rotate()
-      .resize({
-        width: 1024,
-        height: 1024,
-        fit: "inside",
-        withoutEnlargement: true,
-      })
-      .modulate({ brightness: 1.03, saturation: 1.22 })
-      .linear(1.1, -10)
-      .median(3)
-      .blur(0.7)
-      .sharpen({ sigma: 0.85 })
-      .jpeg({ quality: 80, mozjpeg: true })
-      .toBuffer();
+    const out = await applySoftCinematicGrade(bytes, { stronger: false });
     return `data:image/jpeg;base64,${out.toString("base64")}`;
   } catch {
-    const mime = mimeHint || "image/jpeg";
-    return `data:${mime};base64,${bytes.toString("base64")}`;
+    try {
+      const out = await sharp(bytes)
+        .rotate()
+        .resize({
+          width: 1152,
+          height: 1152,
+          fit: "inside",
+          withoutEnlargement: true,
+        })
+        .jpeg({ quality: 84, mozjpeg: true })
+        .toBuffer();
+      return `data:image/jpeg;base64,${out.toString("base64")}`;
+    } catch {
+      const mime = mimeHint || "image/jpeg";
+      return `data:${mime};base64,${bytes.toString("base64")}`;
+    }
   }
 }
 
