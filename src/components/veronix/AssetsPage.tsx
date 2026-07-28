@@ -23,6 +23,10 @@ import {
 } from "@/lib/generate-eta";
 import { writeEditDraft } from "@/lib/edit-draft";
 import {
+  hydrateReferenceImages,
+  hydrateRefImageUrl,
+} from "@/lib/hydrate-ref-images";
+import {
   cleanAssetPrompt,
   assetPromptTitle,
   veronixDownloadPath,
@@ -258,22 +262,28 @@ function FeedVideoSlide({
           label: "edit-start-frame",
         };
       }
+
+      let characters = await hydrateReferenceImages(item.referenceImages);
+      // Older assets without saved refs: use captured frame as the character still.
+      if (!characters.length && startFrame?.url) {
+        const hydrated = await hydrateRefImageUrl(startFrame.url);
+        if (hydrated) {
+          characters = [
+            {
+              type: "image",
+              id: `edit-char-${item.id}`,
+              url: hydrated,
+              label: "من المشهد",
+            },
+          ];
+        }
+      }
+
       writeEditDraft({
         prompt: prompt || item.prompt || "",
         media: "video",
-        startFrame,
-        referenceImages:
-          Array.isArray(item.referenceImages) && item.referenceImages.length
-            ? item.referenceImages.slice(0, 4)
-            : startFrame
-              ? [
-                  {
-                    ...startFrame,
-                    id: `edit-char-${item.id}`,
-                    label: "من المشهد",
-                  },
-                ]
-              : [],
+        startFrame: characters.length ? null : startFrame,
+        referenceImages: characters,
         sourceAssetId: item.id,
       });
       router.push("/create/video?edit=1");
@@ -615,33 +625,32 @@ function ImageTile({
           <button
             type="button"
             onClick={() => {
-              writeEditDraft({
-                prompt: prompt || item.prompt || "",
-                media: "image",
-                startFrame: item.url
-                  ? {
-                      type: "image",
-                      id: `edit-img-${item.id}`,
-                      url: item.url,
-                      label: "edit-image",
-                    }
-                  : null,
-                referenceImages:
-                  Array.isArray(item.referenceImages) && item.referenceImages.length
-                    ? item.referenceImages.slice(0, 4)
-                    : item.url
-                      ? [
-                          {
-                            type: "image",
-                            id: `edit-img-ref-${item.id}`,
-                            url: item.url,
-                            label: "من الصورة",
-                          },
-                        ]
-                      : [],
-                sourceAssetId: item.id,
-              });
-              router.push("/create/image?edit=1");
+              void (async () => {
+                let characters = await hydrateReferenceImages(
+                  item.referenceImages,
+                );
+                if (!characters.length && item.url) {
+                  const url = await hydrateRefImageUrl(item.url);
+                  if (url) {
+                    characters = [
+                      {
+                        type: "image",
+                        id: `edit-img-ref-${item.id}`,
+                        url,
+                        label: "من الصورة",
+                      },
+                    ];
+                  }
+                }
+                writeEditDraft({
+                  prompt: prompt || item.prompt || "",
+                  media: "image",
+                  startFrame: null,
+                  referenceImages: characters,
+                  sourceAssetId: item.id,
+                });
+                router.push("/create/image?edit=1");
+              })();
             }}
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#22f0ff]"
           >

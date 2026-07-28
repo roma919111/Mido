@@ -284,7 +284,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     const draft = readEditDraft();
     if (!draft) return;
     if (lockedMedia && draft.media !== lockedMedia) {
-      // Still apply video drafts on video studio.
       if (lockedMedia !== "video") return;
     }
     setPrompt(stripInternalPromptNotes(draft.prompt || ""));
@@ -300,17 +299,15 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           isCharacterName(r.label) ? normalizeCharacterName(r.label) : "",
         ),
       );
-      // Keep start frame for composition only when no characters —
-      // Seedance XOR would otherwise drop character refs.
-      if (draft.startFrame?.url && chars.length === 0) {
-        setStartFrame(draft.startFrame);
-        setStartPreview(draft.startFrame.url);
-      } else {
-        setStartFrame(null);
-        setStartPreview(null);
-      }
+      setStartFrame(null);
+      setStartPreview(null);
+      const missingNames = chars.filter(
+        (r) => !isCharacterName(r.label),
+      ).length;
       setStatus(
-        `تم تحميل الوصف و${chars.length} شخصية للتعديل — عدّل ثم Generate`,
+        missingNames
+          ? `تم تحميل ${chars.length} صورة — سمِّ الشخصيات واذكر الأسماء في الوصف ثم Generate`
+          : `تم تحميل ${chars.length} شخصية — تأكد أن الأسماء مذكورة في الوصف ثم Generate`,
       );
     } else if (draft.startFrame?.url) {
       setStartFrame(draft.startFrame);
@@ -318,7 +315,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       setRefs([]);
       setRefPreviews([]);
       setRefNames([]);
-      setStatus("تم تحميل الوصف والإطار للتعديل — أضف شخصيات إن رغبت ثم Generate");
+      setStatus("تم تحميل الوصف والإطار — أضف شخصيات بأسماء للتعرّف الأفضل");
     } else {
       setStatus("تم تحميل الوصف للتعديل — عدّل ثم Generate");
     }
@@ -1746,16 +1743,30 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         <div className="flex flex-wrap gap-3">
           {refPreviews.map((src, i) => (
             <div
-              key={`${src}-${i}`}
+              key={`char-${i}-${refNames[i] || refs[i]?.id || "x"}`}
               className="w-[8.5rem] space-y-1.5 rounded-2xl border border-white/10 bg-black/25 p-1.5 sm:w-[9.5rem]"
             >
-              <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl bg-black/40">
+              <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl bg-[#1a1f2a]">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={src}
                   alt={refNames[i] || `شخصية ${i + 1}`}
-                  className="h-full w-full object-contain"
+                  className="h-full w-full object-cover"
+                  onError={(e) => {
+                    const el = e.currentTarget;
+                    el.style.display = "none";
+                    const fallback = el.nextElementSibling;
+                    if (fallback instanceof HTMLElement) {
+                      fallback.classList.remove("hidden");
+                    }
+                  }}
                 />
+                <div className="hidden absolute inset-0 flex flex-col items-center justify-center gap-1 px-2 text-center">
+                  <span className="text-[10px] font-semibold text-rose-200">
+                    الصورة لا تظهر
+                  </span>
+                  <span className="text-[9px] text-white/45">أعد رفعها</span>
+                </div>
                 <button
                   type="button"
                   className="absolute right-1 top-1 rounded-full bg-black/70 p-0.5"

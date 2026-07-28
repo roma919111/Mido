@@ -109,8 +109,9 @@ export function stripInternalPromptNotes(prompt: string): string {
 }
 
 /**
- * Short Seedance 2.0 binding prompt (API only — never store on the asset).
- * Uses @ImageN tags the model actually understands.
+ * Seedance API prompt only (never store on asset).
+ * Replaces each character name in the scene with `@ImageN (Name)` so the model
+ * binds identity where the name appears — plus a short face/wardrobe line.
  */
 export function buildSeedanceCharacterPrompt(
   userPrompt: string,
@@ -120,27 +121,62 @@ export function buildSeedanceCharacterPrompt(
   const ordered = orderCharacterRefsForBinding(clean, refs);
   if (!ordered.length) return clean;
 
-  const bindings = ordered.map((r, i) => {
-    const tag = `@Image${i + 1}`;
-    const name = isCharacterName(r.label)
-      ? normalizeCharacterName(r.label)
-      : "";
-    return name
-      ? `${tag} is the character "${name}".`
-      : `${tag} is character ${i + 1}.`;
-  });
+  let scene = clean;
+  const named = ordered
+    .map((r, i) => ({
+      i,
+      name: isCharacterName(r.label) ? normalizeCharacterName(r.label) : "",
+    }))
+    .filter((x) => x.name.length >= 2)
+    .sort((a, b) => b.name.length - a.name.length);
 
-  const tags = ordered.map((_, i) => `@Image${i + 1}`).join(" and ");
+  for (const { i, name } of named) {
+    const tag = `@Image${i + 1}`;
+    if (scene.includes(tag)) continue;
+    const pattern = new RegExp(
+      `(^|[^\\p{L}\\p{N}_]|و)(${escapeRegExp(name)})(?=[^\\p{L}\\p{N}_]|$)`,
+      "giu",
+    );
+    scene = scene.replace(pattern, `$1${tag} ($2)`);
+  }
+
+  const intro = ordered
+    .map((r, i) => {
+      const tag = `@Image${i + 1}`;
+      const name = isCharacterName(r.label)
+        ? normalizeCharacterName(r.label)
+        : "";
+      return name
+        ? `${tag} is "${name}" — use this face only for ${name}.`
+        : `${tag} is character ${i + 1} — keep this face.`;
+    })
+    .join(" ");
+
+  const tags = ordered.map((_, i) => `@Image${i + 1}`).join(", ");
   return [
-    bindings.join(" "),
-    clean,
-    `Maintain facial identity from ${tags} throughout. Dress characters in modest clothes that fit this scene (no bikini/lingerie).`,
-  ]
-    .filter(Boolean)
-    .join("\n");
+    intro,
+    scene,
+    `Keep faces matching ${tags}. Modest clothes that fit the scene.`,
+  ].join("\n");
 }
 
-/** @deprecated kept for any legacy imports — prefer buildSeedanceCharacterPrompt */
+/** Single-character path (first_frame) — strongest identity lock on Seedance mini. */
+export function buildFirstFrameCharacterPrompt(
+  userPrompt: string,
+  ref: VisualReference | undefined,
+): string {
+  const clean = stripInternalPromptNotes(userPrompt);
+  const name =
+    ref && isCharacterName(ref.label)
+      ? normalizeCharacterName(ref.label)
+      : "";
+  if (name) {
+    return `${clean}\nThe person in the first frame is "${name}" — keep the same face, hair, and skin throughout. Modest clothes that fit the scene.`;
+  }
+  return `${clean}\nKeep the same face as the first frame throughout. Modest clothes that fit the scene.`;
+}
+
+/** @deprecated */
 export function appendCharacterLinkHint(
   prompt: string,
   _matched: VisualReference[],
@@ -149,9 +185,9 @@ export function appendCharacterLinkHint(
   return buildSeedanceCharacterPrompt(prompt, allRefs);
 }
 
-/** @deprecated prefer buildSeedanceCharacterPrompt wardrobe line */
+/** @deprecated */
 export function withModestWardrobeDirective(prompt: string): string {
   const base = stripInternalPromptNotes(prompt);
   if (!base || /modest clothes that fit/i.test(base)) return base;
-  return `${base}\nDress characters in modest clothes that fit this scene (no bikini/lingerie).`;
+  return `${base}\nModest clothes that fit the scene.`;
 }

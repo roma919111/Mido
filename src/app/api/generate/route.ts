@@ -30,6 +30,7 @@ import {
 } from "@/lib/model-catalog";
 import { loadSyncedCatalog } from "@/lib/openart-catalog-sync";
 import {
+  buildFirstFrameCharacterPrompt,
   buildSeedanceCharacterPrompt,
   stripInternalPromptNotes,
 } from "@/lib/character-names";
@@ -441,19 +442,21 @@ export async function POST(request: Request) {
           referenceUrls.push(u);
         }
 
-        // Seedance: first/last XOR reference_image.
-        // Character identity wins — if refs exist, use multimodal refs (drop start/end).
-        if (referenceUrls.length) {
+        // Seedance mini: 1 character → first_frame (proven identity).
+        // 2+ characters → multimodal reference_image + @Image name injection.
+        let finalPrompt = cleanPrompt;
+        if (referenceUrls.length === 1) {
+          startUrl = referenceUrls[0]!;
+          lastUrl = null;
+          referenceUrls.length = 0;
+          finalPrompt = buildFirstFrameCharacterPrompt(cleanPrompt, keptRefs[0]);
+        } else if (referenceUrls.length > 1) {
           startUrl = null;
           lastUrl = null;
+          finalPrompt = buildSeedanceCharacterPrompt(cleanPrompt, keptRefs);
         }
 
-        // API-only prompt with @ImageN — never written back to the asset.
-        const finalPrompt = referenceUrls.length
-          ? buildSeedanceCharacterPrompt(cleanPrompt, keptRefs)
-          : cleanPrompt;
-
-        if (referenceUrls.length === 0 && refList.length > 0) {
+        if (refList.length > 0 && keptRefs.length === 0) {
           console.warn(
             "[veronix] character refs uploaded but none resolved for BytePlus",
             refList.map((r) => r.url?.slice(0, 48)),
