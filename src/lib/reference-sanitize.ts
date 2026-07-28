@@ -180,8 +180,8 @@ export async function stylizeReferenceImage(sourceUrl: string): Promise<string> 
       const st = await stat(outPublic);
       if (st.size < 400) throw new Error("Stylized reference too small");
       // Guarantee BytePlus min width after ffmpeg scale.
-      let bytes = await readFile(outPublic);
-      bytes = await applySoftCinematicGrade(bytes, { level: "retry" });
+      let bytes: Buffer = await readFile(outPublic);
+      bytes = Buffer.from(await applySoftCinematicGrade(bytes, { level: "retry" }));
       await writeFile(outPublic, bytes);
       return `data:image/jpeg;base64,${bytes.toString("base64")}`;
     } finally {
