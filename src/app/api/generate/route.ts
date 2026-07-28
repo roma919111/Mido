@@ -32,6 +32,7 @@ import { loadSyncedCatalog } from "@/lib/openart-catalog-sync";
 import {
   isCharacterName,
   normalizeCharacterName,
+  withModestWardrobeDirective,
 } from "@/lib/character-names";
 import type { VisualReference } from "@/lib/types";
 
@@ -62,10 +63,16 @@ function characterPromptAppendix(refs: VisualReference[]): string {
       ? normalizeCharacterName(r.label)
       : "";
     return name
-      ? `- ${tag} is "${name}" — match this person's face, hair, skin tone, and wardrobe exactly`
-      : `- ${tag} — match this reference appearance exactly`;
+      ? `- ${tag} = ONLY "${name}" — face/hair/skin from ${tag} only; never swap with another @Image`
+      : `- ${tag} = character ${i + 1} — face/hair/skin from ${tag} only; never swap`;
   });
-  return `\n\nUse these character references:\n${lines.join("\n")}\nKeep a photoreal live-action look (not CGI or cartoon). Keep identity consistent across the shot.`;
+  const antiSwap =
+    refs.length > 1
+      ? `IDENTITY LOCK: Do not swap faces/bodies between ${refs
+          .map((_, i) => `@Image${i + 1}`)
+          .join(" and ")}. Do not mirror identities.`
+      : `IDENTITY LOCK: Keep @Image1 identity consistent; do not replace with a different person.`;
+  return `\n\nUse these character references:\n${lines.join("\n")}\n${antiSwap}\nKeep a photoreal live-action look (not CGI or cartoon).`;
 }
 
 type GenBody = {
@@ -463,9 +470,16 @@ export async function POST(request: Request) {
         let finalPrompt = prompt;
         if (
           referenceUrls.length &&
-          !/Use these character references|@Image1/.test(finalPrompt)
+          !/Use these character references|IDENTITY LOCK|@Image1\s*=/.test(
+            finalPrompt,
+          )
         ) {
           finalPrompt = `${prompt.trim()}${characterPromptAppendix(keptRefs)}`;
+        }
+        // Behind-the-scenes wardrobe: scene-appropriate but non-revealing
+        // (avoids bikini/privacy rejects while keeping face identity from refs).
+        if (referenceUrls.length) {
+          finalPrompt = withModestWardrobeDirective(finalPrompt);
         }
 
         const createInput = {

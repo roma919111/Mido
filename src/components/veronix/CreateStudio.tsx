@@ -1481,6 +1481,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       });
       const linked = resolveCharacterRefsForPrompt(prompt.trim(), namedRefs);
       const activeRefs = linked.refs;
+      // Client hint for binding only — modest wardrobe is applied server-side.
       const finalPrompt = appendCharacterLinkHint(
         prompt.trim(),
         linked.matched,
@@ -1750,11 +1751,15 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           {refPreviews.map((src, i) => (
             <div
               key={`${src}-${i}`}
-              className="w-[5.5rem] space-y-1.5 rounded-2xl border border-white/10 bg-black/25 p-1.5"
+              className="w-[8.5rem] space-y-1.5 rounded-2xl border border-white/10 bg-black/25 p-1.5 sm:w-[9.5rem]"
             >
-              <div className="relative h-16 w-full overflow-hidden rounded-xl">
+              <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl bg-black/40">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={src} alt="" className="h-full w-full object-cover" />
+                <img
+                  src={src}
+                  alt={refNames[i] || `شخصية ${i + 1}`}
+                  className="h-full w-full object-contain"
+                />
                 <button
                   type="button"
                   className="absolute right-1 top-1 rounded-full bg-black/70 p-0.5"
@@ -1806,7 +1811,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             </div>
           ))}
           {refPreviews.length < 4 && (
-            <label className="flex h-[7.25rem] w-[5.5rem] cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border border-dashed border-white/20 text-white/60">
+            <label className="flex aspect-[3/4] w-[8.5rem] cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border border-dashed border-white/20 text-white/60 sm:w-[9.5rem]">
               <ImagePlus className="h-5 w-5" />
               <span className="text-[10px]">إضافة</span>
               <input
@@ -2068,27 +2073,25 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           onClick={() => void handleGenerate()}
           disabled={quoting || !selectedModel?.available}
           className={`relative flex min-w-0 flex-1 items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-5 py-4 text-base font-bold text-white transition duration-150 enabled:active:scale-[0.97] enabled:active:brightness-110 disabled:opacity-70 ${
-            genFlash || generating
+            genFlash
               ? "scale-[0.98] brightness-110 ring-2 ring-white/45"
               : ""
           }`}
         >
-          {quoting || generating ? (
+          {quoting ? (
             <Loader2 className="h-5 w-5 animate-spin" />
           ) : (
             <Sparkles className="h-5 w-5" />
           )}
           {quoting
             ? "يحسب السعر…"
-            : generating
-              ? "جاري الإرسال…"
-              : waitingResult
-                ? "توليد فيديو جديد"
-                : freeTrial
-                  ? "Generate مجاني"
-                  : outputCount > 1
-                    ? `Generate ×${outputCount}`
-                    : "Generate"}
+            : waitingResult || generating
+              ? "توليد فيديو جديد"
+              : freeTrial
+                ? "Generate مجاني"
+                : outputCount > 1
+                  ? `Generate ×${outputCount}`
+                  : "Generate"}
           <span className="rounded-full bg-black/20 px-2.5 py-0.5 text-xs tabular-nums">
             {quoting
               ? "…"
