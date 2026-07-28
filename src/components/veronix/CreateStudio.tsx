@@ -31,6 +31,13 @@ import type { VisualReference } from "@/lib/types";
 import type { SceneState } from "@/lib/prompt-enhance";
 import { fetchJson } from "@/lib/fetch-json";
 import {
+  appendCharacterLinkHint,
+  isCharacterName,
+  matchNamedCharacters,
+  normalizeCharacterName,
+  resolveCharacterRefsForPrompt,
+} from "@/lib/character-names";
+import {
   estimateGenerateSeconds,
   formatStudioCountdownLabel,
   inferTargetSecondsFromAsset,
@@ -141,6 +148,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const [freeTrial, setFreeTrial] = useState(false);
   const [refs, setRefs] = useState<VisualReference[]>([]);
   const [refPreviews, setRefPreviews] = useState<string[]>([]);
+  /** Display names aligned with refPreviews / refs (no @ needed in prompt). */
+  const [refNames, setRefNames] = useState<string[]>([]);
   const [startFrame, setStartFrame] = useState<VisualReference | null>(null);
   const [endFrame, setEndFrame] = useState<VisualReference | null>(null);
   const [startPreview, setStartPreview] = useState<string | null>(null);
@@ -197,6 +206,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     selectedModelId === VERONIX_MODEL_ID &&
     !user?.freeVeronixUsed &&
     (user?.credits ?? 0) <= 0;
+
+  const linkedCharacters = useMemo(
+    () => matchNamedCharacters(prompt, refs),
+    [prompt, refs],
+  );
 
   const allModels = useMemo(
     () => [...imageModels, ...videoModels],
@@ -275,6 +289,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       setStartPreview(draft.startFrame.url);
       setRefs([]);
       setRefPreviews([]);
+      setRefNames([]);
     }
     setStatus("تم تحميل الوصف والصورة للتعديل — عدّل ثم Generate");
     clearEditDraft();
@@ -701,7 +716,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
     // Show every selected thumbnail immediately, then upload in parallel.
     const previews = batch.map((file) => URL.createObjectURL(file));
+    const nextNames = [...refNames, ...batch.map(() => "")].slice(0, 4);
     setRefPreviews((prev) => [...prev, ...previews].slice(0, 4));
+    setRefNames(nextNames);
     setStatus(
       batch.length === 1
         ? "جاري رفع الشخصية…"
@@ -730,7 +747,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       setRefs((prev) => {
         const next = [...prev];
         for (const item of uploaded) {
-          if (item.ref && next.length < 4) next.push(item.ref);
+          if (!item.ref || next.length >= 4) continue;
+          const name = normalizeCharacterName(nextNames[next.length] || "");
+          next.push(name ? { ...item.ref, label: name } : item.ref);
         }
         return next;
       });
@@ -738,12 +757,18 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
     const failed = settled.filter((s) => !s.ref);
     if (failed.length) {
-      setRefPreviews((prev) => {
-        const drop = new Set(failed.map((f) => f.preview));
-        for (const f of failed) {
-          if (f.preview.startsWith("blob:")) URL.revokeObjectURL(f.preview);
-        }
-        return prev.filter((p) => !drop.has(p));
+      const drop = new Set(failed.map((f) => f.preview));
+      for (const f of failed) {
+        if (f.preview.startsWith("blob:")) URL.revokeObjectURL(f.preview);
+      }
+      setRefPreviews((prev) => prev.filter((p) => !drop.has(p)));
+      setRefNames((prev) => {
+        const start = Math.max(0, prev.length - batch.length);
+        return prev.filter((_, idx) => {
+          if (idx < start) return true;
+          const batchIdx = idx - start;
+          return !drop.has(previews[batchIdx]!);
+        });
       });
       setError(failed[0]?.error || "فشل رفع بعض الصور");
     }
@@ -1230,6 +1255,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     endFrame?: VisualReference | null;
     /** Hide intermediate multi-shot clips from Assets */
     sequencePart?: boolean;
+    referenceImages?: VisualReference[];
   }) {
     const { res, data } = await fetchJson<{
       error?: string;
@@ -1259,7 +1285,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         generateAudio: media === "video" ? generateAudio : undefined,
         startFrame: input.startFrame ?? null,
         endFrame: input.endFrame ?? null,
-        referenceImages: refs,
+        referenceImages: input.referenceImages ?? refs,
         waitForResult: false,
         sequencePart: Boolean(input.sequencePart),
       }),
@@ -1378,21 +1404,25 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     );
     try {
       // Single-clip path (images, free trial, or one action)
+      const linked = resolveCharacterRefsForPrompt(prompt.trim(), refs);
+      const activeRefs = linked.refs;
+      const finalPrompt = appendCharacterLinkHint(prompt.trim(), linked.matched);
       const mode =
         media === "image"
-          ? refs.length
+          ? activeRefs.length
             ? "image2image"
             : "text2image"
-          : startFrame || refs.length
+          : startFrame || activeRefs.length
             ? "image2video"
             : "text2video";
 
       const { res, data } = await createOneClip({
-        prompt: prompt.trim(),
+        prompt: finalPrompt,
         mode,
         duration,
         startFrame,
         endFrame,
+        referenceImages: activeRefs,
       });
 
       if (res.status === 401 || data.needsAuth) {
@@ -1608,29 +1638,57 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           <span className="font-normal text-white/45">(اختياري)</span>
         </p>
         <p className="mb-3 text-[11px] leading-relaxed text-white/40">
-          {media === "image"
-            ? "يمكنك اختيار صورتين أو أكثر دفعة واحدة لتوجيه أسلوب الصورة."
-            : "اختر صورتين أو أكثر معاً لتظهر الشخصيات بنفس الملامح في الفيديو."}
+          سمِّ كل شخصية ثم اذكر اسمها في الوصف مباشرة — مثل «محمد ذهب إلى الحديقة» بدون @.
         </p>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-3">
           {refPreviews.map((src, i) => (
-            <div key={`${src}-${i}`} className="relative h-16 w-16 overflow-hidden rounded-xl">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={src} alt="" className="h-full w-full object-cover" />
-              <button
-                type="button"
-                className="absolute right-1 top-1 rounded-full bg-black/70 p-0.5"
-                onClick={() => {
-                  setRefs((r) => r.filter((_, idx) => idx !== i));
-                  setRefPreviews((r) => {
-                    const doomed = r[i];
-                    if (doomed?.startsWith("blob:")) URL.revokeObjectURL(doomed);
-                    return r.filter((_, idx) => idx !== i);
+            <div key={`${src}-${i}`} className="w-20 space-y-1.5">
+              <div className="relative h-16 w-20 overflow-hidden rounded-xl">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={src} alt="" className="h-full w-full object-cover" />
+                <button
+                  type="button"
+                  className="absolute right-1 top-1 rounded-full bg-black/70 p-0.5"
+                  onClick={() => {
+                    setRefs((r) => r.filter((_, idx) => idx !== i));
+                    setRefPreviews((r) => {
+                      const doomed = r[i];
+                      if (doomed?.startsWith("blob:")) URL.revokeObjectURL(doomed);
+                      return r.filter((_, idx) => idx !== i);
+                    });
+                    setRefNames((n) => n.filter((_, idx) => idx !== i));
+                  }}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+              <input
+                type="text"
+                value={refNames[i] || ""}
+                onChange={(e) => {
+                  const value = normalizeCharacterName(e.target.value);
+                  setRefNames((prev) => {
+                    const next = [...prev];
+                    while (next.length <= i) next.push("");
+                    next[i] = value;
+                    return next;
                   });
+                  setRefs((prev) =>
+                    prev.map((ref, idx) =>
+                      idx === i
+                        ? {
+                            ...ref,
+                            label: value || ref.label || "reference",
+                          }
+                        : ref,
+                    ),
+                  );
                 }}
-              >
-                <X className="h-3 w-3" />
-              </button>
+                placeholder={`اسم ${i + 1}`}
+                className="w-full rounded-lg border border-white/10 bg-black/35 px-1.5 py-1 text-center text-[11px] text-white outline-none placeholder:text-white/30"
+                dir="rtl"
+                maxLength={40}
+              />
             </div>
           ))}
           {refPreviews.length < 4 && (
@@ -1681,12 +1739,37 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       )}
 
       <div className="rounded-2xl border border-white/10 bg-[#141821] p-3">
+        {linkedCharacters.length > 0 ? (
+          <div className="mb-2 flex flex-wrap items-center gap-1.5" dir="rtl">
+            <span className="text-[10px] text-white/40">تم الربط:</span>
+            {linkedCharacters.map((c) => (
+              <span
+                key={c.id}
+                className="inline-flex items-center gap-1 rounded-full border border-[#22f0ff]/30 bg-[#22f0ff]/10 px-2 py-0.5 text-[11px] font-semibold text-[#22f0ff]"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={c.url}
+                  alt=""
+                  className="h-4 w-4 rounded-full object-cover"
+                />
+                {normalizeCharacterName(c.label)}
+              </span>
+            ))}
+          </div>
+        ) : refNames.some((n) => isCharacterName(n)) ? (
+          <p className="mb-2 text-[11px] text-white/35" dir="rtl">
+            اكتب اسم الشخصية في الوصف للربط التلقائي — مثال: «محمد ذهب إلى الحديقة»
+          </p>
+        ) : null}
         <textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           rows={5}
           placeholder={
-            media === "image" ? "صف الصورة التي تريدها…" : "صف مشهد الفيديو والحركة…"
+            media === "image"
+              ? "صف الصورة… يمكنك ذكر اسم الشخصية مباشرة"
+              : "صف مشهد الفيديو… اذكر اسم الشخصية مثل: محمد ذهب إلى الحديقة"
           }
           className="w-full resize-y bg-transparent text-[15px] text-white outline-none placeholder:text-white/35"
         />
