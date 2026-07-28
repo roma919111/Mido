@@ -136,7 +136,7 @@ export function resolveCharacterRefsForPrompt(
 export function stripInternalPromptNotes(prompt: string): string {
   if (!prompt) return "";
   let text = prompt;
-  text = text.replace(/\n\nUse these character references:[\s\S]*$/i, "");
+  text = text.replace(/\n+Use these character references:[\s\S]*$/i, "");
   text = text.replace(/\nWARDROBE POLICY[\s\S]*$/i, "");
   text = text.replace(/\nIDENTITY LOCK:[\s\S]*$/i, "");
   text = text.replace(/\n\n@Image\d+ is[\s\S]*$/i, "");
@@ -155,6 +155,8 @@ export function stripInternalPromptNotes(prompt: string): string {
   text = text.replace(/\n\n\(الشخصي[^\n]*المرفقة تمامًا\.\)/g, "");
   text = text.replace(/\n\n\(جارٍ توليد ودمج[\s\S]*$/u, "");
   text = text.replace(/\n\n\(جاري توليد ودمج[\s\S]*$/u, "");
+  // Drop leftover "- @ImageN = ONLY …" bullets from older client builds.
+  text = text.replace(/\n-\s*@Image\d+\s*=\s*ONLY[^\n]*/gi, "");
   return text.trim();
 }
 

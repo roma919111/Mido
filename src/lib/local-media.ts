@@ -25,7 +25,9 @@ export async function saveLocalImage(input: {
 }): Promise<{ localPath: string; visualReference: VisualReference }> {
   await mkdir(GENERATIONS_DIR, { recursive: true });
   const ext = extFromContentType(input.contentType || "image/jpeg", "jpg");
+  // Strip any extension from the label so we never write `name.jpg.jpg`.
   const safeLabel = (input.label || "upload")
+    .replace(/\.[a-z0-9]{2,5}$/i, "")
     .replace(/[^\w.-]+/g, "-")
     .replace(/-+/g, "-")
     .slice(0, 36)
