@@ -3,7 +3,9 @@
 import { memo, useEffect, useRef, useState } from "react";
 import {
   Loader2,
+  Pause,
   Pencil,
+  Play,
   Share2,
   Trash2,
 } from "lucide-react";
@@ -51,8 +53,6 @@ const ResultCard = memo(function ResultCard({
   const [deleting, setDeleting] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [durationSec, setDurationSec] = useState(0);
-  const [showControls, setShowControls] = useState(true);
-  const hideTimer = useRef<number | null>(null);
   const waiting = job.status === "running";
   const failed = job.status === "failed";
   const clockStart =
@@ -83,48 +83,23 @@ const ResultCard = memo(function ResultCard({
         }) || job.url
       : null;
 
-  // Only attach video src after the user taps play — avoids N parallel proxy loads.
-  const [mediaArmed, setMediaArmed] = useState(false);
-
   useEffect(() => {
-    setMediaArmed(false);
     setPlaying(false);
     setDurationSec(0);
-    setShowControls(true);
+    const el = videoRef.current;
+    if (el) {
+      try {
+        el.pause();
+        el.currentTime = 0;
+      } catch {
+        // ignore
+      }
+    }
   }, [src]);
 
-  useEffect(() => {
-    return () => {
-      if (hideTimer.current) window.clearTimeout(hideTimer.current);
-    };
-  }, []);
-
-  const revealControls = () => {
-    setShowControls(true);
-    if (hideTimer.current) window.clearTimeout(hideTimer.current);
-    hideTimer.current = window.setTimeout(() => {
-      const el = videoRef.current;
-      if (el && !el.paused) setShowControls(false);
-    }, 2500);
-  };
-
   const togglePlay = () => {
-    if (!mediaArmed) {
-      setMediaArmed(true);
-      // Play after src mounts on next paint.
-      window.requestAnimationFrame(() => {
-        window.setTimeout(() => {
-          const el = videoRef.current;
-          if (!el) return;
-          revealControls();
-          void el.play().catch(() => undefined);
-        }, 40);
-      });
-      return;
-    }
     const el = videoRef.current;
-    if (!el) return;
-    revealControls();
+    if (!el || !src) return;
     if (el.paused) {
       void el.play().catch(() => undefined);
     } else {
@@ -225,69 +200,46 @@ const ResultCard = memo(function ResultCard({
       <div className="relative aspect-video bg-black/50">
         {src ? (
           <>
-            {posterSrc && !mediaArmed ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={posterSrc}
-                alt=""
-                decoding="async"
-                loading="lazy"
-                className="absolute inset-0 h-full w-full object-contain"
-              />
-            ) : null}
             <video
               ref={videoRef}
               key={src}
-              src={mediaArmed ? src : undefined}
+              src={src}
               poster={posterSrc || undefined}
               playsInline
-              preload="none"
+              preload="metadata"
               controls={false}
               controlsList="nodownload"
-              className={`h-full w-full object-contain ${
-                mediaArmed ? "relative" : "absolute inset-0 opacity-0"
-              }`}
+              className="h-full w-full object-contain"
               onClick={togglePlay}
               onLoadedMetadata={(e) => {
                 const d = e.currentTarget.duration;
                 if (Number.isFinite(d) && d > 0) setDurationSec(d);
               }}
-              onPlay={() => {
-                setPlaying(true);
-                revealControls();
-              }}
-              onPause={() => {
-                setPlaying(false);
-                setShowControls(true);
-              }}
-              onEnded={() => {
-                setPlaying(false);
-                setShowControls(true);
-              }}
+              onPlay={() => setPlaying(true)}
+              onPause={() => setPlaying(false)}
+              onEnded={() => setPlaying(false)}
             />
-            {/* Native-like: tap screen → play + duration at bottom */}
-            {showControls ? (
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex items-end justify-between bg-gradient-to-t from-black/75 via-black/25 to-transparent px-2.5 pb-2 pt-8">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    togglePlay();
-                  }}
-                  className="pointer-events-auto flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-black shadow"
-                  aria-label={playing ? "إيقاف مؤقت" : "تشغيل"}
-                >
-                  {playing ? (
-                    <span className="text-sm font-black">❚❚</span>
-                  ) : (
-                    <span className="translate-x-[1px] text-sm font-black">▶</span>
-                  )}
-                </button>
-                <span className="rounded bg-black/55 px-1.5 py-0.5 font-mono text-[11px] font-bold tabular-nums text-white">
-                  {formatDuration(durationSec)}
-                </span>
-              </div>
-            ) : null}
+            {/* Native media-player controls at the bottom */}
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex items-end justify-between bg-gradient-to-t from-black/75 via-black/25 to-transparent px-2.5 pb-2 pt-8">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  togglePlay();
+                }}
+                className="pointer-events-auto flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-black shadow"
+                aria-label={playing ? "إيقاف مؤقت" : "تشغيل"}
+              >
+                {playing ? (
+                  <Pause className="h-4 w-4" fill="currentColor" />
+                ) : (
+                  <Play className="h-4 w-4 translate-x-[1px]" fill="currentColor" />
+                )}
+              </button>
+              <span className="rounded bg-black/55 px-1.5 py-0.5 font-mono text-[11px] font-bold tabular-nums text-white">
+                {formatDuration(durationSec || job.targetSeconds || 0)}
+              </span>
+            </div>
           </>
         ) : imgSrc ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -318,7 +270,6 @@ const ResultCard = memo(function ResultCard({
         VYRONIX
       </div>
 
-      {/* Clear action row: تعديل · شير · حذف */}
       <div className="grid grid-cols-3 gap-1.5 p-2">
         <button
           type="button"

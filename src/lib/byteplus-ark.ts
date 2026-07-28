@@ -28,7 +28,7 @@ async function toCompressedDataUrl(bytes: Buffer, mimeHint?: string): Promise<st
   try {
     const out = await compressReferenceForBytePlus(bytes);
     console.info(
-      "[veronix] AI digital character filter applied before BytePlus",
+      "[veronix] character still prepared before BytePlus",
       `inBytes=${bytes.length}`,
       `outBytes=${out.length}`,
       `mime=${mimeHint || "image/jpeg"}`,

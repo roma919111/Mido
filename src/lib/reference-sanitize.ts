@@ -148,8 +148,21 @@ async function maxFaceBodyZoom(buf: Buffer): Promise<Buffer> {
 }
 
 /**
+ * TEMPORARY KILL SWITCH — AI / 3D digital character look.
+ * Set back to `true` to restore the previous BytePlus-accept filter + prompt framing.
+ * User asked to disable and retry; restore on request if privacy rejects return.
+ */
+export const AI_DIGITAL_FILTER_ENABLED = false;
+
+async function plainCompressForBytePlus(bytes: Buffer): Promise<Buffer> {
+  const { buf } = await normalizeCanvas(bytes);
+  const jpg = await sharp(buf).jpeg({ quality: 88, mozjpeg: true }).toBuffer();
+  return ensureMinSide(jpg, 88);
+}
+
+/**
  * Convert a character still into an AI / 3D-render digital look.
- * Applied on Generate BEFORE BytePlus create.
+ * Applied on Generate BEFORE BytePlus create (when AI_DIGITAL_FILTER_ENABLED).
  */
 export async function toAiDigitalCharacterRender(bytes: Buffer): Promise<Buffer> {
   const { buf: sized, width: w, height: h } = await normalizeCanvas(bytes);
@@ -229,8 +242,11 @@ export async function toAiDigitalCharacterRender(bytes: Buffer): Promise<Buffer>
   return finalBuf;
 }
 
-/** @deprecated name kept for callers — now runs the AI digital render. */
+/** Compress (+ optional AI digital render when enabled). */
 export async function compressReferenceForBytePlus(bytes: Buffer): Promise<Buffer> {
+  if (!AI_DIGITAL_FILTER_ENABLED) {
+    return plainCompressForBytePlus(bytes);
+  }
   try {
     return await toAiDigitalCharacterRender(bytes);
   } catch (err) {
@@ -238,9 +254,7 @@ export async function compressReferenceForBytePlus(bytes: Buffer): Promise<Buffe
       "[veronix] AI digital render failed, falling back to compress:",
       err instanceof Error ? err.message : err,
     );
-    const { buf } = await normalizeCanvas(bytes);
-    const jpg = await sharp(buf).jpeg({ quality: 88, mozjpeg: true }).toBuffer();
-    return ensureMinSide(jpg, 88);
+    return plainCompressForBytePlus(bytes);
   }
 }
 
@@ -265,7 +279,9 @@ export async function stylizeReferenceImage(sourceUrl: string): Promise<string> 
 
   try {
     const raw = await loadImageBytes(trimmed);
-    const out = await toAiDigitalCharacterRender(raw);
+    const out = AI_DIGITAL_FILTER_ENABLED
+      ? await toAiDigitalCharacterRender(raw)
+      : await plainCompressForBytePlus(raw);
     if (out.length < 400) throw new Error("AI digital render too small");
     await writeFile(outPublic, out);
     return `data:image/jpeg;base64,${out.toString("base64")}`;
@@ -309,7 +325,7 @@ export function isInputImagePrivacyError(message: string): boolean {
 
 const AI_MARK = "شخصية رقمية مولّدة بالذكاء الاصطناعي";
 
-/** Prompt framing after AI digital stills are attached. */
+/** Prompt framing after AI digital stills are attached (no-op while filter disabled). */
 export function toSemiRealisticScenePrompt(prompt: string): string {
   const base = (prompt || "")
     .replace(/\n\n\(جارٍ توليد ودمج[\s\S]*$/u, "")
@@ -319,6 +335,7 @@ export function toSemiRealisticScenePrompt(prompt: string): string {
     .replace(/\n*cinematic CGI[^\n]*/gi, "")
     .replace(/\n*لقطة سينمائية ناعمة[^\n]*/giu, "")
     .trim();
+  if (!AI_DIGITAL_FILTER_ENABLED) return base;
   if (!base) {
     return `${AI_MARK}، مظهر 3D render رقمي مصقول، إضاءة soft bloom.`;
   }

@@ -37,6 +37,10 @@ import {
   isFreeVeronixEligible,
 } from "@/lib/free-trial";
 import { quoteCreditsLocal } from "@/lib/credit-quote-local";
+import {
+  buildVeronixShotScript,
+  type VeronixShotScript,
+} from "@/lib/veronix-shot-script";
 import type { VisualReference } from "@/lib/types";
 import type { SceneState } from "@/lib/prompt-enhance";
 import { fetchJson } from "@/lib/fetch-json";
@@ -133,6 +137,12 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const [genFlash, setGenFlash] = useState(false);
   /** How many videos to generate in one tap (1–4). Grid shows up to 3 per row. */
   const [outputCount, setOutputCount] = useState(1);
+  /** Pre-generate Veronix shot-script recommendation sheet. */
+  const [genConfirmOpen, setGenConfirmOpen] = useState(false);
+  const [genConfirmLoading, setGenConfirmLoading] = useState(false);
+  const [genConfirmScript, setGenConfirmScript] =
+    useState<VeronixShotScript | null>(null);
+  const [genConfirmOriginal, setGenConfirmOriginal] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [platformReady, setPlatformReady] = useState<boolean | null>(null);
@@ -1387,52 +1397,140 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     return [...new Set(imageUrls)].slice(0, 2);
   }
 
-  async function handleGenerate() {
-    setGenFlash(true);
-    window.setTimeout(() => setGenFlash(false), 220);
-    setError(null);
-    setStatus(null);
-    setShareNote(null);
-
+  function validateGenerateReady(): boolean {
     if (!canStartMore) {
       setError(
         slotsLeft <= 0
           ? "لديك 4 فيديوهات قيد التوليد — انتظر انتهاء أحدها قبل توليد المزيد."
           : "التوليد جارٍ — انتظر لحظة ثم أعد المحاولة.",
       );
-      return;
+      return false;
     }
-
     if (!user) {
       router.push(`/signup?next=${encodeURIComponent("/")}&paywall=1`);
-      return;
+      return false;
     }
     if (!prompt.trim()) {
       setError("اكتب وصفًا أولًا.");
-      return;
+      return false;
     }
     if (!selectedModel?.available) {
       setError("هذا الموديل غير متاح للتوليد حاليًا. اختر موديلًا متاحًا.");
-      return;
+      return false;
     }
-    // Exact selection: 1→1, 2→2… capped only by remaining concurrent slots.
     const requestCount = freeTrial
       ? 1
       : Math.min(slotsLeft, Math.max(1, Math.min(4, Math.floor(outputCount) || 1)));
     if (requestCount < 1) {
       setError("لديك 4 فيديوهات قيد التوليد — انتظر انتهاء أحدها.");
-      return;
+      return false;
     }
     const billedCost = freeTrial ? 0 : creditCost * requestCount;
     if (!freeTrial && (user.credits <= 0 || user.credits < billedCost)) {
       setError("رصيدك غير كافٍ. أضف كريدت أو رقِّ الباقة للمتابعة.");
       router.push("/pricing?paywall=1");
-      return;
+      return false;
     }
     if (refPreviews.length > refs.length) {
       setError("انتظر اكتمال رفع الشخصيات ثم أعد التوليد.");
+      return false;
+    }
+    return true;
+  }
+
+  /** Generate click → for video: build Veronix shot script + confirm sheet. */
+  async function handleGenerate() {
+    setGenFlash(true);
+    window.setTimeout(() => setGenFlash(false), 220);
+    setError(null);
+    setStatus(null);
+    setShareNote(null);
+    if (!validateGenerateReady()) return;
+
+    // Images: generate immediately with the customer's original prompt.
+    if (media !== "video") {
+      void runGenerateWithPrompt(prompt.trim());
       return;
     }
+
+    const original = prompt.trim();
+    const totalSeconds = Math.min(sliderMax, Math.max(sliderMin, duration));
+    setGenConfirmOriginal(original);
+    setGenConfirmOpen(true);
+    setGenConfirmLoading(true);
+    setGenConfirmScript(null);
+
+    try {
+      const mode =
+        refs.length || startFrame ? "image2video" : "text2video";
+      let enhanced = "";
+      try {
+        const { res, data } = await fetchJson<{
+          enhanced?: string;
+          finalState?: SceneState;
+          error?: string;
+        }>("/api/enhance", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: original,
+            mode,
+            imageUrls: await gatherEnhanceImageUrls(),
+            previousState: promptSceneState,
+          }),
+        });
+        if (res.ok && data.enhanced?.trim()) {
+          enhanced = data.enhanced.trim();
+          if (data.finalState) setPromptSceneState(data.finalState);
+        }
+      } catch {
+        // Local script still works from the original Arabic/English prompt.
+      }
+
+      const script = buildVeronixShotScript({
+        originalPrompt: original,
+        enhancedPrompt: enhanced || undefined,
+        totalSeconds,
+      });
+      setGenConfirmScript(script);
+    } catch (err) {
+      setGenConfirmOpen(false);
+      setError(
+        err instanceof Error ? err.message : "تعذر تجهيز توصية فيرونيكس",
+      );
+    } finally {
+      setGenConfirmLoading(false);
+    }
+  }
+
+  async function acceptVeronixRecommendation() {
+    const script = genConfirmScript;
+    setGenConfirmOpen(false);
+    if (!script) return;
+    void runGenerateWithPrompt(script.scriptPrompt);
+  }
+
+  async function cancelVeronixRecommendation() {
+    const original = genConfirmOriginal || prompt.trim();
+    setGenConfirmOpen(false);
+    setGenConfirmScript(null);
+    // Cancel = generate from the customer's original prompt (no shot script).
+    void runGenerateWithPrompt(original);
+  }
+
+  async function runGenerateWithPrompt(promptForGenerate: string) {
+    if (!validateGenerateReady()) return;
+    const userPrompt = prompt.trim();
+    const finalUserPrompt = (promptForGenerate || userPrompt).trim();
+    if (!finalUserPrompt) {
+      setError("اكتب وصفًا أولًا.");
+      return;
+    }
+
+    // Exact selection: 1→1, 2→2… capped only by remaining concurrent slots.
+    const requestCount = freeTrial
+      ? 1
+      : Math.min(slotsLeft, Math.max(1, Math.min(4, Math.floor(outputCount) || 1)));
 
     // New run id — previous jobs keep polling independently by assetId.
     const runId = ++genRunIdRef.current;
@@ -1450,7 +1548,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       status: "running" as const,
       targetSeconds: outputTargetSeconds,
       startedAt,
-      prompt: prompt.trim(),
+      prompt: userPrompt,
     }));
     setGenerating(true);
     setGenStartedAt(startedAt);
@@ -1478,6 +1576,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     if (
       media === "video" &&
       selectedModelId === VERONIX_MODEL_ID &&
+      user &&
       ((user.credits ?? 0) > 0 || Boolean(user.freeVeronixUsed))
     ) {
       setMultiShotOn(false);
@@ -1488,9 +1587,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         const name = normalizeCharacterName(refNames[i] || "");
         return name ? { ...r, label: name } : r;
       });
-      const linked = resolveCharacterRefsForPrompt(prompt.trim(), namedRefs);
+      const linked = resolveCharacterRefsForPrompt(userPrompt, namedRefs);
       const activeRefs = linked.refs;
-      const finalPrompt = prompt.trim();
+      const finalPrompt = finalUserPrompt;
       const mode =
         media === "image"
           ? activeRefs.length
@@ -2202,28 +2301,93 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         <button
           type="button"
           onClick={() => void handleGenerate()}
-          disabled={!selectedModel?.available || !canStartMore}
+          disabled={
+            !selectedModel?.available ||
+            !canStartMore ||
+            genConfirmOpen ||
+            genConfirmLoading
+          }
           className={`relative flex min-w-0 flex-1 items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-5 py-4 text-base font-bold text-white transition duration-150 enabled:active:scale-[0.97] enabled:active:brightness-110 disabled:opacity-70 ${
             genFlash
               ? "scale-[0.98] brightness-110 ring-2 ring-white/45"
               : ""
           }`}
         >
-          <Sparkles className="h-5 w-5" />
-          {!canStartMore
-            ? slotsLeft <= 0
-              ? "ممتلئ (4/4)"
-              : "جاري الإرسال…"
-            : freeTrial
-              ? "Generate مجاني"
-              : requestCountPreview > 1
-                ? `Generate ×${requestCountPreview}`
-                : "Generate"}
+          {genConfirmLoading ? (
+            <Loader2 className="h-5 w-5 animate-spin" />
+          ) : (
+            <Sparkles className="h-5 w-5" />
+          )}
+          {genConfirmLoading
+            ? "تجهيز توصية فيرونيكس…"
+            : !canStartMore
+              ? slotsLeft <= 0
+                ? "ممتلئ (4/4)"
+                : "جاري الإرسال…"
+              : freeTrial
+                ? "Generate مجاني"
+                : requestCountPreview > 1
+                  ? `Generate ×${requestCountPreview}`
+                  : "Generate"}
           <span className="rounded-full bg-black/20 px-2.5 py-0.5 text-xs tabular-nums">
             {freeTrial ? "مجاني" : `−${creditCost * requestCountPreview}`}
           </span>
         </button>
       </div>
+
+      {genConfirmOpen ? (
+        <div
+          className="fixed inset-0 z-[70] flex items-end justify-center bg-black/65 p-3 sm:items-center"
+          dir="rtl"
+          role="dialog"
+          aria-modal="true"
+          aria-label="توصية فيرونيكس"
+        >
+          <div className="w-full max-w-lg overflow-hidden rounded-3xl border border-white/12 bg-[#12161f] shadow-[0_24px_60px_rgba(0,0,0,0.55)]">
+            <div className="border-b border-white/10 px-4 py-3">
+              <p className="text-xs font-semibold tracking-[0.16em] text-[#22f0ff]/90">
+                توصية فيرونيكس
+              </p>
+              <p className="mt-1 text-sm text-white/55">
+                سكريبت لقطات موقت داخل مدة الفيديو ({genConfirmScript?.totalSeconds || duration}ث)
+              </p>
+            </div>
+            <div className="max-h-[45vh] overflow-y-auto px-4 py-3">
+              {genConfirmLoading || !genConfirmScript ? (
+                <div className="flex items-center gap-2 py-8 text-sm text-white/60">
+                  <Loader2 className="h-4 w-4 animate-spin text-[#22f0ff]" />
+                  جاري تحسين الوصف وتقسيم اللقطات…
+                </div>
+              ) : (
+                <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-white/85">
+                  {genConfirmScript.summaryAr}
+                </pre>
+              )}
+              <p className="mt-3 text-[11px] leading-relaxed text-white/40">
+                «توصية فيرونيكس» = توليد بالسكريبت المحسّن · «إلغاء» = توليد بوصفك الأصلي كما هو
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2 border-t border-white/10 p-3">
+              <button
+                type="button"
+                disabled={genConfirmLoading || !genConfirmScript || generating}
+                onClick={() => void acceptVeronixRecommendation()}
+                className="rounded-2xl bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-3 py-3 text-sm font-bold text-white disabled:opacity-50"
+              >
+                توصية فيرونيكس
+              </button>
+              <button
+                type="button"
+                disabled={genConfirmLoading || generating}
+                onClick={() => void cancelVeronixRecommendation()}
+                className="rounded-2xl border border-white/15 bg-white/5 px-3 py-3 text-sm font-bold text-white/85 disabled:opacity-50"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {waitingResult ? (
         <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-[#22f0ff]/25 bg-[#141821] px-4 py-4">

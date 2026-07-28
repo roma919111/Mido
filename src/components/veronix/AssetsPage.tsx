@@ -162,22 +162,15 @@ function FeedVideoSlide({
     const el = videoRef.current;
     if (!el || !canPlay) return;
     el.muted = muted;
-    if (active) {
-      // Don't keep the slide black if loadeddata is slow/missing on mobile.
-      const revealTimer = window.setTimeout(() => setVideoReady(true), 1200);
-      const play = el.play();
-      if (play && typeof play.catch === "function") {
-        play.catch(() => undefined);
+    // Normal media player: never autoplay. Pause when leaving the slide.
+    if (!active) {
+      el.pause();
+      setPlaying(false);
+      try {
+        el.currentTime = 0;
+      } catch {
+        // ignore
       }
-      return () => window.clearTimeout(revealTimer);
-    }
-    el.pause();
-    setPlaying(false);
-    setVideoReady(false);
-    try {
-      el.currentTime = 0;
-    } catch {
-      // ignore
     }
   }, [active, muted, canPlay, src]);
 
@@ -185,10 +178,7 @@ function FeedVideoSlide({
     const el = videoRef.current;
     if (!el || !canPlay) return;
     if (el.paused) {
-      const play = el.play();
-      if (play && typeof play.catch === "function") {
-        play.catch(() => undefined);
-      }
+      void el.play().catch(() => undefined);
     } else {
       el.pause();
     }
@@ -336,19 +326,6 @@ function FeedVideoSlide({
     >
       {canPlay ? (
         <>
-          {poster && !posterFailed ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={poster}
-              alt=""
-              decoding="async"
-              loading={active ? "eager" : "lazy"}
-              className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-200 ${
-                active && videoReady ? "opacity-0" : "opacity-100"
-              }`}
-              onError={() => setPosterFailed(true)}
-            />
-          ) : null}
           <video
             ref={videoRef}
             src={active || loadMedia ? src || undefined : undefined}
@@ -359,9 +336,11 @@ function FeedVideoSlide({
             preload={active || loadMedia ? "metadata" : "none"}
             controls={false}
             controlsList="nodownload"
+            onClick={togglePlay}
             onLoadedMetadata={(e) => {
               const d = e.currentTarget.duration;
               if (Number.isFinite(d) && d > 0) setDurationSec(d);
+              setVideoReady(true);
             }}
             onLoadedData={() => setVideoReady(true)}
             onCanPlay={() => setVideoReady(true)}
@@ -371,24 +350,22 @@ function FeedVideoSlide({
             }}
             onPause={() => setPlaying(false)}
             onError={() => {
-              // Keep poster visible; allow retry when user scrolls back.
+              setPosterFailed(true);
               setVideoReady(false);
               setPlaying(false);
             }}
-            className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-200 ${
-              active && videoReady ? "opacity-100" : "opacity-0"
-            }`}
+            className="absolute inset-0 h-full w-full object-contain bg-black"
           />
 
-          {/* Duration + Play / Pause — bottom of the frame (not center) */}
-          <div className="absolute inset-x-0 bottom-28 z-30 flex flex-col items-center gap-2 sm:bottom-32">
+          {/* Native-like: Play / Pause + duration at the bottom */}
+          <div className="pointer-events-none absolute inset-x-0 bottom-28 z-30 flex items-end justify-between px-5 sm:bottom-32">
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 togglePlay();
               }}
-              className="flex h-14 w-14 items-center justify-center rounded-full bg-black/45 text-white ring-1 ring-white/35 backdrop-blur-md transition hover:bg-black/55"
+              className="pointer-events-auto flex h-14 w-14 items-center justify-center rounded-full bg-white/90 text-black shadow-lg transition active:scale-95"
               aria-label={playing ? "إيقاف مؤقت" : "تشغيل"}
             >
               {playing ? (
@@ -397,8 +374,9 @@ function FeedVideoSlide({
                 <Play className="h-6 w-6 translate-x-0.5" fill="currentColor" />
               )}
             </button>
-            <span className="rounded-full bg-black/55 px-2.5 py-1 text-xs font-bold tabular-nums text-white ring-1 ring-white/20 backdrop-blur-md">
+            <span className="rounded-full bg-black/65 px-2.5 py-1 text-xs font-bold tabular-nums text-white ring-1 ring-white/25">
               {formatClipDuration(displayDuration)}
+              {!videoReady ? " · …" : ""}
             </span>
           </div>
         </>
