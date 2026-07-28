@@ -1743,7 +1743,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         <div className="flex flex-wrap gap-3">
           {refPreviews.map((src, i) => (
             <div
-              key={`char-${i}-${refNames[i] || refs[i]?.id || "x"}`}
+              key={refs[i]?.id || `char-slot-${i}`}
               className="w-[8.5rem] space-y-1.5 rounded-2xl border border-white/10 bg-black/25 p-1.5 sm:w-[9.5rem]"
             >
               <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl bg-[#1a1f2a]">
@@ -1792,22 +1792,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                   value={refNames[i] || ""}
                   onChange={(e) => {
                     const value = normalizeCharacterName(e.target.value);
+                    // Update name only — do NOT remount the card or rewrite refs here
+                    // (labels are synced onto refs at Generate time).
                     setRefNames((prev) => {
                       const next = [...prev];
                       while (next.length <= i) next.push("");
                       next[i] = value;
                       return next;
                     });
-                    setRefs((prev) =>
-                      prev.map((ref, idx) =>
-                        idx === i
-                          ? {
-                              ...ref,
-                              label: value || ref.label || "reference",
-                            }
-                          : ref,
-                      ),
-                    );
                   }}
                   placeholder="مثال: محمد"
                   className="w-full rounded-lg border border-[#22f0ff]/35 bg-black/50 px-1.5 py-1.5 text-center text-xs font-semibold text-white outline-none placeholder:font-normal placeholder:text-white/35 focus:border-[#22f0ff]"

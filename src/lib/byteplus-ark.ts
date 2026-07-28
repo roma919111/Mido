@@ -341,31 +341,33 @@ export async function createBytePlusVideoTask(
     }
   }
 
-  // If multimodal reference_image is rejected, fall back to first character as first_frame.
-  // Do NOT treat generic "invalid" / image_url fetch errors as multimodal failures —
-  // those need a real media-url fix, not a CGI privacy rewrite.
+  // If multimodal reference_image fails for any reason, fall back to first
+  // character as first_frame — Seedance mini identity lock is more reliable there.
   if (
     !res.ok &&
     input.referenceImageUrls?.length &&
     !input.startFrameUrl
   ) {
-    const msg = errorTextFromCreate(data, res.status);
-    if (
-      /reference_image|role.*not support|multimodal|does not support/i.test(msg) &&
-      !/image_url|resource not found|not valid/i.test(msg)
-    ) {
-      const first = input.referenceImageUrls[0]!;
-      payload = buildCreatePayload(
-        { ...input, startFrameUrl: first, referenceImageUrls: [] },
-        {
-          frameUrl: first,
-          referenceUrls: [],
-          imageRole: "first_frame",
-          generateAudio: Boolean(payload.generate_audio),
-        },
-      );
-      ({ res, data } = await postCreateTask(payload));
-    }
+    const first = input.referenceImageUrls[0]!;
+    const nameHint = /@Image1 is "([^"]+)"/.exec(input.prompt || "");
+    const fallbackPrompt = nameHint
+      ? `${input.prompt}\nThe person in the first frame is "${nameHint[1]}".`
+      : input.prompt;
+    payload = buildCreatePayload(
+      {
+        ...input,
+        prompt: fallbackPrompt,
+        startFrameUrl: first,
+        referenceImageUrls: [],
+      },
+      {
+        frameUrl: first,
+        referenceUrls: [],
+        imageRole: "first_frame",
+        generateAudio: Boolean(payload.generate_audio),
+      },
+    );
+    ({ res, data } = await postCreateTask(payload));
   }
 
   // Privacy block: prefer keeping photoreal refs. Try prompt-only rewrite first,

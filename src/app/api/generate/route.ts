@@ -32,6 +32,7 @@ import { loadSyncedCatalog } from "@/lib/openart-catalog-sync";
 import {
   buildFirstFrameCharacterPrompt,
   buildSeedanceCharacterPrompt,
+  orderCharacterRefsForBinding,
   stripInternalPromptNotes,
 } from "@/lib/character-names";
 import type { VisualReference } from "@/lib/types";
@@ -433,17 +434,23 @@ export async function POST(request: Request) {
         ).filter((r): r is VisualReference => Boolean(r?.url));
         let startUrl = await ensureBytePlusRefUrl(body.startFrame);
         let lastUrl = await ensureBytePlusRefUrl(body.endFrame);
+
+        // Order must match @Image1..N in the Seedance prompt (mention order).
+        const orderedRefList = orderCharacterRefsForBinding(
+          cleanPrompt,
+          refList,
+        ).slice(0, 4);
         const keptRefs: VisualReference[] = [];
         const referenceUrls: string[] = [];
-        for (const r of refList.slice(0, 4)) {
+        for (const r of orderedRefList) {
           const u = await ensureBytePlusRefUrl(r);
           if (!u) continue;
           keptRefs.push(r);
           referenceUrls.push(u);
         }
 
-        // Seedance mini: 1 character → first_frame (proven identity).
-        // 2+ characters → multimodal reference_image + @Image name injection.
+        // Seedance mini: 1 character → first_frame (strongest face lock).
+        // 2+ → multimodal reference_image with matching @ImageN order.
         let finalPrompt = cleanPrompt;
         if (referenceUrls.length === 1) {
           startUrl = referenceUrls[0]!;
@@ -471,7 +478,7 @@ export async function POST(request: Request) {
           watermark: false,
           startFrameUrl: startUrl,
           lastFrameUrl: lastUrl,
-          referenceImageUrls: referenceUrls,
+          referenceImageUrls: referenceUrls.length ? [...referenceUrls] : [],
           imageRole: (startUrl ? "first_frame" : "reference_image") as
             | "first_frame"
             | "reference_image",

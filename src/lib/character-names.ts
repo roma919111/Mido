@@ -108,10 +108,12 @@ export function stripInternalPromptNotes(prompt: string): string {
   return text.trim();
 }
 
+const MODEST_WARDROBE =
+  "If any reference shows bikini, swimsuit, lingerie, underwear, or nudity, dress that person in modest casual clothes that fit the scene (full top + pants or dress). Keep the same face, hair, and skin — change clothing only.";
+
 /**
  * Seedance API prompt only (never store on asset).
- * Replaces each character name in the scene with `@ImageN (Name)` so the model
- * binds identity where the name appears — plus a short face/wardrobe line.
+ * Replaces each character name in the scene with `@ImageN (Name)`.
  */
 export function buildSeedanceCharacterPrompt(
   userPrompt: string,
@@ -153,11 +155,9 @@ export function buildSeedanceCharacterPrompt(
     .join(" ");
 
   const tags = ordered.map((_, i) => `@Image${i + 1}`).join(", ");
-  return [
-    intro,
-    scene,
-    `Keep faces matching ${tags}. Modest clothes that fit the scene.`,
-  ].join("\n");
+  return [intro, scene, `Keep faces matching ${tags}.`, MODEST_WARDROBE].join(
+    "\n",
+  );
 }
 
 /** Single-character path (first_frame) — strongest identity lock on Seedance mini. */
@@ -171,9 +171,17 @@ export function buildFirstFrameCharacterPrompt(
       ? normalizeCharacterName(ref.label)
       : "";
   if (name) {
-    return `${clean}\nThe person in the first frame is "${name}" — keep the same face, hair, and skin throughout. Modest clothes that fit the scene.`;
+    return [
+      clean,
+      `The person in the first frame is "${name}" — keep the same face, hair, and skin throughout.`,
+      MODEST_WARDROBE,
+    ].join("\n");
   }
-  return `${clean}\nKeep the same face as the first frame throughout. Modest clothes that fit the scene.`;
+  return [
+    clean,
+    "Keep the same face as the first frame throughout.",
+    MODEST_WARDROBE,
+  ].join("\n");
 }
 
 /** @deprecated */
