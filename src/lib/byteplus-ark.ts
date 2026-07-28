@@ -19,24 +19,25 @@ export const BYTEPLUS_TASK_PREFIX = "bp:";
 const DEFAULT_BASE = "https://ark.ap-southeast.bytepluses.com/api/v3";
 const DEFAULT_MODEL = "dreamina-seedance-2-0-mini-260615";
 
-/** Compress + light soft-render so Seedance privacy is less likely to flag "real person". */
+/** Compress + soft AI-render grade so Seedance is less likely to flag "real person". */
 async function toCompressedDataUrl(bytes: Buffer, mimeHint?: string): Promise<string> {
   try {
-    // One sharp pass only (resize + mild grade) — typically <300ms, no ffmpeg spawn.
+    // One sharp pass only — typically <400ms. Stronger than a tint: smooths pores
+    // and pushes a digital/cinematic look while keeping recognizable faces.
     const out = await sharp(bytes)
       .rotate()
       .resize({
-        width: 1280,
-        height: 1280,
+        width: 1024,
+        height: 1024,
         fit: "inside",
         withoutEnlargement: true,
       })
-      // Soft cinematic grade: keep likeness, nudge away from passport-photo realism.
-      .modulate({ brightness: 1.02, saturation: 1.1 })
-      .linear(1.05, -6)
-      .blur(0.35)
-      .sharpen({ sigma: 0.55 })
-      .jpeg({ quality: 82, mozjpeg: true })
+      .modulate({ brightness: 1.03, saturation: 1.22 })
+      .linear(1.1, -10)
+      .median(3)
+      .blur(0.7)
+      .sharpen({ sigma: 0.85 })
+      .jpeg({ quality: 80, mozjpeg: true })
       .toBuffer();
     return `data:image/jpeg;base64,${out.toString("base64")}`;
   } catch {

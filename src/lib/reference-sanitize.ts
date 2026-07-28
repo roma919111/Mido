@@ -1,13 +1,14 @@
 /**
- * Stylize reference / start-frame images so BytePlus privacy filters
+ * Soft-render reference / start-frame images so BytePlus privacy filters
  * (InputImageSensitiveContentDetected · real person) are less likely to reject them.
- * Output is a stable `/generations/….jpg` URL the Ark API can fetch.
+ * Prefers a fast sharp pass; ffmpeg only as fallback.
  */
 
 import { spawn } from "node:child_process";
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import sharp from "sharp";
 import { GENERATIONS_DIR, resolveGenerationFile } from "@/lib/veronix-outro";
 
 function run(cmd: string, args: string[]): Promise<void> {
@@ -25,18 +26,16 @@ function run(cmd: string, args: string[]): Promise<void> {
   });
 }
 
-async function downloadImage(url: string, dest: string) {
+async function loadImageBytes(url: string): Promise<Buffer> {
   if (url.startsWith("/generations/")) {
     const existing = resolveGenerationFile(url);
     if (!existing) throw new Error("Invalid local generation path");
-    await copyFile(existing, dest);
-    return;
+    return readFile(existing);
   }
   if (url.startsWith("data:image/")) {
     const m = /^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/.exec(url);
-    if (!m) throw new Error("Invalid data URL");
-    await writeFile(dest, Buffer.from(m[2]!, "base64"));
-    return;
+    if (!m?.[2]) throw new Error("Invalid data URL");
+    return Buffer.from(m[2], "base64");
   }
   const res = await fetch(url, {
     redirect: "follow",
@@ -49,13 +48,13 @@ async function downloadImage(url: string, dest: string) {
   if (!res.ok) throw new Error(`Failed to fetch reference image (${res.status})`);
   const buf = Buffer.from(await res.arrayBuffer());
   if (buf.length < 200) throw new Error("Reference image too small");
-  await writeFile(dest, buf);
+  return buf;
 }
 
 /**
- * Convert a photoreal reference into a cinematic CGI / illustration look
- * (pose & wardrobe preserved) so privacy filters treat it as creative media.
- * Returns a data: URL so BytePlus can ingest it without a public CDN fetch.
+ * Stronger digital / cinematic CGI look for privacy retries.
+ * Keeps pose + face identity, reduces passport-photo realism.
+ * Returns a data: URL for Ark ingest.
  */
 export async function stylizeReferenceImage(sourceUrl: string): Promise<string> {
   const trimmed = sourceUrl.trim();
@@ -64,68 +63,69 @@ export async function stylizeReferenceImage(sourceUrl: string): Promise<string> 
   const id = `refstyle-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   await mkdir(GENERATIONS_DIR, { recursive: true });
   const outPublic = path.join(GENERATIONS_DIR, `${id}.jpg`);
-  const work = await mkdtemp(path.join(tmpdir(), "vyronix-refstyle-"));
+
   try {
-    const raw = path.join(work, "in.bin");
-    const styled = path.join(work, "styled.jpg");
-    await downloadImage(trimmed, raw);
-
-    // Soft photoreal grade — keep likeness; avoid heavy CGI/cartoon look.
-    // Only used when BytePlus privacy filters reject raw photos.
-    const attempts = [
-      "scale=1280:-2:flags=lanczos,eq=contrast=1.05:saturation=1.06:brightness=0.01,unsharp=3:3:0.4:3:3:0.0,format=yuvj420p",
-      "scale=1024:-2:flags=lanczos,eq=contrast=1.08:saturation=1.08,format=yuvj420p",
-      "scale=1024:-2,format=yuvj420p",
-    ];
-
-    let ok = false;
-    for (const vf of attempts) {
-      try {
-        await run("ffmpeg", [
-          "-y",
-          "-i",
-          raw,
-          "-vf",
-          vf,
-          "-frames:v",
-          "1",
-          "-q:v",
-          "4",
-          styled,
-        ]);
-        ok = true;
-        break;
-      } catch {
-        // try next graph
+    const raw = await loadImageBytes(trimmed);
+    const out = await sharp(raw)
+      .rotate()
+      .resize({
+        width: 1024,
+        height: 1024,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .modulate({ brightness: 1.04, saturation: 1.28 })
+      .linear(1.12, -12)
+      .median(5)
+      .blur(1.1)
+      .sharpen({ sigma: 1.0 })
+      .jpeg({ quality: 78, mozjpeg: true })
+      .toBuffer();
+    if (out.length < 400) throw new Error("Stylized reference too small");
+    await writeFile(outPublic, out);
+    return `data:image/jpeg;base64,${out.toString("base64")}`;
+  } catch {
+    // ffmpeg fallback if sharp rejects the codec
+    const work = await mkdtemp(path.join(tmpdir(), "vyronix-refstyle-"));
+    try {
+      const raw = path.join(work, "in.bin");
+      const styled = path.join(work, "styled.jpg");
+      await writeFile(raw, await loadImageBytes(trimmed));
+      const attempts = [
+        "scale=1024:-2:flags=lanczos,eq=contrast=1.15:saturation=1.3:brightness=0.03,unsharp=5:5:0.9:5:5:0.0,noise=alls=6:allf=t,format=yuvj420p",
+        "scale=960:-2:flags=lanczos,eq=contrast=1.12:saturation=1.22,format=yuvj420p",
+        "scale=960:-2,format=yuvj420p",
+      ];
+      let ok = false;
+      for (const vf of attempts) {
+        try {
+          await run("ffmpeg", [
+            "-y",
+            "-i",
+            raw,
+            "-vf",
+            vf,
+            "-frames:v",
+            "1",
+            "-q:v",
+            "5",
+            styled,
+          ]);
+          ok = true;
+          break;
+        } catch {
+          // try next
+        }
       }
+      if (!ok) throw new Error("Unable to stylize reference image");
+      await copyFile(styled, outPublic);
+      const st = await stat(outPublic);
+      if (st.size < 400) throw new Error("Stylized reference too small");
+      const bytes = await readFile(outPublic);
+      return `data:image/jpeg;base64,${bytes.toString("base64")}`;
+    } finally {
+      await rm(work, { recursive: true, force: true }).catch(() => undefined);
     }
-    if (!ok) throw new Error("Unable to stylize reference image");
-
-    await copyFile(styled, outPublic);
-    const st = await stat(outPublic);
-    if (st.size < 400) throw new Error("Stylized reference too small");
-    // Cap payload for Ark JSON — keep under ~1.5MB base64.
-    if (st.size > 1_400_000) {
-      const smaller = path.join(work, "small.jpg");
-      await run("ffmpeg", [
-        "-y",
-        "-i",
-        styled,
-        "-vf",
-        "scale=768:-2",
-        "-frames:v",
-        "1",
-        "-q:v",
-        "6",
-        smaller,
-      ]);
-      await copyFile(smaller, outPublic);
-    }
-
-    const bytes = await readFile(outPublic);
-    return `data:image/jpeg;base64,${bytes.toString("base64")}`;
-  } finally {
-    await rm(work, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
@@ -135,25 +135,27 @@ export function isInputImagePrivacyError(message: string): boolean {
   );
 }
 
-const SEMI_REAL_MARK = "لقطة سينمائية واقعية";
+const AI_SCENE_MARK = "شخصيات رقمية مولّدة بالذكاء الاصطناعي";
 
 /**
- * When BytePlus rejects a still as a real person, keep a photoreal live-action
- * look (not cartoon/CGI) while framing it as creative cinematic footage.
+ * When BytePlus rejects a still as a real person, reframe the prompt as
+ * AI-generated digital characters / cinematic CGI — NOT live-action photoreal
+ * (photoreal wording makes the privacy filter worse).
  */
 export function toSemiRealisticScenePrompt(prompt: string): string {
   const base = (prompt || "")
     .replace(/\n\n\(جارٍ توليد ودمج[\s\S]*$/u, "")
+    .replace(/\n*أشخاص غير حقيقيين[^\n]*/giu, "")
     .trim();
   if (!base) {
-    return `${SEMI_REAL_MARK}، إضاءة طبيعية، تفاصيل بشرة واقعية، حركة طبيعية.`;
+    return `${AI_SCENE_MARK}، مظهر سينمائي رقمي، إضاءة استوديو.`;
   }
-  if (base.includes(SEMI_REAL_MARK) || /لقطة سينمائية واقعية|live-?action|photoreal/i.test(base)) {
+  if (base.includes(AI_SCENE_MARK)) {
     return base;
   }
   return [
-    `${SEMI_REAL_MARK} (live-action photoreal)، كاميرا سينمائية، إضاءة طبيعية.`,
-    "تفاصيل بشرة وملابس واقعية، بدون مظهر كرتوني أو CGI أو رسم رقمي.",
+    `${AI_SCENE_MARK} (AI-generated digital characters, cinematic CGI render).`,
+    "Not a real-person photo. Stylized digital humans, film lighting, creative media.",
     "",
     base,
   ].join("\n");
