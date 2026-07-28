@@ -341,11 +341,11 @@ export async function createBytePlusVideoTask(
     }
   }
 
-  // If multimodal reference_image fails for any reason, fall back to first
-  // character as first_frame — Seedance mini identity lock is more reliable there.
+  // If multimodal reference_image fails for a SINGLE character, try first_frame.
+  // Never collapse 2+ characters into one face — that drops identity binding.
   if (
     !res.ok &&
-    input.referenceImageUrls?.length &&
+    input.referenceImageUrls?.length === 1 &&
     !input.startFrameUrl
   ) {
     const first = input.referenceImageUrls[0]!;
@@ -371,7 +371,7 @@ export async function createBytePlusVideoTask(
   }
 
   // Privacy block: prefer keeping photoreal refs. Try prompt-only rewrite first,
-  // then a light grade — avoid heavy CGI stylize that changes identity.
+  // then a light grade — never drop character stills (that wastes credits).
   const hasImages = Boolean(
     input.startFrameUrl || (input.referenceImageUrls && input.referenceImageUrls.length),
   );
@@ -421,17 +421,8 @@ export async function createBytePlusVideoTask(
           }
           ({ res, data } = await postCreateTask(payload));
         }
-
-        // 3) Last resort: prompt only (no stills)
-        if (!res.ok && isInputImagePrivacyError(errorTextFromCreate(data, res.status))) {
-          payload = buildCreatePayload(rewritten, {
-            frameUrl: null,
-            lastFrameUrl: null,
-            referenceUrls: [],
-            generateAudio: Boolean(payload.generate_audio),
-          });
-          ({ res, data } = await postCreateTask(payload));
-        }
+        // Intentionally NO "drop stills" retry — generating without faces
+        // looks like "characters failed to bind" and burns customer credits.
       } catch (styleErr) {
         console.warn(
           "[veronix] privacy retry failed:",
@@ -610,11 +601,12 @@ export async function waitForBytePlusVideoTask(
         !privacyDropUsed &&
         options?.retryInput &&
         isInputImagePrivacyError(err) &&
-        // Only drop stills as last resort when we already tried a soft retry
-        // OR there were no refs to preserve.
-        (privacyRetryUsed ||
-          (!options.retryInput.referenceImageUrls?.length &&
-            !options.retryInput.startFrameUrl))
+        // NEVER drop uploaded character stills — that produces a faceless clip
+        // and looks like character binding failed. Only drop when there were
+        // no character refs / start frame to preserve.
+        !options.retryInput.referenceImageUrls?.length &&
+        !options.retryInput.startFrameUrl &&
+        privacyRetryUsed
       ) {
         privacyDropUsed = true;
         const retry = await createBytePlusVideoTask({

@@ -88,7 +88,14 @@ function localFileResponse(
   mediaType: "image" | "video",
 ): NextResponse {
   const size = statSync(filePath).size;
-  const contentType = mediaType === "image" ? "image/png" : "video/mp4";
+  const contentType =
+    mediaType === "video"
+      ? "video/mp4"
+      : filePath.toLowerCase().endsWith(".png")
+        ? "image/png"
+        : filePath.toLowerCase().endsWith(".webp")
+          ? "image/webp"
+          : "image/jpeg";
   const range = parseRange(request.headers.get("range"), size);
 
   if (range) {

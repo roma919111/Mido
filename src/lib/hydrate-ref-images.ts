@@ -1,9 +1,10 @@
 /**
  * Make character stills reliably visible after Assets → Edit.
- * Converts /generations and remote URLs into compact JPEG data URLs
- * so previews don't go black when the original path is missing/truncated.
+ * Local `/generations` paths are private — load via the media stream proxy,
+ * then (optionally) compact to JPEG data URLs for session hand-off.
  */
 
+import { veronixRefImageSrc } from "@/lib/media-proxy";
 import type { VisualReference } from "@/lib/types";
 
 async function blobToJpegDataUrl(
@@ -25,6 +26,11 @@ async function blobToJpegDataUrl(
   return canvas.toDataURL("image/jpeg", quality);
 }
 
+/** Prefer a same-origin fetchable URL (stream proxy for /generations). */
+export function resolveRefFetchUrl(url: string): string | null {
+  return veronixRefImageSrc(url);
+}
+
 export async function hydrateRefImageUrl(url: string): Promise<string | null> {
   const trimmed = (url || "").trim();
   if (!trimmed) return null;
@@ -39,8 +45,25 @@ export async function hydrateRefImageUrl(url: string): Promise<string | null> {
       return trimmed;
     }
   }
+
+  const fetchUrl = resolveRefFetchUrl(trimmed);
+  if (!fetchUrl) return null;
+
+  // Keep compact /generations paths when possible — CreateStudio can display
+  // them via the stream proxy without bloating sessionStorage.
+  if (trimmed.startsWith("/generations/")) {
+    try {
+      const res = await fetch(fetchUrl, { credentials: "same-origin" });
+      if (!res.ok) return trimmed; // still pass path; UI uses proxy
+      // Verify the file exists; keep the stable local path for Edit restore.
+      return trimmed;
+    } catch {
+      return trimmed;
+    }
+  }
+
   try {
-    const res = await fetch(trimmed, { credentials: "same-origin" });
+    const res = await fetch(fetchUrl, { credentials: "same-origin" });
     if (!res.ok) return null;
     const blob = await res.blob();
     if (!blob.size) return null;

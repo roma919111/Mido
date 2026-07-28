@@ -214,6 +214,14 @@ export function buildSeedanceCharacterPrompt(
     .join(" ");
 
   const tags = ordered.map((_, i) => `@Image${i + 1}`).join(", ");
+  // Ensure the scene itself cites every @ImageN (required by Seedance multimodal).
+  const missingTags = ordered
+    .map((_, i) => `@Image${i + 1}`)
+    .filter((tag) => !scene.includes(tag));
+  if (missingTags.length) {
+    scene = `${missingTags.join(" and ")} appear in this scene. ${scene}`;
+  }
+
   return [
     intro,
     scene,

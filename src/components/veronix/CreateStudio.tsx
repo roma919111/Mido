@@ -44,7 +44,7 @@ import {
   lockEtaStart,
   remainingGenerateSeconds,
 } from "@/lib/generate-eta";
-import { veronixDownloadPath, veronixMediaSrc } from "@/lib/media-proxy";
+import { veronixDownloadPath, veronixMediaSrc, veronixRefImageSrc } from "@/lib/media-proxy";
 import { clearEditDraft, readEditDraft } from "@/lib/edit-draft";
 import type { CustomerUser } from "./AppHeader";
 
@@ -295,7 +295,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       .slice(0, 4);
     if (chars.length) {
       setRefs(chars);
-      setRefPreviews(chars.map((r) => r.url));
+      setRefPreviews(
+        chars.map((r) => veronixRefImageSrc(r.url) || r.url),
+      );
       setRefNames(
         chars.map((r) =>
           isCharacterName(r.label) ? normalizeCharacterName(r.label) : "",
@@ -314,6 +316,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     } else if (draft.startFrame?.url) {
       // Always map edit stills into character slots (never Start Frame).
       const frame = draft.startFrame;
+      const display = veronixRefImageSrc(frame.url) || frame.url;
       setRefs([
         {
           ...frame,
@@ -321,7 +324,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           label: isCharacterName(frame.label) ? frame.label : "",
         },
       ]);
-      setRefPreviews([frame.url]);
+      setRefPreviews([display]);
       setRefNames([
         isCharacterName(frame.label) ? normalizeCharacterName(frame.label) : "",
       ]);

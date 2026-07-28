@@ -17,7 +17,13 @@ export const maxDuration = 300;
 
 type Body = {
   /** List live DB + backups (default). */
-  action?: "status" | "restore" | "auto" | "advance-multi" | "promote-finals";
+  action?:
+    | "status"
+    | "restore"
+    | "auto"
+    | "advance-multi"
+    | "promote-finals"
+    | "inspect";
   email?: string;
   backupName?: string;
   fullReplace?: boolean;
@@ -37,6 +43,54 @@ export async function POST(request: Request) {
 
     const body = (await request.json().catch(() => ({}))) as Body;
     const action = body.action || "status";
+
+    if (action === "inspect") {
+      const email = body.email?.trim().toLowerCase();
+      if (!email) {
+        return NextResponse.json({ error: "email required" }, { status: 400 });
+      }
+      const user = await findUserByEmail(email);
+      if (!user) {
+        return NextResponse.json({ error: "user not found" }, { status: 404 });
+      }
+      const assets = await listAssetsForAdmin(user.id, 12);
+      return NextResponse.json({
+        ok: true,
+        email: user.email,
+        credits: user.credits,
+        assets: assets.map((a) => {
+          const refs = Array.isArray(a.referenceImages) ? a.referenceImages : [];
+          return {
+            id: a.id,
+            status: a.status,
+            mode: a.mode,
+            mediaType: a.mediaType,
+            targetSeconds: a.targetSeconds,
+            preferClarity: a.preferClarity === true,
+            hasUrl: Boolean(a.url),
+            urlPrefix: (a.url || "").slice(0, 64),
+            historyId: a.historyId,
+            createdAt: a.createdAt,
+            prompt: (a.prompt || "").slice(0, 240),
+            refCount: refs.length,
+            refs: refs.map((r) => ({
+              id: r.id,
+              label: r.label,
+              urlPrefix: (r.url || "").slice(0, 72),
+              urlKind: (r.url || "").startsWith("data:")
+                ? "data"
+                : (r.url || "").startsWith("/generations/")
+                  ? "generations"
+                  : (r.url || "").startsWith("http")
+                    ? "http"
+                    : "other",
+              urlLen: (r.url || "").length,
+            })),
+            error: a.error?.slice(0, 160),
+          };
+        }),
+      });
+    }
 
     if (action === "promote-finals") {
       const email = body.email?.trim().toLowerCase();

@@ -227,55 +227,71 @@ function FeedVideoSlide({
     if (editing) return;
     setEditing(true);
     try {
-      const el = videoRef.current;
-      let startFrame: VisualReference | null = null;
-      if (el && active) {
-        try {
-          if (el.readyState < 2) {
-            await new Promise<void>((resolve) => {
-              const done = () => resolve();
-              el.addEventListener("loadeddata", done, { once: true });
-              window.setTimeout(done, 2500);
-            });
-          }
-          try {
-            el.currentTime = Math.min(0.15, (el.duration || 1) * 0.02);
-            await new Promise<void>((resolve) => {
-              const done = () => resolve();
-              el.addEventListener("seeked", done, { once: true });
-              window.setTimeout(done, 800);
-            });
-          } catch {
-            // keep current frame
-          }
-          startFrame = await captureVideoFrame(el);
-        } catch {
-          startFrame = null;
-        }
-      }
-      // Poster fallback when frame capture is blocked (CORS / not ready).
-      if (!startFrame && poster && !posterFailed) {
-        startFrame = {
-          type: "image",
-          id: `edit-poster-${item.id}`,
-          url: poster,
-          label: "edit-start-frame",
-        };
+      // Always restore uploaded character stills first — never steal a video frame
+      // when the asset already has referenceImages (frame = result scene, not faces).
+      const savedRefs = Array.isArray(item.referenceImages)
+        ? item.referenceImages.filter((r) => r?.url).slice(0, 4)
+        : [];
+
+      let characters = savedRefs.length
+        ? await hydrateReferenceImages(savedRefs)
+        : [];
+
+      // If hydrate failed but we still have paths, keep the original URLs
+      // (CreateStudio displays /generations via the stream proxy).
+      if (!characters.length && savedRefs.length) {
+        characters = savedRefs.map((r, i) => ({
+          type: "image" as const,
+          id: r.id || `edit-ref-${item.id}-${i}`,
+          url: r.url,
+          label: r.label || "",
+        }));
       }
 
-      let characters = await hydrateReferenceImages(item.referenceImages);
-      // Older assets without saved refs: use captured frame as the character still.
-      if (!characters.length && startFrame?.url) {
-        const hydrated = await hydrateRefImageUrl(startFrame.url);
-        if (hydrated) {
-          characters = [
-            {
-              type: "image",
-              id: `edit-char-${item.id}`,
-              url: hydrated,
-              label: "من المشهد",
-            },
-          ];
+      // Only older assets without saved refs: capture a still as a character slot.
+      if (!characters.length) {
+        const el = videoRef.current;
+        let frameUrl: string | null = null;
+        if (el && active) {
+          try {
+            if (el.readyState < 2) {
+              await new Promise<void>((resolve) => {
+                const done = () => resolve();
+                el.addEventListener("loadeddata", done, { once: true });
+                window.setTimeout(done, 2500);
+              });
+            }
+            try {
+              el.currentTime = Math.min(0.15, (el.duration || 1) * 0.02);
+              await new Promise<void>((resolve) => {
+                const done = () => resolve();
+                el.addEventListener("seeked", done, { once: true });
+                window.setTimeout(done, 800);
+              });
+            } catch {
+              // keep current frame
+            }
+            const captured = await captureVideoFrame(el);
+            frameUrl = captured?.url || null;
+          } catch {
+            frameUrl = null;
+          }
+        }
+        if (!frameUrl && poster && !posterFailed) {
+          frameUrl = poster;
+        }
+        if (frameUrl) {
+          const hydrated = await hydrateRefImageUrl(frameUrl);
+          if (hydrated) {
+            characters = [
+              {
+                type: "image",
+                id: `edit-char-${item.id}`,
+                url: hydrated,
+                label: "من المشهد",
+              },
+            ];
+          }
         }
       }
 

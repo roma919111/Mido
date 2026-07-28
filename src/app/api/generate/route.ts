@@ -30,31 +30,61 @@ import {
 } from "@/lib/model-catalog";
 import { loadSyncedCatalog } from "@/lib/openart-catalog-sync";
 import {
-  buildFirstFrameCharacterPrompt,
   buildSeedanceCharacterPrompt,
   orderCharacterRefsForBinding,
   stripInternalPromptNotes,
 } from "@/lib/character-names";
+import { saveLocalImage } from "@/lib/local-media";
 import type { VisualReference } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-function persistableReferenceImages(
+/**
+ * Persist character stills as stable `/generations/…` paths so Assets → Edit
+ * can restore the uploaded faces (data URLs / remote URLs blow sessionStorage).
+ */
+async function persistableReferenceImages(
   refs: VisualReference[] | undefined,
-): VisualReference[] | undefined {
+): Promise<VisualReference[] | undefined> {
   if (!Array.isArray(refs) || !refs.length) return undefined;
-  const kept = refs
-    .filter((r) => r && typeof r.url === "string" && r.url.length > 0)
-    .filter((r) => !r.url.startsWith("blob:"))
-    .slice(0, 4)
-    .map((r) => ({
-      type: "image" as const,
-      id: String(r.id || `ref-${Math.random().toString(36).slice(2, 8)}`),
-      url: r.url,
-      label: String(r.label || "").slice(0, 40),
-    }));
-  return kept.length ? kept : undefined;
+  const out: VisualReference[] = [];
+  for (const r of refs.slice(0, 4)) {
+    if (!r || typeof r.url !== "string" || !r.url.length) continue;
+    if (r.url.startsWith("blob:")) continue;
+    const label = String(r.label || "").slice(0, 40);
+    const id = String(r.id || `ref-${Math.random().toString(36).slice(2, 8)}`);
+    if (r.url.startsWith("/generations/")) {
+      out.push({ type: "image", id, url: r.url, label });
+      continue;
+    }
+    if (r.url.startsWith("data:image/")) {
+      try {
+        const m = /^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/i.exec(r.url);
+        if (!m?.[2]) continue;
+        const bytes = Buffer.from(m[2], "base64");
+        if (bytes.length < 32) continue;
+        const saved = await saveLocalImage({
+          bytes,
+          contentType: m[1] || "image/jpeg",
+          label: label || "character",
+          prefix: "char",
+        });
+        out.push({
+          type: "image",
+          id: saved.visualReference.id || id,
+          url: saved.localPath,
+          label,
+        });
+      } catch {
+        // skip unpersistable still
+      }
+      continue;
+    }
+    // http(s) — keep as-is (Edit can fetch); prefer not to re-download here
+    out.push({ type: "image", id, url: r.url, label });
+  }
+  return out.length ? out : undefined;
 }
 
 type GenBody = {
@@ -413,6 +443,9 @@ export async function POST(request: Request) {
         : Math.min(bounds.max, Math.max(bounds.min, requestedDuration));
 
       const cleanPrompt = stripInternalPromptNotes(prompt);
+      const savedRefs = await persistableReferenceImages(
+        Array.isArray(body.referenceImages) ? body.referenceImages : undefined,
+      );
       const asset = await createAsset({
         userId: user.id,
         mediaType: media,
@@ -426,9 +459,7 @@ export async function POST(request: Request) {
         // Intermediate beats never appear in Assets — only the stitched final.
         hidden: Boolean(body.sequencePart),
         targetSeconds: modelDuration,
-        referenceImages: persistableReferenceImages(
-          Array.isArray(body.referenceImages) ? body.referenceImages : undefined,
-        ),
+        referenceImages: savedRefs,
         preferClarity,
       });
 
@@ -453,15 +484,10 @@ export async function POST(request: Request) {
           referenceUrls.push(u);
         }
 
-        // Seedance mini: 1 character → first_frame (strongest face lock).
-        // 2+ → multimodal reference_image with matching @ImageN order.
+        // Seedance: character stills always use multimodal reference_image + @ImageN.
+        // first_frame is for scene start only — it does NOT reliably lock face identity.
         let finalPrompt = cleanPrompt;
-        if (referenceUrls.length === 1) {
-          startUrl = referenceUrls[0]!;
-          lastUrl = null;
-          referenceUrls.length = 0;
-          finalPrompt = buildFirstFrameCharacterPrompt(cleanPrompt, keptRefs[0]);
-        } else if (referenceUrls.length > 1) {
+        if (referenceUrls.length >= 1) {
           startUrl = null;
           lastUrl = null;
           finalPrompt = buildSeedanceCharacterPrompt(cleanPrompt, keptRefs);
@@ -495,7 +521,7 @@ export async function POST(request: Request) {
           url: "",
           status: "running",
           hidden: Boolean(body.sequencePart),
-          referenceImages: persistableReferenceImages(refList),
+          referenceImages: savedRefs || (await persistableReferenceImages(refList)),
         });
 
         /**

@@ -140,6 +140,23 @@ export function veronixPosterSrc(input: {
   return buildMediaApiPath({ ...input, mediaType: "video" }, "poster");
 }
 
+/**
+ * Display / hydrate URL for a character still.
+ * Local `/generations/*` files are not public — always go through the stream proxy.
+ */
+export function veronixRefImageSrc(url: string | null | undefined): string | null {
+  const raw = (url || "").trim();
+  if (!raw) return null;
+  if (raw.startsWith("data:image/") || raw.startsWith("blob:")) return raw;
+  if (raw.startsWith("/generations/")) {
+    const qs = new URLSearchParams({ local: raw, type: "image" });
+    return `/api/media/stream?${qs.toString()}`;
+  }
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (raw.startsWith("/")) return raw;
+  return null;
+}
+
 /** Strip internal multi-shot / ETA / binding tags from the customer-facing prompt. */
 export function cleanAssetPrompt(prompt: string | undefined | null): string {
   if (!prompt) return "";
