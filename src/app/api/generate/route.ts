@@ -1,6 +1,7 @@
 import { after, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { adjustCredits, createAsset, updateAsset, updateUser } from "@/lib/db";
+import { refundFailedAssetCredits } from "@/lib/credit-refund";
 import { quoteOpenArtCredits } from "@/lib/credit-quote";
 import {
   createBytePlusVideoTask,
@@ -210,22 +211,20 @@ export async function POST(request: Request) {
           } catch (err) {
             const msg =
               err instanceof Error ? err.message : "Image generation failed";
-            if (quote.totalCredits > 0) {
-              await adjustCredits(user.id, quote.totalCredits).catch(
-                () => undefined,
-              );
-            }
-            await updateAsset(asset.id, user.id, {
-              status: "failed",
-              error: msg,
+            const refund = await refundFailedAssetCredits({
+              userId: user.id,
+              assetId: asset.id,
+              errorMessage: msg,
             });
             return {
               assetId: asset.id,
               modelId: VERONIX_IMAGE_MODEL_ID,
               status: "failed" as const,
-              error: msg,
+              error: refund.errorMessage,
               urls: [] as string[],
               creditsUsed: 0,
+              creditsRefunded: refund.refunded,
+              note: "تم استرجاع الكريديت",
               quote,
             };
           }
@@ -508,21 +507,41 @@ export async function POST(request: Request) {
           )
             ? "الصورة المرجعية رُفضت (شخص حقيقي). أعدنا كتابة الوصف كمشهد شبه واقعي وأعدنا التوليد — إن فشل مرة أخرى استخدم صورة مرسومة/AI أو احذف Start Frame."
             : rawErr;
+          if (freeTrial) {
+            await updateAsset(asset.id, user.id, {
+              historyId,
+              status: "failed",
+              error: errMsg,
+              hidden: Boolean(body.sequencePart),
+            });
+            results.push({
+              modelId: quote.modelId,
+              assetId: asset.id,
+              historyId,
+              error: errMsg,
+              creditsUsed: 0,
+              freeTrial,
+              provider: "byteplus",
+            });
+            continue;
+          }
           await updateAsset(asset.id, user.id, {
             historyId,
-            status: "failed",
-            error: errMsg,
             hidden: Boolean(body.sequencePart),
           });
-          if (!freeTrial && quote.totalCredits > 0) {
-            await adjustCredits(user.id, quote.totalCredits);
-          }
+          const refund = await refundFailedAssetCredits({
+            userId: user.id,
+            assetId: asset.id,
+            errorMessage: errMsg,
+          });
           results.push({
             modelId: quote.modelId,
             assetId: asset.id,
             historyId,
-            error: errMsg,
+            error: refund.errorMessage,
             creditsUsed: 0,
+            creditsRefunded: refund.refunded,
+            note: "تم استرجاع الكريديت",
             freeTrial,
             provider: "byteplus",
           });
@@ -550,22 +569,40 @@ export async function POST(request: Request) {
           ? "الصورة المرجعية رُفضت (شخص حقيقي). أعدنا كتابة الوصف كمشهد شبه واقعي تلقائياً — إن فشل استخدم صورة مرسومة/AI أو احذف Start Frame."
           : raw;
         console.error("[veronix] BytePlus generation failed (no OpenArt fallback):", raw);
-        await updateAsset(asset.id, user.id, {
-          status: "failed",
-          error: message,
-          hidden: Boolean(body.sequencePart),
-        });
-        if (!freeTrial && quote.totalCredits > 0) {
-          await adjustCredits(user.id, quote.totalCredits);
+        if (freeTrial) {
+          await updateAsset(asset.id, user.id, {
+            status: "failed",
+            error: message,
+            hidden: Boolean(body.sequencePart),
+          });
+          results.push({
+            modelId: quote.modelId,
+            assetId: asset.id,
+            error: message,
+            creditsUsed: 0,
+            freeTrial,
+            provider: "byteplus",
+          });
+        } else {
+          await updateAsset(asset.id, user.id, {
+            hidden: Boolean(body.sequencePart),
+          });
+          const refund = await refundFailedAssetCredits({
+            userId: user.id,
+            assetId: asset.id,
+            errorMessage: message,
+          });
+          results.push({
+            modelId: quote.modelId,
+            assetId: asset.id,
+            error: refund.errorMessage,
+            creditsUsed: 0,
+            creditsRefunded: refund.refunded,
+            note: "تم استرجاع الكريديت",
+            freeTrial,
+            provider: "byteplus",
+          });
         }
-        results.push({
-          modelId: quote.modelId,
-          assetId: asset.id,
-          error: message,
-          creditsUsed: 0,
-          freeTrial,
-          provider: "byteplus",
-        });
       }
     }
 

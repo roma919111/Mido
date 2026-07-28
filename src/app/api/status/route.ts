@@ -7,6 +7,7 @@ import {
 import { getCurrentUser } from "@/lib/customer-auth";
 import { findAssetByHistoryId, findAssetById, updateAsset } from "@/lib/db";
 import { ensureClarityUrl } from "@/lib/ensure-clarity";
+import { refundFailedAssetCredits } from "@/lib/credit-refund";
 
 export const runtime = "nodejs";
 
@@ -28,6 +29,23 @@ export async function GET(request: Request) {
     if (!asset) {
       return NextResponse.json({ error: "Asset not found" }, { status: 404 });
     }
+
+    // Late failures (async image jobs): refund if still charged.
+    let failureError = asset.error || "Generation failed";
+    let creditsRefunded = false;
+    if (asset.status === "failed") {
+      const refund = await refundFailedAssetCredits({
+        userId: user.id,
+        assetId: asset.id,
+        errorMessage: asset.error || "Generation failed",
+      });
+      failureError = refund.errorMessage;
+      creditsRefunded =
+        refund.refunded > 0 ||
+        (Number(asset.creditsUsed || 0) === 0 &&
+          Boolean(asset.error?.includes("تم استرجاع الكريديت")));
+    }
+
     const status =
       asset.status === "completed"
         ? "COMPLETED"
@@ -41,7 +59,9 @@ export async function GET(request: Request) {
       live: true,
       provider: asset.mediaType === "image" ? "byteplus" : "veronix",
       pollAfterSeconds: status === "RUNNING" ? 3 : undefined,
-      error: status === "FAILED" ? asset.error || "Generation failed" : undefined,
+      error: status === "FAILED" ? failureError : undefined,
+      creditsRefunded: status === "FAILED" ? creditsRefunded : undefined,
+      note: status === "FAILED" && creditsRefunded ? "تم استرجاع الكريديت" : undefined,
     });
   }
 
@@ -73,6 +93,9 @@ export async function GET(request: Request) {
           : "";
 
     const user = await getCurrentUser().catch(() => null);
+    let creditsRefunded = false;
+    let failureError = errMsg || "BytePlus generation failed";
+
     if (user && (urls[0] || status === "FAILED")) {
       const byHistory = await findAssetByHistoryId(user.id, historyId);
       const targetId = assetId || byHistory?.id;
@@ -90,12 +113,16 @@ export async function GET(request: Request) {
           }).catch(() => null);
           urls[0] = graded;
         } else if (status === "FAILED") {
-          await updateAsset(targetId, user.id, {
-            historyId,
-            status: "failed",
-            error: errMsg || "BytePlus generation failed",
-            hidden: keepHidden ? true : false,
-          }).catch(() => null);
+          const refund = await refundFailedAssetCredits({
+            userId: user.id,
+            assetId: targetId,
+            errorMessage: errMsg || "BytePlus generation failed",
+          });
+          if (keepHidden) {
+            await updateAsset(targetId, user.id, { hidden: true }).catch(() => null);
+          }
+          creditsRefunded = true;
+          failureError = refund.errorMessage;
         }
       }
     }
@@ -107,7 +134,9 @@ export async function GET(request: Request) {
       live: true,
       provider: "byteplus",
       pollAfterSeconds: status === "RUNNING" || status === "PENDING" ? 8 : undefined,
-      error: status === "FAILED" ? errMsg || "BytePlus generation failed" : undefined,
+      error: status === "FAILED" ? failureError : undefined,
+      creditsRefunded: status === "FAILED" ? creditsRefunded : undefined,
+      note: status === "FAILED" && creditsRefunded ? "تم استرجاع الكريديت" : undefined,
       details: task.raw,
     });
   } catch (error) {

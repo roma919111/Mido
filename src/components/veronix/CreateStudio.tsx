@@ -1086,6 +1086,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           status?: string;
           urls?: string[];
           error?: string;
+          note?: string;
+          creditsRefunded?: boolean;
           pollAfterSeconds?: number;
         }>(`/api/status?${statusQs.toString()}`);
         if (!res.ok) continue;
@@ -1119,7 +1121,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         }
         if (st === "FAILED" || st === "CANCELLED") {
           setPreview({ url: "", mediaType, historyId, assetId, status: "failed" });
-          setError(data.error || "فشل التوليد");
+          const failMsg =
+            data.creditsRefunded || data.note
+              ? data.error?.includes("تم استرجاع")
+                ? data.error
+                : `${data.error || "فشل التوليد"}\nفشل التوليد · تم استرجاع الكريديت`
+              : data.error || "فشل التوليد";
+          setError(failMsg);
           setGenStartedAt(null);
           await onUserRefresh().catch(() => undefined);
           return;
@@ -1269,6 +1277,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         assetId?: string;
         urls?: string[];
         needsBrandOutro?: boolean;
+        creditsRefunded?: number;
+        note?: string;
       }>;
     }>("/api/create", {
       method: "POST",
@@ -1438,7 +1448,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
       const failed = data.results?.find((r) => r.error);
       if (failed?.error) {
-        setError(failed.error);
+        const msg =
+          failed.note || (failed.creditsRefunded && failed.creditsRefunded > 0)
+            ? failed.error.includes("تم استرجاع")
+              ? failed.error
+              : `${failed.error}\nفشل التوليد · تم استرجاع الكريديت`
+            : failed.error;
+        setError(msg);
         setGenStartedAt(null);
         return;
       }
@@ -1538,7 +1554,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
       {(error || status) && (
         <div
-          className={`rounded-2xl border px-4 py-3 text-sm ${
+          className={`rounded-2xl border px-4 py-3 text-sm whitespace-pre-line ${
             error
               ? "border-rose-400/30 bg-rose-400/10 text-rose-100"
               : "border-cyan-400/25 bg-cyan-400/10 text-cyan-50"
@@ -2071,6 +2087,16 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           )}
         </div>
       )}
+
+      {error && error.includes("تم استرجاع") ? (
+        <div
+          className="fixed inset-x-0 bottom-[4.75rem] z-[60] mx-auto w-[min(100%-1.5rem,28rem)] rounded-2xl border border-rose-400/35 bg-[#1a1014]/95 px-4 py-3 text-center text-sm font-semibold text-rose-50 shadow-[0_12px_32px_rgba(0,0,0,0.45)] backdrop-blur-md sm:bottom-24"
+          dir="rtl"
+          role="status"
+        >
+          فشل التوليد · تم استرجاع الكريديت
+        </div>
+      ) : null}
 
     </div>
   );

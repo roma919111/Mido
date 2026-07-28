@@ -9,7 +9,7 @@ import {
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Download, Loader2, Pencil, Trash2, Volume2, VolumeX } from "lucide-react";
+import { Download, Loader2, Pause, Pencil, Play, Trash2, Volume2, VolumeX } from "lucide-react";
 import { AppHeader, type CustomerUser } from "./AppHeader";
 import { BottomNav } from "./BottomNav";
 import { fetchJson } from "@/lib/fetch-json";
@@ -103,6 +103,14 @@ async function captureVideoFrame(
   }
 }
 
+function formatClipDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "—";
+  const total = Math.max(1, Math.round(seconds));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 function FeedVideoSlide({
   item,
   active,
@@ -127,6 +135,13 @@ function FeedVideoSlide({
   const [posterFailed, setPosterFailed] = useState(false);
   const [promptExpanded, setPromptExpanded] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const [durationSec, setDurationSec] = useState<number | null>(
+    () =>
+      typeof item.targetSeconds === "number" && item.targetSeconds > 0
+        ? item.targetSeconds
+        : null,
+  );
 
   const src =
     loadMedia
@@ -151,12 +166,22 @@ function FeedVideoSlide({
     Boolean(src) &&
     item.status !== "failed" &&
     item.status !== "running";
+  const displayDuration =
+    durationSec && durationSec > 0
+      ? durationSec
+      : inferTargetSecondsFromAsset(item);
 
   useEffect(() => {
     setPromptExpanded(false);
     setVideoReady(false);
     setPosterFailed(false);
-  }, [item.id]);
+    setPlaying(false);
+    setDurationSec(
+      typeof item.targetSeconds === "number" && item.targetSeconds > 0
+        ? item.targetSeconds
+        : null,
+    );
+  }, [item.id, item.targetSeconds]);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -172,6 +197,7 @@ function FeedVideoSlide({
       return () => window.clearTimeout(revealTimer);
     }
     el.pause();
+    setPlaying(false);
     setVideoReady(false);
     try {
       el.currentTime = 0;
@@ -179,6 +205,19 @@ function FeedVideoSlide({
       // ignore
     }
   }, [active, muted, canPlay, src]);
+
+  const togglePlay = () => {
+    const el = videoRef.current;
+    if (!el || !canPlay) return;
+    if (el.paused) {
+      const play = el.play();
+      if (play && typeof play.catch === "function") {
+        play.catch(() => undefined);
+      }
+    } else {
+      el.pause();
+    }
+  };
 
   const handleEdit = async () => {
     if (editing) return;
@@ -311,17 +350,48 @@ function FeedVideoSlide({
             preload={active ? "auto" : loadMedia ? "metadata" : "none"}
             controls={false}
             controlsList="nodownload"
+            onLoadedMetadata={(e) => {
+              const d = e.currentTarget.duration;
+              if (Number.isFinite(d) && d > 0) setDurationSec(d);
+            }}
             onLoadedData={() => setVideoReady(true)}
             onCanPlay={() => setVideoReady(true)}
-            onPlaying={() => setVideoReady(true)}
+            onPlaying={() => {
+              setVideoReady(true);
+              setPlaying(true);
+            }}
+            onPause={() => setPlaying(false)}
             onError={() => {
               // Keep poster visible; allow retry when user scrolls back.
               setVideoReady(false);
+              setPlaying(false);
             }}
             className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-200 ${
               active && videoReady ? "opacity-100" : "opacity-0"
             }`}
           />
+
+          {/* Duration + Play / Pause */}
+          <div className="absolute left-1/2 top-[42%] z-30 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-2">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                togglePlay();
+              }}
+              className="flex h-16 w-16 items-center justify-center rounded-full bg-black/45 text-white ring-1 ring-white/35 backdrop-blur-md transition hover:bg-black/55"
+              aria-label={playing ? "إيقاف مؤقت" : "تشغيل"}
+            >
+              {playing ? (
+                <Pause className="h-7 w-7" fill="currentColor" />
+              ) : (
+                <Play className="h-7 w-7 translate-x-0.5" fill="currentColor" />
+              )}
+            </button>
+            <span className="rounded-full bg-black/55 px-2.5 py-1 text-xs font-bold tabular-nums text-white ring-1 ring-white/20 backdrop-blur-md">
+              {formatClipDuration(displayDuration)}
+            </span>
+          </div>
         </>
       ) : (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center">
@@ -338,7 +408,9 @@ function FeedVideoSlide({
             {item.status === "running"
               ? "جاري التوليد"
               : item.status === "failed"
-                ? "فشل التوليد"
+                ? item.error?.includes("تم استرجاع")
+                  ? "فشل التوليد · تم استرجاع الكريديت"
+                  : "فشل التوليد"
                 : item.status}
           </span>
           {item.status === "running" && (
@@ -350,6 +422,11 @@ function FeedVideoSlide({
               />
             </div>
           )}
+          {item.status === "failed" && item.error?.includes("تم استرجاع") ? (
+            <p className="relative z-10 mt-1 max-w-xs text-xs text-emerald-200/90">
+              أُعيد الكريديت إلى رصيدك
+            </p>
+          ) : null}
         </div>
       )}
 
@@ -473,7 +550,9 @@ function FeedVideoSlide({
             <p className="mt-1 text-sm text-white/50">بدون وصف</p>
           )}
           {item.error ? (
-            <p className="mt-1 text-xs text-rose-300">{item.error}</p>
+            <p className="mt-1 whitespace-pre-line text-xs text-rose-300">
+              {item.error}
+            </p>
           ) : null}
         </div>
       </div>

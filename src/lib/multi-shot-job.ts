@@ -16,6 +16,7 @@ import {
   waitForBytePlusVideoTask,
 } from "@/lib/byteplus-ark";
 import { quoteOpenArtCredits } from "@/lib/credit-quote";
+import { refundFailedAssetCredits } from "@/lib/credit-refund";
 import {
   adjustCredits,
   createAsset,
@@ -347,12 +348,12 @@ async function tickMultiShotJobUnlocked(
     const st = mapBytePlusStatus(finished.status);
 
     if (!videoUrl) {
-      await updateAsset(part.id, userId, {
-        status: "failed",
-        error: st === "FAILED" ? "BytePlus generation failed" : "timeout",
-        hidden: true,
+      await refundFailedAssetCredits({
+        userId,
+        assetId: part.id,
+        errorMessage: st === "FAILED" ? "BytePlus generation failed" : "timeout",
       });
-      if (quote.totalCredits > 0) await adjustCredits(userId, quote.totalCredits);
+      await updateAsset(part.id, userId, { hidden: true });
       meta.nextIndex += 1;
       meta.bridgeFrameUrl = null;
       await updateAsset(pending.id, userId, {
@@ -385,14 +386,12 @@ async function tickMultiShotJobUnlocked(
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "فشل توليد اللقطة";
-    await updateAsset(part.id, userId, {
-      status: "failed",
-      error: message,
-      hidden: true,
+    await refundFailedAssetCredits({
+      userId,
+      assetId: part.id,
+      errorMessage: message,
     });
-    if (quote.totalCredits > 0) {
-      await adjustCredits(userId, quote.totalCredits).catch(() => undefined);
-    }
+    await updateAsset(part.id, userId, { hidden: true });
     meta.nextIndex += 1;
     meta.bridgeFrameUrl = null;
     await updateAsset(pending.id, userId, {

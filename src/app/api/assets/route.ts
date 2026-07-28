@@ -18,6 +18,7 @@ import { PRODUCT_PER_SHOT_SECONDS } from "@/lib/shot-plan";
 import { VERONIX_MODEL_ID } from "@/lib/free-trial";
 import { toSemiRealisticScenePrompt } from "@/lib/reference-sanitize";
 import { ensureClarityUrl, needsClarityGrade } from "@/lib/ensure-clarity";
+import { refundFailedAssetCredits } from "@/lib/credit-refund";
 import { concatVideos } from "@/lib/video-stitch";
 import { tickUserMultiShotJobs, isMultiShotStillGenerating } from "@/lib/multi-shot-job";
 import { estimateGenerateSeconds } from "@/lib/generate-eta";
@@ -240,12 +241,17 @@ async function syncRunningAssets(userId: string) {
               // fall through to mark failed
             }
           }
-          await updateAsset(asset.id, userId, {
-            status: "failed",
-            error: errMsg,
-            // Keep failed beats hidden; the job card carries the error.
-            hidden: asset.mode === "sequence-part" ? true : false,
+          await refundFailedAssetCredits({
+            userId,
+            assetId: asset.id,
+            errorMessage: errMsg,
           });
+          // Keep failed beats hidden; the job card carries the error.
+          if (asset.mode === "sequence-part") {
+            await updateAsset(asset.id, userId, { hidden: true });
+          } else {
+            await updateAsset(asset.id, userId, { hidden: false });
+          }
         }
         continue;
       }
