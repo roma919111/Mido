@@ -1,7 +1,7 @@
 /**
  * Soft cinematic / beauty grade for character stills.
- * Matched to accepted Seedance refs: soft skin, diffused light look,
- * mild film grade — NOT CGI/cartoon.
+ * Tuned from accepted Seedance refs (soft skin, film still) vs rejected
+ * passport-sharp faces. NOT CGI/cartoon — closer to portrait beauty mode.
  */
 
 import { spawn } from "node:child_process";
@@ -51,44 +51,51 @@ async function loadImageBytes(url: string): Promise<Buffer> {
   return buf;
 }
 
+export type SoftGradeLevel = "generate" | "retry";
+
 /**
- * Soft cinematic beauty grade (Generate path + privacy retry).
- * - mild skin smooth (reduce pore microcontrast)
- * - soft diffuse lighting feel
- * - slight film desaturation
- * Keeps photoreal likeness; avoids cartoon/CGI plastic look.
+ * Portrait beauty / soft film grade.
+ * Key anti-reject levers (from accepted vs rejected refs):
+ * - downscale hard (sharp high-res faces trigger "real person")
+ * - skin smooth (median + blur) without cartoon edges
+ * - mild film desat + soft lift
  */
 export async function applySoftCinematicGrade(
   bytes: Buffer,
-  opts?: { stronger?: boolean },
+  opts?: { level?: SoftGradeLevel; stronger?: boolean },
 ): Promise<Buffer> {
-  const stronger = Boolean(opts?.stronger);
-  // Generate: light pass. Privacy retry: a bit more soft beauty, still not CGI.
+  const level: SoftGradeLevel =
+    opts?.level || (opts?.stronger ? "retry" : "generate");
+  const retry = level === "retry";
+
+  // 768 on generate / 640 on retry — passport sharpness is the main reject signal.
+  const edge = retry ? 640 : 768;
+
   return sharp(bytes)
     .rotate()
     .resize({
-      width: stronger ? 1024 : 1152,
-      height: stronger ? 1024 : 1152,
+      width: edge,
+      height: edge,
       fit: "inside",
       withoutEnlargement: true,
+      kernel: sharp.kernel.lanczos3,
     })
-    // Soft film: slightly warmer lift, mild desat (cinematic still, not selfie).
     .modulate({
-      brightness: stronger ? 1.04 : 1.03,
-      saturation: stronger ? 0.9 : 0.92,
+      brightness: retry ? 1.06 : 1.04,
+      saturation: retry ? 0.84 : 0.88,
     })
-    .linear(stronger ? 1.06 : 1.04, stronger ? -6 : -4)
-    // Skin soften without cartoon: tiny median + soft blur, then gentle re-sharpen.
-    .median(stronger ? 3 : 2)
-    .blur(stronger ? 0.55 : 0.4)
-    .sharpen({ sigma: stronger ? 0.55 : 0.45 })
-    .jpeg({ quality: stronger ? 82 : 84, mozjpeg: true })
+    .linear(retry ? 1.03 : 1.02, retry ? -3 : -2)
+    // Beauty soft: kill pore microcontrast (accepted refs look airbrushed).
+    .median(retry ? 7 : 5)
+    .blur(retry ? 1.35 : 0.95)
+    // Very light re-sharpen so face stays clear but not ID-photo crisp.
+    .sharpen({ sigma: retry ? 0.28 : 0.35 })
+    .jpeg({ quality: retry ? 80 : 82, mozjpeg: true })
     .toBuffer();
 }
 
 /**
- * Privacy retry: same soft cinematic look, slightly stronger.
- * Returns a data: URL for Ark ingest.
+ * Privacy retry: stronger portrait beauty (still not CGI).
  */
 export async function stylizeReferenceImage(sourceUrl: string): Promise<string> {
   const trimmed = sourceUrl.trim();
@@ -100,21 +107,21 @@ export async function stylizeReferenceImage(sourceUrl: string): Promise<string> 
 
   try {
     const raw = await loadImageBytes(trimmed);
-    const out = await applySoftCinematicGrade(raw, { stronger: true });
+    const out = await applySoftCinematicGrade(raw, { level: "retry" });
     if (out.length < 400) throw new Error("Stylized reference too small");
     await writeFile(outPublic, out);
     return `data:image/jpeg;base64,${out.toString("base64")}`;
   } catch {
     const work = await mkdtemp(path.join(tmpdir(), "vyronix-refstyle-"));
     try {
-      const raw = path.join(work, "in.bin");
+      const rawPath = path.join(work, "in.bin");
       const styled = path.join(work, "styled.jpg");
-      await writeFile(raw, await loadImageBytes(trimmed));
-      // Soft cinematic ffmpeg — beauty soft + mild film, not CGI/noise cartoon.
+      await writeFile(rawPath, await loadImageBytes(trimmed));
       const attempts = [
-        "scale=1024:-2:flags=lanczos,eq=contrast=1.05:saturation=0.9:brightness=0.02,gblur=sigma=0.6,unsharp=3:3:0.4:3:3:0.0,format=yuvj420p",
-        "scale=1024:-2:flags=lanczos,eq=contrast=1.04:saturation=0.92:brightness=0.015,format=yuvj420p",
-        "scale=1024:-2,format=yuvj420p",
+        // Soft beauty film — downscale + gblur + mild desat (no CGI noise).
+        "scale=640:-2:flags=lanczos,eq=contrast=1.02:saturation=0.84:brightness=0.03,gblur=sigma=1.2,unsharp=3:3:0.25:3:3:0.0,format=yuvj420p",
+        "scale=640:-2:flags=lanczos,eq=saturation=0.88:brightness=0.02,gblur=sigma=0.9,format=yuvj420p",
+        "scale=640:-2,format=yuvj420p",
       ];
       let ok = false;
       for (const vf of attempts) {
@@ -122,7 +129,7 @@ export async function stylizeReferenceImage(sourceUrl: string): Promise<string> 
           await run("ffmpeg", [
             "-y",
             "-i",
-            raw,
+            rawPath,
             "-vf",
             vf,
             "-frames:v",
@@ -134,7 +141,7 @@ export async function stylizeReferenceImage(sourceUrl: string): Promise<string> 
           ok = true;
           break;
         } catch {
-          // try next
+          // next
         }
       }
       if (!ok) throw new Error("Unable to stylize reference image");
@@ -158,8 +165,7 @@ export function isInputImagePrivacyError(message: string): boolean {
 const CINEMA_MARK = "لقطة سينمائية ناعمة";
 
 /**
- * Privacy retry prompt: cinematic soft still (matches accepted refs),
- * not CGI/cartoon and not passport-photo language.
+ * Privacy retry prompt: soft cinematic film still (matches accepted refs).
  */
 export function toSemiRealisticScenePrompt(prompt: string): string {
   const base = (prompt || "")
@@ -176,7 +182,7 @@ export function toSemiRealisticScenePrompt(prompt: string): string {
     return base;
   }
   return [
-    `${CINEMA_MARK} (soft cinematic film still), diffused lighting, gentle skin, shallow depth of field.`,
+    `${CINEMA_MARK} (soft cinematic film still), diffused lighting, soft skin, shallow depth of field.`,
     "Creative cinematic media — not a raw phone selfie or ID photo.",
     "",
     base,

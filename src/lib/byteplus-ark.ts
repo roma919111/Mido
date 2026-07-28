@@ -23,19 +23,19 @@ const DEFAULT_MODEL = "dreamina-seedance-2-0-mini-260615";
 /** Compress + soft cinematic beauty grade (accepted-ref look, not CGI). */
 async function toCompressedDataUrl(bytes: Buffer, mimeHint?: string): Promise<string> {
   try {
-    const out = await applySoftCinematicGrade(bytes, { stronger: false });
+    const out = await applySoftCinematicGrade(bytes, { level: "generate" });
     return `data:image/jpeg;base64,${out.toString("base64")}`;
   } catch {
     try {
       const out = await sharp(bytes)
         .rotate()
         .resize({
-          width: 1152,
-          height: 1152,
+          width: 768,
+          height: 768,
           fit: "inside",
           withoutEnlargement: true,
         })
-        .jpeg({ quality: 84, mozjpeg: true })
+        .jpeg({ quality: 82, mozjpeg: true })
         .toBuffer();
       return `data:image/jpeg;base64,${out.toString("base64")}`;
     } catch {
@@ -374,8 +374,8 @@ export async function createBytePlusVideoTask(
     ({ res, data } = await postCreateTask(payload));
   }
 
-  // Privacy block: prefer keeping photoreal refs. Try prompt-only rewrite first,
-  // then a light grade — never drop character stills (that wastes credits).
+  // Privacy block: skip wasteful same-photo retry — go straight to stronger
+  // portrait beauty grade (still not CGI). Never drop character stills.
   const hasImages = Boolean(
     input.startFrameUrl || (input.referenceImageUrls && input.referenceImageUrls.length),
   );
@@ -387,46 +387,31 @@ export async function createBytePlusVideoTask(
         prompt: toSemiRealisticScenePrompt(input.prompt),
       };
       try {
-        // 1) Same photos + photoreal cinematic prompt
-        payload = buildCreatePayload(rewritten, {
-          frameUrl: input.startFrameUrl || null,
-          lastFrameUrl: input.lastFrameUrl || null,
-          referenceUrls: input.startFrameUrl ? [] : input.referenceImageUrls || [],
-          imageRole: input.startFrameUrl ? "first_frame" : "reference_image",
-          generateAudio: Boolean(payload.generate_audio),
-        });
-        ({ res, data } = await postCreateTask(payload));
-
-        // 2) Light grade only if still blocked
-        if (!res.ok && isInputImagePrivacyError(errorTextFromCreate(data, res.status))) {
-          if (input.startFrameUrl) {
-            const styled = await stylizeReferenceImage(input.startFrameUrl);
-            payload = buildCreatePayload(rewritten, {
-              frameUrl: styled,
-              lastFrameUrl: input.lastFrameUrl || null,
-              referenceUrls: [],
-              imageRole: "first_frame",
-              generateAudio: Boolean(payload.generate_audio),
-            });
-          } else {
-            const styledRefs: string[] = [];
-            for (const u of input.referenceImageUrls || []) {
-              try {
-                styledRefs.push(await stylizeReferenceImage(u));
-              } catch {
-                styledRefs.push(u);
-              }
+        if (input.startFrameUrl) {
+          const styled = await stylizeReferenceImage(input.startFrameUrl);
+          payload = buildCreatePayload(rewritten, {
+            frameUrl: styled,
+            lastFrameUrl: input.lastFrameUrl || null,
+            referenceUrls: [],
+            imageRole: "first_frame",
+            generateAudio: Boolean(payload.generate_audio),
+          });
+        } else {
+          const styledRefs: string[] = [];
+          for (const u of input.referenceImageUrls || []) {
+            try {
+              styledRefs.push(await stylizeReferenceImage(u));
+            } catch {
+              styledRefs.push(u);
             }
-            payload = buildCreatePayload(rewritten, {
-              frameUrl: null,
-              referenceUrls: styledRefs,
-              generateAudio: Boolean(payload.generate_audio),
-            });
           }
-          ({ res, data } = await postCreateTask(payload));
+          payload = buildCreatePayload(rewritten, {
+            frameUrl: null,
+            referenceUrls: styledRefs,
+            generateAudio: Boolean(payload.generate_audio),
+          });
         }
-        // Intentionally NO "drop stills" retry — generating without faces
-        // looks like "characters failed to bind" and burns customer credits.
+        ({ res, data } = await postCreateTask(payload));
       } catch (styleErr) {
         console.warn(
           "[veronix] privacy retry failed:",

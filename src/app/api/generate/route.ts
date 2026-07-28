@@ -591,7 +591,7 @@ export async function POST(request: Request) {
           const errMsg = /InputImageSensitive|PrivacyInformation|real person/i.test(
             rawErr,
           )
-            ? "الصورة المرجعية رُفضت (وجه حاد شبه فوتوغرافي). أعدنا تنعيمًا سينمائيًا خفيفًا وأعدنا التوليد — إن فشل استخدم صورة بإضاءة ناعمة وبشرة أنعم لنفس الشخصية."
+            ? "الصورة المرجعية رُفضت من BytePlus (وجه حاد). أعدنا تنعيم Portrait أقوى تلقائياً — إن فشل استخدم صورة ببشرة أنعم وإضاءة ناعمة مثل الصور التي قُبلت سابقًا. تم استرجاع الكريديت."
             : rawErr;
           if (freeTrial) {
             await updateAsset(asset.id, user.id, {
@@ -652,7 +652,7 @@ export async function POST(request: Request) {
       } catch (err) {
         const raw = err instanceof Error ? err.message : "BytePlus generation failed";
         const message = /InputImageSensitive|PrivacyInformation|real person/i.test(raw)
-          ? "الصورة المرجعية رُفضت (وجه حاد شبه فوتوغرافي). أعدنا تنعيمًا سينمائيًا خفيفًا وأعدنا التوليد — إن فشل استخدم صورة بإضاءة ناعمة وبشرة أنعم لنفس الشخصية."
+          ? "الصورة المرجعية رُفضت من BytePlus (وجه حاد). أعدنا تنعيم Portrait أقوى تلقائياً — إن فشل استخدم صورة ببشرة أنعم وإضاءة ناعمة مثل الصور التي قُبلت سابقًا. تم استرجاع الكريديت."
           : raw;
         console.error("[veronix] BytePlus generation failed (no OpenArt fallback):", raw);
         if (freeTrial) {
