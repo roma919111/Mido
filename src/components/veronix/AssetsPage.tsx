@@ -37,8 +37,8 @@ import {
 } from "@/lib/generate-eta";
 import { writeEditDraft } from "@/lib/edit-draft";
 import {
-  hydrateReferenceImages,
   hydrateRefImageUrl,
+  prepareCharacterRefsForEdit,
 } from "@/lib/hydrate-ref-images";
 import {
   cleanAssetPrompt,
@@ -410,7 +410,7 @@ function FeedVideoSlide({
         : [];
 
       let characters = savedRefs.length
-        ? await hydrateReferenceImages(savedRefs)
+        ? await prepareCharacterRefsForEdit(savedRefs)
         : [];
 
       // If hydrate failed but we still have paths, keep the original URLs
@@ -953,9 +953,41 @@ function FeedImageSlide({
     if (editing) return;
     setEditing(true);
     try {
-      let characters = await hydrateReferenceImages(item.referenceImages);
+      // Re-fetch the asset so character stills are not missing from a stale cache.
+      let savedRefs = Array.isArray(item.referenceImages)
+        ? item.referenceImages
+        : [];
+      let editPrompt = prompt || item.prompt || "";
+      let aspectRatio = item.aspectRatio;
+      let resolution = item.resolution;
+      try {
+        const { res, data } = await fetchJson<{
+          assets?: Array<{
+            id: string;
+            prompt?: string;
+            aspectRatio?: string;
+            resolution?: string;
+            referenceImages?: typeof item.referenceImages;
+          }>;
+        }>("/api/assets");
+        if (res.ok) {
+          const asset = (data.assets || []).find((a) => a.id === item.id);
+          if (asset?.prompt) editPrompt = cleanAssetPrompt(asset.prompt) || asset.prompt;
+          if (asset?.aspectRatio) aspectRatio = asset.aspectRatio;
+          if (asset?.resolution) resolution = asset.resolution;
+          if (Array.isArray(asset?.referenceImages) && asset.referenceImages.length) {
+            savedRefs = asset.referenceImages;
+          }
+        }
+      } catch {
+        // keep list item refs
+      }
+
+      let characters = await prepareCharacterRefsForEdit(savedRefs);
+
+      // Last resort only when the asset never stored character stills.
       if (!characters.length && item.url) {
-        const url = await hydrateRefImageUrl(item.url);
+        const url = (await hydrateRefImageUrl(item.url)) || item.url;
         if (url) {
           characters = [
             {
@@ -967,14 +999,15 @@ function FeedImageSlide({
           ];
         }
       }
+
       writeEditDraft({
-        prompt: prompt || item.prompt || "",
+        prompt: editPrompt,
         media: "image",
         startFrame: null,
         referenceImages: characters,
         sourceAssetId: item.id,
-        aspectRatio: item.aspectRatio,
-        resolution: item.resolution,
+        aspectRatio,
+        resolution,
       });
       router.push("/create/image?edit=1");
     } finally {

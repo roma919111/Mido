@@ -3,7 +3,9 @@
  * Restores prompt, characters, duration, resolution, aspect, clarity.
  *
  * Uses sessionStorage + localStorage so the draft survives soft navigations
- * and brief storage quirks on mobile.
+ * and brief storage quirks on mobile. An in-memory sticky copy keeps character
+ * stills even when storage quota rejects large payloads, and survives React
+ * Strict Mode remounts on the Create page.
  */
 
 import type { VisualReference } from "@/lib/types";
@@ -27,6 +29,12 @@ export type CreateEditDraft = {
    */
   useAsStartFrame?: boolean;
 };
+
+/** Same-tab memory — survives storage quota failures + Strict Mode remount. */
+let stickyDraft: CreateEditDraft | null = null;
+/** True after writeEditDraft until dismissEditDraft (not cleared by clearEditDraft). */
+let editBootLive = false;
+let dismissTimer: ReturnType<typeof setTimeout> | null = null;
 
 function writeStore(key: string, value: string) {
   try {
@@ -68,20 +76,9 @@ function clearStore(key: string) {
   }
 }
 
-export function writeEditDraft(draft: CreateEditDraft) {
-  if (typeof window === "undefined") return;
+function parseDraft(raw: string | null): CreateEditDraft | null {
+  if (!raw) return null;
   try {
-    writeStore(EDIT_DRAFT_KEY, JSON.stringify(draft));
-  } catch {
-    // ignore quota
-  }
-}
-
-export function readEditDraft(): CreateEditDraft | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = readStore(EDIT_DRAFT_KEY);
-    if (!raw) return null;
     const parsed = JSON.parse(raw) as CreateEditDraft;
     if (!parsed || typeof parsed.prompt !== "string") return null;
     return parsed;
@@ -90,9 +87,118 @@ export function readEditDraft(): CreateEditDraft | null {
   }
 }
 
+/** Compact refs so sessionStorage can hold the draft (prefer paths over data URLs). */
+function compactDraftForStorage(draft: CreateEditDraft): CreateEditDraft {
+  const compactUrl = (url: string | undefined | null): string | null => {
+    const u = (url || "").trim();
+    if (!u) return null;
+    if (u.startsWith("data:image/") && u.length > 180_000) return null;
+    return u;
+  };
+  const referenceImages = (draft.referenceImages || [])
+    .map((r, i) => {
+      const url = compactUrl(r?.url);
+      if (!url) return null;
+      return {
+        type: "image" as const,
+        id: r.id || `edit-ref-${i}`,
+        url,
+        label: r.label || "",
+      };
+    })
+    .filter((r): r is VisualReference => Boolean(r));
+
+  const startUrl = compactUrl(draft.startFrame?.url);
+  return {
+    ...draft,
+    referenceImages,
+    startFrame:
+      draft.startFrame && startUrl
+        ? { ...draft.startFrame, url: startUrl }
+        : draft.startFrame?.url && !startUrl
+          ? null
+          : draft.startFrame ?? null,
+  };
+}
+
+export function writeEditDraft(draft: CreateEditDraft) {
+  if (typeof window === "undefined") return;
+  if (dismissTimer) {
+    clearTimeout(dismissTimer);
+    dismissTimer = null;
+  }
+  stickyDraft = draft;
+  editBootLive = true;
+  try {
+    writeStore(EDIT_DRAFT_KEY, JSON.stringify(compactDraftForStorage(draft)));
+  } catch {
+    // Sticky memory still holds the full draft for this tab.
+  }
+}
+
+function readStoredEditDraft(): CreateEditDraft | null {
+  if (typeof window === "undefined") return null;
+  return parseDraft(readStore(EDIT_DRAFT_KEY));
+}
+
+export function readEditDraft(): CreateEditDraft | null {
+  if (typeof window === "undefined") return null;
+  const stored = readStoredEditDraft();
+  if (stored) {
+    // Prefer sticky character refs when storage was compacted/truncated.
+    if (
+      stickyDraft?.referenceImages?.length &&
+      (stickyDraft.referenceImages.length || 0) >
+        (stored.referenceImages?.length || 0)
+    ) {
+      return {
+        ...stored,
+        referenceImages: stickyDraft.referenceImages,
+        startFrame: stickyDraft.startFrame ?? stored.startFrame,
+      };
+    }
+    stickyDraft = stored;
+    return stored;
+  }
+  return editBootLive ? stickyDraft : null;
+}
+
+/** Clear durable storage only — keep sticky boot for Create remounts. */
 export function clearEditDraft() {
   if (typeof window === "undefined") return;
   clearStore(EDIT_DRAFT_KEY);
+}
+
+/** Fully drop Edit hand-off (fresh Create / leave Create). */
+export function dismissEditDraft() {
+  if (typeof window === "undefined") return;
+  if (dismissTimer) {
+    clearTimeout(dismissTimer);
+    dismissTimer = null;
+  }
+  stickyDraft = null;
+  editBootLive = false;
+  clearStore(EDIT_DRAFT_KEY);
+}
+
+/**
+ * After Create unmounts, drop sticky boot unless we are still on /create
+ * (Strict Mode remount) or Edit just wrote a new draft.
+ */
+export function armEditDraftDismiss(ms = 900) {
+  if (typeof window === "undefined") return;
+  if (dismissTimer) clearTimeout(dismissTimer);
+  dismissTimer = setTimeout(() => {
+    dismissTimer = null;
+    try {
+      if (window.location.pathname.startsWith("/create") && editBootLive) {
+        return;
+      }
+    } catch {
+      // ignore
+    }
+    dismissEditDraft();
+  }, ms);
 }
 
 /** Clamp a restored video duration into the paid Seedance window. */

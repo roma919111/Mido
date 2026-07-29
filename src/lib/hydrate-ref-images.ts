@@ -91,3 +91,51 @@ export async function hydrateReferenceImages(
   }
   return out;
 }
+
+/**
+ * Character stills for Assets → Edit draft. Prefer compact `/generations`
+ * (and http) paths so sessionStorage is not blown by JPEG data URLs.
+ * Falls back to the original saved URLs when hydrate fails.
+ */
+export async function prepareCharacterRefsForEdit(
+  refs: VisualReference[] | undefined | null,
+): Promise<VisualReference[]> {
+  if (!Array.isArray(refs) || !refs.length) return [];
+  const saved = refs
+    .filter(
+      (r) =>
+        r?.url &&
+        !/^(start-frame|start-from|edit-start)/i.test(
+          String(r.label || r.id || ""),
+        ),
+    )
+    .slice(0, 4);
+  if (!saved.length) return [];
+
+  const hydrated = await hydrateReferenceImages(saved);
+  const byId = new Map(hydrated.map((r) => [r.id, r]));
+
+  return saved.map((r, i) => {
+    const id = r.id || `edit-ref-${i}`;
+    const fromHydrate = byId.get(id) || hydrated[i];
+    const raw = (r.url || "").trim();
+    // Keep stable local / remote paths — avoid huge data URLs in the draft.
+    const preferCompact =
+      raw.startsWith("/generations/") ||
+      /^https?:\/\//i.test(raw) ||
+      (raw.startsWith("data:image/") && raw.length < 180_000);
+    const url = preferCompact
+      ? raw
+      : fromHydrate?.url &&
+          (!fromHydrate.url.startsWith("data:image/") ||
+            fromHydrate.url.length < 180_000)
+        ? fromHydrate.url
+        : raw;
+    return {
+      type: "image" as const,
+      id,
+      url,
+      label: r.label || fromHydrate?.label || "",
+    };
+  });
+}

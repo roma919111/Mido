@@ -61,8 +61,10 @@ import {
 } from "@/lib/generate-eta";
 import { veronixRefImageSrc } from "@/lib/media-proxy";
 import {
+  armEditDraftDismiss,
   clearEditDraft,
   clampEditDuration,
+  dismissEditDraft,
   resolveEditBoot,
   type CreateEditDraft,
 } from "@/lib/edit-draft";
@@ -122,11 +124,24 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   /** `undefined` = not booted yet; `null` = no edit draft. */
   const editBootRef = useRef<CreateEditDraft | null | undefined>(undefined);
   if (editBootRef.current === undefined && typeof window !== "undefined") {
-    const bootDraft = resolveEditBoot();
+    let bootDraft = resolveEditBoot();
+    if (
+      bootDraft &&
+      lockedMedia &&
+      bootDraft.media &&
+      bootDraft.media !== lockedMedia
+    ) {
+      dismissEditDraft();
+      bootDraft = null;
+    }
     editBootRef.current = bootDraft;
     if (bootDraft) restoreFromEditRef.current = true;
+    else dismissEditDraft();
   }
   const boot = editBootRef.current ?? null;
+  const bootChars = (boot?.referenceImages || [])
+    .filter((r) => r?.url)
+    .slice(0, 4);
 
   const [media, setMedia] = useState<"image" | "video">(lockedMedia || "video");
   const [imageModels, setImageModels] = useState<CatalogModel[]>(IMAGE_MODELS);
@@ -161,10 +176,16 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const [applyClarity, setApplyClarity] = useState(() =>
     typeof boot?.preferClarity === "boolean" ? boot.preferClarity : false,
   );
-  const [refs, setRefs] = useState<VisualReference[]>([]);
-  const [refPreviews, setRefPreviews] = useState<string[]>([]);
+  const [refs, setRefs] = useState<VisualReference[]>(() => bootChars);
+  const [refPreviews, setRefPreviews] = useState<string[]>(() =>
+    bootChars.map((r) => veronixRefImageSrc(r.url) || r.url),
+  );
   /** Display names aligned with refPreviews / refs (no @ needed in prompt). */
-  const [refNames, setRefNames] = useState<string[]>([]);
+  const [refNames, setRefNames] = useState<string[]>(() =>
+    bootChars.map((r) =>
+      isCharacterName(r.label) ? normalizeCharacterName(r.label) : "",
+    ),
+  );
   const [startFrame, setStartFrame] = useState<VisualReference | null>(null);
   const [endFrame, setEndFrame] = useState<VisualReference | null>(null);
   const [startPreview, setStartPreview] = useState<string | null>(null);
@@ -470,6 +491,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       window.history.replaceState({}, "", next);
     }
   }, [lockedMedia]);
+
+  // Drop sticky Edit boot after leaving Create (delayed so Strict Mode remount keeps it).
+  useEffect(() => {
+    return () => {
+      armEditDraftDismiss();
+    };
+  }, []);
 
   // Re-assert Edit duration after user finishes loading (user=null looked "free" and wiped slider).
   useEffect(() => {

@@ -12,6 +12,7 @@ import {
 import { veronixMediaSrc, veronixPosterSrc } from "@/lib/media-proxy";
 import type { StudioJob } from "@/lib/studio-jobs";
 import { writeEditDraft } from "@/lib/edit-draft";
+import { prepareCharacterRefsForEdit } from "@/lib/hydrate-ref-images";
 import { fetchJson } from "@/lib/fetch-json";
 import { inferTargetSecondsFromAsset } from "@/lib/generate-eta";
 import { useRouter } from "next/navigation";
@@ -199,21 +200,14 @@ const ResultCard = memo(function ResultCard({
             }
 
             if (asset?.referenceImages?.length) {
-              characters = asset.referenceImages
-                .filter(
-                  (r) =>
-                    r?.url &&
-                    !/^(start-frame|start-from|edit-start)/i.test(
-                      String(r.label || r.id || ""),
-                    ),
-                )
-                .slice(0, 4)
-                .map((r, i) => ({
+              characters = await prepareCharacterRefsForEdit(
+                asset.referenceImages.map((r, i) => ({
                   type: "image" as const,
                   id: r.id || `edit-ref-${job.assetId}-${i}`,
                   url: r.url,
                   label: r.label || "",
-                }));
+                })),
+              );
             }
             writeEditDraft({
               prompt: editPrompt,
