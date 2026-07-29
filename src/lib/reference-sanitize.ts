@@ -163,12 +163,13 @@ async function plainCompressForBytePlus(bytes: Buffer): Promise<Buffer> {
 /**
  * Convert a character still into an AI / 3D-render digital look.
  * Applied on Generate BEFORE BytePlus create (when AI_DIGITAL_FILTER_ENABLED).
+ *
+ * FROZEN «نجحت المهمة» settings (commit eee7049) — do not raise/lower any value.
  */
 export async function toAiDigitalCharacterRender(bytes: Buffer): Promise<Buffer> {
   const { buf: sized, width: w, height: h } = await normalizeCanvas(bytes);
 
   // 1–3) Digital aesthetic + extreme texture smooth + exaggerated definition.
-  // Exact settings from the successful BytePlus-accept build (نجحت المهمة).
   const sculpted = await sharp(sized)
     .median(13)
     .blur(2.4)
@@ -325,7 +326,10 @@ export function isInputImagePrivacyError(message: string): boolean {
 
 const AI_MARK = "شخصية رقمية مولّدة بالذكاء الاصطناعي";
 
-/** Prompt framing after AI digital stills are attached (no-op while filter disabled). */
+/**
+ * Prompt framing after AI digital stills are attached.
+ * Frozen to the successful «نجحت المهمة» wording (eee7049) — do not strengthen.
+ */
 export function toSemiRealisticScenePrompt(prompt: string): string {
   const base = (prompt || "")
     .replace(/\n\n\(جارٍ توليد ودمج[\s\S]*$/u, "")
@@ -337,18 +341,9 @@ export function toSemiRealisticScenePrompt(prompt: string): string {
     .trim();
   if (!AI_DIGITAL_FILTER_ENABLED) return base;
   if (!base) {
-    return `${AI_MARK}، مظهر ثلاثي الأبعاد رقمي مصقول، إضاءة ناعمة متوهجة.`;
+    return `${AI_MARK}، مظهر 3D render رقمي مصقول، إضاءة soft bloom.`;
   }
   if (base.includes(AI_MARK)) return base;
-  const arabic = /[\u0600-\u06FF]/.test(base);
-  if (arabic) {
-    return [
-      `${AI_MARK}، مظهر ثلاثي الأبعاد رقمي مصقول، بشرة اصطناعية ناعمة، إضاءة bloom خفيفة.`,
-      "ليست صورة كاميرا لشخص حقيقي. تركيب سينمائي رقمي بالذكاء الاصطناعي.",
-      "",
-      base,
-    ].join("\n");
-  }
   return [
     `${AI_MARK} (AI-generated digital 3D character render, polished synthetic skin, soft bloom).`,
     "Not a real-person camera photo. Digital cinematic AI synthesis.",

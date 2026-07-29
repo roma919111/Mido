@@ -6,7 +6,6 @@
 import {
   compressReferenceForBytePlus,
   isInputImagePrivacyError,
-  stylizeReferenceImage,
   toSemiRealisticScenePrompt,
 } from "@/lib/reference-sanitize";
 import { resolveGenerationFile } from "@/lib/veronix-outro";
@@ -387,8 +386,9 @@ export async function createBytePlusVideoTask(
     ({ res, data } = await postCreateTask(payload));
   }
 
-  // Privacy block: skip wasteful same-photo retry — go straight to stronger
-  // portrait beauty grade (still not CGI). Never drop character stills.
+  // Privacy block: rewrite prompt only. Images were already AI-digitized once in
+  // ensureBytePlusRefUrl — re-running stylizeReferenceImage doubles the filter
+  // and makes characters look weirdly over-3D.
   const hasImages = Boolean(
     input.startFrameUrl || (input.referenceImageUrls && input.referenceImageUrls.length),
   );
@@ -401,26 +401,17 @@ export async function createBytePlusVideoTask(
       };
       try {
         if (input.startFrameUrl) {
-          const styled = await stylizeReferenceImage(input.startFrameUrl);
           payload = buildCreatePayload(rewritten, {
-            frameUrl: styled,
+            frameUrl: input.startFrameUrl,
             lastFrameUrl: input.lastFrameUrl || null,
             referenceUrls: [],
             imageRole: "first_frame",
             generateAudio: Boolean(payload.generate_audio),
           });
         } else {
-          const styledRefs: string[] = [];
-          for (const u of input.referenceImageUrls || []) {
-            try {
-              styledRefs.push(await stylizeReferenceImage(u));
-            } catch {
-              styledRefs.push(u);
-            }
-          }
           payload = buildCreatePayload(rewritten, {
             frameUrl: null,
-            referenceUrls: styledRefs,
+            referenceUrls: [...(input.referenceImageUrls || [])],
             generateAudio: Boolean(payload.generate_audio),
           });
         }
@@ -575,16 +566,15 @@ export async function waitForBytePlusVideoTask(
         isInputImagePrivacyError(err)
       ) {
         privacyRetryUsed = true;
+        // Images already passed through the frozen AI digital filter once.
+        // Only rewrite the prompt — do not re-filter (avoids over-3D look).
         const semiPrompt = toSemiRealisticScenePrompt(options.retryInput.prompt);
         try {
           if (options.retryInput.startFrameUrl) {
-            const styled = await stylizeReferenceImage(
-              options.retryInput.startFrameUrl,
-            );
             const retry = await createBytePlusVideoTask({
               ...options.retryInput,
               prompt: semiPrompt,
-              startFrameUrl: styled,
+              startFrameUrl: options.retryInput.startFrameUrl,
               referenceImageUrls: [],
               imageRole: "first_frame",
             });
@@ -592,19 +582,11 @@ export async function waitForBytePlusVideoTask(
             continue;
           }
           if (options.retryInput.referenceImageUrls?.length) {
-            const styledRefs: string[] = [];
-            for (const u of options.retryInput.referenceImageUrls) {
-              try {
-                styledRefs.push(await stylizeReferenceImage(u));
-              } catch {
-                styledRefs.push(u);
-              }
-            }
             const retry = await createBytePlusVideoTask({
               ...options.retryInput,
               prompt: semiPrompt,
               startFrameUrl: undefined,
-              referenceImageUrls: styledRefs,
+              referenceImageUrls: [...options.retryInput.referenceImageUrls],
               imageRole: "reference_image",
             });
             currentId = retry.id;
