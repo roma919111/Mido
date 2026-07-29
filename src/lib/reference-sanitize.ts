@@ -281,10 +281,50 @@ async function toAiDigitalCharacterRenderFull(bytes: Buffer): Promise<Buffer> {
   return finalBuf;
 }
 
+/**
+ * Post-pass AFTER the frozen full filter (does not change frozen numbers).
+ * Pulls crushed / warm / near-B&W grades back toward natural full color while
+ * keeping the digital smooth/bloom look BytePlus needs for facial privacy.
+ */
+async function recoverNaturalColorAfterFullFilter(bytes: Buffer): Promise<Buffer> {
+  const recovered = await sharp(bytes, { failOn: "none" })
+    // Counter the frozen warm tint (255,240,220) toward neutral daylight.
+    .recomb([
+      [1.02, -0.01, 0.04],
+      [-0.02, 1.03, 0.02],
+      [0.04, 0.01, 1.06],
+    ])
+    .modulate({ saturation: 1.28, brightness: 1.04 })
+    // Open crushed shadows from frozen linear contrast without undoing digital look.
+    .linear(0.92, 12)
+    .jpeg({ quality: 88, mozjpeg: true, chromaSubsampling: "4:4:4" })
+    .toBuffer();
+
+  const finalBuf = await ensureMinSide(recovered, 88);
+  try {
+    const id = `aichar-color-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    await mkdir(GENERATIONS_DIR, { recursive: true });
+    await writeFile(path.join(GENERATIONS_DIR, `${id}.jpg`), finalBuf);
+    console.info(`[veronix] color recovery after full filter /generations/${id}.jpg`);
+  } catch {
+    // non-fatal
+  }
+  return finalBuf;
+}
+
 /** Active AI digital render — lite or full per AI_FILTER_PRESET. */
 export async function toAiDigitalCharacterRender(bytes: Buffer): Promise<Buffer> {
   if (AI_FILTER_PRESET === "full") {
-    return toAiDigitalCharacterRenderFull(bytes);
+    const full = await toAiDigitalCharacterRenderFull(bytes);
+    try {
+      return await recoverNaturalColorAfterFullFilter(full);
+    } catch (err) {
+      console.warn(
+        "[veronix] color recovery failed, using full filter output:",
+        err instanceof Error ? err.message : err,
+      );
+      return full;
+    }
   }
   return toAiDigitalCharacterRenderLite(bytes);
 }
