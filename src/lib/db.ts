@@ -19,6 +19,12 @@ export interface UserRecord {
   planId: PlanId;
   /** One free Veronix video (stock intro + 4s model) already used */
   freeVeronixUsed?: boolean;
+  /** Owner admin can lock accounts from generating / logging in */
+  locked?: boolean;
+  lockedReason?: string;
+  lockedAt?: string;
+  /** Internal note visible only in admin panel */
+  adminNote?: string;
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
   createdAt: string;
@@ -245,17 +251,108 @@ export async function adjustCredits(userId: string, delta: number): Promise<User
   });
 }
 
-/** Ops-only: email/credits/plan for credit grants (no secrets). */
+/** Ops-only: safe user rows for the owner admin panel. */
 export async function listUsersForAdmin(): Promise<
-  Array<{ email: string; credits: number; planId: PlanId; freeVeronixUsed: boolean }>
+  Array<{
+    id: string;
+    email: string;
+    name: string;
+    credits: number;
+    planId: PlanId;
+    freeVeronixUsed: boolean;
+    locked: boolean;
+    lockedReason?: string;
+    lockedAt?: string;
+    adminNote?: string;
+    createdAt: string;
+    updatedAt: string;
+    hasStripe: boolean;
+    assetCount: number;
+    videoCount: number;
+    imageCount: number;
+    runningCount: number;
+  }>
 > {
   const db = await ensureDb();
-  return db.users.map((u) => ({
-    email: u.email,
-    credits: u.credits,
-    planId: u.planId,
-    freeVeronixUsed: Boolean(u.freeVeronixUsed),
-  }));
+  return db.users
+    .map((u) => {
+      const assets = db.assets.filter((a) => a.userId === u.id && !a.deletedAt);
+      return {
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        credits: u.credits,
+        planId: u.planId,
+        freeVeronixUsed: Boolean(u.freeVeronixUsed),
+        locked: Boolean(u.locked),
+        lockedReason: u.lockedReason,
+        lockedAt: u.lockedAt,
+        adminNote: u.adminNote,
+        createdAt: u.createdAt,
+        updatedAt: u.updatedAt,
+        hasStripe: Boolean(u.stripeCustomerId || u.stripeSubscriptionId),
+        assetCount: assets.length,
+        videoCount: assets.filter((a) => a.mediaType === "video").length,
+        imageCount: assets.filter((a) => a.mediaType === "image").length,
+        runningCount: assets.filter((a) => a.status === "running").length,
+      };
+    })
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export async function getAdminStats(): Promise<{
+  users: number;
+  paidUsers: number;
+  lockedUsers: number;
+  totalCredits: number;
+  assets: number;
+  videos: number;
+  images: number;
+  running: number;
+}> {
+  const db = await ensureDb();
+  const assets = db.assets.filter((a) => !a.deletedAt);
+  return {
+    users: db.users.length,
+    paidUsers: db.users.filter((u) => u.planId === "mini" || u.planId === "pro").length,
+    lockedUsers: db.users.filter((u) => u.locked).length,
+    totalCredits: db.users.reduce((s, u) => s + (u.credits || 0), 0),
+    assets: assets.length,
+    videos: assets.filter((a) => a.mediaType === "video").length,
+    images: assets.filter((a) => a.mediaType === "image").length,
+    running: assets.filter((a) => a.status === "running").length,
+  };
+}
+
+export async function listAssetsForUserAdmin(
+  userId: string,
+  limit = 20,
+): Promise<
+  Array<{
+    id: string;
+    mediaType: string;
+    status: string;
+    prompt: string;
+    creditsUsed: number;
+    createdAt: string;
+    error?: string;
+    model: string;
+  }>
+> {
+  const db = await ensureDb();
+  return db.assets
+    .filter((a) => a.userId === userId && !a.deletedAt)
+    .slice(0, Math.max(1, Math.min(50, limit)))
+    .map((a) => ({
+      id: a.id,
+      mediaType: a.mediaType,
+      status: a.status,
+      prompt: (a.prompt || "").slice(0, 160),
+      creditsUsed: a.creditsUsed,
+      createdAt: a.createdAt,
+      error: a.error,
+      model: a.model,
+    }));
 }
 
 export async function createAsset(
@@ -598,6 +695,7 @@ export function publicUser(user: UserRecord) {
     credits: user.credits,
     planId: user.planId,
     freeVeronixUsed: Boolean(user.freeVeronixUsed),
+    locked: Boolean(user.locked),
     createdAt: user.createdAt,
   };
 }

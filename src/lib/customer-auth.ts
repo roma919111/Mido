@@ -98,6 +98,12 @@ export async function registerUser(input: {
 export async function loginUser(input: { email: string; password: string }) {
   const user = await findUserByEmail(input.email.trim().toLowerCase());
   if (!user) throw new Error("Invalid email or password");
+  if (user.locked) {
+    throw new Error(
+      user.lockedReason?.trim() ||
+        "تم إيقاف هذا الحساب. تواصل مع الدعم.",
+    );
+  }
   if (!user.passwordHash) {
     throw new Error("This account uses Google Sign-In. Continue with Google.");
   }

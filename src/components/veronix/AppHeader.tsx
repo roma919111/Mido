@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { Coins, UserRound, Zap } from "lucide-react";
+import { Coins, Shield, UserRound, Zap } from "lucide-react";
 import { BrandLogo } from "@/components/BrandLogo";
+import { isAdminEmail } from "@/lib/admin-shared";
 
 export interface CustomerUser {
   id: string;
@@ -11,6 +12,7 @@ export interface CustomerUser {
   credits: number;
   planId: string | null;
   freeVeronixUsed?: boolean;
+  locked?: boolean;
 }
 
 interface AppHeaderProps {
@@ -39,6 +41,17 @@ export function AppHeader({ user, onLogout }: AppHeaderProps) {
             <Zap className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             <span className="hidden xs:inline sm:inline">Upgrade</span>
           </Link>
+
+          {user && isAdminEmail(user.email) ? (
+            <Link
+              href="/admin"
+              className="inline-flex h-8 items-center gap-1 rounded-full border border-amber-300/30 bg-amber-300/10 px-2.5 text-xs font-semibold text-amber-100 sm:h-9 sm:px-3 sm:text-sm"
+              title="لوحة التحكم"
+            >
+              <Shield className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Admin</span>
+            </Link>
+          ) : null}
 
           {user ? (
             <div className="flex items-center gap-1.5 sm:gap-2">

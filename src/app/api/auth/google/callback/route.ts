@@ -6,7 +6,7 @@ import {
   parseOAuthState,
   resolvePublicOrigin,
 } from "@/lib/google-oauth";
-import { setSessionCookie } from "@/lib/customer-auth";
+import { setSessionCookie, clearSessionCookie } from "@/lib/customer-auth";
 import { upsertGoogleUser } from "@/lib/db";
 import { reconcileCustomerWallet } from "@/lib/wallet-reconcile";
 
@@ -46,6 +46,14 @@ export async function GET(request: Request) {
     const tokens = await exchangeGoogleCode(code, request);
     const profile = await fetchGoogleUser(tokens.access_token);
     const user = await upsertGoogleUser(profile);
+    if (user.locked) {
+      await clearSessionCookie();
+      return NextResponse.redirect(
+        `${base}/login?error=${encodeURIComponent(
+          user.lockedReason?.trim() || "تم إيقاف هذا الحساب. تواصل مع الدعم.",
+        )}`,
+      );
+    }
     await setSessionCookie(user.id);
     // Restore paid wallet from Stripe if local DB was rebuilt.
     await reconcileCustomerWallet(user);

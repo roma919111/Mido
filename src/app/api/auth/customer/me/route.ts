@@ -10,6 +10,17 @@ export async function GET() {
     return NextResponse.json({ user: null, authenticated: false });
   }
 
+  if (user.locked) {
+    return NextResponse.json({
+      user: publicUser(user),
+      authenticated: true,
+      locked: true,
+      error:
+        user.lockedReason?.trim() ||
+        "تم إيقاف هذا الحساب. تواصل مع الدعم.",
+    });
+  }
+
   // Sync plan from Stripe if needed. Never refills spent credits on return.
   const { user: synced, restored, appliedSessions } = await reconcileCustomerWallet(user);
 

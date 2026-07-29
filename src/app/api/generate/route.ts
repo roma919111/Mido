@@ -130,6 +130,17 @@ export async function POST(request: Request) {
         { status: 401 },
       );
     }
+    if (user.locked) {
+      return NextResponse.json(
+        {
+          error:
+            user.lockedReason?.trim() ||
+            "تم إيقاف هذا الحساب. تواصل مع الدعم.",
+          code: "account_locked",
+        },
+        { status: 403 },
+      );
+    }
 
     if (!isBytePlusConfigured()) {
       return NextResponse.json(

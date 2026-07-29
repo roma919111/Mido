@@ -84,6 +84,18 @@ export async function POST(request: Request) {
       );
     }
 
+    if (user.locked) {
+      return NextResponse.json(
+        {
+          error:
+            user.lockedReason?.trim() ||
+            "تم إيقاف هذا الحساب. تواصل مع الدعم.",
+          code: "account_locked",
+        },
+        { status: 403 },
+      );
+    }
+
     if (!canPurchasePlan(user.planId, planId)) {
       return NextResponse.json(
         {
