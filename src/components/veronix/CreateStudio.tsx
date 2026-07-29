@@ -61,6 +61,10 @@ import {
 } from "@/lib/generate-eta";
 import { veronixRefImageSrc } from "@/lib/media-proxy";
 import {
+  nearestAspectRatio,
+  readImageDimensions,
+} from "@/lib/aspect-ratio";
+import {
   armEditDraftDismiss,
   clearEditDraft,
   clampEditDuration,
@@ -1108,6 +1112,19 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     const preview = URL.createObjectURL(file);
     if (which === "start") setStartPreview(preview);
     else setEndPreview(preview);
+
+    // Match Output aspect to the uploaded frame (e.g. 9:16 portrait → 9:16).
+    // Skip while free-trial settings are locked to the starter 16:9 clip.
+    if (!freeSettingsLocked) {
+      try {
+        const { width, height } = await readImageDimensions(preview);
+        const nextAspect = nearestAspectRatio(width, height, VIDEO_ASPECTS);
+        setAspectRatio(nextAspect);
+      } catch {
+        // Keep current aspect if dimensions can't be read.
+      }
+    }
+
     try {
       const ref = await uploadFile(file, "create-video");
       if (which === "start") setStartFrame(ref);
@@ -2506,14 +2523,31 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           ].map((slot) => (
             <label
               key={slot.label}
-              className="flex min-h-[110px] cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-white/15 bg-[#141821] p-3 text-center"
+              className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 bg-[#141821] p-3 text-center"
             >
-              {slot.preview ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={slot.preview} alt="" className="mb-2 h-16 w-full rounded-lg object-cover" />
-              ) : (
-                <ImagePlus className="mb-2 h-5 w-5 text-white/50" />
-              )}
+              <div
+                className="relative w-full max-w-[9.5rem] overflow-hidden rounded-xl bg-[#1a1f2a]"
+                style={{
+                  aspectRatio: (
+                    (VIDEO_ASPECTS as readonly string[]).includes(aspectRatio)
+                      ? aspectRatio
+                      : "16:9"
+                  ).replace(":", " / "),
+                }}
+              >
+                {slot.preview ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={slot.preview}
+                    alt=""
+                    className="absolute inset-0 h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <ImagePlus className="h-5 w-5 text-white/50" />
+                  </div>
+                )}
+              </div>
               <span className="text-xs text-white/70">{slot.label}</span>
               <input
                 type="file"
