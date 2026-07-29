@@ -142,6 +142,7 @@ export type Dictionary = {
     characterNamePlaceholder: string;
     enhance: string;
     enhancing: string;
+    restoreOriginalPrompt: string;
     generate: string;
     freeGenerate: string;
     duration: string;
@@ -164,6 +165,25 @@ export type Dictionary = {
     createdBy: string;
     freeTrialBanner: string;
     outputCount: string;
+    output: string;
+    camera: string;
+    credits: string;
+    generatingStatus: string;
+    freeFirstTime: string;
+    freeTrialLabel: string;
+    countLabel: string;
+    generatingFreeVideo: string;
+    generatingVideos: (count: number) => string;
+    audioEnabledInFreeTrial: string;
+    audioUnavailable: string;
+    durationPaidRange: string;
+    durationMax: (max: number) => string;
+    slotsLeft: (n: number) => string;
+    slotsMax: string;
+    pickRecommendation: string;
+    queueFull: string;
+    sending: string;
+    originalPromptRestored: string;
     native720Note: string;
     clarityUpgrade: string;
     resultPreview: string;
@@ -372,6 +392,7 @@ export const ar: Dictionary = {
     characterNamePlaceholder: "مثال: محمد",
     enhance: "تحسين الوصف",
     enhancing: "جاري التحسين…",
+    restoreOriginalPrompt: "إرجاع البرومبت الأصلي",
     generate: "Generate",
     freeGenerate: "Generate مجاني",
     duration: "المدة",
@@ -395,6 +416,25 @@ export const ar: Dictionary = {
     freeTrialBanner:
       "أول فيديو على Veronix مجاني مرة واحدة — مقدمة Veronix + 4 ثوانٍ · 480p.",
     outputCount: "عدد الفيديوهات",
+    output: "المخرجات",
+    camera: "كاميرا",
+    credits: "كريدت",
+    generatingStatus: "جاري التوليد…",
+    freeFirstTime: "مجاني أول مرة",
+    freeTrialLabel: "تجربة مجانية",
+    countLabel: "عدد",
+    generatingFreeVideo: "جاري توليد فيديوك المجاني…",
+    generatingVideos: (count) => `جاري توليد ${count} فيديوهات…`,
+    audioEnabledInFreeTrial: "(مفعّل في التجربة المجانية)",
+    audioUnavailable: "لا يتوفر خيار صوت منفصل لهذا الموديل",
+    durationPaidRange: "4 → 15 ثانية",
+    durationMax: (max) => `أقصى ${max}s`,
+    slotsLeft: (n) => `متبقي ${n} من 4`,
+    slotsMax: "حد أقصى 4 معاً",
+    pickRecommendation: "اختر من التوصية…",
+    queueFull: "ممتلئ (4/4)",
+    sending: "جاري الإرسال…",
+    originalPromptRestored: "تم إرجاع البرومبت الأصلي",
     native720Note: "720p أصلي — لا حاجة لترقية وضوح إضافية",
     clarityUpgrade: "ترقية وضوح 480→720",
     resultPreview: "معاينة النتيجة",
@@ -603,6 +643,7 @@ export const en: Dictionary = {
     characterNamePlaceholder: "e.g. Sara",
     enhance: "Enhance prompt",
     enhancing: "Enhancing…",
+    restoreOriginalPrompt: "Restore original prompt",
     generate: "Generate",
     freeGenerate: "Free Generate",
     duration: "Duration",
@@ -626,6 +667,25 @@ export const en: Dictionary = {
     freeTrialBanner:
       "Your first Veronix video is free once — Veronix intro + 4s · 480p.",
     outputCount: "Video count",
+    output: "Output",
+    camera: "Camera",
+    credits: "credits",
+    generatingStatus: "Generating…",
+    freeFirstTime: "Free first time",
+    freeTrialLabel: "Free trial",
+    countLabel: "Count",
+    generatingFreeVideo: "Generating your free video…",
+    generatingVideos: (count) => `Generating ${count} videos…`,
+    audioEnabledInFreeTrial: "(enabled in free trial)",
+    audioUnavailable: "Separate audio option is not available for this model",
+    durationPaidRange: "4 → 15 seconds",
+    durationMax: (max) => `Max ${max}s`,
+    slotsLeft: (n) => `${n} of 4 left`,
+    slotsMax: "Max 4 at once",
+    pickRecommendation: "Pick a recommendation…",
+    queueFull: "Full (4/4)",
+    sending: "Sending…",
+    originalPromptRestored: "Original prompt restored",
     native720Note: "Native 720p — no extra clarity upgrade needed",
     clarityUpgrade: "Clarity upgrade 480→720",
     resultPreview: "Result preview",

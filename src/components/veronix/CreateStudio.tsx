@@ -245,6 +245,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const [previewHydrated, setPreviewHydrated] = useState(false);
   /** Final pose / entities from last enhance — used for sequential actions (ثم…). */
   const [promptSceneState, setPromptSceneState] = useState<SceneState | null>(null);
+  /** Customer's prompt before the first Enhance in this edit session. */
+  const [promptBeforeEnhance, setPromptBeforeEnhance] = useState<string | null>(
+    null,
+  );
   const [enhancing, setEnhancing] = useState(false);
   /** Allows starting a new Generate while a previous job continues in Assets. */
   const genRunIdRef = useRef(0);
@@ -820,7 +824,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     if (!hasRunningJobs && !generating) {
       setGenStartedAt(null);
       setStatus((s) =>
-        s && /جاري التوليد|توليد قيد|توليد سابق/i.test(s) ? null : s,
+        s &&
+        /جاري التوليد|توليد قيد|توليد سابق|generating/i.test(s)
+          ? null
+          : s,
       );
     }
   }, [hasRunningJobs, generating]);
@@ -1160,7 +1167,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     if (!prompt.trim()) return;
     setEnhancing(true);
     setError(null);
-    setStatus("جاري التحسين…");
+    setStatus(t.create.enhancing);
+    const beforeEnhance = prompt.trim();
     const controller = new AbortController();
     const kill = window.setTimeout(() => controller.abort(), 45_000);
     try {
@@ -1191,6 +1199,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       if (!res.ok) throw new Error(data.error || "Enhance failed");
       const next = (data.enhanced || "").trim();
       if (!next) throw new Error("لم يتم إنشاء وصف محسّن");
+      // Keep the first pre-enhance prompt so Restore can undo Enhance.
+      if (!promptBeforeEnhance) setPromptBeforeEnhance(beforeEnhance);
       // Full replace — cinematic polish in the customer's language.
       setPrompt(next);
       setPlannedShots(null);
@@ -1492,12 +1502,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           return true;
         }
         if (st === "FAILED" || st === "CANCELLED") {
-          const failMsg =
-            data.creditsRefunded || data.note
-              ? data.error?.includes("تم استرجاع")
-                ? data.error
-                : `${data.error || "فشل التوليد"}\nفشل التوليد · تم استرجاع الكريديت`
-              : data.error || "فشل التوليد";
+          const refunded = Boolean(data.creditsRefunded || data.note);
+          const failMsg = refunded
+            ? t.assets.failedRefunded
+            : data.error || t.assets.failed;
           setJobsDeferred((prev) =>
             patchJob(prev, match, {
               url: "",
@@ -1563,12 +1571,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         if (st === "FAILED" || st === "CANCELLED") {
           // BytePlus may fail an old historyId after privacy-retry; check DB asset first.
           if (await tryAssetReady()) return;
-          const failMsg =
-            data.creditsRefunded || data.note
-              ? data.error?.includes("تم استرجاع")
-                ? data.error
-                : `${data.error || "فشل التوليد"}\nفشل التوليد · تم استرجاع الكريديت`
-              : data.error || "فشل التوليد";
+          const refunded = Boolean(data.creditsRefunded || data.note);
+          const failMsg = refunded
+            ? t.assets.failedRefunded
+            : data.error || t.assets.failed;
           setJobsDeferred((prev) =>
             patchJob(prev, match, {
               url: "",
@@ -2000,10 +2006,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     setJobs((prev) => [...placeholders, ...prev].slice(0, 12));
     setStatus(
       freeTrial
-        ? "جاري توليد فيديوك المجاني…"
+        ? t.create.generatingFreeVideo
         : requestCount > 1
-          ? `جاري توليد ${requestCount} فيديوهات…`
-          : "جاري التوليد…",
+          ? t.create.generatingVideos(requestCount)
+          : t.create.generatingStatus,
     );
 
     // Yield to the browser so the clock + cards paint before the network call
@@ -2101,12 +2107,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         }
 
         if (result.error) {
-          const msg =
-            result.note || (result.creditsRefunded && result.creditsRefunded > 0)
-              ? result.error.includes("تم استرجاع")
-                ? result.error
-                : `${result.error}\nفشل التوليد · تم استرجاع الكريديت`
-              : result.error;
+          const refunded = Boolean(
+            result.note ||
+              (result.creditsRefunded && result.creditsRefunded > 0),
+          );
+          const msg = refunded
+            ? t.assets.failedRefunded
+            : result.error;
           setJobs((prev) =>
             patchJob(
               prev,
@@ -2234,8 +2241,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       if (anyRunning) {
         setStatus(
           requestCount > 1
-            ? `جاري توليد ${requestCount} فيديوهات…`
-            : "جاري التوليد…",
+            ? t.create.generatingVideos(requestCount)
+            : t.create.generatingStatus,
         );
       } else if (completedCount > 0) {
         setStatus(
@@ -2560,7 +2567,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/70"
           >
             <Camera className="h-3.5 w-3.5" />
-            Camera
+            {t.create.camera}
           </button>
           <button
             type="button"
@@ -2575,24 +2582,28 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             )}
             {enhancing ? t.create.enhancing : t.create.enhance}
           </button>
-          {promptSceneState ? (
+          {promptBeforeEnhance ? (
             <button
               type="button"
               onClick={() => {
+                setPrompt(promptBeforeEnhance);
+                setPromptBeforeEnhance(null);
                 setPromptSceneState(null);
-                setStatus("تم مسح سلسلة الحالة — المشهد التالي يبدأ من الصفر");
+                setPlannedShots(null);
+                setShotHint(null);
+                setStatus(t.create.originalPromptRestored);
               }}
               className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/50"
-              title="إعادة ضبط تسلسل الأفعال"
+              title={t.create.restoreOriginalPrompt}
             >
-              تصفير التسلسل
+              {t.create.restoreOriginalPrompt}
             </button>
           ) : null}
         </div>
       </div>
 
       <div className="rounded-2xl border border-white/10 bg-[#141821] p-3 sm:p-4">
-        <p className="mb-2.5 text-sm font-semibold text-white">Output</p>
+        <p className="mb-2.5 text-sm font-semibold text-white">{t.create.output}</p>
         <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
           <label className="space-y-1 text-xs text-white/50">
               {t.create.aspect}
@@ -2653,8 +2664,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             <div className="flex items-center justify-between text-sm">
               <span className="text-white/70">{t.create.duration}</span>
               <span className="font-semibold tabular-nums text-[#22f0ff]">
-                {Math.min(sliderMax, Math.max(sliderMin, duration))}ث
-                {freeSettingsLocked ? " · مجاني أول مرة" : ` · −${creditCost.toLocaleString("en-US")} كريدت`}
+                {Math.min(sliderMax, Math.max(sliderMin, duration))}
+                {locale === "en" ? "s" : "ث"}
+                {freeSettingsLocked
+                  ? ` · ${t.create.freeFirstTime}`
+                  : ` · −${creditCost.toLocaleString("en-US")} ${t.create.credits}`}
               </span>
             </div>
             <input
@@ -2677,10 +2691,12 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               {selectedModelId === VERONIX_MODEL_ID &&
               !user?.freeVeronixUsed &&
               (user?.credits ?? 0) <= 0 ? (
-                <span className="text-[#22f0ff]">تجربة مجانية</span>
+                <span className="text-[#22f0ff]">{t.create.freeTrialLabel}</span>
               ) : (
                 <span className="text-[#22f0ff]">
-                  {paidDurationMode ? "4 → 15 ثانية" : `أقصى ${sliderMax}s`}
+                  {paidDurationMode
+                    ? t.create.durationPaidRange
+                    : t.create.durationMax(sliderMax)}
                 </span>
               )}
               <span>{sliderMax}s</span>
@@ -2695,12 +2711,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 />
                 {t.create.audio}
                 {freeSettingsLocked ? (
-                  <span className="text-[10px] text-white/40">(مفعّل في التجربة المجانية)</span>
+                  <span className="text-[10px] text-white/40">
+                    {t.create.audioEnabledInFreeTrial}
+                  </span>
                 ) : null}
               </label>
             ) : (
               <p className="mt-2 text-xs text-white/40">
-                لا يتوفر خيار صوت منفصل لهذا الموديل
+                {t.create.audioUnavailable}
               </p>
             )}
             {!freeSettingsLocked &&
@@ -2734,7 +2752,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             className="flex shrink-0 flex-col items-center justify-center gap-0.5 rounded-2xl border border-white/12 bg-[#141821] px-2 py-1.5 sm:gap-1 sm:px-2.5 sm:py-2"
             aria-label={t.create.outputCount}
           >
-            <span className="text-[10px] font-semibold text-white/55">عدد</span>
+            <span className="text-[10px] font-semibold text-white/55">
+              {t.create.countLabel}
+            </span>
             <div className="flex items-center gap-1 sm:gap-1.5">
               <button
                 type="button"
@@ -2766,8 +2786,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             </div>
             <span className="text-[9px] text-white/40">
               {slotsLeft < 4
-                ? `متبقي ${slotsLeft} من 4`
-                : "حد أقصى 4 معاً"}
+                ? t.create.slotsLeft(slotsLeft)
+                : t.create.slotsMax}
             </span>
           </div>
         ) : null}
@@ -2792,11 +2812,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             <Sparkles className="h-5 w-5" />
           )}
           {genConfirmOpen
-            ? "اختر من التوصية…"
+            ? t.create.pickRecommendation
             : !canStartMore
               ? slotsLeft <= 0
-                ? "ممتلئ (4/4)"
-                : "جاري الإرسال…"
+                ? t.create.queueFull
+                : t.create.sending
               : freeTrial
                 ? t.create.freeGenerate
                 : requestCountPreview > 1
@@ -2813,20 +2833,26 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       {genConfirmOpen ? (
         <div
           className="fixed inset-0 z-[70] flex items-end justify-center bg-black/65 p-3 sm:items-center"
-          dir="rtl"
+          dir={dir}
           role="dialog"
           aria-modal="true"
-          aria-label="توصية فيرونيكس"
+          aria-label={
+            locale === "en" ? "Veronix recommendation" : "توصية فيرونيكس"
+          }
         >
           <div className="w-full max-w-lg overflow-hidden rounded-3xl border border-white/12 bg-[#12161f] shadow-[0_24px_60px_rgba(0,0,0,0.55)]">
             <div className="border-b border-white/10 px-4 py-3">
               <p className="text-xs font-semibold tracking-[0.16em] text-[#22f0ff]/90">
-                توصية فيرونيكس
+                {locale === "en" ? "Veronix recommendation" : "توصية فيرونيكس"}
               </p>
               <p className="mt-1 text-sm text-white/55">
-                سكريبت لقطات بدون تكرار أفعال
+                {locale === "en"
+                  ? "Shot script without repeated actions"
+                  : "سكريبت لقطات بدون تكرار أفعال"}
                 {genConfirmScript
-                  ? ` · المدة المقترحة ${genConfirmScript.totalSeconds}ث`
+                  ? locale === "en"
+                    ? ` · suggested ${genConfirmScript.totalSeconds}s`
+                    : ` · المدة المقترحة ${genConfirmScript.totalSeconds}ث`
                   : ""}
               </p>
             </div>
@@ -2834,14 +2860,18 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               {!genConfirmScript ? (
                 <div className="flex items-center gap-2 py-8 text-sm text-white/60">
                   <Loader2 className="h-4 w-4 animate-spin text-[#22f0ff]" />
-                  جاري تجهيز التوصية…
+                  {locale === "en"
+                    ? "Preparing recommendation…"
+                    : "جاري تجهيز التوصية…"}
                 </div>
               ) : (
                 <>
                   {genConfirmLoading ? (
                     <p className="mb-2 flex items-center gap-2 text-[11px] text-white/45">
                       <Loader2 className="h-3.5 w-3.5 animate-spin text-[#22f0ff]" />
-                      جاري تحسين التوصية بالذكاء الاصطناعي (يمكنك التوليد الآن)
+                      {locale === "en"
+                        ? "Polishing recommendation with AI (you can generate now)"
+                        : "جاري تحسين التوصية بالذكاء الاصطناعي (يمكنك التوليد الآن)"}
                     </p>
                   ) : null}
                   <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-white/85">
@@ -2850,9 +2880,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 </>
               )}
               <p className="mt-3 text-[11px] leading-relaxed text-white/40">
-                أفعال من نصك فقط · كل لقطة تُحسَّن وحدها: فعل → اسم الفاعل → اسم المفعول به
-                {" · "}
-                توصية فيرونيكس / البرومبت الأصلي / إلغاء بدون توليد
+                {locale === "en"
+                  ? "Actions from your text only · each shot polished alone · Veronix recommendation / original prompt / cancel"
+                  : "أفعال من نصك فقط · كل لقطة تُحسَّن وحدها: فعل → اسم الفاعل → اسم المفعول به · توصية فيرونيكس / البرومبت الأصلي / إلغاء بدون توليد"}
               </p>
             </div>
             <div className="grid grid-cols-1 gap-2 border-t border-white/10 p-3 sm:grid-cols-3">
@@ -2862,7 +2892,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 onClick={() => void acceptVeronixRecommendation()}
                 className="rounded-2xl bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-3 py-3 text-sm font-bold text-white disabled:opacity-50"
               >
-                توصية فيرونيكس
+                {locale === "en" ? "Veronix recommendation" : "توصية فيرونيكس"}
               </button>
               <button
                 type="button"
@@ -2870,7 +2900,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 onClick={() => void acceptOriginalPrompt()}
                 className="rounded-2xl border border-[#22f0ff]/35 bg-[#22f0ff]/10 px-3 py-3 text-sm font-bold text-[#22f0ff] disabled:opacity-50"
               >
-                البرومبت الأصلي
+                {locale === "en" ? "Original prompt" : "البرومبت الأصلي"}
               </button>
               <button
                 type="button"
@@ -2878,7 +2908,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 onClick={() => dismissGenerateConfirm()}
                 className="rounded-2xl border border-white/15 bg-white/5 px-3 py-3 text-sm font-bold text-white/85 disabled:opacity-50"
               >
-                إلغاء
+                {locale === "en" ? "Cancel" : "إلغاء"}
               </button>
             </div>
           </div>
@@ -2896,7 +2926,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             size="banner"
           />
           <p className="text-sm font-semibold text-white">
-            جاري التوليد…
+            {t.create.generatingStatus}
             {runningJobs.length > 0 ? ` (${runningJobs.length}/${MAX_CONCURRENT})` : ""}
           </p>
         </div>
@@ -2911,13 +2941,15 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         <p className="text-center text-xs text-[#22f0ff]">{shareNote}</p>
       ) : null}
 
-      {error && error.includes("تم استرجاع") ? (
+      {error &&
+      (/تم استرجاع|credits refunded|credit returned/i.test(error) ||
+        error === t.assets.failedRefunded) ? (
         <div
           className="fixed inset-x-0 bottom-[4.75rem] z-[60] mx-auto w-[min(100%-1.5rem,28rem)] rounded-2xl border border-rose-400/35 bg-[#1a1014]/95 px-4 py-3 text-center text-sm font-semibold text-rose-50 shadow-[0_12px_32px_rgba(0,0,0,0.45)] backdrop-blur-md sm:bottom-24"
-          dir="rtl"
+          dir={dir}
           role="status"
         >
-          فشل التوليد · تم استرجاع الكريديت
+          {t.assets.failedRefunded}
         </div>
       ) : null}
 
