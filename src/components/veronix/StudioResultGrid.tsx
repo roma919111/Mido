@@ -52,8 +52,13 @@ const ResultCard = memo(function ResultCard({
   const [makingVideo, setMakingVideo] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [armed, setArmed] = useState(false);
+  /** Broken/expired media URL — treat like a failed generation for old cards. */
+  const [mediaBroken, setMediaBroken] = useState(false);
   const waiting = job.status === "running";
-  const failed = job.status === "failed";
+  const failed =
+    job.status === "failed" ||
+    mediaBroken ||
+    (!waiting && !String(job.url || "").trim() && job.status === "completed");
   const clockStart =
     typeof job.startedAt === "number" && job.startedAt > 0
       ? job.startedAt
@@ -82,6 +87,10 @@ const ResultCard = memo(function ResultCard({
           mediaType: "image",
         }) || job.url
       : null;
+
+  useEffect(() => {
+    setMediaBroken(false);
+  }, [job.url, job.historyId, job.mediaType, job.status]);
 
   useEffect(() => {
     setPlaying(false);
@@ -390,6 +399,17 @@ const ResultCard = memo(function ResultCard({
     }
   };
 
+  const failedOverlay = (
+    <div className="flex h-full flex-col items-center justify-center gap-1.5 px-2 text-center">
+      <p className="rounded-lg bg-rose-500/20 px-2.5 py-1.5 text-sm font-bold text-rose-100 ring-1 ring-rose-400/35">
+        {t.assets.failed}
+      </p>
+      <p className="text-[11px] font-semibold text-emerald-200/90">
+        {t.assets.creditReturned}
+      </p>
+    </div>
+  );
+
   return (
     <div className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-[#141821]">
       <div className="flex items-center justify-between gap-1 border-b border-white/8 px-2 py-1.5">
@@ -409,23 +429,25 @@ const ResultCard = memo(function ResultCard({
 
       <div
         className={`relative aspect-video bg-black/50 ${
-          canOpenAssets ? "cursor-pointer" : ""
+          canOpenAssets && !failed ? "cursor-pointer" : ""
         }`}
         onClick={() => {
-          if (canOpenAssets) openInAssets();
+          if (canOpenAssets && !failed) openInAssets();
         }}
-        role={canOpenAssets ? "link" : undefined}
-        tabIndex={canOpenAssets ? 0 : undefined}
+        role={canOpenAssets && !failed ? "link" : undefined}
+        tabIndex={canOpenAssets && !failed ? 0 : undefined}
         onKeyDown={(e) => {
-          if (!canOpenAssets) return;
+          if (!canOpenAssets || failed) return;
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             openInAssets();
           }
         }}
-        aria-label={canOpenAssets ? t.nav.assets : undefined}
+        aria-label={canOpenAssets && !failed ? t.nav.assets : undefined}
       >
-        {mediaUrl ? (
+        {failed && !waiting ? (
+          failedOverlay
+        ) : mediaUrl ? (
           <>
             {!armed && posterSrc ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -448,6 +470,7 @@ const ResultCard = memo(function ResultCard({
               onPlay={() => setPlaying(true)}
               onPause={() => setPlaying(false)}
               onEnded={() => setPlaying(false)}
+              onError={() => setMediaBroken(true)}
             />
             {!playing ? (
               <button
@@ -480,6 +503,7 @@ const ResultCard = memo(function ResultCard({
             src={imgSrc}
             alt=""
             className="pointer-events-none h-full w-full object-cover"
+            onError={() => setMediaBroken(true)}
           />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-1 px-2 text-center">
@@ -490,22 +514,16 @@ const ResultCard = memo(function ResultCard({
                   {t.assets.generating}
                 </p>
               </div>
-            ) : failed ? (
-              <div className="flex flex-col items-center gap-1 px-2">
-                <p className="rounded-lg bg-rose-500/20 px-2.5 py-1.5 text-sm font-bold text-rose-100 ring-1 ring-rose-400/35">
-                  {t.assets.failed}
-                </p>
-              </div>
             ) : (
-              <p className="text-xs text-white/40">{t.create.resultEmpty}</p>
+              failedOverlay
             )}
           </div>
         )}
-        {job.mediaType === "image" ? (
+        {!failed && job.mediaType === "image" ? (
           <span className="pointer-events-none absolute end-2 top-2 rounded-md bg-black/65 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[#b9a6ff]">
             {t.create.resultImages}
           </span>
-        ) : job.url || waiting ? (
+        ) : !failed && (job.url || waiting) ? (
           <span className="pointer-events-none absolute end-2 top-2 rounded-md bg-black/65 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[#22f0ff]">
             {t.create.resultVideos}
           </span>
@@ -538,7 +556,7 @@ const ResultCard = memo(function ResultCard({
           <button
             type="button"
             onClick={() => void handleMakeVideo()}
-            disabled={waiting || makingVideo || !job.url || failed}
+            disabled={waiting || makingVideo || !job.url || failed || mediaBroken}
             className="inline-flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-xl border border-[#22f0ff]/35 bg-[#22f0ff]/10 px-1 py-1.5 text-[11px] font-bold text-[#22f0ff] disabled:opacity-40"
           >
             {makingVideo ? (
@@ -552,7 +570,7 @@ const ResultCard = memo(function ResultCard({
         <button
           type="button"
           onClick={() => onShare(job)}
-          disabled={!job.url}
+          disabled={!job.url || failed}
           className="inline-flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-xl border border-white/20 bg-white/10 px-1 py-1.5 text-[11px] font-bold text-white disabled:opacity-40"
         >
           <Share2 className="h-4 w-4 text-[#22f0ff]" />
