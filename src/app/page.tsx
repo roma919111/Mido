@@ -1,41 +1,46 @@
 import type { Metadata } from "next";
 import { VeronixApp } from "@/components/veronix/VeronixApp";
+import { getRequestDictionary } from "@/lib/i18n";
 
-export const metadata: Metadata = {
-  title: {
-    absolute: "Veronix.ai — استوديو الصور والفيديو بالذكاء الاصطناعي",
-  },
-  description:
-    "أنشئ صورًا وفيديوهات بالذكاء الاصطناعي على Veronix.ai. حسابات زبائن، كريدت، باقات شهرية، ودفع آمن عبر Stripe على vyronix.app.",
-  alternates: { canonical: "https://vyronix.app/" },
-  openGraph: {
-    title: "Veronix.ai — استوديو الصور والفيديو",
-    description:
-      "منصة عربية لتوليد الصور والفيديو بالذكاء الاصطناعي على vyronix.app",
-    url: "https://vyronix.app/",
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getRequestDictionary();
+  return {
+    title: { absolute: t.meta.titleDefault },
+    description: t.meta.description,
+    alternates: {
+      canonical: "https://vyronix.app/",
+      languages: {
+        ar: "https://vyronix.app/",
+        en: "https://vyronix.app/",
+        "x-default": "https://vyronix.app/",
+      },
+    },
+    openGraph: {
+      title: t.meta.ogTitle,
+      description: t.meta.ogDescription,
+      url: "https://vyronix.app/",
+    },
+  };
+}
 
-export default function HomePage() {
+export default async function HomePage() {
+  const { t, dir } = await getRequestDictionary();
   return (
     <>
       {/* Server-rendered crawlable content for Google (complements the client studio UI). */}
-      <section className="sr-only" aria-hidden={false}>
-        <h1>Veronix.ai — استوديو الصور والفيديو بالذكاء الاصطناعي</h1>
-        <p>
-          Veronix.ai منصة رسمية على vyronix.app لتوليد الصور والفيديو بالذكاء
-          الاصطناعي. سجّل حسابك، اختر الموديل، واكتب وصفك، وادفع بأمان عبر Stripe.
-        </p>
+      <section className="sr-only" aria-hidden={false} dir={dir}>
+        <h1>{t.meta.homeH1}</h1>
+        <p>{t.meta.homeSeoP}</p>
         <ul>
-          <li>توليد صور وفيديو بالذكاء الاصطناعي</li>
-          <li>محفظة كريدت وباقات شهرية</li>
-          <li>تسجيل دخول Google ودعم عربي</li>
-          <li>صفحة التسعير والخصوصية والشروط والدعم</li>
+          {t.meta.homeBullets.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
         </ul>
-        <a href="/pricing">الباقات والأسعار</a>
-        <a href="/about">عن Veronix</a>
-        <a href="/faq">الأسئلة الشائعة</a>
-        <a href="/contact">تواصل معنا</a>
+        <a href="/pricing">{t.footer.pricing}</a>
+        <a href="/about">{t.footer.about}</a>
+        <a href="/faq">{t.footer.faq}</a>
+        <a href="/contact">{t.footer.contact}</a>
+        <a href="/signup">{t.header.signup}</a>
       </section>
       <VeronixApp />
     </>

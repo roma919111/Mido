@@ -76,6 +76,7 @@ import {
 } from "@/lib/studio-jobs";
 import { StudioResultGrid } from "@/components/veronix/StudioResultGrid";
 import { GenerateClock } from "@/components/veronix/GenerateClock";
+import { useLocale } from "@/components/veronix/LocaleProvider";
 import type { CustomerUser } from "./AppHeader";
 
 /** Catalog id for VYRONIX image studio (Seedream under the hood). */
@@ -115,6 +116,7 @@ interface CreateStudioProps {
 
 export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioProps) {
   const router = useRouter();
+  const { t, dir } = useLocale();
   /** Assets → Edit: keep restored duration/ratio/clarity until the user changes model. */
   const restoreFromEditRef = useRef(false);
   /** `undefined` = not booted yet; `null` = no edit draft. */
@@ -2149,7 +2151,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-4 px-3 pb-8 pt-4 sm:px-6" dir="rtl">
+    <div className="mx-auto w-full max-w-6xl space-y-4 px-3 pb-8 pt-4 sm:px-6" dir={dir}>
       {platformReady === false && (
         <div className="rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-50">
           التوليد غير مُعدّ على السيرفر. يلزم ضبط مفتاح Veronix لدى المسؤول ثم إعادة التشغيل.
@@ -2212,7 +2214,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
       <label className="block rounded-2xl border border-white/10 bg-[#141821] px-4 py-3">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <p className="text-xs uppercase tracking-[0.16em] text-white/40">الموديل</p>
+          <p className="text-xs uppercase tracking-[0.16em] text-white/40">{t.create.model}</p>
           <ChevronDown className="h-4 w-4 text-white/50" />
         </div>
         <select
@@ -2255,11 +2257,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
       <div className="rounded-2xl border border-dashed border-white/15 bg-[#141821] p-4">
         <p className="mb-1 text-sm font-medium text-white/80">
-          رفع الشخصيات{" "}
-          <span className="font-normal text-white/45">(اختياري)</span>
+          {t.create.characters}{" "}
+          <span className="font-normal text-white/45">{t.create.charactersOptional}</span>
         </p>
         <p className="mb-3 text-[11px] leading-relaxed text-white/40">
-          سمِّ كل شخصية ثم اذكر اسمها في الوصف مباشرة — مثل «محمد ذهب إلى الحديقة» بدون @.
+          {t.create.charactersHint}
         </p>
         <div className="flex flex-wrap gap-3">
           {refPreviews.map((src, i) => (
@@ -2407,9 +2409,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           onChange={(e) => setPrompt(e.target.value)}
           rows={5}
           placeholder={
-            media === "image"
-              ? "صف الصورة… يمكنك ذكر اسم الشخصية مباشرة"
-              : "صف مشهد الفيديو… اذكر اسم الشخصية مثل: محمد ذهب إلى الحديقة"
+            media === "image" ? t.create.promptImage : t.create.promptVideo
           }
           className="w-full resize-y bg-transparent text-[15px] text-white outline-none placeholder:text-white/35"
         />
@@ -2432,7 +2432,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             ) : (
               <WandSparkles className="h-3.5 w-3.5 text-[#22f0ff]" />
             )}
-            {enhancing ? "جاري التحسين…" : "تحسين الوصف"}
+            {enhancing ? t.create.enhancing : t.create.enhance}
           </button>
           {promptSceneState ? (
             <button
@@ -2454,7 +2454,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         <p className="mb-3 text-sm font-semibold text-white">Output</p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="space-y-1 text-xs text-white/50">
-            النسبة
+              {t.create.aspect}
             <select
               value={
                 media === "video"
@@ -2476,7 +2476,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           </label>
           {media === "video" && resolutionOptions.length > 0 && (
             <label className="space-y-1 text-xs text-white/50">
-              الوضوح
+              {t.create.clarity}
               <select
                 value={
                   resolutionOptions.includes(resolution)
@@ -2503,7 +2503,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         {media === "video" && (
           <div className="mt-4 space-y-2">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-white/70">المدة</span>
+              <span className="text-white/70">{t.create.duration}</span>
               <span className="font-semibold tabular-nums text-[#22f0ff]">
                 {Math.min(sliderMax, Math.max(sliderMin, duration))}ث
                 {freeSettingsLocked ? " · مجاني أول مرة" : ` · −${creditCost.toLocaleString("en-US")} كريدت`}
@@ -2545,7 +2545,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                   disabled={freeSettingsLocked}
                   onChange={(e) => setGenerateAudio(e.target.checked)}
                 />
-                توليد صوت
+                {t.create.audio}
                 {freeSettingsLocked ? (
                   <span className="text-[10px] text-white/40">(مفعّل في التجربة المجانية)</span>
                 ) : null}
@@ -2564,7 +2564,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 />
                 ترقية وضوح 480→720
                 <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-200 ring-1 ring-emerald-300/30">
-                  مجاني
+                  {t.create.clarityFree}
                 </span>
               </label>
             ) : null}
@@ -2572,7 +2572,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         )}
       </div>
 
-      <div className="relative z-20 flex items-stretch gap-2" dir="rtl">
+      <div className="relative z-20 flex items-stretch gap-2" dir={dir}>
         {!freeTrial ? (
           <div
             className="flex shrink-0 flex-col items-center justify-center gap-1 rounded-2xl border border-white/12 bg-[#141821] px-2.5 py-2"
@@ -2642,12 +2642,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 ? "ممتلئ (4/4)"
                 : "جاري الإرسال…"
               : freeTrial
-                ? "Generate مجاني"
+                ? t.create.freeGenerate
                 : requestCountPreview > 1
                   ? `Generate ×${requestCountPreview}`
-                  : "Generate"}
+                  : t.create.generate}
           <span className="rounded-full bg-black/20 px-2.5 py-0.5 text-xs tabular-nums">
-            {freeTrial ? "مجاني" : `−${creditCost * requestCountPreview}`}
+            {freeTrial
+              ? t.create.clarityFree
+              : `−${creditCost * requestCountPreview}`}
           </span>
         </button>
       </div>

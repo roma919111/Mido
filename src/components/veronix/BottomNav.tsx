@@ -3,7 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Clapperboard, FolderOpen, Home, ImageIcon, Lightbulb, Sparkles, Wrench } from "lucide-react";
+import {
+  Clapperboard,
+  FolderOpen,
+  Home,
+  ImageIcon,
+  Lightbulb,
+  Sparkles,
+  Wrench,
+} from "lucide-react";
 import {
   writeAssetsCache,
   warmAssetPosters,
@@ -11,19 +19,7 @@ import {
 } from "@/lib/assets-cache";
 import { fetchJson } from "@/lib/fetch-json";
 import { veronixPosterSrc } from "@/lib/media-proxy";
-
-const ITEMS: Array<{
-  href: string;
-  label: string;
-  icon: typeof Home;
-  center?: boolean;
-}> = [
-  { href: "/", label: "Home", icon: Home },
-  { href: "/inspire", label: "Inspire", icon: Lightbulb },
-  { href: "/create", label: "إنشاء", icon: Sparkles, center: true },
-  { href: "/tools", label: "Tools", icon: Wrench },
-  { href: "/assets", label: "Assets", icon: FolderOpen },
-];
+import { useLocale } from "@/components/veronix/LocaleProvider";
 
 function prefetchAssets() {
   if (typeof window === "undefined") return;
@@ -48,9 +44,18 @@ function prefetchAssets() {
 export function BottomNav() {
   const pathname = usePathname();
   const router = useRouter();
+  const { t, dir } = useLocale();
   const [createOpen, setCreateOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const prefetched = useRef(false);
+
+  const items = [
+    { href: "/", label: t.nav.home, icon: Home },
+    { href: "/inspire", label: t.nav.inspire, icon: Lightbulb },
+    { href: "/create", label: t.nav.create, icon: Sparkles, center: true as const },
+    { href: "/tools", label: t.nav.tools, icon: Wrench },
+    { href: "/assets", label: t.nav.assets, icon: FolderOpen },
+  ];
 
   useEffect(() => {
     setCreateOpen(false);
@@ -58,12 +63,12 @@ export function BottomNav() {
 
   useEffect(() => {
     if (pathname.startsWith("/assets") || prefetched.current) return;
-    const t = window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
       prefetched.current = true;
       router.prefetch("/assets");
       prefetchAssets();
     }, 800);
-    return () => window.clearTimeout(t);
+    return () => window.clearTimeout(timer);
   }, [pathname, router]);
 
   useEffect(() => {
@@ -90,7 +95,7 @@ export function BottomNav() {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-white/10 bg-[#0b0d12]/95 pb-[env(safe-area-inset-bottom)]">
       <div className="mx-auto grid max-w-lg grid-cols-5 items-end px-2 pt-2">
-        {ITEMS.map((item) => {
+        {items.map((item) => {
           const Icon = item.icon;
           const active = item.center
             ? pathname.startsWith("/create") || (pathname === "/" && createOpen)
@@ -101,19 +106,23 @@ export function BottomNav() {
           if (item.center) {
             return (
               <div
-                key={item.label}
+                key="create"
                 ref={menuRef}
                 className="relative -mt-5 flex flex-col items-center justify-center"
               >
                 {createOpen && (
                   <div
                     className="absolute bottom-[4.75rem] left-1/2 z-[60] w-[min(92vw,20.5rem)] -translate-x-1/2"
-                    dir="rtl"
+                    dir={dir}
                   >
                     <div className="overflow-hidden rounded-[22px] border border-white/12 bg-[#12161f] shadow-[0_22px_55px_rgba(0,0,0,0.55)]">
                       <div className="border-b border-white/8 px-4 py-3 text-center">
-                        <p className="text-xs font-semibold tracking-[0.14em] text-[#22f0ff]/90">إنشاء</p>
-                        <p className="mt-1 text-sm text-white/55">اختر النوع للمتابعة</p>
+                        <p className="text-xs font-semibold tracking-[0.14em] text-[#22f0ff]/90">
+                          {t.nav.create}
+                        </p>
+                        <p className="mt-1 text-sm text-white/55">
+                          {t.nav.createPick}
+                        </p>
                       </div>
                       <div className="grid grid-cols-2 gap-3 p-3">
                         <button
@@ -127,8 +136,12 @@ export function BottomNav() {
                           <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#22f0ff]/15 text-[#22f0ff] ring-1 ring-[#22f0ff]/30">
                             <Clapperboard className="h-6 w-6" />
                           </span>
-                          <span className="text-sm font-bold text-white">فيديو VYRONIX</span>
-                          <span className="text-[11px] text-white/45">4–15 ثانية · 480p / 720p</span>
+                          <span className="text-sm font-bold text-white">
+                            {t.nav.createVideo}
+                          </span>
+                          <span className="text-[11px] text-white/45">
+                            {t.nav.createVideoHint}
+                          </span>
                         </button>
                         <button
                           type="button"
@@ -141,8 +154,12 @@ export function BottomNav() {
                           <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#7c5cff]/15 text-[#b9a6ff] ring-1 ring-[#7c5cff]/30">
                             <ImageIcon className="h-6 w-6" />
                           </span>
-                          <span className="text-sm font-bold text-white">صور VYRONIX</span>
-                          <span className="text-[11px] text-white/45">جودة 2K · بدون واترمارك</span>
+                          <span className="text-sm font-bold text-white">
+                            {t.nav.createImage}
+                          </span>
+                          <span className="text-[11px] text-white/45">
+                            {t.nav.createImageHint}
+                          </span>
                         </button>
                       </div>
                     </div>
@@ -152,7 +169,7 @@ export function BottomNav() {
                 <button
                   type="button"
                   aria-expanded={createOpen}
-                  aria-label="إنشاء"
+                  aria-label={t.nav.create}
                   onClick={() => setCreateOpen((v) => !v)}
                   className="relative flex flex-col items-center justify-center"
                 >
@@ -173,7 +190,7 @@ export function BottomNav() {
 
           return (
             <Link
-              key={item.label}
+              key={item.href}
               href={item.href}
               onMouseEnter={() => {
                 if (item.href === "/assets") {

@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { Coins, Shield, UserRound, Zap } from "lucide-react";
 import { BrandLogo } from "@/components/BrandLogo";
+import { LanguageSwitcher } from "@/components/veronix/LanguageSwitcher";
+import { useLocale } from "@/components/veronix/LocaleProvider";
 import { isAdminEmail } from "@/lib/admin-shared";
 
 export interface CustomerUser {
@@ -21,6 +23,8 @@ interface AppHeaderProps {
 }
 
 export function AppHeader({ user, onLogout }: AppHeaderProps) {
+  const { t } = useLocale();
+
   return (
     <header className="sticky top-0 z-40 border-b border-white/8 bg-[#0b0d12]/95 backdrop-blur">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-2 px-3 py-2.5 sm:gap-3 sm:px-6 sm:py-3">
@@ -29,9 +33,13 @@ export function AppHeader({ user, onLogout }: AppHeaderProps) {
         </Link>
 
         <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
+          <LanguageSwitcher compact />
+
           <div className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-white/90 sm:gap-1.5 sm:px-3 sm:text-sm">
             <Coins className="h-3.5 w-3.5 text-[#22f0ff] sm:h-4 sm:w-4" />
-            <span className="font-semibold tabular-nums">{user ? user.credits : 0}</span>
+            <span className="font-semibold tabular-nums">
+              {user ? user.credits : 0}
+            </span>
           </div>
 
           <Link
@@ -39,17 +47,17 @@ export function AppHeader({ user, onLogout }: AppHeaderProps) {
             className="inline-flex items-center gap-1 rounded-full bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-2.5 py-1.5 text-xs font-semibold text-white sm:gap-1.5 sm:px-3 sm:text-sm"
           >
             <Zap className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-            <span className="hidden xs:inline sm:inline">Upgrade</span>
+            <span className="hidden xs:inline sm:inline">{t.header.upgrade}</span>
           </Link>
 
           {user && isAdminEmail(user.email) ? (
             <Link
               href="/admin"
               className="inline-flex h-8 items-center gap-1 rounded-full border border-amber-300/30 bg-amber-300/10 px-2.5 text-xs font-semibold text-amber-100 sm:h-9 sm:px-3 sm:text-sm"
-              title="لوحة التحكم"
+              title={t.header.admin}
             >
               <Shield className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Admin</span>
+              <span className="hidden sm:inline">{t.header.admin}</span>
             </Link>
           ) : null}
 
@@ -67,7 +75,7 @@ export function AppHeader({ user, onLogout }: AppHeaderProps) {
                 onClick={onLogout}
                 className="inline-flex h-8 items-center rounded-full border border-white/15 px-2.5 text-xs text-white/80 hover:border-rose-400/40 hover:text-rose-100 sm:h-9 sm:px-3 sm:text-sm"
               >
-                خروج
+                {t.header.logout}
               </button>
             </div>
           ) : (
@@ -76,13 +84,13 @@ export function AppHeader({ user, onLogout }: AppHeaderProps) {
                 href="/login"
                 className="inline-flex h-8 items-center rounded-full border border-white/15 px-2.5 text-xs text-white/80 sm:h-9 sm:px-3 sm:text-sm"
               >
-                دخول
+                {t.header.login}
               </Link>
               <Link
                 href="/signup"
                 className="inline-flex h-8 items-center rounded-full bg-white px-2.5 text-xs font-semibold text-black sm:h-9 sm:px-3 sm:text-sm"
               >
-                حساب
+                {t.header.signup}
               </Link>
             </div>
           )}

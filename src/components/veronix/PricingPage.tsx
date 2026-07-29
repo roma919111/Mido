@@ -21,10 +21,12 @@ import {
   type PlanId,
 } from "@/lib/plans";
 import { fetchJson } from "@/lib/fetch-json";
+import { useLocale } from "@/components/veronix/LocaleProvider";
 
 export function PricingPage() {
   const router = useRouter();
   const params = useSearchParams();
+  const { t, dir, locale } = useLocale();
   const [user, setUser] = useState<CustomerUser | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -141,11 +143,13 @@ export function PricingPage() {
           void fetch("/api/auth/customer/logout", { method: "POST" }).then(() => setUser(null));
         }}
       />
-      <main className="mx-auto max-w-5xl px-4 pb-28 pt-8 sm:px-6" dir="rtl">
-        <h1 className="font-display text-3xl font-extrabold">الباقات والشحن</h1>
-        <p className="mt-2 text-white/50">
-          ابدأ بالأساسية، ثم رقِّ للاشتراك الشهري. إضافة الكريدت متاحة بعد باقة مدفوعة فقط.
+      <main className="mx-auto max-w-5xl px-4 pb-28 pt-8 sm:px-6" dir={dir}>
+        <p className="text-xs uppercase tracking-[0.22em] text-[#22f0ff]/80">
+          {t.pricing.eyebrow}
         </p>
+        <h1 className="mt-2 font-display text-3xl font-extrabold">{t.pricing.title}</h1>
+        <p className="mt-2 text-white/50">{t.pricing.subtitle}</p>
+        <p className="mt-2 text-xs text-emerald-200/80">{t.pricing.freeTrialNote}</p>
 
         {currentPlan && (
           <div className="mt-5 flex flex-wrap items-center gap-3 rounded-2xl border border-[#22f0ff]/25 bg-[rgba(34,240,255,0.08)] px-4 py-3 text-sm">
@@ -153,12 +157,14 @@ export function PricingPage() {
               <Check className="h-4 w-4" />
             </span>
             <div>
-              <p className="font-semibold text-white">باقتك الحالية: {currentPlan.name}</p>
+              <p className="font-semibold text-white">
+                {t.pricing.current}: {currentPlan.name}
+              </p>
               <p className="text-white/55">
                 {currentPlan.monthlyCredits > 0
-                  ? `${currentPlan.monthlyCredits.toLocaleString("en-US")} كريدت / شهر · `
-                  : "0 كريدت · "}
-                رصيدك الآن {(user?.credits ?? 0).toLocaleString("en-US")}
+                  ? `${currentPlan.monthlyCredits.toLocaleString(locale === "en" ? "en-US" : "ar-EG")} · `
+                  : "0 · "}
+                {(user?.credits ?? 0).toLocaleString(locale === "en" ? "en-US" : "ar-EG")}
               </p>
             </div>
           </div>
@@ -166,16 +172,7 @@ export function PricingPage() {
 
         {stripeReady === false && (
           <div className="mt-4 rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-4 text-sm text-amber-50">
-            <p className="font-semibold">الدفع غير مفعّل</p>
-            <p className="mt-1 text-amber-50/80">
-              فعّل Stripe أولًا — بدون مفاتيح لن تتم ترقية ولا إضافة كريدت.
-            </p>
-            <a
-              href="/setup/stripe"
-              className="mt-3 inline-flex rounded-full bg-white px-4 py-2 text-xs font-bold text-black"
-            >
-              تفعيل Stripe الآن
-            </a>
+            <p className="font-semibold">{t.pricing.stripeMissing}</p>
           </div>
         )}
 
