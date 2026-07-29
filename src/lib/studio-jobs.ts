@@ -17,6 +17,11 @@ export type StudioJob = {
   error?: string;
   /** Prompt used for this job — restored on Edit */
   prompt?: string;
+  /**
+   * Image→video Start Frame URL remembered on the card so Edit on failed
+   * videos can restore the originally generated still without a DB hit.
+   */
+  startFrameUrl?: string;
 };
 
 const JOBS_KEY = "veronix.create.jobs.v2";

@@ -142,6 +142,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const bootChars = (boot?.referenceImages || [])
     .filter((r) => r?.url)
     .slice(0, 4);
+  const bootStart =
+    boot?.startFrame?.url && boot.useAsStartFrame && !bootChars.length
+      ? boot.startFrame
+      : null;
 
   const [media, setMedia] = useState<"image" | "video">(lockedMedia || "video");
   const [imageModels, setImageModels] = useState<CatalogModel[]>(IMAGE_MODELS);
@@ -176,19 +180,35 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const [applyClarity, setApplyClarity] = useState(() =>
     typeof boot?.preferClarity === "boolean" ? boot.preferClarity : false,
   );
-  const [refs, setRefs] = useState<VisualReference[]>(() => bootChars);
+  const [refs, setRefs] = useState<VisualReference[]>(() =>
+    bootStart ? [] : bootChars,
+  );
   const [refPreviews, setRefPreviews] = useState<string[]>(() =>
-    bootChars.map((r) => veronixRefImageSrc(r.url) || r.url),
+    bootStart
+      ? []
+      : bootChars.map((r) => veronixRefImageSrc(r.url) || r.url),
   );
   /** Display names aligned with refPreviews / refs (no @ needed in prompt). */
   const [refNames, setRefNames] = useState<string[]>(() =>
-    bootChars.map((r) =>
-      isCharacterName(r.label) ? normalizeCharacterName(r.label) : "",
-    ),
+    bootStart
+      ? []
+      : bootChars.map((r) =>
+          isCharacterName(r.label) ? normalizeCharacterName(r.label) : "",
+        ),
   );
-  const [startFrame, setStartFrame] = useState<VisualReference | null>(null);
+  const [startFrame, setStartFrame] = useState<VisualReference | null>(() =>
+    bootStart
+      ? {
+          ...bootStart,
+          id: bootStart.id || `start-frame-boot`,
+          label: bootStart.label || "start-frame",
+        }
+      : null,
+  );
   const [endFrame, setEndFrame] = useState<VisualReference | null>(null);
-  const [startPreview, setStartPreview] = useState<string | null>(null);
+  const [startPreview, setStartPreview] = useState<string | null>(() =>
+    bootStart ? veronixRefImageSrc(bootStart.url) || bootStart.url : null,
+  );
   const [endPreview, setEndPreview] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   /** Brief flash so a second Generate tap feels pressed. */
@@ -967,7 +987,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     setError(null);
 
     // How many slots are free right now (previews drive the UI).
-    const freeSlots = Math.max(0, 4 - refPreviews.length);
+    const freeSlots = Math.max(0, 4 - refs.length);
     const batch = picked.slice(0, freeSlots);
     if (!batch.length) {
       setStatus("يمكنك رفع حتى 4 صور");
@@ -1929,6 +1949,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       targetSeconds: outputTargetSeconds,
       startedAt,
       prompt: userPrompt,
+      startFrameUrl:
+        media === "video" && startFrame?.url && !refs.length
+          ? startFrame.url
+          : undefined,
     }));
     setGenerating(true);
     setGenStartedAt(startedAt);
@@ -2330,19 +2354,30 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           {t.create.charactersHint}
         </p>
         <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {refPreviews.map((src, i) => (
+          {refs.map((ref, i) => {
+            const preview =
+              veronixRefImageSrc(ref.url) ||
+              refPreviews[i] ||
+              ref.url;
+            return (
             <div
-              key={refs[i]?.id || `char-slot-${i}`}
+              key={ref.id || `char-slot-${i}`}
               className="w-[6.75rem] shrink-0 space-y-1.5 rounded-2xl border border-white/10 bg-black/25 p-1.5 sm:w-[9.5rem]"
             >
               <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl bg-[#1a1f2a]">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={src}
+                  src={preview}
                   alt={refNames[i] || `شخصية ${i + 1}`}
                   className="h-full w-full object-cover"
                   onError={(e) => {
                     const el = e.currentTarget;
+                    const fallbackUrl = veronixRefImageSrc(ref.url) || ref.url;
+                    if (fallbackUrl && el.src !== fallbackUrl && !el.dataset.retried) {
+                      el.dataset.retried = "1";
+                      el.src = fallbackUrl;
+                      return;
+                    }
                     el.style.display = "none";
                     const fallback = el.nextElementSibling;
                     if (fallback instanceof HTMLElement) {
@@ -2397,8 +2432,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 />
               </label>
             </div>
-          ))}
-          {refPreviews.length < 4 && (
+            );
+          })}
+          {refs.length < 4 && (
             <label className="flex aspect-[3/4] w-[6.75rem] shrink-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border border-dashed border-white/20 text-white/60 sm:w-[9.5rem]">
               <ImagePlus className="h-5 w-5" />
               <span className="text-[10px]">{t.create.add}</span>

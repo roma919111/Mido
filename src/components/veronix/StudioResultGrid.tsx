@@ -12,12 +12,14 @@ import {
 import { veronixMediaSrc, veronixPosterSrc } from "@/lib/media-proxy";
 import type { StudioJob } from "@/lib/studio-jobs";
 import { writeEditDraft } from "@/lib/edit-draft";
-import { prepareCharacterRefsForEdit } from "@/lib/hydrate-ref-images";
+import { resolveVideoEditSource } from "@/lib/video-edit-source";
 import { fetchJson } from "@/lib/fetch-json";
 import { inferTargetSecondsFromAsset } from "@/lib/generate-eta";
 import { useRouter } from "next/navigation";
 import { GenerateClock } from "@/components/veronix/GenerateClock";
 import { useLocale } from "@/components/veronix/LocaleProvider";
+import { stripInternalPromptNotes } from "@/lib/character-names";
+import { prepareCharacterRefsForEdit } from "@/lib/hydrate-ref-images";
 
 function jobVisualEqual(a: StudioJob, b: StudioJob): boolean {
   return (
@@ -121,20 +123,18 @@ const ResultCard = memo(function ResultCard({
     if (editing || waiting) return;
     setEditing(true);
     try {
-      let characters: Array<{
-        type: "image";
-        id: string;
-        url: string;
-        label: string;
-      }> = [];
-      let editPrompt = job.prompt || "";
+      let editPrompt = stripInternalPromptNotes(job.prompt || "");
 
-      if (job.assetId) {
+      if (job.mediaType === "video") {
         try {
           const { res, data } = await fetchJson<{
             assets?: Array<{
               id: string;
+              mediaType?: string;
+              status?: string;
+              url?: string;
               prompt?: string;
+              mode?: string;
               targetSeconds?: number;
               aspectRatio?: string;
               resolution?: string;
@@ -152,53 +152,117 @@ const ResultCard = memo(function ResultCard({
             }>;
           }>("/api/assets");
           if (res.ok) {
-            const asset = (data.assets || []).find((a) => a.id === job.assetId);
-            if (asset?.prompt) editPrompt = asset.prompt;
+            const assets = data.assets || [];
+            const asset = job.assetId
+              ? assets.find((a) => a.id === job.assetId)
+              : undefined;
+            if (asset?.prompt) {
+              editPrompt = stripInternalPromptNotes(asset.prompt);
+            }
             const durationSec =
               (asset ? inferTargetSecondsFromAsset(asset) : undefined) ||
               job.targetSeconds ||
               undefined;
 
-            const savedStart =
-              asset?.startFrame?.url
-                ? asset.startFrame
-                : asset?.referenceImages?.find(
-                    (r) =>
-                      r?.url &&
-                      /^(start-frame|start-from|edit-start)/i.test(
-                        String(r.label || r.id || ""),
-                      ),
-                  );
+            const source = await resolveVideoEditSource({
+              asset: asset || null,
+              assets,
+              prompt: editPrompt,
+              jobStartFrameUrl: job.startFrameUrl,
+              duration: durationSec,
+            });
 
-            if (job.mediaType === "video" && savedStart?.url) {
-              writeEditDraft({
-                prompt: editPrompt,
-                media: "video",
-                startFrame: {
-                  type: "image",
-                  id: savedStart.id || `start-${job.assetId}`,
-                  url: savedStart.url,
-                  label: "start-frame",
-                },
-                referenceImages: [],
-                useAsStartFrame: true,
-                sourceAssetId: job.assetId,
-                duration: durationSec,
-                aspectRatio: asset?.aspectRatio,
-                resolution: asset?.resolution,
-                preferClarity: asset?.preferClarity,
-              });
-              const qs = new URLSearchParams({ edit: "1" });
-              if (typeof durationSec === "number") {
-                qs.set("duration", String(durationSec));
-              }
-              if (asset?.resolution) qs.set("resolution", asset.resolution);
-              if (asset?.aspectRatio) qs.set("aspect", asset.aspectRatio);
-              if (asset?.preferClarity) qs.set("clarity", "1");
-              router.push(`/create/video?${qs.toString()}`);
-              return;
+            writeEditDraft({
+              prompt: source.prompt || editPrompt,
+              media: "video",
+              startFrame: source.startFrame,
+              referenceImages: source.referenceImages,
+              useAsStartFrame: source.useAsStartFrame,
+              sourceAssetId: job.assetId,
+              duration: source.duration,
+              aspectRatio: source.aspectRatio,
+              resolution: source.resolution,
+              preferClarity: source.preferClarity,
+            });
+            const qs = new URLSearchParams({ edit: "1" });
+            if (typeof source.duration === "number") {
+              qs.set("duration", String(source.duration));
             }
+            if (source.resolution) qs.set("resolution", source.resolution);
+            if (source.aspectRatio) qs.set("aspect", source.aspectRatio);
+            if (source.preferClarity) qs.set("clarity", "1");
+            router.push(`/create/video?${qs.toString()}`);
+            return;
+          }
+        } catch {
+          // fall through to local draft
+        }
 
+        // No assets response — still try job-local start frame.
+        if (job.startFrameUrl) {
+          writeEditDraft({
+            prompt: editPrompt,
+            media: "video",
+            startFrame: {
+              type: "image",
+              id: `start-job-${job.clientId}`,
+              url: job.startFrameUrl,
+              label: "start-frame",
+            },
+            referenceImages: [],
+            useAsStartFrame: true,
+            sourceAssetId: job.assetId,
+            duration: job.targetSeconds,
+          });
+          const qs = new URLSearchParams({ edit: "1" });
+          if (typeof job.targetSeconds === "number") {
+            qs.set("duration", String(job.targetSeconds));
+          }
+          router.push(`/create/video?${qs.toString()}`);
+          return;
+        }
+      }
+
+      // Image Edit (or video fallback): restore character stills when present.
+      let characters: Array<{
+        type: "image";
+        id: string;
+        url: string;
+        label: string;
+      }> = [];
+      let durationSec = job.targetSeconds;
+      let aspectRatio: string | undefined;
+      let resolution: string | undefined;
+      let preferClarity: boolean | undefined;
+
+      if (job.assetId) {
+        try {
+          const { res, data } = await fetchJson<{
+            assets?: Array<{
+              id: string;
+              prompt?: string;
+              targetSeconds?: number;
+              aspectRatio?: string;
+              resolution?: string;
+              preferClarity?: boolean;
+              referenceImages?: Array<{
+                id?: string;
+                url: string;
+                label?: string;
+              }>;
+            }>;
+          }>("/api/assets");
+          if (res.ok) {
+            const asset = (data.assets || []).find((a) => a.id === job.assetId);
+            if (asset?.prompt) {
+              editPrompt = stripInternalPromptNotes(asset.prompt);
+            }
+            durationSec =
+              (asset ? inferTargetSecondsFromAsset(asset) : undefined) ||
+              job.targetSeconds;
+            aspectRatio = asset?.aspectRatio;
+            resolution = asset?.resolution;
+            preferClarity = asset?.preferClarity;
             if (asset?.referenceImages?.length) {
               characters = await prepareCharacterRefsForEdit(
                 asset.referenceImages.map((r, i) => ({
@@ -209,30 +273,6 @@ const ResultCard = memo(function ResultCard({
                 })),
               );
             }
-            writeEditDraft({
-              prompt: editPrompt,
-              media: job.mediaType,
-              startFrame: null,
-              referenceImages: characters,
-              sourceAssetId: job.assetId,
-              duration: durationSec,
-              aspectRatio: asset?.aspectRatio,
-              resolution: asset?.resolution,
-              preferClarity: asset?.preferClarity,
-            });
-            const qs = new URLSearchParams({ edit: "1" });
-            if (typeof durationSec === "number") {
-              qs.set("duration", String(durationSec));
-            }
-            if (asset?.resolution) qs.set("resolution", asset.resolution);
-            if (asset?.aspectRatio) qs.set("aspect", asset.aspectRatio);
-            if (asset?.preferClarity) qs.set("clarity", "1");
-            router.push(
-              job.mediaType === "image"
-                ? `/create/image?${qs.toString()}`
-                : `/create/video?${qs.toString()}`,
-            );
-            return;
           }
         } catch {
           // keep local prompt
@@ -245,15 +285,20 @@ const ResultCard = memo(function ResultCard({
         startFrame: null,
         referenceImages: characters,
         sourceAssetId: job.assetId,
-        duration: job.targetSeconds,
-        aspectRatio: undefined,
-        resolution: undefined,
-        preferClarity: undefined,
+        duration: durationSec,
+        aspectRatio,
+        resolution,
+        preferClarity,
       });
+      const qs = new URLSearchParams({ edit: "1" });
+      if (typeof durationSec === "number") qs.set("duration", String(durationSec));
+      if (resolution) qs.set("resolution", resolution);
+      if (aspectRatio) qs.set("aspect", aspectRatio);
+      if (preferClarity) qs.set("clarity", "1");
       router.push(
         job.mediaType === "image"
-          ? "/create/image?edit=1"
-          : "/create/video?edit=1",
+          ? `/create/image?${qs.toString()}`
+          : `/create/video?${qs.toString()}`,
       );
     } finally {
       setEditing(false);

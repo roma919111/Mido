@@ -40,6 +40,7 @@ import {
   hydrateRefImageUrl,
   prepareCharacterRefsForEdit,
 } from "@/lib/hydrate-ref-images";
+import { resolveVideoEditSource } from "@/lib/video-edit-source";
 import {
   cleanAssetPrompt,
   assetPromptTitle,
@@ -353,76 +354,88 @@ function FeedVideoSlide({
           : null;
       const durationSec = item.targetSeconds || liveVideoSec || editDuration;
 
-      // Prefer the original Start Frame used for image→video (never re-grab a
-      // still from the finished clip when we still have the source image).
-      const savedStart = item.startFrame?.url
-        ? item.startFrame
-        : Array.isArray(item.referenceImages)
-          ? item.referenceImages.find(
-              (r) =>
-                r?.url &&
-                /^(start-frame|start-from|edit-start)/i.test(
-                  String(r.label || r.id || ""),
-                ),
-            )
-          : undefined;
+      let assetsList: Array<{
+        id: string;
+        mediaType?: string;
+        status?: string;
+        url?: string;
+        prompt?: string;
+        mode?: string;
+        targetSeconds?: number;
+        aspectRatio?: string;
+        resolution?: string;
+        preferClarity?: boolean;
+        referenceImages?: typeof item.referenceImages;
+        startFrame?: typeof item.startFrame;
+      }> = [];
+      try {
+        const { res, data } = await fetchJson<{
+          assets?: typeof assetsList;
+        }>("/api/assets");
+        if (res.ok) assetsList = data.assets || [];
+      } catch {
+        // keep local item
+      }
 
-      if (savedStart?.url) {
+      const asset =
+        assetsList.find((a) => a.id === item.id) ||
+        ({
+          id: item.id,
+          mediaType: item.mediaType,
+          status: item.status,
+          url: item.url,
+          prompt: item.prompt,
+          mode: item.mode,
+          targetSeconds: item.targetSeconds,
+          aspectRatio: item.aspectRatio,
+          resolution: item.resolution,
+          preferClarity: item.preferClarity,
+          referenceImages: item.referenceImages,
+          startFrame: item.startFrame,
+        } as (typeof assetsList)[number]);
+
+      const source = await resolveVideoEditSource({
+        asset,
+        assets: assetsList.length ? assetsList : [asset],
+        prompt: prompt || item.prompt || "",
+        duration: durationSec,
+      });
+
+      if (source.startFrame?.url && source.useAsStartFrame) {
         const hydrated =
-          (await hydrateRefImageUrl(savedStart.url)) || savedStart.url;
+          (await hydrateRefImageUrl(source.startFrame.url)) ||
+          source.startFrame.url;
         writeEditDraft({
-          prompt: prompt || item.prompt || "",
+          prompt: source.prompt || prompt || item.prompt || "",
           media: "video",
           startFrame: {
             type: "image",
-            id: savedStart.id || `start-${item.id}`,
+            id: source.startFrame.id || `start-${item.id}`,
             url: hydrated,
             label: "start-frame",
           },
           referenceImages: [],
           useAsStartFrame: true,
           sourceAssetId: item.id,
-          duration: durationSec,
-          resolution: item.resolution,
-          aspectRatio: item.aspectRatio,
-          preferClarity: item.preferClarity,
+          duration: source.duration || durationSec,
+          resolution: source.resolution || item.resolution,
+          aspectRatio: source.aspectRatio || item.aspectRatio,
+          preferClarity: source.preferClarity ?? item.preferClarity,
         });
         const qs = new URLSearchParams({ edit: "1" });
-        qs.set("duration", String(durationSec));
-        if (item.resolution) qs.set("resolution", item.resolution);
-        if (item.aspectRatio) qs.set("aspect", item.aspectRatio);
-        if (item.preferClarity) qs.set("clarity", "1");
+        qs.set("duration", String(source.duration || durationSec));
+        if (source.resolution || item.resolution) {
+          qs.set("resolution", source.resolution || item.resolution || "");
+        }
+        if (source.aspectRatio || item.aspectRatio) {
+          qs.set("aspect", source.aspectRatio || item.aspectRatio || "");
+        }
+        if (source.preferClarity ?? item.preferClarity) qs.set("clarity", "1");
         router.push(`/create/video?${qs.toString()}`);
         return;
       }
 
-      // Character refs when present — do NOT capture a video still over faces.
-      const savedRefs = Array.isArray(item.referenceImages)
-        ? item.referenceImages
-            .filter(
-              (r) =>
-                r?.url &&
-                !/^(start-frame|start-from|edit-start)/i.test(
-                  String(r.label || r.id || ""),
-                ),
-            )
-            .slice(0, 4)
-        : [];
-
-      let characters = savedRefs.length
-        ? await prepareCharacterRefsForEdit(savedRefs)
-        : [];
-
-      // If hydrate failed but we still have paths, keep the original URLs
-      // (CreateStudio displays /generations via the stream proxy).
-      if (!characters.length && savedRefs.length) {
-        characters = savedRefs.map((r, i) => ({
-          type: "image" as const,
-          id: r.id || `edit-ref-${item.id}-${i}`,
-          url: r.url,
-          label: r.label || "",
-        }));
-      }
+      let characters = source.referenceImages;
 
       // Only older assets without saved refs/start: capture a still as a character slot.
       if (!characters.length) {
@@ -472,21 +485,25 @@ function FeedVideoSlide({
       }
 
       writeEditDraft({
-        prompt: prompt || item.prompt || "",
+        prompt: source.prompt || prompt || item.prompt || "",
         media: "video",
         startFrame: null,
         referenceImages: characters,
         sourceAssetId: item.id,
-        duration: durationSec,
-        resolution: item.resolution,
-        aspectRatio: item.aspectRatio,
-        preferClarity: item.preferClarity,
+        duration: source.duration || durationSec,
+        resolution: source.resolution || item.resolution,
+        aspectRatio: source.aspectRatio || item.aspectRatio,
+        preferClarity: source.preferClarity ?? item.preferClarity,
       });
       const qs = new URLSearchParams({ edit: "1" });
-      qs.set("duration", String(durationSec));
-      if (item.resolution) qs.set("resolution", item.resolution);
-      if (item.aspectRatio) qs.set("aspect", item.aspectRatio);
-      if (item.preferClarity) qs.set("clarity", "1");
+      qs.set("duration", String(source.duration || durationSec));
+      if (source.resolution || item.resolution) {
+        qs.set("resolution", source.resolution || item.resolution || "");
+      }
+      if (source.aspectRatio || item.aspectRatio) {
+        qs.set("aspect", source.aspectRatio || item.aspectRatio || "");
+      }
+      if (source.preferClarity ?? item.preferClarity) qs.set("clarity", "1");
       router.push(`/create/video?${qs.toString()}`);
     } finally {
       setEditing(false);
