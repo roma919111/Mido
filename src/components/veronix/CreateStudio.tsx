@@ -38,7 +38,6 @@ import {
 } from "@/lib/free-trial";
 import { quoteCreditsLocal } from "@/lib/credit-quote-local";
 import {
-  buildVeronixShotScript,
   idealScriptSeconds,
   type VeronixShotScript,
 } from "@/lib/veronix-shot-script";
@@ -1695,19 +1694,27 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       }
 
       const sourceForIdeal = enhanced || original;
-      const recommendedSec = idealScriptSeconds(sourceForIdeal, {
-        min: sliderMin,
-        max: sliderMax,
+      const { res: scriptRes, data: scriptData } = await fetchJson<{
+        script?: VeronixShotScript;
+        summaryAr?: string;
+        totalSeconds?: number;
+        scriptPrompt?: string;
+        error?: string;
+      }>("/api/shots/script", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: original,
+          enhancedPrompt: enhanced || undefined,
+          minSeconds: sliderMin,
+          maxSeconds: sliderMax,
+        }),
       });
-      const script = buildVeronixShotScript({
-        originalPrompt: original,
-        enhancedPrompt: enhanced || undefined,
-        totalSeconds: recommendedSec,
-        minSeconds: sliderMin,
-        maxSeconds: sliderMax,
-      });
-      // Do not overwrite the slider here — «البرومبت الأصلي» keeps the customer's duration.
-      setGenConfirmScript(script);
+      if (!scriptRes.ok || !scriptData.script) {
+        throw new Error(scriptData.error || "تعذر بناء سكريبت اللقطات");
+      }
+      setGenConfirmScript(scriptData.script);
+      void sourceForIdeal;
     } catch (err) {
       setGenConfirmOpen(false);
       setError(
@@ -2599,7 +2606,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 </pre>
               )}
               <p className="mt-3 text-[11px] leading-relaxed text-white/40">
-                توصية فيرونيكس = السكريبت المحسّن · البرومبت الأصلي = وصفك كما هو · إلغاء = إغلاق بدون توليد
+                الترتيب: فعل → اسم الفاعل وحالته → اسم المفعول به وحالته · بدون تكرار أفعال
+                {" · "}
+                توصية فيرونيكس / البرومبت الأصلي / إلغاء بدون توليد
               </p>
             </div>
             <div className="grid grid-cols-1 gap-2 border-t border-white/10 p-3 sm:grid-cols-3">
