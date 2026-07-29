@@ -233,7 +233,7 @@ const ResultCard = memo(function ResultCard({
         }
       }
 
-      // Image Edit (or video fallback): restore character stills when present.
+      // Image Edit (or video fallback): restore character stills + settings.
       let characters: Array<{
         type: "image";
         id: string;
@@ -241,8 +241,8 @@ const ResultCard = memo(function ResultCard({
         label: string;
       }> = [];
       let durationSec = job.targetSeconds;
-      let aspectRatio: string | undefined;
-      let resolution: string | undefined;
+      let aspectRatio: string | undefined = job.aspectRatio;
+      let resolution: string | undefined = job.resolution;
       let preferClarity: boolean | undefined;
 
       if (job.assetId) {
@@ -270,8 +270,8 @@ const ResultCard = memo(function ResultCard({
             durationSec =
               (asset ? inferTargetSecondsFromAsset(asset) : undefined) ||
               job.targetSeconds;
-            aspectRatio = asset?.aspectRatio;
-            resolution = asset?.resolution;
+            aspectRatio = asset?.aspectRatio || aspectRatio;
+            resolution = asset?.resolution || resolution;
             preferClarity = asset?.preferClarity;
             if (asset?.referenceImages?.length) {
               characters = await prepareCharacterRefsForEdit(
@@ -287,6 +287,38 @@ const ResultCard = memo(function ResultCard({
         } catch {
           // keep local prompt
         }
+      }
+
+      // Failed jobs often lose the list fetch race — use Generate snapshot.
+      if (!characters.length && job.referenceImages?.length) {
+        characters = await prepareCharacterRefsForEdit(job.referenceImages);
+      }
+      if (!characters.length && job.referenceImages?.length) {
+        characters = job.referenceImages
+          .filter((r) => r?.url)
+          .slice(0, 4)
+          .map((r, i) => ({
+            type: "image" as const,
+            id: r.id || `job-ref-${job.clientId}-${i}`,
+            url: r.url,
+            label: r.label || "",
+          }));
+      }
+
+      // Image→image frame: if the job stored a start still, restore as character.
+      if (
+        !characters.length &&
+        job.startFrameUrl &&
+        job.mediaType === "image"
+      ) {
+        characters = [
+          {
+            type: "image",
+            id: `frame-${job.clientId}`,
+            url: job.startFrameUrl,
+            label: "من الإطار",
+          },
+        ];
       }
 
       writeEditDraft({
@@ -442,21 +474,21 @@ const ResultCard = memo(function ResultCard({
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={imgSrc}
-            alt="preview"
+            alt=""
             className="pointer-events-none h-full w-full object-cover"
           />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-1 px-2 text-center">
             {waiting ? (
               <div className="flex flex-col items-center gap-1.5">
-                <GenerateClock startedAt={clockStart} size="large" />
+                <GenerateClock startedAt={clockStart} size="card" />
                 <p className="text-xs font-semibold text-white/80">
                   {t.assets.generating}
                 </p>
               </div>
             ) : failed ? (
-              <p className="text-[11px] font-semibold leading-snug text-rose-200">
-                {job.error || t.assets.failed}
+              <p className="text-sm font-bold text-rose-200">
+                {t.assets.failed}
               </p>
             ) : (
               <p className="text-xs text-white/40">{t.create.resultEmpty}</p>

@@ -22,6 +22,10 @@ export type StudioJob = {
    * videos can restore the originally generated still without a DB hit.
    */
   startFrameUrl?: string;
+  /** Character stills snapped at Generate — restored on failed Edit. */
+  referenceImages?: import("@/lib/types").VisualReference[];
+  aspectRatio?: string;
+  resolution?: string;
 };
 
 const JOBS_KEY = "veronix.create.jobs.v2";

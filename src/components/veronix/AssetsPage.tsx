@@ -188,7 +188,7 @@ function RunningCountdown({
   targetSeconds: number;
 }) {
   const started = lockEtaStart(assetId, createdAt);
-  return <GenerateClock startedAt={started} size="large" />;
+  return <GenerateClock startedAt={started} size="card" />;
 }
 
 async function captureVideoFrame(
@@ -652,10 +652,7 @@ function FeedVideoSlide({
             {item.status === "running"
               ? t.assets.generating
               : item.status === "failed"
-                ? item.error?.includes("تم استرجاع") ||
-                  item.error?.toLowerCase().includes("refund")
-                  ? t.assets.failedRefunded
-                  : t.assets.failed
+                ? t.assets.failed
                 : item.status}
           </span>
           {item.status === "running" && (
@@ -826,13 +823,14 @@ function GridVideoTile({
   item: AssetItem;
   onOpen: (id: string) => void;
 }) {
-  const { dir } = useLocale();
+  const { t, dir } = useLocale();
   const poster = veronixPosterSrc({
     url: item.url,
     historyId: item.historyId,
   });
   const title = assetPromptTitle(item.prompt) || "فيديو";
   const running = item.status === "running" || item.status === "pending";
+  const failed = item.status === "failed";
   const ratio = String(item.aspectRatio || "16:9").trim();
   const portrait =
     ratio === "9:16" || ratio === "3:4" || ratio === "2:3" || ratio === "4:5";
@@ -858,14 +856,25 @@ function GridVideoTile({
             loading="lazy"
           />
         ) : (
-          <div className="flex h-full items-center justify-center text-white/30">
-            <Play className="h-8 w-8" />
+          <div className="flex h-full items-center justify-center px-2 text-center text-sm font-semibold text-rose-200/90">
+            {failed ? t.assets.failed : running ? t.assets.generating : (
+              <Play className="h-8 w-8 text-white/30" />
+            )}
           </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-transparent" />
         {running ? (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/45">
-            <Loader2 className="h-6 w-6 animate-spin text-[#22f0ff]" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/45">
+            <GenerateClock
+              startedAt={lockEtaStart(item.id, item.createdAt)}
+              size="card"
+            />
+          </div>
+        ) : failed ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/55">
+            <span className="rounded-lg bg-black/70 px-2 py-1 text-xs font-bold text-rose-200">
+              {t.assets.failed}
+            </span>
           </div>
         ) : (
           <div className="absolute inset-0 flex items-center justify-center opacity-70 transition group-hover:opacity-100">
@@ -892,7 +901,7 @@ function GridImageTile({
   item: AssetItem;
   onOpen: (id: string) => void;
 }) {
-  const { dir } = useLocale();
+  const { t, dir } = useLocale();
   const src = veronixMediaSrc({
     historyId: item.historyId,
     url: item.url,
@@ -900,6 +909,7 @@ function GridImageTile({
   });
   const title = assetPromptTitle(item.prompt) || "صورة";
   const running = item.status === "running" || item.status === "pending";
+  const failed = item.status === "failed";
 
   return (
     <button
@@ -918,14 +928,23 @@ function GridImageTile({
             loading="lazy"
           />
         ) : (
-          <div className="flex h-full items-center justify-center text-sm text-white/35">
-            {item.status}
+          <div className="flex h-full items-center justify-center px-2 text-center text-sm font-semibold text-rose-200/90">
+            {failed ? t.assets.failed : running ? t.assets.generating : item.status}
           </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-transparent" />
         {running ? (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/45">
-            <Loader2 className="h-6 w-6 animate-spin text-[#22f0ff]" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/45">
+            <GenerateClock
+              startedAt={lockEtaStart(item.id, item.createdAt)}
+              size="card"
+            />
+          </div>
+        ) : failed && src ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/55">
+            <span className="rounded-lg bg-black/70 px-2 py-1 text-xs font-bold text-rose-200">
+              {t.assets.failed}
+            </span>
           </div>
         ) : null}
         <div className="absolute inset-x-0 bottom-0 space-y-0.5 p-2">
@@ -1098,11 +1117,23 @@ function FeedImageSlide({
           className="absolute inset-0 h-full w-full object-cover"
         />
       ) : (
-        <div className="absolute inset-0 flex items-center justify-center text-white/40">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center">
           {running ? (
-            <Loader2 className="h-8 w-8 animate-spin text-[#22f0ff]" />
+            <>
+              <GenerateClock
+                startedAt={lockEtaStart(item.id, item.createdAt)}
+                size="card"
+              />
+              <span className="text-sm font-semibold text-white">
+                {t.assets.generating}
+              </span>
+            </>
+          ) : item.status === "failed" ? (
+            <span className="text-base font-bold text-rose-200">
+              {t.assets.failed}
+            </span>
           ) : (
-            item.status
+            <span className="text-white/40">{t.assets.failed}</span>
           )}
         </div>
       )}

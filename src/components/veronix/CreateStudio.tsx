@@ -159,6 +159,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const [aspectRatio, setAspectRatio] = useState<string>(() => {
     if (
       boot?.aspectRatio &&
+      (
+        (lockedMedia === "image" ? IMAGE_ASPECTS : VIDEO_ASPECTS) as readonly string[]
+      ).includes(boot.aspectRatio)
+    ) {
+      return boot.aspectRatio;
+    }
+    if (
+      boot?.aspectRatio &&
       (VIDEO_ASPECTS as readonly string[]).includes(boot.aspectRatio)
     ) {
       return boot.aspectRatio;
@@ -168,6 +176,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const [resolution, setResolution] = useState<string>(() => {
     if (boot?.resolution && ["480p", "720p"].includes(boot.resolution)) {
       return boot.resolution;
+    }
+    if (boot?.resolution && /^(1K|2K|4K)$/i.test(boot.resolution)) {
+      return boot.resolution.toUpperCase();
     }
     return lockedMedia === "image" ? DEFAULT_IMAGE_RESOLUTION : FREE_VERONIX_RESOLUTION;
   });
@@ -433,8 +444,18 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       if (typeof draft.preferClarity === "boolean") {
         setApplyClarity(draft.preferClarity);
       }
-    } else if (draft.aspectRatio) {
-      setAspectRatio(draft.aspectRatio);
+    } else {
+      if (
+        draft.aspectRatio &&
+        (IMAGE_ASPECTS as readonly string[]).includes(
+          draft.aspectRatio as (typeof IMAGE_ASPECTS)[number],
+        )
+      ) {
+        setAspectRatio(draft.aspectRatio);
+      }
+      if (draft.resolution && /^(1K|2K|4K)$/i.test(draft.resolution)) {
+        setResolution(draft.resolution.toUpperCase());
+      }
     }
 
     const chars = (draft.referenceImages || [])
@@ -907,8 +928,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           VERONIX_IMAGE_MODEL_ID;
         setSelectedModelId(firstLive);
       }
-      setAspectRatio((prev) => (IMAGE_ASPECTS.includes(prev as (typeof IMAGE_ASPECTS)[number]) ? prev : "1:1"));
-      setResolution(DEFAULT_IMAGE_RESOLUTION);
+      setAspectRatio((prev) =>
+        IMAGE_ASPECTS.includes(prev as (typeof IMAGE_ASPECTS)[number]) ? prev : "1:1",
+      );
+      // Never wipe Assets → Edit restored image resolution (1K/2K/4K).
+      if (!restoreFromEditRef.current) {
+        setResolution(DEFAULT_IMAGE_RESOLUTION);
+      }
     } else {
       const stillValid = videoModels.some((m) => m.id === selectedModelId && m.available);
       if (!stillValid) {
@@ -1952,7 +1978,20 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       startFrameUrl:
         media === "video" && startFrame?.url && !refs.length
           ? startFrame.url
-          : undefined,
+          : media === "image" && startFrame?.url
+            ? startFrame.url
+            : undefined,
+      referenceImages: refs.length
+        ? refs.slice(0, 4).map((r, i) => ({
+            type: "image" as const,
+            id: r.id || `snap-ref-${i}`,
+            url: r.url,
+            label: normalizeCharacterName(refNames[i] || "") || r.label || "",
+          }))
+        : undefined,
+      aspectRatio,
+      resolution:
+        media === "video" ? resolution : resolution || DEFAULT_IMAGE_RESOLUTION,
     }));
     setGenerating(true);
     setGenStartedAt(startedAt);
@@ -2847,14 +2886,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       ) : null}
 
       {waitingResult ? (
-        <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-[#22f0ff]/25 bg-[#141821] px-4 py-4">
+        <div className="flex items-center justify-center gap-3 rounded-2xl border border-[#22f0ff]/25 bg-[#141821] px-3 py-3">
           <GenerateClock
             startedAt={
               genStartedAt ||
               runningJobs[0]?.startedAt ||
               Date.now()
             }
-            size="large"
+            size="banner"
           />
           <p className="text-sm font-semibold text-white">
             جاري التوليد…
