@@ -63,6 +63,11 @@ export interface AssetRecord {
    * Restored by Assets → Edit so the customer can tweak without re-uploading.
    */
   referenceImages?: import("@/lib/types").VisualReference[];
+  /**
+   * Original image→video Start Frame (first frame). Prefer this on Edit —
+   * never re-capture a still from the finished video when this exists.
+   */
+  startFrame?: import("@/lib/types").VisualReference | null;
   /** Customer opted into OmarFX clarity grade for this video. */
   preferClarity?: boolean;
   /** Whether the generation requested native audio. */
@@ -388,6 +393,14 @@ export async function createAsset(
       jobMeta: input.jobMeta,
       referenceImages: Array.isArray(input.referenceImages)
         ? input.referenceImages.slice(0, 4)
+        : undefined,
+      startFrame: input.startFrame?.url
+        ? {
+            type: "image" as const,
+            id: input.startFrame.id || `start-${randomUUID().slice(0, 8)}`,
+            url: input.startFrame.url,
+            label: input.startFrame.label || "start-frame",
+          }
         : undefined,
       preferClarity: Boolean(input.preferClarity),
       generateAudio:

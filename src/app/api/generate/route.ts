@@ -472,6 +472,18 @@ export async function POST(request: Request) {
     const sharedSavedRefs = await persistableReferenceImages(
       Array.isArray(body.referenceImages) ? body.referenceImages : undefined,
     );
+    const sharedSavedStart = body.startFrame?.url
+      ? (
+          await persistableReferenceImages([
+            {
+              type: "image",
+              id: body.startFrame.id || `start-${Date.now()}`,
+              url: body.startFrame.url,
+              label: body.startFrame.label || "start-frame",
+            },
+          ])
+        )?.[0]
+      : undefined;
     for (const quote of billedQuotes) {
       const catalog = getCatalogModel(quote.modelId);
       const uiResolution = freeTrial
@@ -503,6 +515,7 @@ export async function POST(request: Request) {
         aspectRatio: String(body.aspectRatio || "16:9").trim() || "16:9",
         resolution: uiResolution,
         referenceImages: savedRefs,
+        startFrame: sharedSavedStart || undefined,
         preferClarity,
         generateAudio: freeTrial ? true : Boolean(body.generateAudio),
       });

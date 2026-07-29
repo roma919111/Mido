@@ -344,10 +344,69 @@ function FeedVideoSlide({
     if (editing) return;
     setEditing(true);
     try {
-      // Always restore uploaded character stills first — never steal a video frame
-      // when the asset already has referenceImages (frame = result scene, not faces).
+      const editDuration = inferTargetSecondsFromAsset(item);
+      const liveVideoSec =
+        videoRef.current &&
+        Number.isFinite(videoRef.current.duration) &&
+        videoRef.current.duration >= 4
+          ? Math.min(15, Math.max(4, Math.round(videoRef.current.duration)))
+          : null;
+      const durationSec = item.targetSeconds || liveVideoSec || editDuration;
+
+      // Prefer the original Start Frame used for image→video (never re-grab a
+      // still from the finished clip when we still have the source image).
+      const savedStart = item.startFrame?.url
+        ? item.startFrame
+        : Array.isArray(item.referenceImages)
+          ? item.referenceImages.find(
+              (r) =>
+                r?.url &&
+                /^(start-frame|start-from|edit-start)/i.test(
+                  String(r.label || r.id || ""),
+                ),
+            )
+          : undefined;
+
+      if (savedStart?.url) {
+        const hydrated =
+          (await hydrateRefImageUrl(savedStart.url)) || savedStart.url;
+        writeEditDraft({
+          prompt: prompt || item.prompt || "",
+          media: "video",
+          startFrame: {
+            type: "image",
+            id: savedStart.id || `start-${item.id}`,
+            url: hydrated,
+            label: "start-frame",
+          },
+          referenceImages: [],
+          useAsStartFrame: true,
+          sourceAssetId: item.id,
+          duration: durationSec,
+          resolution: item.resolution,
+          aspectRatio: item.aspectRatio,
+          preferClarity: item.preferClarity,
+        });
+        const qs = new URLSearchParams({ edit: "1" });
+        qs.set("duration", String(durationSec));
+        if (item.resolution) qs.set("resolution", item.resolution);
+        if (item.aspectRatio) qs.set("aspect", item.aspectRatio);
+        if (item.preferClarity) qs.set("clarity", "1");
+        router.push(`/create/video?${qs.toString()}`);
+        return;
+      }
+
+      // Character refs when present — do NOT capture a video still over faces.
       const savedRefs = Array.isArray(item.referenceImages)
-        ? item.referenceImages.filter((r) => r?.url).slice(0, 4)
+        ? item.referenceImages
+            .filter(
+              (r) =>
+                r?.url &&
+                !/^(start-frame|start-from|edit-start)/i.test(
+                  String(r.label || r.id || ""),
+                ),
+            )
+            .slice(0, 4)
         : [];
 
       let characters = savedRefs.length
@@ -365,7 +424,7 @@ function FeedVideoSlide({
         }));
       }
 
-      // Only older assets without saved refs: capture a still as a character slot.
+      // Only older assets without saved refs/start: capture a still as a character slot.
       if (!characters.length) {
         const el = videoRef.current;
         let frameUrl: string | null = null;
@@ -411,15 +470,6 @@ function FeedVideoSlide({
           }
         }
       }
-
-      const editDuration = inferTargetSecondsFromAsset(item);
-      const liveVideoSec =
-        videoRef.current &&
-        Number.isFinite(videoRef.current.duration) &&
-        videoRef.current.duration >= 4
-          ? Math.min(15, Math.max(4, Math.round(videoRef.current.duration)))
-          : null;
-      const durationSec = item.targetSeconds || liveVideoSec || editDuration;
 
       writeEditDraft({
         prompt: prompt || item.prompt || "",

@@ -143,14 +143,70 @@ const ResultCard = memo(function ResultCard({
                 url: string;
                 label?: string;
               }>;
+              startFrame?: {
+                id?: string;
+                url: string;
+                label?: string;
+              } | null;
             }>;
           }>("/api/assets");
           if (res.ok) {
             const asset = (data.assets || []).find((a) => a.id === job.assetId);
             if (asset?.prompt) editPrompt = asset.prompt;
+            const durationSec =
+              (asset ? inferTargetSecondsFromAsset(asset) : undefined) ||
+              job.targetSeconds ||
+              undefined;
+
+            const savedStart =
+              asset?.startFrame?.url
+                ? asset.startFrame
+                : asset?.referenceImages?.find(
+                    (r) =>
+                      r?.url &&
+                      /^(start-frame|start-from|edit-start)/i.test(
+                        String(r.label || r.id || ""),
+                      ),
+                  );
+
+            if (job.mediaType === "video" && savedStart?.url) {
+              writeEditDraft({
+                prompt: editPrompt,
+                media: "video",
+                startFrame: {
+                  type: "image",
+                  id: savedStart.id || `start-${job.assetId}`,
+                  url: savedStart.url,
+                  label: "start-frame",
+                },
+                referenceImages: [],
+                useAsStartFrame: true,
+                sourceAssetId: job.assetId,
+                duration: durationSec,
+                aspectRatio: asset?.aspectRatio,
+                resolution: asset?.resolution,
+                preferClarity: asset?.preferClarity,
+              });
+              const qs = new URLSearchParams({ edit: "1" });
+              if (typeof durationSec === "number") {
+                qs.set("duration", String(durationSec));
+              }
+              if (asset?.resolution) qs.set("resolution", asset.resolution);
+              if (asset?.aspectRatio) qs.set("aspect", asset.aspectRatio);
+              if (asset?.preferClarity) qs.set("clarity", "1");
+              router.push(`/create/video?${qs.toString()}`);
+              return;
+            }
+
             if (asset?.referenceImages?.length) {
               characters = asset.referenceImages
-                .filter((r) => r?.url)
+                .filter(
+                  (r) =>
+                    r?.url &&
+                    !/^(start-frame|start-from|edit-start)/i.test(
+                      String(r.label || r.id || ""),
+                    ),
+                )
                 .slice(0, 4)
                 .map((r, i) => ({
                   type: "image" as const,
@@ -159,10 +215,6 @@ const ResultCard = memo(function ResultCard({
                   label: r.label || "",
                 }));
             }
-            const durationSec =
-              (asset ? inferTargetSecondsFromAsset(asset) : undefined) ||
-              job.targetSeconds ||
-              undefined;
             writeEditDraft({
               prompt: editPrompt,
               media: job.mediaType,

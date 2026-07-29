@@ -21,6 +21,8 @@ export type CachedAssetItem = {
   preferClarity?: boolean;
   generateAudio?: boolean;
   referenceImages?: import("@/lib/types").VisualReference[];
+  /** Original image→video start frame when the clip was seeded from a still. */
+  startFrame?: import("@/lib/types").VisualReference | null;
 };
 
 type AssetsCachePayload = {
