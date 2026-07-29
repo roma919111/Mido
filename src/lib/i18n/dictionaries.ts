@@ -190,6 +190,7 @@ export type Dictionary = {
     noPrompt: string;
     swipeUp: string;
     gridHint: string;
+    photosGridHint: string;
     generating: string;
     failed: string;
     failedRefunded: string;
@@ -420,6 +421,7 @@ export const ar: Dictionary = {
     noPrompt: "بدون وصف",
     swipeUp: "اسحب للأعلى",
     gridHint: "شبكة الفيديوهات",
+    photosGridHint: "شبكة الصور",
     generating: "جاري التوليد",
     failed: "فشل التوليد",
     failedRefunded: "فشل التوليد · تم استرجاع الكريديت",
@@ -650,6 +652,7 @@ export const en: Dictionary = {
     noPrompt: "No description",
     swipeUp: "Swipe up",
     gridHint: "Video grid",
+    photosGridHint: "Photo grid",
     generating: "Generating",
     failed: "Generation failed",
     failedRefunded: "Generation failed · credits refunded",

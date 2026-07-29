@@ -868,7 +868,65 @@ function GridVideoTile({
   );
 }
 
-function ImageTile({
+function GridImageTile({
+  item,
+  onOpen,
+}: {
+  item: AssetItem;
+  onOpen: (id: string) => void;
+}) {
+  const { dir } = useLocale();
+  const src = veronixMediaSrc({
+    historyId: item.historyId,
+    url: item.url,
+    mediaType: "image",
+  });
+  const title = assetPromptTitle(item.prompt) || "صورة";
+  const running = item.status === "running" || item.status === "pending";
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(item.id)}
+      className="group relative overflow-hidden rounded-xl bg-[#10141c] text-right ring-1 ring-white/10 transition hover:ring-white/25"
+      dir={dir}
+    >
+      <div className="relative aspect-[3/4] bg-black/50">
+        {src ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={src}
+            alt=""
+            className="h-full w-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center text-sm text-white/35">
+            {item.status}
+          </div>
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-transparent" />
+        {running ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/45">
+            <Loader2 className="h-6 w-6 animate-spin text-[#22f0ff]" />
+          </div>
+        ) : null}
+        <div className="absolute inset-x-0 bottom-0 space-y-0.5 p-2">
+          <p className="line-clamp-2 text-[11px] font-semibold leading-snug text-white">
+            {title}
+          </p>
+          {item.aspectRatio || item.resolution ? (
+            <p className="truncate text-[9px] font-medium text-white/70">
+              {[item.resolution, item.aspectRatio].filter(Boolean).join(" · ")}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function FeedImageSlide({
   item,
   onDeleted,
 }: {
@@ -876,165 +934,235 @@ function ImageTile({
   onDeleted: (id: string) => void;
 }) {
   const router = useRouter();
-  const { t } = useLocale();
+  const { t, dir } = useLocale();
   const [deleting, setDeleting] = useState(false);
   const [makingVideo, setMakingVideo] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [promptExpanded, setPromptExpanded] = useState(false);
   const src = veronixMediaSrc({
     historyId: item.historyId,
     url: item.url,
     mediaType: "image",
   });
   const prompt = cleanAssetPrompt(item.prompt);
+  const title = assetPromptTitle(item.prompt);
+  const promptLong = prompt.length > 90;
+  const running = item.status === "running" || item.status === "pending";
+
+  const handleEdit = async () => {
+    if (editing) return;
+    setEditing(true);
+    try {
+      let characters = await hydrateReferenceImages(item.referenceImages);
+      if (!characters.length && item.url) {
+        const url = await hydrateRefImageUrl(item.url);
+        if (url) {
+          characters = [
+            {
+              type: "image",
+              id: `edit-img-ref-${item.id}`,
+              url,
+              label: "من الصورة",
+            },
+          ];
+        }
+      }
+      writeEditDraft({
+        prompt: prompt || item.prompt || "",
+        media: "image",
+        startFrame: null,
+        referenceImages: characters,
+        sourceAssetId: item.id,
+        aspectRatio: item.aspectRatio,
+        resolution: item.resolution,
+      });
+      router.push("/create/image?edit=1");
+    } finally {
+      setEditing(false);
+    }
+  };
+
+  const handleMakeVideo = async () => {
+    if (makingVideo || item.status !== "completed" || !item.url) return;
+    setMakingVideo(true);
+    try {
+      const url = (await hydrateRefImageUrl(item.url)) || item.url;
+      if (!url) throw new Error("تعذر تحميل الصورة");
+      writeEditDraft({
+        prompt: prompt || item.prompt || "",
+        media: "video",
+        startFrame: {
+          type: "image",
+          id: `start-from-img-${item.id}`,
+          url,
+          label: "start-frame",
+        },
+        referenceImages: [],
+        useAsStartFrame: true,
+        sourceAssetId: item.id,
+        aspectRatio: item.aspectRatio,
+        resolution:
+          item.resolution && ["480p", "720p"].includes(item.resolution)
+            ? item.resolution
+            : "720p",
+      });
+      router.push("/create/video?edit=1");
+    } catch (err) {
+      window.alert(
+        err instanceof Error ? err.message : "تعذر فتح توليد الفيديو",
+      );
+    } finally {
+      setMakingVideo(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (deleting) return;
+    if (!window.confirm("حذف هذه الصورة من Assets؟")) return;
+    setDeleting(true);
+    try {
+      const { res, data } = await fetchJson<{ error?: string }>("/api/assets", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: item.id }),
+      });
+      if (!res.ok) throw new Error(data.error || "تعذر الحذف");
+      onDeleted(item.id);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "تعذر الحذف");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
-    <article className="relative overflow-hidden rounded-2xl bg-[#10141c]">
-      <div className="aspect-[3/4] bg-black/40">
-        {src ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={src}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            className="h-full w-full object-cover"
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center text-sm text-white/40">
-            {item.status}
-          </div>
-        )}
-      </div>
-      <div className="space-y-2 p-3" dir="rtl">
-        <h3 className="text-sm font-extrabold text-white">
-          {assetPromptTitle(item.prompt)}
-        </h3>
-        <p className="line-clamp-3 text-sm text-white/75">{prompt}</p>
-        <div className="flex flex-wrap items-center gap-3">
+    <section
+      data-asset-id={item.id}
+      className="relative h-[calc(100dvh-5.25rem-env(safe-area-inset-bottom))] w-full snap-start snap-always overflow-hidden bg-black"
+    >
+      {src ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={src}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center text-white/40">
+          {running ? (
+            <Loader2 className="h-8 w-8 animate-spin text-[#22f0ff]" />
+          ) : (
+            item.status
+          )}
+        </div>
+      )}
+
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[42%] bg-gradient-to-t from-black/85 via-black/35 to-transparent" />
+
+      <div className="absolute bottom-28 left-2 z-40 flex flex-col items-center gap-2 sm:bottom-32 sm:left-4">
+        <div className="flex flex-col items-center gap-1">
           <button
             type="button"
-            onClick={() => {
-              void (async () => {
-                let characters = await hydrateReferenceImages(
-                  item.referenceImages,
-                );
-                if (!characters.length && item.url) {
-                  const url = await hydrateRefImageUrl(item.url);
-                  if (url) {
-                    characters = [
-                      {
-                        type: "image",
-                        id: `edit-img-ref-${item.id}`,
-                        url,
-                        label: "من الصورة",
-                      },
-                    ];
-                  }
-                }
-                writeEditDraft({
-                  prompt: prompt || item.prompt || "",
-                  media: "image",
-                  startFrame: null,
-                  referenceImages: characters,
-                  sourceAssetId: item.id,
-                  aspectRatio: item.aspectRatio,
-                  resolution: item.resolution,
-                });
-                router.push("/create/image?edit=1");
-              })();
-            }}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#22f0ff]"
+            onClick={() => void handleEdit()}
+            disabled={editing || running}
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-white/12 text-white ring-1 ring-white/25 backdrop-blur-md disabled:opacity-40"
+            aria-label={t.assets.edit}
           >
-            <Pencil className="h-3.5 w-3.5" />
-            {t.assets.edit}
+            {editing ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <Pencil className="h-5 w-5" />
+            )}
           </button>
+          <span className="text-[10px] font-semibold text-white/80">
+            {t.assets.edit}
+          </span>
+        </div>
+
+        <div className="flex flex-col items-center gap-1">
           <button
             type="button"
+            onClick={() => void handleMakeVideo()}
             disabled={makingVideo || item.status !== "completed" || !item.url}
-            onClick={() => {
-              void (async () => {
-                if (makingVideo) return;
-                setMakingVideo(true);
-                try {
-                  const url =
-                    (await hydrateRefImageUrl(item.url)) || item.url;
-                  if (!url) throw new Error("تعذر تحميل الصورة");
-                  writeEditDraft({
-                    prompt: prompt || item.prompt || "",
-                    media: "video",
-                    startFrame: {
-                      type: "image",
-                      id: `start-from-img-${item.id}`,
-                      url,
-                      label: "start-frame",
-                    },
-                    referenceImages: [],
-                    useAsStartFrame: true,
-                    sourceAssetId: item.id,
-                    aspectRatio: item.aspectRatio,
-                    resolution:
-                      item.resolution && ["480p", "720p"].includes(item.resolution)
-                        ? item.resolution
-                        : "720p",
-                  });
-                  router.push("/create/video?edit=1");
-                } catch (err) {
-                  window.alert(
-                    err instanceof Error ? err.message : "تعذر فتح توليد الفيديو",
-                  );
-                } finally {
-                  setMakingVideo(false);
-                }
-              })();
-            }}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#22f0ff] disabled:opacity-50"
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-[#22f0ff]/20 text-[#22f0ff] ring-1 ring-[#22f0ff]/35 backdrop-blur-md disabled:opacity-40"
+            aria-label={t.assets.makeVideo}
           >
             {makingVideo ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
-              <Clapperboard className="h-3.5 w-3.5" />
+              <Clapperboard className="h-4 w-4" />
             )}
-            {t.assets.makeVideo}
           </button>
+          <span className="text-[10px] font-semibold text-white/80">
+            {t.assets.makeVideo}
+          </span>
+        </div>
+
+        <div className="flex flex-col items-center gap-1">
           <button
             type="button"
+            onClick={() => void handleDelete()}
             disabled={deleting}
-            onClick={() => {
-              void (async () => {
-                if (deleting) return;
-                if (!window.confirm("حذف هذه الصورة من Assets؟")) return;
-                setDeleting(true);
-                try {
-                  const { res, data } = await fetchJson<{ error?: string }>(
-                    "/api/assets",
-                    {
-                      method: "DELETE",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ id: item.id }),
-                    },
-                  );
-                  if (!res.ok) throw new Error(data.error || "تعذر الحذف");
-                  onDeleted(item.id);
-                } catch (err) {
-                  window.alert(
-                    err instanceof Error ? err.message : "تعذر الحذف",
-                  );
-                } finally {
-                  setDeleting(false);
-                }
-              })();
-            }}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-300 disabled:opacity-50"
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-rose-500/20 text-rose-100 ring-1 ring-rose-300/30 backdrop-blur-md disabled:opacity-40"
+            aria-label={t.assets.delete}
           >
             {deleting ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 className="h-4 w-4" />
             )}
-            {t.assets.delete}
           </button>
+          <span className="text-[10px] font-semibold text-white/80">
+            {t.assets.delete}
+          </span>
         </div>
       </div>
-    </article>
+
+      <div
+        className="pointer-events-none absolute inset-x-0 bottom-16 z-20 px-3 pb-[env(safe-area-inset-bottom)] pl-16 sm:bottom-20 sm:px-6 sm:pl-24"
+        dir={dir}
+      >
+        <div className="pointer-events-auto max-w-[min(100%,28rem)]">
+          <p className="mb-1 text-[11px] font-semibold tracking-wide text-[#22f0ff]/90">
+            {t.create.createdBy}
+          </p>
+          <h2 className="text-base font-extrabold leading-snug text-white sm:text-lg">
+            {title}
+          </h2>
+          {prompt ? (
+            <div className="mt-1.5">
+              <p
+                className={`text-sm leading-relaxed text-white/80 sm:text-[15px] ${
+                  promptExpanded ? "" : "line-clamp-2"
+                }`}
+              >
+                {prompt}
+              </p>
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                {promptLong ? (
+                  <button
+                    type="button"
+                    onClick={() => setPromptExpanded((v) => !v)}
+                    className="text-xs font-semibold text-white/95 underline-offset-2 hover:underline"
+                  >
+                    {promptExpanded ? t.assets.showLess : t.assets.showMore}
+                  </button>
+                ) : null}
+                {(item.resolution || item.aspectRatio) && (
+                  <p className="text-[10px] font-semibold text-white/70">
+                    {[item.resolution, item.aspectRatio]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="mt-1.5 text-sm text-white/50">{t.assets.noPrompt}</p>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -1195,10 +1323,13 @@ export function AssetsPage() {
 
   const videos = assets.filter((a) => a.mediaType === "video");
   const images = assets.filter((a) => a.mediaType === "image");
-  const activeId = useActiveSlide(
-    feedRef,
-    viewMode === "browse" ? videos.length : 0,
-  );
+  const browseCount =
+    viewMode === "browse"
+      ? filter === "video"
+        ? videos.length
+        : images.length
+      : 0;
+  const activeId = useActiveSlide(feedRef, browseCount);
 
   useEffect(() => {
     if (viewMode !== "browse" || !focusAssetId) return;
@@ -1213,7 +1344,7 @@ export function AssetsPage() {
       setFocusAssetId(null);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [viewMode, focusAssetId, videos.length]);
+  }, [viewMode, focusAssetId, videos.length, images.length, filter]);
 
   const openVideoInBrowse = useCallback(
     (id: string) => {
@@ -1222,6 +1353,22 @@ export function AssetsPage() {
     },
     [setVideoViewMode],
   );
+
+  const openImageInBrowse = useCallback(
+    (id: string) => {
+      setFocusAssetId(id);
+      setVideoViewMode("browse");
+    },
+    [setVideoViewMode],
+  );
+
+  const onDeletedAsset = useCallback((id: string) => {
+    setAssets((prev) => {
+      const next = prev.filter((a) => a.id !== id);
+      writeAssetsCache(next);
+      return next;
+    });
+  }, []);
 
   if (filter === "video") {
     return (
@@ -1404,75 +1551,166 @@ export function AssetsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0b0d12] text-white">
-      <AppHeader
-        user={user}
-        onLogout={() => {
-          void fetch("/api/auth/customer/logout", { method: "POST" }).then(() => {
-            setUser(null);
-            setAssets([]);
-            clearAssetsCache();
-          });
-        }}
-      />
-      <main className="mx-auto max-w-6xl px-4 pb-28 pt-6 sm:px-6" dir={dir}>
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h1 className="font-display text-3xl font-extrabold">{t.nav.assets}</h1>
-            <p className="mt-1 text-sm text-white/50">
-              {locale === "en" ? "Your saved images" : "صورك المحفوظة"}
-            </p>
+    <div className="relative min-h-[100dvh] bg-black text-white">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-30 bg-gradient-to-b from-black/80 via-black/50 to-transparent">
+        <div className="pointer-events-auto">
+          <AppHeader
+            compact
+            user={user}
+            onLogout={() => {
+              void fetch("/api/auth/customer/logout", { method: "POST" }).then(
+                () => {
+                  setUser(null);
+                  setAssets([]);
+                  clearAssetsCache();
+                },
+              );
+            }}
+          />
+        </div>
+        <div className="pointer-events-auto px-3 pb-2.5 pt-1 sm:px-4" dir={dir}>
+          <div className="flex items-end justify-between gap-2">
+            <div className="min-w-0">
+              <p className="font-display text-lg font-extrabold leading-none sm:text-xl">
+                {t.nav.assets}
+              </p>
+              <p className="mt-1 text-[10px] text-white/45 sm:text-[11px]">
+                {viewMode === "browse"
+                  ? t.assets.swipeUp
+                  : t.assets.photosGridHint}
+              </p>
+            </div>
+            <div className="flex shrink-0 gap-1">
+              <button
+                type="button"
+                onClick={() => setFilter("video")}
+                className="rounded-full border border-white/20 px-2.5 py-1 text-[11px] font-semibold text-white/80"
+              >
+                {t.assets.video}
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilter("image")}
+                className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black"
+              >
+                {t.assets.photos}
+              </button>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setFilter("video")}
-              className="rounded-full border border-white/20 px-3 py-1.5 text-xs font-semibold text-white/80"
-            >
-              {t.assets.video}
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilter("image")}
-              className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-black"
-            >
-              {t.assets.photos}
-            </button>
+
+          <div className="mt-2 flex items-center gap-2">
+            <div className="flex shrink-0 rounded-full bg-white/10 p-0.5 ring-1 ring-white/15">
+              <button
+                type="button"
+                onClick={() => setVideoViewMode("browse")}
+                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold transition ${
+                  viewMode === "browse"
+                    ? "bg-white text-black"
+                    : "text-white/75 hover:text-white"
+                }`}
+              >
+                <Rows3 className="h-3.5 w-3.5" />
+                {t.assets.browse}
+              </button>
+              <button
+                type="button"
+                onClick={() => setVideoViewMode("grid")}
+                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold transition ${
+                  viewMode === "grid"
+                    ? "bg-white text-black"
+                    : "text-white/75 hover:text-white"
+                }`}
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+                {t.assets.grid}
+              </button>
+            </div>
+
+            {viewMode === "grid" ? (
+              <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-full bg-white/10 px-2 py-1 ring-1 ring-white/15">
+                <ZoomOut className="h-3.5 w-3.5 shrink-0 text-white/55" />
+                <input
+                  type="range"
+                  min={GRID_ZOOM_MIN}
+                  max={GRID_ZOOM_MAX}
+                  step={1}
+                  value={gridZoom}
+                  onChange={(e) => setVideoGridZoom(Number(e.target.value))}
+                  className="h-1.5 w-full min-w-0 accent-[#22f0ff]"
+                  aria-label={t.assets.zoom}
+                />
+                <ZoomIn className="h-3.5 w-3.5 shrink-0 text-white/55" />
+                <span className="shrink-0 text-[10px] font-semibold tabular-nums text-white/70">
+                  {gridZoom}×
+                </span>
+              </div>
+            ) : null}
           </div>
         </div>
+      </div>
 
-        {error && (
-          <div className="mt-6 rounded-2xl border border-white/10 bg-[#141821] p-6 text-sm text-white/70">
-            {error}
-          </div>
-        )}
+      {error && (
+        <div className="flex min-h-[100dvh] items-center justify-center px-6 text-center text-sm text-white/70">
+          {error}{" "}
+          <Link href="/login?next=/assets" className="text-[#22f0ff]">
+            دخول
+          </Link>
+        </div>
+      )}
 
-        {!error && loading && images.length === 0 && (
-          <div className="mt-16 flex justify-center">
-            <Loader2 className="h-7 w-7 animate-spin text-[#22f0ff]" />
-          </div>
-        )}
+      {!error && loading && images.length === 0 && (
+        <div className="flex min-h-[100dvh] items-center justify-center">
+          <Loader2 className="h-7 w-7 animate-spin text-[#22f0ff]" />
+        </div>
+      )}
 
-        {!error && !loading && images.length === 0 && (
-          <p className="mt-8 text-sm text-white/45">لا توجد صور بعد.</p>
-        )}
+      {!error && !loading && images.length === 0 && (
+        <div className="flex min-h-[100dvh] flex-col items-center justify-center gap-3 px-6 text-center">
+          <p className="text-sm text-white/50">لا توجد صور بعد.</p>
+          <Link
+            href="/create/image"
+            className="rounded-full bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-4 py-2 text-sm font-semibold"
+          >
+            إنشاء صورة
+          </Link>
+        </div>
+      )}
 
-        <div className="mt-4 grid gap-2 sm:mt-6 sm:grid-cols-2 sm:gap-3 lg:grid-cols-3">
+      {!error && images.length > 0 && viewMode === "browse" && (
+        <div
+          ref={feedRef}
+          className="h-[calc(100dvh-5.25rem-env(safe-area-inset-bottom))] snap-y snap-mandatory overflow-y-scroll overscroll-y-contain"
+          style={{ scrollSnapType: "y mandatory" }}
+        >
           {images.map((item) => (
-            <ImageTile
+            <FeedImageSlide
               key={item.id}
               item={item}
-              onDeleted={(id) => {
-                setAssets((prev) => {
-                  const next = prev.filter((a) => a.id !== id);
-                  writeAssetsCache(next);
-                  return next;
-                });
-              }}
+              onDeleted={onDeletedAsset}
             />
           ))}
         </div>
-      </main>
+      )}
+
+      {!error && images.length > 0 && viewMode === "grid" && (
+        <div className="h-[calc(100dvh-5.25rem-env(safe-area-inset-bottom))] overflow-y-auto overscroll-y-contain px-2 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[7.75rem] sm:px-3 sm:pt-36">
+          <div
+            className="mx-auto grid max-w-6xl gap-2 sm:gap-2.5"
+            style={{
+              gridTemplateColumns: `repeat(${gridZoom}, minmax(0, 1fr))`,
+            }}
+          >
+            {images.map((item) => (
+              <GridImageTile
+                key={item.id}
+                item={item}
+                onOpen={openImageInBrowse}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
       <BottomNav />
     </div>
   );
