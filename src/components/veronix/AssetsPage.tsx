@@ -1001,15 +1001,17 @@ export function AssetsPage() {
 
   useEffect(() => {
     if (viewMode !== "browse" || !focusAssetId) return;
-    const root = feedRef.current;
-    if (!root) return;
-    const el = root.querySelector<HTMLElement>(
-      `[data-asset-id="${CSS.escape(focusAssetId)}"]`,
-    );
-    if (el) {
-      el.scrollIntoView({ block: "start" });
-    }
-    setFocusAssetId(null);
+    const id = focusAssetId;
+    const frame = window.requestAnimationFrame(() => {
+      const root = feedRef.current;
+      if (!root) return;
+      const el = root.querySelector<HTMLElement>(
+        `[data-asset-id="${CSS.escape(id)}"]`,
+      );
+      el?.scrollIntoView({ block: "start" });
+      setFocusAssetId(null);
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [viewMode, focusAssetId, videos.length]);
 
   const openVideoInBrowse = useCallback(
