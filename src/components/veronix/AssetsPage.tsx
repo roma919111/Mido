@@ -3,10 +3,12 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type RefObject,
 } from "react";
+import { flushSync } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -225,20 +227,27 @@ function FeedVideoSlide({
   /** Only attach video src after Play — neighbors stay on poster (CDN bytes). */
   const [armed, setArmed] = useState(false);
 
-  const mediaUrl = veronixMediaSrc({
-    historyId: item.historyId,
-    url: item.url,
-    mediaType: "video",
-  });
+  const mediaUrl = useMemo(
+    () =>
+      veronixMediaSrc({
+        historyId: item.historyId,
+        url: item.url,
+        mediaType: "video",
+      }),
+    [item.historyId, item.url],
+  );
   const src = loadMedia && armed ? mediaUrl : null;
   // Prefer URL-based posters (CDN) — skip BytePlus history lookup on cold open.
-  const poster =
-    loadMedia
-      ? veronixPosterSrc({
-          url: item.url,
-          historyId: item.historyId,
-        })
-      : null;
+  const poster = useMemo(
+    () =>
+      loadMedia
+        ? veronixPosterSrc({
+            url: item.url,
+            historyId: item.historyId,
+          })
+        : null,
+    [loadMedia, item.url, item.historyId],
+  );
   const prompt = cleanAssetPrompt(item.prompt);
   const title = assetPromptTitle(item.prompt);
   const promptLong = prompt.length > 110;
@@ -256,9 +265,14 @@ function FeedVideoSlide({
 
   useEffect(() => {
     const el = videoRef.current;
-    if (!el || !canPlay) return;
+    if (!el) return;
     el.muted = muted;
-    // Normal media player: never autoplay. Pause + unload when leaving the slide.
+  }, [muted]);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || !canPlay) return;
+    // Pause + unload only when leaving the slide — never on mute toggles.
     if (!active) {
       el.pause();
       setPlaying(false);
@@ -270,41 +284,39 @@ function FeedVideoSlide({
         // ignore
       }
     }
-  }, [active, muted, canPlay]);
+  }, [active, canPlay]);
 
-  /** Button-only play — call play() in the same user gesture (mobile-safe). */
+  /**
+   * Button-only play.
+   * Important: set `armed` with flushSync so React attaches `src` once,
+   * then call play() in the same click. Do NOT also set el.src manually —
+   * that double-assignment reloads the media mid-buffer (2s → restart → 4s…).
+   */
   const handlePlayClick = () => {
     const el = videoRef.current;
     if (!el || !canPlay || !mediaUrl) return;
 
-    const tryPlay = () => {
-      void el
-        .play()
-        .then(() => setPlaying(true))
-        .catch(() => setPlaying(false));
-    };
-
     if (!armed) {
-      setArmed(true);
-      el.src = mediaUrl;
-      el.load();
-      if (el.readyState >= 2) {
-        tryPlay();
-      } else {
-        const onReady = () => {
-          el.removeEventListener("canplay", onReady);
-          tryPlay();
-        };
-        el.addEventListener("canplay", onReady);
-        // Fallback if canplay already fired.
-        window.setTimeout(() => {
-          if (el.paused && el.readyState >= 2) tryPlay();
-        }, 50);
-      }
-      return;
+      flushSync(() => {
+        setArmed(true);
+      });
     }
 
-    tryPlay();
+    // Same source already attached — just resume.
+    void el
+      .play()
+      .then(() => setPlaying(true))
+      .catch(() => {
+        // Rare: src not ready yet after flushSync — wait one canplay, once.
+        const onReady = () => {
+          el.removeEventListener("canplay", onReady);
+          void el
+            .play()
+            .then(() => setPlaying(true))
+            .catch(() => setPlaying(false));
+        };
+        el.addEventListener("canplay", onReady, { once: true });
+      });
   };
 
   const handlePauseClick = () => {
@@ -491,13 +503,21 @@ function FeedVideoSlide({
             src={src || undefined}
             poster={!posterFailed && poster ? poster : undefined}
             playsInline
+            // Loop only after a full playthrough — do not remount src while buffering.
             loop
             muted={muted}
             preload={armed && active ? "auto" : "none"}
             controls={false}
-            controlsList="nodownload"
+            controlsList="nodownload noremoteplayback"
             onPlaying={() => setPlaying(true)}
-            onPause={() => setPlaying(false)}
+            onPause={() => {
+              // Ignore transient pause events while the element is still the active source
+              // and the user did not press Pause (e.g. brief stalls). Keep UI in sync only
+              // when the element is actually paused after event settles.
+              const el = videoRef.current;
+              if (el && !el.paused) return;
+              setPlaying(false);
+            }}
             onError={() => {
               setPosterFailed(true);
               setPlaying(false);

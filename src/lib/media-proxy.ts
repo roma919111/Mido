@@ -38,6 +38,20 @@ function toBase64Url(raw: string): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
+/** Stable short id so stream/poster query strings don't change every render. */
+function stableMediaKey(input: {
+  historyId?: string | null;
+  url?: string | null;
+}): string {
+  const key = String(input.historyId || input.url || "media");
+  let hash = 2166136261;
+  for (let i = 0; i < key.length; i += 1) {
+    hash ^= key.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
 function buildMediaApiPath(
   input: {
     historyId?: string | null;
@@ -48,7 +62,16 @@ function buildMediaApiPath(
 ): string | null {
   const mediaType = input.mediaType || "video";
   const ext = mediaType === "video" ? "mp4" : "png";
-  const filename = `veronix-${Date.now()}.${ext}`;
+  /**
+   * Stream/poster URLs MUST be stable across React re-renders.
+   * Using Date.now() made `<video src>` change every setState → browser
+   * restarted playback every ~2s while buffering (looked like a load loop).
+   * Downloads can stay unique for the save-as filename.
+   */
+  const filename =
+    mode === "download"
+      ? `veronix-${Date.now()}.${ext}`
+      : `veronix-${stableMediaKey(input)}.${ext}`;
   const endpoint =
     mode === "download"
       ? "/api/media/download"
