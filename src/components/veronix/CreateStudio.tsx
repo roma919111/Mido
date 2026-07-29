@@ -64,6 +64,7 @@ import {
   newStudioClientId,
   patchJob,
   readStoredJobs,
+  syncRunningJobsFromAssets,
   writeStoredJobs,
   type StudioJob,
 } from "@/lib/studio-jobs";
@@ -461,6 +462,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                   assetId: a.id || j.assetId,
                   status,
                   error: a.error || j.error,
+                  prompt: j.prompt || a.prompt || j.prompt,
                   targetSeconds:
                     j.targetSeconds || inferTargetSecondsFromAsset(a),
                   startedAt:
@@ -471,6 +473,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 };
               });
 
+              const synced = syncRunningJobsFromAssets(next, assets, {
+                mediaType: lockedMedia || media,
+              });
+              next = synced.jobs;
+              for (const key of synced.clearedKeys) activePreviewPolls.delete(key);
               // Attach live running jobs that aren't already on the grid.
               for (const a of assets) {
                 if (a.status !== "running") continue;
@@ -591,64 +598,25 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             status: string;
             mode?: string;
             error?: string;
+            prompt?: string;
+            createdAt?: string;
             targetSeconds?: number;
           }>;
-        }>("/api/assets");
+        }>("/api/assets?sync=1");
         if (cancelled || !res.ok) return;
-        const assets = (data.assets || []).filter(
-          (a) => a.mode !== "sequence-part",
-        );
-        const byId = new Map(assets.map((a) => [a.id, a]));
+        const assets = data.assets || [];
 
-        setJobsDeferred((prev) => {
-          let changed = false;
-          const next = prev.map((j) => {
-            if (j.status !== "running") return j;
-            const a =
-              (j.assetId && byId.get(j.assetId)) ||
-              (j.historyId
-                ? assets.find((x) => x.historyId && x.historyId === j.historyId)
-                : undefined);
-            if (!a) return j;
-
-            if (a.status === "completed" && a.url) {
-              changed = true;
-              if (j.assetId) activePreviewPolls.delete(j.assetId);
-              if (j.historyId) activePreviewPolls.delete(j.historyId);
-              if (a.historyId) activePreviewPolls.delete(a.historyId);
-              if (j.clientId) activePreviewPolls.delete(j.clientId);
-              return {
-                ...j,
-                url: a.url,
-                historyId: a.historyId || j.historyId,
-                status: "completed" as const,
-                error: undefined,
-                targetSeconds:
-                  j.targetSeconds || inferTargetSecondsFromAsset(a),
-              };
-            }
-
-            if (a.status === "failed") {
-              changed = true;
-              if (j.assetId) activePreviewPolls.delete(j.assetId);
-              if (j.historyId) activePreviewPolls.delete(j.historyId);
-              if (j.clientId) activePreviewPolls.delete(j.clientId);
-              return {
-                ...j,
-                status: "failed" as const,
-                error: a.error || "فشل التوليد",
-                historyId: a.historyId || j.historyId,
-              };
-            }
-
-            // Privacy/mute retry may replace historyId while status stays running.
-            if (a.historyId && a.historyId !== j.historyId) {
-              changed = true;
-              return { ...j, historyId: a.historyId, assetId: a.id || j.assetId };
-            }
-            return j;
-          });
-          return changed ? next : prev;
+        // Immediate setState so clocks drop as soon as Assets is done.
+        setJobs((prev) => {
+          const { jobs: next, changed, clearedKeys } = syncRunningJobsFromAssets(
+            prev,
+            assets,
+            { mediaType: lockedMedia || media },
+          );
+          if (!changed) return prev;
+          for (const key of clearedKeys) activePreviewPolls.delete(key);
+          writeStoredJobs(next);
+          return next;
         });
       } catch {
         // ignore — next tick retries
@@ -656,12 +624,17 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     };
 
     void reconcile();
-    const id = window.setInterval(() => void reconcile(), 6_000);
+    const id = window.setInterval(() => void reconcile(), 3_000);
+    const onVis = () => {
+      if (!document.hidden) void reconcile();
+    };
+    document.addEventListener("visibilitychange", onVis);
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
     };
-  }, [user?.id, hasRunningJobs, setJobsDeferred]);
+  }, [user?.id, hasRunningJobs, lockedMedia, media]);
 
   // Clear the big clock when nothing is actually running anymore.
   useEffect(() => {

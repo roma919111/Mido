@@ -104,3 +104,162 @@ export function patchJob(
     return hit ? { ...j, ...patch } : j;
   });
 }
+
+export type AssetSyncRow = {
+  id: string;
+  url?: string;
+  mediaType?: "image" | "video" | string;
+  historyId?: string;
+  status?: string;
+  mode?: string;
+  error?: string;
+  prompt?: string;
+  createdAt?: string;
+  targetSeconds?: number;
+};
+
+/**
+ * Mark Create "running" cards done when Assets already has the finished clip.
+ * Matches by assetId / historyId, then by prompt + time window, then FIFO
+ * among unmatched completed assets of the same media type.
+ */
+export function syncRunningJobsFromAssets(
+  jobs: StudioJob[],
+  assets: AssetSyncRow[],
+  opts?: { mediaType?: "image" | "video" },
+): { jobs: StudioJob[]; changed: boolean; clearedKeys: string[] } {
+  const rows = assets.filter(
+    (a) =>
+      a &&
+      a.mode !== "sequence-part" &&
+      (!opts?.mediaType || a.mediaType === opts.mediaType),
+  );
+  const byId = new Map(rows.map((a) => [a.id, a]));
+  const usedAssetIds = new Set(
+    jobs
+      .filter((j) => j.status === "completed" && j.assetId)
+      .map((j) => j.assetId!),
+  );
+  const clearedKeys: string[] = [];
+  let changed = false;
+
+  const normPrompt = (p?: string) =>
+    String(p || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 120)
+      .toLowerCase();
+
+  const takeCompleted = (a: AssetSyncRow | undefined, j: StudioJob): StudioJob | null => {
+    if (!a || a.status !== "completed" || !a.url) return null;
+    if (usedAssetIds.has(a.id)) return null;
+    usedAssetIds.add(a.id);
+    changed = true;
+    if (j.assetId) clearedKeys.push(j.assetId);
+    if (j.historyId) clearedKeys.push(j.historyId);
+    if (a.historyId) clearedKeys.push(a.historyId);
+    if (j.clientId) clearedKeys.push(j.clientId);
+    return {
+      ...j,
+      url: a.url,
+      historyId: a.historyId || j.historyId,
+      assetId: a.id || j.assetId,
+      status: "completed",
+      error: undefined,
+      targetSeconds: j.targetSeconds || a.targetSeconds || j.targetSeconds,
+      prompt: j.prompt || a.prompt || j.prompt,
+    };
+  };
+
+  const takeFailed = (a: AssetSyncRow | undefined, j: StudioJob): StudioJob | null => {
+    if (!a || a.status !== "failed") return null;
+    changed = true;
+    if (j.assetId) clearedKeys.push(j.assetId);
+    if (j.historyId) clearedKeys.push(j.historyId);
+    if (j.clientId) clearedKeys.push(j.clientId);
+    return {
+      ...j,
+      status: "failed",
+      error: a.error || "فشل التوليد",
+      historyId: a.historyId || j.historyId,
+      assetId: a.id || j.assetId,
+    };
+  };
+
+  let next = jobs.map((j) => {
+    if (j.status !== "running") return j;
+    const direct =
+      (j.assetId && byId.get(j.assetId)) ||
+      (j.historyId
+        ? rows.find((x) => x.historyId && x.historyId === j.historyId)
+        : undefined);
+
+    const done = takeCompleted(direct, j);
+    if (done) return done;
+    const fail = takeFailed(direct, j);
+    if (fail) return fail;
+
+    // Same asset still running but privacy-retry replaced historyId.
+    if (direct?.status === "running" && direct.historyId && direct.historyId !== j.historyId) {
+      changed = true;
+      return {
+        ...j,
+        historyId: direct.historyId,
+        assetId: direct.id || j.assetId,
+      };
+    }
+    return j;
+  });
+
+  // Second pass: unmatched running ← unmatched completed (prompt then FIFO).
+  const unmatchedCompleted = rows
+    .filter(
+      (a) =>
+        a.status === "completed" &&
+        a.url &&
+        a.id &&
+        !usedAssetIds.has(a.id),
+    )
+    .sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
+
+  next = next.map((j) => {
+    if (j.status !== "running") return j;
+    const jp = normPrompt(j.prompt);
+    const started = j.startedAt || 0;
+    let pick =
+      jp &&
+      unmatchedCompleted.find((a) => {
+        if (usedAssetIds.has(a.id)) return false;
+        if (opts?.mediaType && a.mediaType && a.mediaType !== j.mediaType) return false;
+        if (a.mediaType && a.mediaType !== j.mediaType) return false;
+        if (normPrompt(a.prompt) !== jp) return false;
+        if (started > 0 && a.createdAt) {
+          const t = Date.parse(a.createdAt);
+          if (Number.isFinite(t) && t + 60_000 < started) return false;
+        }
+        return true;
+      });
+
+    if (!pick) {
+      pick = unmatchedCompleted.find((a) => {
+        if (usedAssetIds.has(a.id)) return false;
+        if (a.mediaType && a.mediaType !== j.mediaType) return false;
+        if (started > 0 && a.createdAt) {
+          const t = Date.parse(a.createdAt);
+          // Asset created within job window (or up to 25 min after start).
+          if (Number.isFinite(t) && (t + 30_000 < started || t - started > 25 * 60_000)) {
+            return false;
+          }
+        }
+        return true;
+      });
+    }
+
+    if (!pick) return j;
+    const done = takeCompleted(pick, j);
+    return done || j;
+  });
+
+  return { jobs: next, changed, clearedKeys };
+}
+
