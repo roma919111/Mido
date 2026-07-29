@@ -9,7 +9,6 @@
 import {
   countActionVerbs,
   splitActionClauses,
-  splitByActionVerbs,
 } from "@/lib/prompt-chain";
 import { hasArabic, isMostlyArabic } from "@/lib/prompt-translate";
 
@@ -126,38 +125,59 @@ function preferVerbSegment(text: string, arabic: boolean): string {
 }
 
 function shortenAction(action: string): string {
+  // Keep written events in the same sentence. Only strip atmosphere / side clauses.
   return trimAtmospherePrefix(action)
     .replace(/\s+بينما\s+.*/u, "")
     .replace(/\s+و\s*بينما\s+.*/u, "")
     .replace(/\s+تحرك(?:ت|ين)?\s+الكاميرا.*/u, "")
-    .replace(/\s+الذي\s+تبدو\s+عليه.*/u, "")
-    .replace(/\s+التي\s+تبدو\s+عليها.*/u, "")
-    .replace(/\s+و\s*تؤدي\s+.*/u, "")
-    .replace(/\s+لـ?تؤدي\s+.*/u, "")
-    .replace(/\s+لـ?يقوم\s+.*/u, "")
-    .replace(/\s+يتزامن\s+.*/u, "")
-    .replace(/\s*\.\s*يسقط.*/u, "")
-    .replace(/\s+وهي\s+لا\s+تزال.*/u, "")
+    .replace(/\s+يتزامن\s+ذلك\s+مع.*/u, "")
     .replace(/\s+/g, " ")
     .replace(/[،,\s]+$/u, "")
     .trim()
-    .slice(0, 110);
+    .slice(0, 140);
 }
 
-/** Pull ordered unique action phrases (chronological). */
+/** Polished action must still reflect the locked source action (no new verbs). */
+function actionGroundedInSource(polished: string, locked: string): boolean {
+  const a = polished.replace(/\s+/g, " ").trim();
+  const b = locked.replace(/\s+/g, " ").trim();
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (b.includes(a) || a.includes(b.slice(0, Math.min(24, b.length)))) return true;
+  const tokens = (s: string) =>
+    s
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((t) => t.length >= 3);
+  const bt = new Set(tokens(b));
+  const at = tokens(a);
+  if (!at.length || !bt.size) return false;
+  const hit = at.filter((t) => bt.has(t)).length;
+  return hit / Math.min(at.length, bt.size) >= 0.34;
+}
+
+/**
+ * Actions literally written in the customer text only.
+ * Split on sequence markers / sentences — do NOT invent verbs or over-split every verb.
+ */
 export function extractActionBeats(prompt: string): string[] {
   const core = cleanCore(prompt);
   if (!core) return [];
   const arabic = hasArabic(core);
-  let clauses = splitActionClauses(core, arabic)
+
+  // 1) ثم / then …  2) sentence boundaries — never splitByActionVerbs (inflates duration).
+  const sequenced = splitActionClauses(core, arabic)
     .map((c) => c.trim())
     .filter((c) => c.length >= 2);
-  if (clauses.length < 2 && countActionVerbs(core, arabic) >= 1) {
-    clauses = splitByActionVerbs(core, arabic)
-      .map((c) => c.trim())
-      .filter((c) => c.length >= 2);
+  const clauses: string[] = [];
+  for (const block of sequenced.length ? sequenced : [core]) {
+    const sentences = block
+      .split(/(?<=[.!?؟。])\s+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length >= 4);
+    if (sentences.length > 1) clauses.push(...sentences);
+    else clauses.push(block);
   }
-  if (!clauses.length) clauses = [core];
 
   const withVerbs = clauses.filter((c) => countActionVerbs(c, arabic) >= 1);
   const pool = withVerbs.length ? withVerbs : clauses;
@@ -167,12 +187,21 @@ export function extractActionBeats(prompt: string): string[] {
     .filter((c) => c.length >= 4 && !isAtmosphereOnly(c, arabic))
     .map((c) => preferVerbSegment(c, arabic))
     .map(shortenAction)
-    .filter(Boolean);
+    .map((c) => c.trim())
+    .filter((c) => {
+      if (c.length < 4) return false;
+      return (
+        actionGroundedInSource(c, core) ||
+        core.includes(c.slice(0, Math.min(16, c.length)))
+      );
+    });
 
-  return uniqKeepOrder(actions.length ? actions : pool.map(shortenAction)).slice(
-    0,
-    8,
-  );
+  const unique = uniqKeepOrder(actions).slice(0, 8);
+  if (!unique.length) {
+    const one = shortenAction(core) || core.slice(0, 110);
+    return one ? [one] : [];
+  }
+  return unique;
 }
 
 /** Guess two character display names from the prompt (فاعل / مفعول به). */
@@ -374,87 +403,118 @@ async function openaiJson(
   }
 }
 
+/** Polished action must still reflect the locked source action (no new verbs). */
+function actionGroundedInLocked(polished: string, locked: string): boolean {
+  return actionGroundedInSource(polished, locked);
+}
+
 function normalizeTriples(
   raw: unknown,
+  lockedActions: string[],
   fallbackPrompt: string,
 ): ActionTriple[] | null {
   if (!raw || typeof raw !== "object") return null;
   const beats = (raw as { beats?: unknown }).beats;
   if (!Array.isArray(beats) || !beats.length) return null;
-  const out: ActionTriple[] = [];
-  for (const b of beats) {
-    if (!b || typeof b !== "object") continue;
-    const row = b as Record<string, unknown>;
-    const action = String(row.action || "").trim();
-    const subject = stripRolePrefixes(String(row.subject || row.actor || "").trim());
-    const object = stripRolePrefixes(
-      String(row.object || row.patient || "").trim(),
-    );
-    if (!action || !subject || !object) continue;
-    out.push({
-      action: shortenAction(action) || action,
-      subject,
-      object,
+
+  const byIndex: ActionTriple[] = [];
+  for (let i = 0; i < lockedActions.length; i += 1) {
+    const locked = lockedActions[i]!;
+    const row =
+      beats[i] && typeof beats[i] === "object"
+        ? (beats[i] as Record<string, unknown>)
+        : null;
+    const polishedAction = row ? String(row.action || "").trim() : "";
+    const subject = row
+      ? stripRolePrefixes(String(row.subject || row.actor || "").trim())
+      : "";
+    const object = row
+      ? stripRolePrefixes(String(row.object || row.patient || "").trim())
+      : "";
+
+    const action =
+      polishedAction && actionGroundedInLocked(polishedAction, locked)
+        ? shortenAction(polishedAction) || locked
+        : locked;
+
+    const arabic = hasArabic(fallbackPrompt);
+    const names = guessCharacterNames(fallbackPrompt);
+    byIndex.push({
+      action,
+      subject: subject || inventSubjectState(action, names.subject, arabic),
+      object: object || inventObjectState(action, names.object, arabic),
     });
   }
-  if (!out.length) return null;
-  // Deduplicate identical actions (keep first chronological).
-  const seen = new Set<string>();
-  const unique: ActionTriple[] = [];
-  for (const t of out) {
-    const key = t.action.toLowerCase().slice(0, 48);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    unique.push(t);
-  }
-  return unique.length ? unique : planShotTriplesLocal(fallbackPrompt);
+  return byIndex.length ? byIndex : null;
 }
 
 /**
- * AI extracts ordered action → subject-state → object-state triples.
- * Invents missing character states. Falls back to local heuristics.
+ * 1) Lock actions to verbs literally present in the customer text (local extract).
+ * 2) AI polishes EACH locked shot only (action / subject / object) — never adds actions.
  */
 export async function planShotTriplesAi(prompt: string): Promise<ActionTriple[]> {
   const source = cleanCore(prompt);
   if (!source) return [];
   const arabic = isMostlyArabic(source) || hasArabic(source);
+  const lockedActions = extractActionBeats(source);
+  const local = planShotTriplesLocal(source);
+  if (!lockedActions.length) return local;
+
+  const listed = lockedActions
+    .map((a, i) => `${i + 1}) ${a}`)
+    .join("\n");
 
   const instruction = arabic
-    ? `أنت مخرج سينمائي لفيرونيكس. استخرج من المشهد أفعالاً مرتبة زمنياً دون تكرار أي فعل.
-لكل فعل واحد أخرج ثلاثة حقول:
-- action: نص الفعل فقط
-- subject: حالة الفاعل تبدأ باسم الشخصية مباشرة (مثال: «دانو تبتسم بثقة…») بدون كتابة كلمة «حالة الفاعل»
-- object: حالة المفعول به تبدأ باسم الشخصية مباشرة (مثال: «ميدو منهك…») بدون كتابة كلمة «حالة المفعول به»
-القواعد:
-1) رتّب حسب الأسبقية الزمنية
-2) لا تكرر فعلاً سبق ذكره
-3) حالة الفاعل وحالة المفعول به يجب أن تطابق لحظة هذا الفعل فقط (لا تستخدم حالة من فعل سابق)
-4) إذا لم يذكر المستخدم الحالة، اخترع تحسيناً سينمائياً مناسباً بالذكاء الاصطناعي
-5) أرجع JSON فقط: {"beats":[{"action":"...","subject":"...","object":"..."}]}
+    ? `أنت محرّر أوصاف فيرونيكس. هذه هي الأفعال الوحيدة المسموحة — مأخوذة حرفياً من نص الزبون. عددها ثابت ولا يجوز إضافة فعل جديد.
 
-المشهد:
-${source.slice(0, 4500)}`
-    : `You are a Veronix cinematic director. Extract chronological ACTIONS with no repeated verbs.
-For each action return:
-- action: verb line only
+الأفعال المقفلة (بالترتيب):
+${listed}
+
+لكل فعل مقفل بالفهرس نفسه أخرج تحسيناً سينمائياً لثلاث حقول:
+- action: حسّن صياغة نفس الفعل فقط (لا تغيّر معناه ولا تضف حدثاً جديداً)
+- subject: حالة الفاعل تبدأ باسم الشخصية (بدون كلمة «حالة الفاعل»)
+- object: حالة المفعول به تبدأ باسم الشخصية (بدون كلمة «حالة المفعول به»)
+
+قواعد صارمة:
+1) عدد العناصر في beats يجب أن يساوي بالضبط ${lockedActions.length}
+2) beats[i] يخص الفعل المقفول رقم i+1 فقط
+3) ممنوع اختراع أفعال أو لقطات إضافية
+4) إن لم تُذكر حالة الفاعل/المفعول به في النص، حسّنها بالذكاء الاصطناعي لتناسب هذا الفعل فقط
+5) JSON فقط: {"beats":[{"action":"...","subject":"...","object":"..."}]}
+
+نص المشهد الأصلي (مرجع فقط):
+${source.slice(0, 4000)}`
+    : `You are a Veronix copy editor. These are the ONLY allowed actions — taken from the customer's text. Count is fixed; you must NOT invent new actions.
+
+Locked actions (in order):
+${listed}
+
+For each locked action at the same index, return a cinematic polish of three fields:
+- action: polish THE SAME action only (do not change meaning or add a new event)
 - subject: actor state starting with the character name (no "subject state:" prefix)
 - object: patient state starting with the character name (no "object state:" prefix)
-Rules: chronological order; never repeat an action; states must match THIS action's moment; invent cinematic AI states when missing.
-Return JSON only: {"beats":[{"action":"...","subject":"...","object":"..."}]}
 
-SCENE:
-${source.slice(0, 4500)}`;
+Hard rules:
+1) beats length MUST equal exactly ${lockedActions.length}
+2) beats[i] belongs only to locked action #i+1
+3) Never invent extra actions/shots
+4) If subject/object state is missing, invent AI cinematic detail for THIS action only
+5) JSON only: {"beats":[{"action":"...","subject":"...","object":"..."}]}
+
+Original scene (reference only):
+${source.slice(0, 4000)}`;
 
   const parsed =
     (await geminiJson(instruction)) ||
     (await openaiJson(
-      "You extract cinematic shot triples for AI video. Return JSON only.",
+      "Polish locked cinematic shot triples only. Never add actions. Return JSON only.",
       instruction,
     ));
 
-  const triples = normalizeTriples(parsed, source);
-  if (triples?.length) return triples.slice(0, 8);
-  return planShotTriplesLocal(source);
+  const triples = normalizeTriples(parsed, lockedActions, source);
+  if (triples?.length === lockedActions.length) return triples;
+  // Fallback: local triples already locked to extractActionBeats.
+  return local.slice(0, lockedActions.length);
 }
 
 export function packTriplesToScript(
@@ -528,8 +588,8 @@ export function packTriplesToScript(
         input.sceneCore,
         "",
         "سيناريو لقطات فيرونيكس الزمني — التزم بهذا التوقيت داخل فيديو واحد متصل:",
-        `المدة بدون تكرار أفعال: ${totalSeconds}ث (${cycleCount} فعل × ${CYCLE}ث).`,
-        "الترتيب لكل فعل: الفعل ثم حالة الفاعل (باسم الشخصية) ثم حالة المفعول به (باسم الشخصية). لا تكرر فعلاً سبق.",
+        `المدة = ${totalSeconds}ث من أفعال النص فقط (${cycleCount} × ${CYCLE}ث) — بدون اختراع أفعال.`,
+        "لكل فعل مكتوب: الفعل المحسّن ثم اسم الفاعل وحالته ثم اسم المفعول به وحالته.",
         timelineAr,
         "حافظ على الاستمرارية بين اللقطات. حركة سينمائية طبيعية. فيديو واحد متصل.",
       ].join("\n")
