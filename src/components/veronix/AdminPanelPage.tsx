@@ -47,17 +47,6 @@ type Stats = {
   running: number;
 };
 
-type AssetRow = {
-  id: string;
-  mediaType: string;
-  status: string;
-  prompt: string;
-  creditsUsed: number;
-  createdAt: string;
-  error?: string;
-  model: string;
-};
-
 const PLAN_LABEL: Record<string, string> = {
   free: "أساسية",
   mini: "برو",
@@ -70,7 +59,6 @@ export function AdminPanelPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [q, setQ] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [assets, setAssets] = useState<AssetRow[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -126,17 +114,10 @@ export function AdminPanelPage() {
 
   useEffect(() => {
     if (!selected) {
-      setAssets([]);
       setNote("");
       return;
     }
     setNote(selected.adminNote || "");
-    void (async () => {
-      const { res, data } = await fetchJson<{ assets?: AssetRow[] }>(
-        `/api/admin/panel?userId=${encodeURIComponent(selected.id)}`,
-      );
-      if (res.ok) setAssets(data.assets || []);
-    })();
   }, [selected]);
 
   async function runAction(
@@ -157,7 +138,6 @@ export function AdminPanelPage() {
         locked?: boolean;
         freeVeronixUsed?: boolean;
         adminNote?: string;
-        assets?: AssetRow[];
       }>("/api/admin/panel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -165,7 +145,6 @@ export function AdminPanelPage() {
       });
       if (!res.ok) throw new Error(data.error || "فشل الإجراء");
       setMessage("تم حفظ التغيير");
-      if (action === "user_assets" && data.assets) setAssets(data.assets);
       await load(q);
     } catch (e) {
       setError(e instanceof Error ? e.message : "فشل الإجراء");
@@ -508,35 +487,6 @@ export function AdminPanelPage() {
                   >
                     حفظ الملاحظة
                   </button>
-                </div>
-
-                <div>
-                  <div className="mb-2 flex items-center justify-between">
-                    <p className="text-xs text-white/50">آخر الأصول</p>
-                    <button
-                      type="button"
-                      className="text-[11px] text-[#22f0ff]"
-                      onClick={() => void runAction("user_assets", {}, "assets")}
-                    >
-                      تحديث
-                    </button>
-                  </div>
-                  <div className="max-h-48 space-y-2 overflow-y-auto">
-                    {assets.map((a) => (
-                      <div
-                        key={a.id}
-                        className="rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-xs"
-                      >
-                        <p className="font-semibold">
-                          {a.mediaType} · {a.status} · {a.creditsUsed} كريدت
-                        </p>
-                        <p className="mt-0.5 line-clamp-2 text-white/45">{a.prompt || "—"}</p>
-                      </div>
-                    ))}
-                    {!assets.length && (
-                      <p className="text-center text-white/35">لا أصول</p>
-                    )}
-                  </div>
                 </div>
               </div>
             )}

@@ -5,7 +5,6 @@ import {
   findUserByEmail,
   findUserById,
   getAdminStats,
-  listAssetsForUserAdmin,
   listUsersForAdmin,
   updateUser,
   type PlanId,
@@ -21,8 +20,7 @@ type ActionBody = {
     | "lock"
     | "unlock"
     | "set_trial"
-    | "set_note"
-    | "user_assets";
+    | "set_note";
   userId?: string;
   email?: string;
   amount?: number;
@@ -48,12 +46,6 @@ export async function GET(request: Request) {
     await requireAdminUser();
     const url = new URL(request.url);
     const q = (url.searchParams.get("q") || "").trim().toLowerCase();
-    const userId = url.searchParams.get("userId")?.trim();
-
-    if (userId) {
-      const assets = await listAssetsForUserAdmin(userId, 30);
-      return NextResponse.json({ assets });
-    }
 
     const [stats, users] = await Promise.all([getAdminStats(), listUsersForAdmin()]);
     const filtered = q
@@ -93,19 +85,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Never lock or wipe the owner admin from this panel.
-    if (isAdminEmail(target.email) && (action === "lock" || action === "set_credits")) {
-      if (action === "lock") {
-        return NextResponse.json(
-          { error: "لا يمكن قفل حساب المالك من اللوحة." },
-          { status: 400 },
-        );
-      }
-    }
-
-    if (action === "user_assets") {
-      const assets = await listAssetsForUserAdmin(target.id, 30);
-      return NextResponse.json({ ok: true, userId: target.id, assets });
+    // Never lock the owner admin from this panel.
+    if (isAdminEmail(target.email) && action === "lock") {
+      return NextResponse.json(
+        { error: "لا يمكن قفل حساب المالك من اللوحة." },
+        { status: 400 },
+      );
     }
 
     if (action === "add_credits") {
