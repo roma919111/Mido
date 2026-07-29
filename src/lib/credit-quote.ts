@@ -9,6 +9,7 @@ import {
   type QuoteResult,
 } from "@/lib/credit-multiplier";
 import {
+  BYTEPLUS_TOKEN_USD_PER_1K,
   VERONIX_PROFIT_MARKUP,
   isVeronixImageModel,
   isVeronixVideoModel,
@@ -143,7 +144,7 @@ function quoteBytePlusResult(
       multiplier: VERONIX_PROFIT_MARKUP,
       available: available || true,
       config: { ...params, resolution },
-      pricingNote: `BytePlus tokens × $0.0021/1K × ${VERONIX_PROFIT_MARKUP} markup`,
+      pricingNote: `BytePlus tokens × $${BYTEPLUS_TOKEN_USD_PER_1K}/1K × ${VERONIX_PROFIT_MARKUP} markup`,
       source: "estimate",
     };
   }
