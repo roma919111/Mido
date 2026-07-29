@@ -36,6 +36,61 @@ import { warmVideoPosterBackground } from "@/lib/poster-cache";
 export const runtime = "nodejs";
 export const maxDuration = 180;
 
+/** Images finish via `after()` with no historyId — recover ghosts stuck on running. */
+const STUCK_IMAGE_MS = 2.5 * 60 * 1000;
+const STUCK_VIDEO_NO_HISTORY_MS = 3 * 60 * 1000;
+
+/**
+ * - running + url → completed (inconsistent write)
+ * - running image with no url past STUCK_IMAGE_MS → failed + refund
+ * - running video with no historyId past threshold → failed + refund
+ */
+async function recoverStuckRunningMedia(userId: string) {
+  const assets = await listAssetsForUser(userId, { includeHidden: true });
+  const running = assets.filter((a) => a.status === "running").slice(0, 24);
+  const now = Date.now();
+  for (const asset of running) {
+    try {
+      if (asset.url && String(asset.url).trim()) {
+        await updateAsset(asset.id, userId, {
+          status: "completed",
+          error: undefined,
+        });
+        continue;
+      }
+      const age = now - new Date(asset.createdAt).getTime();
+      if (!Number.isFinite(age) || age < 0) continue;
+
+      if (asset.mediaType === "image" && age >= STUCK_IMAGE_MS) {
+        await refundFailedAssetCredits({
+          userId,
+          assetId: asset.id,
+          errorMessage: "فشل التوليد",
+        });
+        continue;
+      }
+
+      if (
+        asset.mediaType === "video" &&
+        !asset.historyId &&
+        age >= STUCK_VIDEO_NO_HISTORY_MS
+      ) {
+        await refundFailedAssetCredits({
+          userId,
+          assetId: asset.id,
+          errorMessage: "فشل التوليد",
+        });
+      }
+    } catch (err) {
+      console.warn(
+        "[veronix] recoverStuckRunningMedia:",
+        asset.id,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+}
+
 function needsLocalBrand(asset: {
   mediaType: string;
   model: string;
@@ -402,9 +457,10 @@ export async function GET(request: Request) {
   const wantSync = new URL(request.url).searchParams.get("sync") === "1";
 
   // Fast path: return the customer's library immediately so Assets feels instant.
-  // Heavy recover / stitch / BytePlus sync only runs when explicitly requested.
+  // Still clear stuck image "running" ghosts (no BytePlus historyId to poll).
   if (!wantSync) {
     try {
+      await recoverStuckRunningMedia(user.id).catch(() => 0);
       const assets = await listAssetsForUser(user.id);
       return NextResponse.json({ assets, fast: true });
     } catch (error) {
@@ -422,6 +478,7 @@ export async function GET(request: Request) {
     // Restore paid multi-shot clips if stitch never produced a visible final.
     await recoverOrphanedHiddenAssets(user.id);
     await recoverStuckSequencePending(user.id);
+    await recoverStuckRunningMedia(user.id);
     // Kick / resume in-process multi-shot runners (non-blocking).
     {
       const all = await listAssetsForUser(user.id, { includeHidden: true });
@@ -433,6 +490,7 @@ export async function GET(request: Request) {
   } catch (error) {
     await recoverOrphanedHiddenAssets(user.id).catch(() => 0);
     await recoverStuckSequencePending(user.id).catch(() => 0);
+    await recoverStuckRunningMedia(user.id).catch(() => 0);
     await stitchPendingJobs(user.id).catch(() => 0);
     const assets = await listAssetsForUser(user.id);
     return NextResponse.json({

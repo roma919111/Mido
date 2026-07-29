@@ -27,13 +27,34 @@ export async function GET(request: Request) {
         { status: 401 },
       );
     }
-    const asset = await findAssetById(user.id, assetId);
+    let asset = await findAssetById(user.id, assetId);
     if (!asset) {
       return NextResponse.json({ error: "Asset not found" }, { status: 404 });
     }
 
+    // Stuck image jobs (no historyId to poll): promote url → completed, or fail late ghosts.
+    if (asset.status === "running") {
+      if (asset.url && String(asset.url).trim()) {
+        await updateAsset(asset.id, user.id, {
+          status: "completed",
+          error: undefined,
+        }).catch(() => null);
+        asset = (await findAssetById(user.id, assetId)) || asset;
+      } else if (asset.mediaType === "image") {
+        const age = Date.now() - new Date(asset.createdAt).getTime();
+        if (Number.isFinite(age) && age >= 2.5 * 60 * 1000) {
+          await refundFailedAssetCredits({
+            userId: user.id,
+            assetId: asset.id,
+            errorMessage: "فشل التوليد",
+          });
+          asset = (await findAssetById(user.id, assetId)) || asset;
+        }
+      }
+    }
+
     // Late failures (async image jobs): refund if still charged.
-    let failureError = asset.error || "Generation failed";
+    let failureError = asset.error || "فشل التوليد";
     let creditsRefunded = false;
     if (asset.status === "failed") {
       const refund = await refundFailedAssetCredits({

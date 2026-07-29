@@ -330,24 +330,44 @@ export async function POST(request: Request) {
           }
         };
 
+        // One shared promise — wait a bit for mobile, keep running in `after()`
+        // so Railway does not drop the job when the HTTP response is sent early.
+        const jobPromise = runImageJob();
+        after(() => {
+          void jobPromise.catch((err) => {
+            console.warn(
+              "[veronix] image after() error:",
+              asset.id,
+              err instanceof Error ? err.message : err,
+            );
+          });
+        });
+
         if (waitNow) {
-          results.push(await runImageJob());
+          results.push(await jobPromise);
         } else {
-          after(() => {
-            void runImageJob();
-          });
-          results.push({
-            assetId: asset.id,
-            modelId: VERONIX_IMAGE_MODEL_ID,
-            status: "running",
-            urls: [] as string[],
-            creditsUsed: quote.totalCredits,
-            freeTrial: false,
-            live: true,
-            provider: "byteplus",
-            tool: "byteplus_images_generations",
-            quote,
-          });
+          const settled = await Promise.race([
+            jobPromise.then((r) => ({ done: true as const, r })),
+            new Promise<{ done: false }>((resolve) => {
+              setTimeout(() => resolve({ done: false }), 40_000);
+            }),
+          ]);
+          if (settled.done) {
+            results.push(settled.r);
+          } else {
+            results.push({
+              assetId: asset.id,
+              modelId: VERONIX_IMAGE_MODEL_ID,
+              status: "running",
+              urls: [] as string[],
+              creditsUsed: quote.totalCredits,
+              freeTrial: false,
+              live: true,
+              provider: "byteplus",
+              tool: "byteplus_images_generations",
+              quote,
+            });
+          }
         }
       }
 

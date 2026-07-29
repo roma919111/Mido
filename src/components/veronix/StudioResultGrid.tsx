@@ -393,7 +393,11 @@ const ResultCard = memo(function ResultCard({
   return (
     <div className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-[#141821]">
       <div className="flex items-center justify-between gap-1 border-b border-white/8 px-2 py-1.5">
-        <p className="truncate text-[11px] font-semibold text-white/80">
+        <p
+          className={`truncate text-[11px] font-semibold ${
+            failed ? "text-rose-200" : "text-white/80"
+          }`}
+        >
           {waiting
             ? t.assets.generating
             : failed
@@ -487,9 +491,11 @@ const ResultCard = memo(function ResultCard({
                 </p>
               </div>
             ) : failed ? (
-              <p className="text-sm font-bold text-rose-200">
-                {t.assets.failed}
-              </p>
+              <div className="flex flex-col items-center gap-1 px-2">
+                <p className="rounded-lg bg-rose-500/20 px-2.5 py-1.5 text-sm font-bold text-rose-100 ring-1 ring-rose-400/35">
+                  {t.assets.failed}
+                </p>
+              </div>
             ) : (
               <p className="text-xs text-white/40">{t.create.resultEmpty}</p>
             )}

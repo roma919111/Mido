@@ -639,38 +639,44 @@ function FeedVideoSlide({
         </>
       ) : (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center">
-          {poster && !posterFailed ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={poster}
-              alt=""
-              className="absolute inset-0 h-full w-full object-cover opacity-50"
-              onError={() => setPosterFailed(true)}
-            />
-          ) : null}
-          <span className="relative z-10 text-base font-semibold text-white">
-            {item.status === "running"
-              ? t.assets.generating
-              : item.status === "failed"
-                ? t.assets.failed
-                : item.status}
-          </span>
-          {item.status === "running" && (
-            <div className="relative z-10">
-              <RunningCountdown
-                assetId={item.id}
-                createdAt={item.createdAt}
-                targetSeconds={inferTargetSecondsFromAsset(item)}
-              />
-            </div>
+          {item.status === "failed" ? (
+            <>
+              <div className="absolute inset-0 bg-black/80" />
+              <span className="relative z-10 rounded-xl bg-rose-500/20 px-4 py-2 text-lg font-bold text-rose-100 ring-1 ring-rose-400/40">
+                {t.assets.failed}
+              </span>
+              {item.error?.includes("تم استرجاع") ||
+              item.error?.toLowerCase().includes("refund") ? (
+                <p className="relative z-10 mt-1 max-w-xs text-xs text-emerald-200/90">
+                  {t.assets.creditReturned}
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <>
+              {poster && !posterFailed ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={poster}
+                  alt=""
+                  className="absolute inset-0 h-full w-full object-cover opacity-50"
+                  onError={() => setPosterFailed(true)}
+                />
+              ) : null}
+              <span className="relative z-10 text-base font-semibold text-white">
+                {item.status === "running" ? t.assets.generating : item.status}
+              </span>
+              {item.status === "running" && (
+                <div className="relative z-10">
+                  <RunningCountdown
+                    assetId={item.id}
+                    createdAt={item.createdAt}
+                    targetSeconds={inferTargetSecondsFromAsset(item)}
+                  />
+                </div>
+              )}
+            </>
           )}
-          {item.status === "failed" &&
-          (item.error?.includes("تم استرجاع") ||
-            item.error?.toLowerCase().includes("refund")) ? (
-            <p className="relative z-10 mt-1 max-w-xs text-xs text-emerald-200/90">
-              {t.assets.creditReturned}
-            </p>
-          ) : null}
         </div>
       )}
 
@@ -1109,7 +1115,7 @@ function FeedImageSlide({
       data-asset-id={item.id}
       className="relative h-[calc(100dvh-5.25rem-env(safe-area-inset-bottom))] w-full snap-start snap-always overflow-hidden bg-black"
     >
-      {src ? (
+      {src && item.status !== "failed" ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={src}
@@ -1117,8 +1123,12 @@ function FeedImageSlide({
           className="absolute inset-0 h-full w-full object-cover"
         />
       ) : (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center">
-          {running ? (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black px-6 text-center">
+          {item.status === "failed" ? (
+            <span className="rounded-xl bg-rose-500/20 px-4 py-2 text-lg font-bold text-rose-100 ring-1 ring-rose-400/40">
+              {t.assets.failed}
+            </span>
+          ) : running ? (
             <>
               <GenerateClock
                 startedAt={lockEtaStart(item.id, item.createdAt)}
@@ -1128,12 +1138,10 @@ function FeedImageSlide({
                 {t.assets.generating}
               </span>
             </>
-          ) : item.status === "failed" ? (
-            <span className="text-base font-bold text-rose-200">
+          ) : (
+            <span className="rounded-xl bg-rose-500/20 px-4 py-2 text-lg font-bold text-rose-100 ring-1 ring-rose-400/40">
               {t.assets.failed}
             </span>
-          ) : (
-            <span className="text-white/40">{t.assets.failed}</span>
           )}
         </div>
       )}
