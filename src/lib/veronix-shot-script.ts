@@ -244,8 +244,14 @@ function inventSubjectState(
 ): string {
   const a = action;
   if (arabic) {
+    if (/ترم[يى]|تقذف|يرم[يى]|يقذف/.test(a) && /وقفة\s*يدين|انشقاق/.test(a)) {
+      return `${subjectName} تقذف ثم تثبت في وقفة يدين بانشقاق أفقي`;
+    }
     if (/ترم[يى]|تقذف|يرم[يى]|يقذف/.test(a)) {
       return `${subjectName} بقوة وتركيز وهي تقذف للأعلى`;
+    }
+    if (/يسقط|سقوط|ممدد\s*على\s*بطن/.test(a)) {
+      return `${subjectName} ثابتة في وضعيتها أثناء سقوط الشريك`;
     }
     if (/وقفة\s*يدين|انشقاق|handstand|تؤدي/.test(a)) {
       return `${subjectName} ثابتة في وقفة اليدين بانشقاق أفقي وجسد مشدود`;
@@ -258,8 +264,14 @@ function inventSubjectState(
     }
     return `${subjectName} بملامح واثقة وحضور سينمائي واضح`;
   }
+  if (/throw|toss|fling/i.test(a) && /handstand|split/i.test(a)) {
+    return `${subjectName} throwing then locking into a handstand`;
+  }
   if (/throw|toss|fling/i.test(a)) {
     return `${subjectName} focused and powerful in the throw`;
+  }
+  if (/fall|lands|belly/i.test(a)) {
+    return `${subjectName} holding position while the partner falls`;
   }
   if (/handstand|split/i.test(a)) {
     return `${subjectName} locked in a perfect handstand, body taut`;
@@ -465,43 +477,41 @@ export async function planShotTriplesAi(prompt: string): Promise<ActionTriple[]>
     .join("\n");
 
   const instruction = arabic
-    ? `أنت محرّر أوصاف فيرونيكس. هذه هي الأفعال الوحيدة المسموحة — مأخوذة حرفياً من نص الزبون. عددها ثابت ولا يجوز إضافة فعل جديد.
+    ? `أنت محرّر أوصاف فيرونيكس. حسّن كل لقطة على حدة. الأفعال التالية وحدها مسموحة — من نص الزبون حرفياً. العدد ثابت.
 
-الأفعال المقفلة (بالترتيب):
+الأفعال المقفلة:
 ${listed}
 
-لكل فعل مقفل بالفهرس نفسه أخرج تحسيناً سينمائياً لثلاث حقول:
-- action: حسّن صياغة نفس الفعل فقط (لا تغيّر معناه ولا تضف حدثاً جديداً)
-- subject: حالة الفاعل تبدأ باسم الشخصية (بدون كلمة «حالة الفاعل»)
-- object: حالة المفعول به تبدأ باسم الشخصية (بدون كلمة «حالة المفعول به»)
+لكل فعل مقفل i أخرج تحسيناً سينمائياً مستقلاً:
+- action: حسّن صياغة نفس الفعل المكتوب فقط (ممنوع حدث جديد)
+- subject: اسم الفاعل + حالته في هذه اللحظة فقط
+- object: اسم المفعول به + حالته في هذه اللحظة فقط
 
-قواعد صارمة:
-1) عدد العناصر في beats يجب أن يساوي بالضبط ${lockedActions.length}
-2) beats[i] يخص الفعل المقفول رقم i+1 فقط
-3) ممنوع اختراع أفعال أو لقطات إضافية
-4) إن لم تُذكر حالة الفاعل/المفعول به في النص، حسّنها بالذكاء الاصطناعي لتناسب هذا الفعل فقط
-5) JSON فقط: {"beats":[{"action":"...","subject":"...","object":"..."}]}
+قواعد:
+1) beats.length = ${lockedActions.length} بالضبط
+2) لا تختلق أفعالاً إضافية ولا تدمج فعلين في عنصر واحد جديد
+3) لا تنسخ حالة من فعل سابق إلى فعل لاحق
+4) JSON فقط: {"beats":[{"action":"...","subject":"...","object":"..."}]}
 
-نص المشهد الأصلي (مرجع فقط):
+النص الأصلي:
 ${source.slice(0, 4000)}`
-    : `You are a Veronix copy editor. These are the ONLY allowed actions — taken from the customer's text. Count is fixed; you must NOT invent new actions.
+    : `Polish EACH locked shot individually. ONLY these customer-written actions are allowed (fixed count).
 
-Locked actions (in order):
+Locked actions:
 ${listed}
 
-For each locked action at the same index, return a cinematic polish of three fields:
-- action: polish THE SAME action only (do not change meaning or add a new event)
-- subject: actor state starting with the character name (no "subject state:" prefix)
-- object: patient state starting with the character name (no "object state:" prefix)
+For each locked action i return an independent cinematic polish:
+- action: polish the SAME written action only (no new event)
+- subject: character name + state for THIS moment only
+- object: character name + state for THIS moment only
 
-Hard rules:
-1) beats length MUST equal exactly ${lockedActions.length}
-2) beats[i] belongs only to locked action #i+1
-3) Never invent extra actions/shots
-4) If subject/object state is missing, invent AI cinematic detail for THIS action only
-5) JSON only: {"beats":[{"action":"...","subject":"...","object":"..."}]}
+Rules:
+1) beats.length must equal exactly ${lockedActions.length}
+2) Never invent extra actions
+3) Never copy a prior action's state onto a later action
+4) JSON only: {"beats":[{"action":"...","subject":"...","object":"..."}]}
 
-Original scene (reference only):
+Original text:
 ${source.slice(0, 4000)}`;
 
   const parsed =

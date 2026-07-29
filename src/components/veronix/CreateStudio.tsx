@@ -2606,7 +2606,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 </pre>
               )}
               <p className="mt-3 text-[11px] leading-relaxed text-white/40">
-                الترتيب: فعل → اسم الفاعل وحالته → اسم المفعول به وحالته · بدون تكرار أفعال
+                أفعال من نصك فقط · كل لقطة تُحسَّن وحدها: فعل → اسم الفاعل → اسم المفعول به
                 {" · "}
                 توصية فيرونيكس / البرومبت الأصلي / إلغاء بدون توليد
               </p>
