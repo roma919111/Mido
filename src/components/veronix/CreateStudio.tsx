@@ -38,6 +38,7 @@ import {
 } from "@/lib/free-trial";
 import { quoteCreditsLocal } from "@/lib/credit-quote-local";
 import {
+  buildVeronixShotScript,
   idealScriptSeconds,
   type VeronixShotScript,
 } from "@/lib/veronix-shot-script";
@@ -1728,7 +1729,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     return true;
   }
 
-  /** Generate click → for video: build Veronix shot script + confirm sheet. */
+  /** Generate click → for video: instant local shot script + optional AI polish. */
   async function handleGenerate() {
     setGenFlash(true);
     window.setTimeout(() => setGenFlash(false), 220);
@@ -1745,88 +1746,81 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
     const original = prompt.trim();
     setGenConfirmOriginal(original);
+
+    // Instant local script — never block Generate on LLM / enhance network.
+    const localScript = buildVeronixShotScript({
+      originalPrompt: original,
+      minSeconds: sliderMin,
+      maxSeconds: sliderMax,
+    });
+    setGenConfirmScript(localScript);
     setGenConfirmOpen(true);
-    setGenConfirmLoading(true);
-    setGenConfirmScript(null);
+    setGenConfirmLoading(false);
 
+    // Background AI polish (optional). Keep local script if it times out.
+    const controller = new AbortController();
+    const kill = window.setTimeout(() => controller.abort(), 18_000);
     try {
-      const mode =
-        refs.length || startFrame ? "image2video" : "text2video";
-      let enhanced = "";
-      try {
-        const { res, data } = await fetchJson<{
-          enhanced?: string;
-          finalState?: SceneState;
-          error?: string;
-        }>("/api/enhance", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prompt: original,
-            mode,
-            imageUrls: await gatherEnhanceImageUrls(),
-            previousState: promptSceneState,
-          }),
-        });
-        if (res.ok && data.enhanced?.trim()) {
-          enhanced = data.enhanced.trim();
-          if (data.finalState) setPromptSceneState(data.finalState);
-        }
-      } catch {
-        // Local script still works from the original Arabic/English prompt.
-      }
-
-      const sourceForIdeal = enhanced || original;
+      setGenConfirmLoading(true);
       const { res: scriptRes, data: scriptData } = await fetchJson<{
         script?: VeronixShotScript;
-        summaryAr?: string;
-        totalSeconds?: number;
-        scriptPrompt?: string;
         error?: string;
       }>("/api/shots/script", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           prompt: original,
-          enhancedPrompt: enhanced || undefined,
+          // Prompt may already be enhanced via «تحسين الوصف» — do not re-enhance here
+          // (that double call was hanging the sheet and blocking video generate).
+          enhancedPrompt: original,
           minSeconds: sliderMin,
           maxSeconds: sliderMax,
         }),
       });
-      if (!scriptRes.ok || !scriptData.script) {
-        throw new Error(scriptData.error || "تعذر بناء سكريبت اللقطات");
+      if (scriptRes.ok && scriptData.script?.scriptPrompt) {
+        setGenConfirmScript(scriptData.script);
       }
-      setGenConfirmScript(scriptData.script);
-      void sourceForIdeal;
-    } catch (err) {
-      setGenConfirmOpen(false);
-      setError(
-        err instanceof Error ? err.message : "تعذر تجهيز توصية فيرونيكس",
-      );
+    } catch {
+      // Keep the instant local recommendation — user can still generate.
     } finally {
+      window.clearTimeout(kill);
       setGenConfirmLoading(false);
     }
   }
 
   async function acceptVeronixRecommendation() {
     const script = genConfirmScript;
+    if (!script?.scriptPrompt?.trim()) {
+      setError("التوصية غير جاهزة — اختر البرومبت الأصلي أو أعد المحاولة.");
+      return;
+    }
     setGenConfirmOpen(false);
-    setGenConfirmScript(null);
-    if (!script) return;
+    setGenConfirmLoading(false);
     const sec = Math.min(
       sliderMax,
       Math.max(sliderMin, script.totalSeconds || duration),
     );
     setDuration(sec);
-    void runGenerateWithPrompt(script.scriptPrompt, { durationSeconds: sec });
+    setGenConfirmScript(null);
+    try {
+      await runGenerateWithPrompt(script.scriptPrompt, { durationSeconds: sec });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "فشل بدء التوليد");
+    }
   }
 
   async function acceptOriginalPrompt() {
     const original = genConfirmOriginal || prompt.trim();
     setGenConfirmOpen(false);
+    setGenConfirmLoading(false);
     setGenConfirmScript(null);
     // Original prompt at the customer's chosen slider duration.
-    void runGenerateWithPrompt(original);
+    try {
+      await runGenerateWithPrompt(original);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "فشل بدء التوليد");
+    }
   }
 
   function dismissGenerateConfirm() {
@@ -2628,8 +2622,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           disabled={
             !selectedModel?.available ||
             !canStartMore ||
-            genConfirmOpen ||
-            genConfirmLoading
+            genConfirmOpen
           }
           className={`relative flex min-w-0 flex-1 items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-5 py-4 text-base font-bold text-white transition duration-150 enabled:active:scale-[0.97] enabled:active:brightness-110 disabled:opacity-70 ${
             genFlash
@@ -2637,13 +2630,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               : ""
           }`}
         >
-          {genConfirmLoading ? (
+          {genConfirmOpen ? (
             <Loader2 className="h-5 w-5 animate-spin" />
           ) : (
             <Sparkles className="h-5 w-5" />
           )}
-          {genConfirmLoading
-            ? "تجهيز توصية فيرونيكس…"
+          {genConfirmOpen
+            ? "اختر من التوصية…"
             : !canStartMore
               ? slotsLeft <= 0
                 ? "ممتلئ (4/4)"
@@ -2680,15 +2673,23 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               </p>
             </div>
             <div className="max-h-[45vh] overflow-y-auto px-4 py-3">
-              {genConfirmLoading || !genConfirmScript ? (
+              {!genConfirmScript ? (
                 <div className="flex items-center gap-2 py-8 text-sm text-white/60">
                   <Loader2 className="h-4 w-4 animate-spin text-[#22f0ff]" />
-                  جاري تحسين الوصف وتقسيم اللقطات…
+                  جاري تجهيز التوصية…
                 </div>
               ) : (
-                <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-white/85">
-                  {genConfirmScript.summaryAr}
-                </pre>
+                <>
+                  {genConfirmLoading ? (
+                    <p className="mb-2 flex items-center gap-2 text-[11px] text-white/45">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-[#22f0ff]" />
+                      جاري تحسين التوصية بالذكاء الاصطناعي (يمكنك التوليد الآن)
+                    </p>
+                  ) : null}
+                  <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-white/85">
+                    {genConfirmScript.summaryAr}
+                  </pre>
+                </>
               )}
               <p className="mt-3 text-[11px] leading-relaxed text-white/40">
                 أفعال من نصك فقط · كل لقطة تُحسَّن وحدها: فعل → اسم الفاعل → اسم المفعول به
@@ -2699,7 +2700,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             <div className="grid grid-cols-1 gap-2 border-t border-white/10 p-3 sm:grid-cols-3">
               <button
                 type="button"
-                disabled={genConfirmLoading || !genConfirmScript || generating}
+                disabled={!genConfirmScript || generating}
                 onClick={() => void acceptVeronixRecommendation()}
                 className="rounded-2xl bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-3 py-3 text-sm font-bold text-white disabled:opacity-50"
               >
@@ -2707,7 +2708,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               </button>
               <button
                 type="button"
-                disabled={genConfirmLoading || generating}
+                disabled={generating || !genConfirmOriginal}
                 onClick={() => void acceptOriginalPrompt()}
                 className="rounded-2xl border border-[#22f0ff]/35 bg-[#22f0ff]/10 px-3 py-3 text-sm font-bold text-[#22f0ff] disabled:opacity-50"
               >

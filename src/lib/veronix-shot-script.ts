@@ -639,7 +639,7 @@ export function buildVeronixShotScript(input: {
   });
 }
 
-/** Async AI builder used on Generate confirm. */
+/** Async AI builder used on Generate confirm. Falls back to local quickly. */
 export async function buildVeronixShotScriptAsync(input: {
   originalPrompt: string;
   enhancedPrompt?: string;
@@ -648,12 +648,29 @@ export async function buildVeronixShotScriptAsync(input: {
 }): Promise<VeronixShotScript> {
   const enhanced = (input.enhancedPrompt || "").trim();
   const source = enhanced || input.originalPrompt;
-  const triples = await planShotTriplesAi(source);
-  return packTriplesToScript(triples, {
-    sceneCore: enhanced || cleanCore(input.originalPrompt),
-    minSeconds: input.minSeconds,
-    maxSeconds: input.maxSeconds,
-  });
+  const local = buildVeronixShotScript(input);
+
+  // Cap AI polish so the confirm sheet never waits ~44s (gemini then openai).
+  const ai = Promise.race([
+    planShotTriplesAi(source),
+    new Promise<null>((resolve) => {
+      setTimeout(() => resolve(null), 12_000);
+    }),
+  ]);
+
+  try {
+    const triples = await ai;
+    if (triples && triples.length) {
+      return packTriplesToScript(triples, {
+        sceneCore: enhanced || cleanCore(input.originalPrompt),
+        minSeconds: input.minSeconds,
+        maxSeconds: input.maxSeconds,
+      });
+    }
+  } catch {
+    // keep local
+  }
+  return local;
 }
 
 export function idealScriptSeconds(
