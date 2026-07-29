@@ -32,6 +32,21 @@ export async function loadOwnerAuthSession(): Promise<OpenArtAuthSession> {
     const parsed = JSON.parse(new TextDecoder().decode(plaintext)) as OpenArtAuthSession;
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
+    // Optional Railway/env bootstrap when the volume file is missing.
+    const fromEnv = process.env.OPENART_OWNER_SESSION_JWE?.trim();
+    if (!fromEnv) return {};
+    try {
+      const key = await getEncryptionKey();
+      const { plaintext } = await compactDecrypt(fromEnv, key);
+      const parsed = JSON.parse(new TextDecoder().decode(plaintext)) as OpenArtAuthSession;
+      if (parsed && typeof parsed === "object") {
+        // Persist onto the volume so later refreshes stick.
+        await saveOwnerAuthSession(parsed).catch(() => undefined);
+        return parsed;
+      }
+    } catch {
+      return {};
+    }
     return {};
   }
 }
