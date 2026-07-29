@@ -9,14 +9,15 @@ import {
   type QuoteResult,
 } from "@/lib/credit-multiplier";
 import {
-  BYTEPLUS_TOKEN_USD_PER_1K,
-  VERONIX_PROFIT_MARKUP,
+  getActivePricingConfig,
   isVeronixImageModel,
   isVeronixVideoModel,
   normalizeVideoResolution,
   quoteVeronixImageCredits,
   quoteVeronixVideoCredits,
+  tokenUsdPer1k,
 } from "@/lib/byteplus-pricing";
+import { ensurePricingConfigLoaded } from "@/lib/veronix-pricing-store";
 
 export {
   VERONIX_CREDIT_MULTIPLIER,
@@ -123,6 +124,7 @@ function quoteBytePlusResult(
   params: Record<string, unknown>,
   available: boolean,
 ): QuoteResult | null {
+  const pricing = getActivePricingConfig();
   if (input.media === "video" && isVeronixVideoModel(input.modelId, mcpModel)) {
     const resolution = normalizeVideoResolution(
       typeof params.resolution === "string"
@@ -133,6 +135,7 @@ function quoteBytePlusResult(
       duration: input.duration,
       resolution,
       videoCount: input.videoCount ?? 1,
+      config: pricing,
     });
     return {
       modelId: input.modelId,
@@ -141,16 +144,19 @@ function quoteBytePlusResult(
       totalCredits,
       unitCredits: totalCredits,
       openArtCredits: totalCredits,
-      multiplier: VERONIX_PROFIT_MARKUP,
+      multiplier: pricing.profitMarkup,
       available: available || true,
       config: { ...params, resolution },
-      pricingNote: `BytePlus tokens × $${BYTEPLUS_TOKEN_USD_PER_1K}/1K × ${VERONIX_PROFIT_MARKUP} markup`,
+      pricingNote: `BytePlus tokens × $${tokenUsdPer1k(pricing)}/1K × ${pricing.profitMarkup} markup`,
       source: "estimate",
     };
   }
 
   if (input.media === "image" && isVeronixImageModel(input.modelId, mcpModel)) {
-    const totalCredits = quoteVeronixImageCredits(input.imageCount ?? 1);
+    const totalCredits = quoteVeronixImageCredits(
+      input.imageCount ?? 1,
+      pricing,
+    );
     return {
       modelId: input.modelId,
       mcpModel,
@@ -158,10 +164,10 @@ function quoteBytePlusResult(
       totalCredits,
       unitCredits: totalCredits,
       openArtCredits: totalCredits,
-      multiplier: VERONIX_PROFIT_MARKUP,
+      multiplier: pricing.profitMarkup,
       available: available || true,
       config: params,
-      pricingNote: `BytePlus image $0.04 × ${VERONIX_PROFIT_MARKUP} markup`,
+      pricingNote: `BytePlus image $${pricing.imageCostUsd} × ${pricing.profitMarkup} markup`,
       source: "estimate",
     };
   }
@@ -254,6 +260,7 @@ export async function quoteOpenArtCredits(
   input: QuoteInput,
   options: QuoteOptions = {},
 ): Promise<QuoteResult> {
+  await ensurePricingConfigLoaded();
   const allowCache = options.allowCache !== false;
   const catalog = getCatalogModel(input.modelId);
   const mcpModel = catalog ? resolveMcpModel(catalog) : input.modelId;

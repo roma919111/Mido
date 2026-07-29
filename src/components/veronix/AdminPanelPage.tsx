@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { AppHeader, type CustomerUser } from "./AppHeader";
 import { BottomNav } from "./BottomNav";
+import { AdminPricingCalculator } from "./AdminPricingCalculator";
 import { fetchJson } from "@/lib/fetch-json";
 
 type AdminUser = {
@@ -230,6 +231,13 @@ export function AdminPanelPage() {
             {error || message}
           </p>
         )}
+
+        <AdminPricingCalculator
+          onSaved={(msg) => {
+            setError(null);
+            setMessage(msg);
+          }}
+        />
 
         <div className="mt-6 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
           <section className="rounded-3xl border border-white/10 bg-[#10141c] p-4">

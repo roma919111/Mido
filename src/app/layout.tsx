@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Outfit, Syne } from "next/font/google";
 import { LocaleProvider } from "@/components/veronix/LocaleProvider";
+import { PricingConfigHydrator } from "@/components/veronix/PricingConfigHydrator";
 import { getRequestDictionary, localeDir } from "@/lib/i18n";
 import "./globals.css";
 
@@ -148,7 +149,10 @@ export default async function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
-        <LocaleProvider initialLocale={locale}>{children}</LocaleProvider>
+        <LocaleProvider initialLocale={locale}>
+          <PricingConfigHydrator />
+          {children}
+        </LocaleProvider>
       </body>
     </html>
   );
