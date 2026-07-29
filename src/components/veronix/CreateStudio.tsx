@@ -419,6 +419,23 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           ? `تم تحميل ${chars.length} صورة — سمِّ الشخصيات واذكر الأسماء في الوصف ثم Generate`
           : `تم تحميل إعدادات التعديل (${chars.length} شخصية) — راجع الوضوح/المدة/النسبة ثم Generate`,
       );
+    } else if (draft.startFrame?.url && draft.useAsStartFrame) {
+      const frame = draft.startFrame;
+      const display = veronixRefImageSrc(frame.url) || frame.url;
+      setStartFrame({
+        ...frame,
+        id: frame.id || `start-frame-${Date.now()}`,
+        label: frame.label || "start-frame",
+      });
+      setStartPreview(display);
+      setEndFrame(null);
+      setEndPreview(null);
+      setRefs([]);
+      setRefPreviews([]);
+      setRefNames([]);
+      setStatus(
+        "تم تحميل الصورة كأول إطار للفيديو — عدّل الوصف والمدة ثم Generate",
+      );
     } else if (draft.startFrame?.url) {
       // Always map edit stills into character slots (never Start Frame).
       const frame = draft.startFrame;

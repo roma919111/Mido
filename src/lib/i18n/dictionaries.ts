@@ -183,6 +183,7 @@ export type Dictionary = {
     pause: string;
     edit: string;
     delete: string;
+    makeVideo: string;
     download: string;
     showMore: string;
     showLess: string;
@@ -412,6 +413,7 @@ export const ar: Dictionary = {
     pause: "إيقاف",
     edit: "تعديل",
     delete: "حذف",
+    makeVideo: "توليد فيديو",
     download: "تحميل",
     showMore: "عرض المزيد",
     showLess: "عرض أقل",
@@ -641,6 +643,7 @@ export const en: Dictionary = {
     pause: "Pause",
     edit: "Edit",
     delete: "Delete",
+    makeVideo: "Make video",
     download: "Download",
     showMore: "Show more",
     showLess: "Show less",

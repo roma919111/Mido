@@ -13,6 +13,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Download,
+  Clapperboard,
   LayoutGrid,
   Loader2,
   Pause,
@@ -825,7 +826,9 @@ function ImageTile({
   onDeleted: (id: string) => void;
 }) {
   const router = useRouter();
+  const { t } = useLocale();
   const [deleting, setDeleting] = useState(false);
+  const [makingVideo, setMakingVideo] = useState(false);
   const src = veronixMediaSrc({
     historyId: item.historyId,
     url: item.url,
@@ -892,7 +895,55 @@ function ImageTile({
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#22f0ff]"
           >
             <Pencil className="h-3.5 w-3.5" />
-            تعديل
+            {t.assets.edit}
+          </button>
+          <button
+            type="button"
+            disabled={makingVideo || item.status !== "completed" || !item.url}
+            onClick={() => {
+              void (async () => {
+                if (makingVideo) return;
+                setMakingVideo(true);
+                try {
+                  const url =
+                    (await hydrateRefImageUrl(item.url)) || item.url;
+                  if (!url) throw new Error("تعذر تحميل الصورة");
+                  writeEditDraft({
+                    prompt: prompt || item.prompt || "",
+                    media: "video",
+                    startFrame: {
+                      type: "image",
+                      id: `start-from-img-${item.id}`,
+                      url,
+                      label: "start-frame",
+                    },
+                    referenceImages: [],
+                    useAsStartFrame: true,
+                    sourceAssetId: item.id,
+                    aspectRatio: item.aspectRatio,
+                    resolution:
+                      item.resolution && ["480p", "720p"].includes(item.resolution)
+                        ? item.resolution
+                        : "720p",
+                  });
+                  router.push("/create/video?edit=1");
+                } catch (err) {
+                  window.alert(
+                    err instanceof Error ? err.message : "تعذر فتح توليد الفيديو",
+                  );
+                } finally {
+                  setMakingVideo(false);
+                }
+              })();
+            }}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#22f0ff] disabled:opacity-50"
+          >
+            {makingVideo ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Clapperboard className="h-3.5 w-3.5" />
+            )}
+            {t.assets.makeVideo}
           </button>
           <button
             type="button"
@@ -929,7 +980,7 @@ function ImageTile({
             ) : (
               <Trash2 className="h-3.5 w-3.5" />
             )}
-            حذف
+            {t.assets.delete}
           </button>
         </div>
       </div>

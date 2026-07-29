@@ -2,6 +2,7 @@
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Clapperboard,
   Loader2,
   Pencil,
   Play,
@@ -45,6 +46,7 @@ const ResultCard = memo(function ResultCard({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [makingVideo, setMakingVideo] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [armed, setArmed] = useState(false);
   const waiting = job.status === "running";
@@ -212,6 +214,30 @@ const ResultCard = memo(function ResultCard({
     }
   };
 
+  const handleMakeVideo = async () => {
+    if (makingVideo || waiting || job.mediaType !== "image" || !job.url) return;
+    setMakingVideo(true);
+    try {
+      writeEditDraft({
+        prompt: job.prompt || "",
+        media: "video",
+        startFrame: {
+          type: "image",
+          id: `start-from-job-${job.clientId}`,
+          url: job.url,
+          label: "start-frame",
+        },
+        referenceImages: [],
+        useAsStartFrame: true,
+        sourceAssetId: job.assetId,
+        resolution: "720p",
+      });
+      router.push("/create/video?edit=1");
+    } finally {
+      setMakingVideo(false);
+    }
+  };
+
   const handleDelete = async () => {
     if (deleting || waiting) return;
     setDeleting(true);
@@ -317,7 +343,11 @@ const ResultCard = memo(function ResultCard({
         VYRONIX
       </div>
 
-      <div className="grid grid-cols-3 gap-1.5 p-2">
+      <div
+        className={`grid gap-1.5 p-2 ${
+          job.mediaType === "image" ? "grid-cols-4" : "grid-cols-3"
+        }`}
+      >
         <button
           type="button"
           onClick={() => void handleEdit()}
@@ -331,6 +361,21 @@ const ResultCard = memo(function ResultCard({
           )}
           {t.assets.edit}
         </button>
+        {job.mediaType === "image" ? (
+          <button
+            type="button"
+            onClick={() => void handleMakeVideo()}
+            disabled={waiting || makingVideo || !job.url || failed}
+            className="inline-flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-xl border border-[#22f0ff]/35 bg-[#22f0ff]/10 px-1 py-1.5 text-[11px] font-bold text-[#22f0ff] disabled:opacity-40"
+          >
+            {makingVideo ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Clapperboard className="h-4 w-4" />
+            )}
+            {t.assets.makeVideo}
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => onShare(job)}

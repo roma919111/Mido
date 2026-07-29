@@ -21,6 +21,11 @@ export type CreateEditDraft = {
   resolution?: string;
   aspectRatio?: string;
   preferClarity?: boolean;
+  /**
+   * When true with startFrame, Create loads the still as video Start Frame
+   * (image → video) instead of a character slot.
+   */
+  useAsStartFrame?: boolean;
 };
 
 function writeStore(key: string, value: string) {
@@ -139,5 +144,6 @@ export function resolveEditBoot(): CreateEditDraft | null {
     resolution,
     aspectRatio,
     preferClarity,
+    useAsStartFrame: Boolean(draft?.useAsStartFrame),
   };
 }
