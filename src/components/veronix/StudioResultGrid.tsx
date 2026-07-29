@@ -155,23 +155,32 @@ const ResultCard = memo(function ResultCard({
                   label: r.label || "",
                 }));
             }
+            const durationSec =
+              (asset ? inferTargetSecondsFromAsset(asset) : undefined) ||
+              job.targetSeconds ||
+              undefined;
             writeEditDraft({
               prompt: editPrompt,
               media: job.mediaType,
               startFrame: null,
               referenceImages: characters,
               sourceAssetId: job.assetId,
-              duration: asset
-                ? inferTargetSecondsFromAsset(asset)
-                : job.targetSeconds,
+              duration: durationSec,
               aspectRatio: asset?.aspectRatio,
               resolution: asset?.resolution,
               preferClarity: asset?.preferClarity,
             });
+            const qs = new URLSearchParams({ edit: "1" });
+            if (typeof durationSec === "number") {
+              qs.set("duration", String(durationSec));
+            }
+            if (asset?.resolution) qs.set("resolution", asset.resolution);
+            if (asset?.aspectRatio) qs.set("aspect", asset.aspectRatio);
+            if (asset?.preferClarity) qs.set("clarity", "1");
             router.push(
               job.mediaType === "image"
-                ? "/create/image?edit=1"
-                : "/create/video?edit=1",
+                ? `/create/image?${qs.toString()}`
+                : `/create/video?${qs.toString()}`,
             );
             return;
           }

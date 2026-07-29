@@ -59,7 +59,12 @@ import {
   formatStudioCountdownLabel,
 } from "@/lib/generate-eta";
 import { veronixRefImageSrc } from "@/lib/media-proxy";
-import { clearEditDraft, readEditDraft } from "@/lib/edit-draft";
+import {
+  clearEditDraft,
+  clampEditDuration,
+  resolveEditBoot,
+  type CreateEditDraft,
+} from "@/lib/edit-draft";
 import {
   newStudioClientId,
   patchJob,
@@ -109,23 +114,50 @@ interface CreateStudioProps {
 
 export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioProps) {
   const router = useRouter();
+  /** Assets → Edit: keep restored duration/ratio/clarity until the user changes model. */
+  const restoreFromEditRef = useRef(false);
+  /** `undefined` = not booted yet; `null` = no edit draft. */
+  const editBootRef = useRef<CreateEditDraft | null | undefined>(undefined);
+  if (editBootRef.current === undefined && typeof window !== "undefined") {
+    const bootDraft = resolveEditBoot();
+    editBootRef.current = bootDraft;
+    if (bootDraft) restoreFromEditRef.current = true;
+  }
+  const boot = editBootRef.current ?? null;
+
   const [media, setMedia] = useState<"image" | "video">(lockedMedia || "video");
   const [imageModels, setImageModels] = useState<CatalogModel[]>(IMAGE_MODELS);
   const [videoModels, setVideoModels] = useState<CatalogModel[]>(VIDEO_MODELS);
   const [selectedModelId, setSelectedModelId] = useState(
     lockedMedia === "image" ? VERONIX_IMAGE_MODEL_ID : VERONIX_MODEL_ID,
   );
-  const [prompt, setPrompt] = useState("");
-  const [aspectRatio, setAspectRatio] = useState<string>(
-    lockedMedia === "image" ? "1:1" : "16:9",
+  const [prompt, setPrompt] = useState(() =>
+    boot?.prompt ? boot.prompt : "",
   );
-  const [resolution, setResolution] = useState<string>(
-    lockedMedia === "image" ? DEFAULT_IMAGE_RESOLUTION : FREE_VERONIX_RESOLUTION,
-  );
-  const [duration, setDuration] = useState<number>(FREE_VERONIX_DURATION_SECONDS);
+  const [aspectRatio, setAspectRatio] = useState<string>(() => {
+    if (
+      boot?.aspectRatio &&
+      (VIDEO_ASPECTS as readonly string[]).includes(boot.aspectRatio)
+    ) {
+      return boot.aspectRatio;
+    }
+    return lockedMedia === "image" ? "1:1" : "16:9";
+  });
+  const [resolution, setResolution] = useState<string>(() => {
+    if (boot?.resolution && ["480p", "720p"].includes(boot.resolution)) {
+      return boot.resolution;
+    }
+    return lockedMedia === "image" ? DEFAULT_IMAGE_RESOLUTION : FREE_VERONIX_RESOLUTION;
+  });
+  const [duration, setDuration] = useState<number>(() => {
+    const d = clampEditDuration(boot?.duration);
+    return d ?? FREE_VERONIX_DURATION_SECONDS;
+  });
   const [generateAudio, setGenerateAudio] = useState(false);
   /** Free clean upscale (480→~720) — opt-in. */
-  const [applyClarity, setApplyClarity] = useState(false);
+  const [applyClarity, setApplyClarity] = useState(() =>
+    typeof boot?.preferClarity === "boolean" ? boot.preferClarity : false,
+  );
   const [refs, setRefs] = useState<VisualReference[]>([]);
   const [refPreviews, setRefPreviews] = useState<string[]>([]);
   /** Display names aligned with refPreviews / refs (no @ needed in prompt). */
@@ -161,8 +193,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const [enhancing, setEnhancing] = useState(false);
   /** Allows starting a new Generate while a previous job continues in Assets. */
   const genRunIdRef = useRef(0);
-  /** Assets → Edit: keep restored duration/ratio/clarity until the user changes model. */
-  const restoreFromEditRef = useRef(false);
   /**
    * Multi-beat stitch is no longer the paid default — duration is a native
    * 4–15s Seedance clip. Flag kept for any restored running multi jobs.
@@ -203,10 +233,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       setJobs(updater);
     });
   }, []);
-  // Lock free-trial defaults only when the customer has no credits yet.
-  // Users with a balance can run paid multi-shot (4s×N) without burning the
-  // single free clip first — otherwise they only ever see one 4s video.
+  // Lock free-trial defaults only when we KNOW the customer has no credits yet.
+  // While user is still loading (null), do NOT lock — that was wiping Edit duration to 4s.
   const freeSettingsLocked =
+    Boolean(user) &&
     media === "video" &&
     selectedModelId === VERONIX_MODEL_ID &&
     !user?.freeVeronixUsed &&
@@ -295,10 +325,12 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     : durationBounds.max;
 
   const applyVideoModelDefaults = (model: CatalogModel | null | undefined) => {
+    if (restoreFromEditRef.current) return;
     setAspectRatio("16:9");
     if (!model) return;
     const options = formOptionsForModel(model);
     const freeLocked =
+      Boolean(user) &&
       model.id === VERONIX_MODEL_ID &&
       !user?.freeVeronixUsed &&
       (user?.credits ?? 0) <= 0;
@@ -331,21 +363,19 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     if (lockedMedia) setMedia(lockedMedia);
   }, [lockedMedia]);
 
-  // Assets → Edit: restore prompt + characters + duration/resolution/ratio/clarity.
+  // Assets → Edit: restore prompt + characters (+ re-assert duration after boot).
   useEffect(() => {
-    const draft = readEditDraft();
+    const draft = editBootRef.current || resolveEditBoot();
     if (!draft) return;
-    if (lockedMedia && draft.media !== lockedMedia) {
-      if (lockedMedia !== "video") return;
-    }
     restoreFromEditRef.current = true;
-    setPrompt(stripInternalPromptNotes(draft.prompt || ""));
+    editBootRef.current = draft;
+
+    if (draft.prompt) {
+      setPrompt(stripInternalPromptNotes(draft.prompt || ""));
+    }
 
     if (draft.media === "video" || lockedMedia === "video") {
-      const restoredDuration =
-        typeof draft.duration === "number" && draft.duration >= 4
-          ? Math.min(15, Math.max(4, Math.round(draft.duration)))
-          : null;
+      const restoredDuration = clampEditDuration(draft.duration);
       if (restoredDuration != null) setDuration(restoredDuration);
       if (draft.resolution && ["480p", "720p"].includes(draft.resolution)) {
         setResolution(draft.resolution);
@@ -410,7 +440,37 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       setStatus("تم تحميل إعدادات التعديل — راجع الوضوح/المدة/النسبة ثم Generate");
     }
     clearEditDraft();
+    // Strip edit query params so refresh does not re-apply forever.
+    if (typeof window !== "undefined" && window.location.search.includes("edit=")) {
+      const url = new URL(window.location.href);
+      ["edit", "duration", "d", "resolution", "r", "aspect", "ar", "clarity", "c"].forEach(
+        (k) => url.searchParams.delete(k),
+      );
+      const next = url.pathname + (url.searchParams.toString() ? `?${url.searchParams}` : "");
+      window.history.replaceState({}, "", next);
+    }
   }, [lockedMedia]);
+
+  // Re-assert Edit duration after user finishes loading (user=null looked "free" and wiped slider).
+  useEffect(() => {
+    if (!user || !restoreFromEditRef.current) return;
+    if (freeSettingsLocked) return;
+    const bootDraft = editBootRef.current;
+    const restored = clampEditDuration(bootDraft?.duration);
+    if (restored != null) setDuration(restored);
+    if (bootDraft?.resolution && ["480p", "720p"].includes(bootDraft.resolution)) {
+      setResolution(bootDraft.resolution);
+    }
+    if (
+      bootDraft?.aspectRatio &&
+      (VIDEO_ASPECTS as readonly string[]).includes(bootDraft.aspectRatio)
+    ) {
+      setAspectRatio(bootDraft.aspectRatio);
+    }
+    if (typeof bootDraft?.preferClarity === "boolean") {
+      setApplyClarity(bootDraft.preferClarity);
+    }
+  }, [user, freeSettingsLocked]);
 
   // Restore result cards under Generate after navigating away (Home / Assets).
   useEffect(() => {
@@ -675,6 +735,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   // Free first visit: lock Veronix defaults to 4s model / 480p (+ stock intro).
   useEffect(() => {
     if (!freeSettingsLocked) return;
+    // Never wipe Assets → Edit restored duration/ratio.
+    if (restoreFromEditRef.current) return;
     setDuration(FREE_VERONIX_DURATION_SECONDS);
     setResolution(FREE_VERONIX_RESOLUTION);
     setAspectRatio("16:9");

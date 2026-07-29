@@ -246,18 +246,32 @@ function FeedVideoSlide({
         }
       }
 
+      const editDuration = inferTargetSecondsFromAsset(item);
+      const liveVideoSec =
+        videoRef.current &&
+        Number.isFinite(videoRef.current.duration) &&
+        videoRef.current.duration >= 4
+          ? Math.min(15, Math.max(4, Math.round(videoRef.current.duration)))
+          : null;
+      const durationSec = item.targetSeconds || liveVideoSec || editDuration;
+
       writeEditDraft({
         prompt: prompt || item.prompt || "",
         media: "video",
         startFrame: null,
         referenceImages: characters,
         sourceAssetId: item.id,
-        duration: inferTargetSecondsFromAsset(item),
+        duration: durationSec,
         resolution: item.resolution,
         aspectRatio: item.aspectRatio,
         preferClarity: item.preferClarity,
       });
-      router.push("/create/video?edit=1");
+      const qs = new URLSearchParams({ edit: "1" });
+      qs.set("duration", String(durationSec));
+      if (item.resolution) qs.set("resolution", item.resolution);
+      if (item.aspectRatio) qs.set("aspect", item.aspectRatio);
+      if (item.preferClarity) qs.set("clarity", "1");
+      router.push(`/create/video?${qs.toString()}`);
     } finally {
       setEditing(false);
     }
