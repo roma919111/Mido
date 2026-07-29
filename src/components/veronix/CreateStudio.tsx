@@ -2162,7 +2162,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-4 px-3 pb-8 pt-4 sm:px-6" dir={dir}>
+    <div className="mx-auto w-full max-w-3xl space-y-3 px-4 pb-6 pt-3 sm:space-y-4 sm:px-6 sm:pb-8 sm:pt-4" dir={dir}>
       {platformReady === false && (
         <div className="rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-50">
           التوليد غير مُعدّ على السيرفر. يلزم ضبط مفتاح Veronix لدى المسؤول ثم إعادة التشغيل.
@@ -2213,7 +2213,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       )}
 
       {lockedMedia && (
-        <div className="inline-flex items-center gap-2 rounded-full border border-[#22f0ff]/25 bg-[#22f0ff]/10 px-3 py-1.5 text-xs font-semibold text-[#22f0ff]">
+        <div className="inline-flex max-w-full flex-wrap items-center gap-1.5 rounded-full border border-[#22f0ff]/25 bg-[#22f0ff]/10 px-2.5 py-1 text-[11px] font-semibold text-[#22f0ff] sm:gap-2 sm:px-3 sm:py-1.5 sm:text-xs">
           {lockedMedia === "video" ? t.create.studioVideo : t.create.studioImage}
           <span className="text-white/40">·</span>
           <span className="font-normal text-white/55">
@@ -2224,9 +2224,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         </div>
       )}
 
-      <label className="block rounded-2xl border border-white/10 bg-[#141821] px-4 py-3">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <p className="text-xs uppercase tracking-[0.16em] text-white/40">{t.create.model}</p>
+      <label className="block rounded-2xl border border-white/10 bg-[#141821] px-3 py-2.5 sm:px-4 sm:py-3">
+        <div className="mb-1.5 flex items-center justify-between gap-2 sm:mb-2">
+          <p className="text-[10px] uppercase tracking-[0.16em] text-white/40 sm:text-xs">{t.create.model}</p>
           <ChevronDown className="h-4 w-4 text-white/50" />
         </div>
         <select
@@ -2246,7 +2246,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               setAspectRatio("1:1");
             }
           }}
-          className="w-full appearance-none rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-sm text-white outline-none"
+          className="w-full appearance-none rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none sm:py-2.5"
         >
           {(media === "image" ? imageModels : videoModels).map((model) => (
             <option
@@ -2272,19 +2272,89 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         )}
       </label>
 
-      <div className="rounded-2xl border border-dashed border-white/15 bg-[#141821] p-4">
+      <div className="rounded-2xl border border-white/10 bg-[#141821] p-3">
+        {linkedCharacters.length > 0 ? (
+          <div className="mb-2 flex flex-wrap items-center gap-1.5" dir="rtl">
+            <span className="text-[10px] text-white/40">تم الربط:</span>
+            {linkedCharacters.map((c) => (
+              <span
+                key={c.id}
+                className="inline-flex items-center gap-1 rounded-full border border-[#22f0ff]/30 bg-[#22f0ff]/10 px-2 py-0.5 text-[11px] font-semibold text-[#22f0ff]"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={veronixRefImageSrc(c.url) || c.url}
+                  alt=""
+                  className="h-4 w-4 rounded-full object-cover"
+                />
+                {normalizeCharacterName(c.label)}
+              </span>
+            ))}
+          </div>
+        ) : refNames.some((n) => isCharacterName(n)) ? (
+          <p className="mb-2 text-[11px] text-white/35" dir="rtl">
+            اكتب اسم الشخصية في الوصف للربط التلقائي — مثال: «محمد ذهب إلى الحديقة»
+          </p>
+        ) : null}
+        <textarea
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          rows={4}
+          placeholder={
+            media === "image" ? t.create.promptImage : t.create.promptVideo
+          }
+          className="w-full resize-y bg-transparent text-[14px] leading-relaxed text-white outline-none placeholder:text-white/35 sm:text-[15px]"
+        />
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/70"
+          >
+            <Camera className="h-3.5 w-3.5" />
+            Camera
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleEnhance()}
+            disabled={enhancing || !prompt.trim()}
+            className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/70 disabled:opacity-50"
+          >
+            {enhancing ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-[#22f0ff]" />
+            ) : (
+              <WandSparkles className="h-3.5 w-3.5 text-[#22f0ff]" />
+            )}
+            {enhancing ? t.create.enhancing : t.create.enhance}
+          </button>
+          {promptSceneState ? (
+            <button
+              type="button"
+              onClick={() => {
+                setPromptSceneState(null);
+                setStatus("تم مسح سلسلة الحالة — المشهد التالي يبدأ من الصفر");
+              }}
+              className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/50"
+              title="إعادة ضبط تسلسل الأفعال"
+            >
+              تصفير التسلسل
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-dashed border-white/15 bg-[#141821] p-3 sm:p-4">
         <p className="mb-1 text-sm font-medium text-white/80">
           {t.create.characters}{" "}
           <span className="font-normal text-white/45">{t.create.charactersOptional}</span>
         </p>
-        <p className="mb-3 text-[11px] leading-relaxed text-white/40">
+        <p className="mb-2.5 text-[11px] leading-relaxed text-white/40">
           {t.create.charactersHint}
         </p>
-        <div className="flex flex-wrap gap-3">
+        <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {refPreviews.map((src, i) => (
             <div
               key={refs[i]?.id || `char-slot-${i}`}
-              className="w-[8.5rem] space-y-1.5 rounded-2xl border border-white/10 bg-black/25 p-1.5 sm:w-[9.5rem]"
+              className="w-[6.75rem] shrink-0 space-y-1.5 rounded-2xl border border-white/10 bg-black/25 p-1.5 sm:w-[9.5rem]"
             >
               <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl bg-[#1a1f2a]">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -2350,7 +2420,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             </div>
           ))}
           {refPreviews.length < 4 && (
-            <label className="flex aspect-[3/4] w-[8.5rem] cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border border-dashed border-white/20 text-white/60 sm:w-[9.5rem]">
+            <label className="flex aspect-[3/4] w-[6.75rem] shrink-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border border-dashed border-white/20 text-white/60 sm:w-[9.5rem]">
               <ImagePlus className="h-5 w-5" />
               <span className="text-[10px]">{t.create.add}</span>
               <input
@@ -2397,79 +2467,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         </div>
       )}
 
-      <div className="rounded-2xl border border-white/10 bg-[#141821] p-3">
-        {linkedCharacters.length > 0 ? (
-          <div className="mb-2 flex flex-wrap items-center gap-1.5" dir="rtl">
-            <span className="text-[10px] text-white/40">تم الربط:</span>
-            {linkedCharacters.map((c) => (
-              <span
-                key={c.id}
-                className="inline-flex items-center gap-1 rounded-full border border-[#22f0ff]/30 bg-[#22f0ff]/10 px-2 py-0.5 text-[11px] font-semibold text-[#22f0ff]"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={veronixRefImageSrc(c.url) || c.url}
-                  alt=""
-                  className="h-4 w-4 rounded-full object-cover"
-                />
-                {normalizeCharacterName(c.label)}
-              </span>
-            ))}
-          </div>
-        ) : refNames.some((n) => isCharacterName(n)) ? (
-          <p className="mb-2 text-[11px] text-white/35" dir="rtl">
-            اكتب اسم الشخصية في الوصف للربط التلقائي — مثال: «محمد ذهب إلى الحديقة»
-          </p>
-        ) : null}
-        <textarea
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          rows={5}
-          placeholder={
-            media === "image" ? t.create.promptImage : t.create.promptVideo
-          }
-          className="w-full resize-y bg-transparent text-[15px] text-white outline-none placeholder:text-white/35"
-        />
-        <div className="mt-2 flex flex-wrap gap-2">
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/70"
-          >
-            <Camera className="h-3.5 w-3.5" />
-            Camera
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleEnhance()}
-            disabled={enhancing || !prompt.trim()}
-            className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/70 disabled:opacity-50"
-          >
-            {enhancing ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-[#22f0ff]" />
-            ) : (
-              <WandSparkles className="h-3.5 w-3.5 text-[#22f0ff]" />
-            )}
-            {enhancing ? t.create.enhancing : t.create.enhance}
-          </button>
-          {promptSceneState ? (
-            <button
-              type="button"
-              onClick={() => {
-                setPromptSceneState(null);
-                setStatus("تم مسح سلسلة الحالة — المشهد التالي يبدأ من الصفر");
-              }}
-              className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/50"
-              title="إعادة ضبط تسلسل الأفعال"
-            >
-              تصفير التسلسل
-            </button>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-white/10 bg-[#141821] p-4">
-        <p className="mb-3 text-sm font-semibold text-white">Output</p>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="rounded-2xl border border-white/10 bg-[#141821] p-3 sm:p-4">
+        <p className="mb-2.5 text-sm font-semibold text-white">Output</p>
+        <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
           <label className="space-y-1 text-xs text-white/50">
               {t.create.aspect}
             <select
@@ -2601,26 +2601,29 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         )}
       </div>
 
-      <div className="relative z-20 flex items-stretch gap-2" dir={dir}>
+      <div
+        className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30 -mx-4 flex items-stretch gap-2 border-t border-white/8 bg-[#0b0d12]/95 px-4 py-2.5 backdrop-blur-md sm:static sm:z-20 sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 sm:backdrop-blur-none"
+        dir={dir}
+      >
         {!freeTrial ? (
           <div
-            className="flex shrink-0 flex-col items-center justify-center gap-1 rounded-2xl border border-white/12 bg-[#141821] px-2.5 py-2"
+            className="flex shrink-0 flex-col items-center justify-center gap-0.5 rounded-2xl border border-white/12 bg-[#141821] px-2 py-1.5 sm:gap-1 sm:px-2.5 sm:py-2"
             aria-label={t.create.outputCount}
           >
             <span className="text-[10px] font-semibold text-white/55">عدد</span>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1 sm:gap-1.5">
               <button
                 type="button"
                 onClick={() =>
                   setOutputCount((n) => Math.max(1, n - 1))
                 }
                 disabled={outputCount <= 1}
-                className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-white transition active:scale-95 disabled:opacity-40"
+                className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/10 text-white transition active:scale-95 disabled:opacity-40 sm:h-9 sm:w-9"
                 aria-label="إنقاص العدد"
               >
                 <Minus className="h-4 w-4" />
               </button>
-              <span className="min-w-[1.75rem] text-center text-lg font-black tabular-nums text-white">
+              <span className="min-w-[1.5rem] text-center text-base font-black tabular-nums text-white sm:min-w-[1.75rem] sm:text-lg">
                 {outputCount}
               </span>
               <button
@@ -2631,7 +2634,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                   )
                 }
                 disabled={outputCount >= Math.min(4, Math.max(slotsLeft, 1))}
-                className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-white transition active:scale-95 disabled:opacity-40"
+                className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/10 text-white transition active:scale-95 disabled:opacity-40 sm:h-9 sm:w-9"
                 aria-label="زيادة العدد"
               >
                 <Plus className="h-4 w-4" />
@@ -2653,7 +2656,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             !canStartMore ||
             genConfirmOpen
           }
-          className={`relative flex min-w-0 flex-1 items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-5 py-4 text-base font-bold text-white transition duration-150 enabled:active:scale-[0.97] enabled:active:brightness-110 disabled:opacity-70 ${
+          className={`relative flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-2xl bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-3 py-3 text-sm font-bold text-white transition duration-150 enabled:active:scale-[0.97] enabled:active:brightness-110 disabled:opacity-70 sm:gap-2 sm:px-5 sm:py-4 sm:text-base ${
             genFlash
               ? "scale-[0.98] brightness-110 ring-2 ring-white/45"
               : ""

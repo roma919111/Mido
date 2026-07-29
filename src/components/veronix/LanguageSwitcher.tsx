@@ -11,6 +11,21 @@ export function LanguageSwitcher({ compact = false }: { compact?: boolean }) {
     setLocale(next);
   }
 
+  if (compact) {
+    const next: Locale = locale === "ar" ? "en" : "ar";
+    return (
+      <button
+        type="button"
+        onClick={() => pick(next)}
+        className="inline-flex h-8 min-w-[2rem] items-center justify-center rounded-full border border-white/12 bg-white/5 px-2 text-[11px] font-semibold text-white/85"
+        aria-label={t.lang.switchTo}
+        title={t.lang.switchTo}
+      >
+        {locale === "ar" ? "ع" : "EN"}
+      </button>
+    );
+  }
+
   return (
     <div
       className="inline-flex items-center rounded-full border border-white/12 bg-white/5 p-0.5 text-[11px] font-semibold"
@@ -27,7 +42,7 @@ export function LanguageSwitcher({ compact = false }: { compact?: boolean }) {
         }`}
         aria-pressed={locale === "ar"}
       >
-        {compact ? "ع" : t.lang.ar}
+        {t.lang.ar}
       </button>
       <button
         type="button"
@@ -39,7 +54,7 @@ export function LanguageSwitcher({ compact = false }: { compact?: boolean }) {
         }`}
         aria-pressed={locale === "en"}
       >
-        {compact ? "EN" : t.lang.en}
+        {t.lang.en}
       </button>
     </div>
   );
