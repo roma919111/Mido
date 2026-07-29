@@ -1,12 +1,14 @@
 /**
  * Veronix customer pricing from BytePlus token economics.
  *
- * Package rate: $29.40 / 14,000,000 tokens → $0.0021 per 1K tokens.
+ * Your prepaid pack: ~$30 / 14,000,000 tokens → $0.002143 per 1K tokens.
+ * Console list formula used $0.0035/1K; your pack rate is cheaper.
  * Sell = cost × 1.55 (55% markup).
  * Display credits use a small USD unit so balances feel large.
  */
 
-export const BYTEPLUS_TOKEN_USD_PER_1K = 0.0021;
+/** $30 ÷ 14,000,000 × 1000 */
+export const BYTEPLUS_TOKEN_USD_PER_1K = 30 / 14_000;
 export const BYTEPLUS_IMAGE_COST_USD = 0.04;
 export const BYTEPLUS_FPS = 24;
 /** Profit markup over BytePlus cost (55%). */
