@@ -17,7 +17,7 @@ export function Header({
   connectionError,
 }: HeaderProps) {
   return (
-    <header className="relative z-20 border-b border-white/8 bg-[rgba(10,12,16,0.72)] backdrop-blur-xl">
+    <header className="relative z-30 border-b border-white/8 bg-[rgba(10,12,16,0.95)]">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
         <div className="flex items-center gap-3">
           <div className="leading-tight">
