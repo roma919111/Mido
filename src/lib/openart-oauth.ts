@@ -165,7 +165,11 @@ export class OwnerOAuthClientProvider implements OAuthClientProvider {
 function ensureClientMatchesRedirect(session: OpenArtAuthSession, redirectUri: string) {
   const registered = session.clientInformation?.redirect_uris;
   if (Array.isArray(registered) && registered.length > 0 && !registered.includes(redirectUri)) {
+    // Re-register OAuth client for the new permanent domain, but keep existing
+    // access/refresh tokens until a successful reconnect replaces them.
     delete session.clientInformation;
+    delete session.codeVerifier;
+    delete session.oauthState;
   }
 }
 
