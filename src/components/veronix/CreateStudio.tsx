@@ -439,8 +439,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
             setJobs((prev) => {
               let next = prev.map((j) => {
-                if (!j.assetId) return j;
-                const a = byId.get(j.assetId);
+                if (!j.assetId && !j.historyId) return j;
+                const a =
+                  (j.assetId && byId.get(j.assetId)) ||
+                  (j.historyId
+                    ? assets.find(
+                        (x) => x.historyId && x.historyId === j.historyId,
+                      )
+                    : undefined);
                 if (!a) return j;
                 const status =
                   a.status === "completed" ||
@@ -452,6 +458,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                   ...j,
                   url: a.url || j.url,
                   historyId: a.historyId || j.historyId,
+                  assetId: a.id || j.assetId,
                   status,
                   error: a.error || j.error,
                   targetSeconds:
@@ -564,6 +571,107 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     const id = window.setInterval(tick, 5000);
     return () => window.clearInterval(id);
   }, [runningJobs.length]);
+
+  /**
+   * If Assets already has the finished clip but Create is still "running"
+   * (stale BytePlus poll / privacy-retry historyId), sync the grid from DB.
+   */
+  useEffect(() => {
+    if (!user || !hasRunningJobs) return;
+    let cancelled = false;
+
+    const reconcile = async () => {
+      try {
+        const { res, data } = await fetchJson<{
+          assets?: Array<{
+            id: string;
+            url: string;
+            mediaType: "image" | "video";
+            historyId?: string;
+            status: string;
+            mode?: string;
+            error?: string;
+            targetSeconds?: number;
+          }>;
+        }>("/api/assets");
+        if (cancelled || !res.ok) return;
+        const assets = (data.assets || []).filter(
+          (a) => a.mode !== "sequence-part",
+        );
+        const byId = new Map(assets.map((a) => [a.id, a]));
+
+        setJobsDeferred((prev) => {
+          let changed = false;
+          const next = prev.map((j) => {
+            if (j.status !== "running") return j;
+            const a =
+              (j.assetId && byId.get(j.assetId)) ||
+              (j.historyId
+                ? assets.find((x) => x.historyId && x.historyId === j.historyId)
+                : undefined);
+            if (!a) return j;
+
+            if (a.status === "completed" && a.url) {
+              changed = true;
+              if (j.assetId) activePreviewPolls.delete(j.assetId);
+              if (j.historyId) activePreviewPolls.delete(j.historyId);
+              if (a.historyId) activePreviewPolls.delete(a.historyId);
+              if (j.clientId) activePreviewPolls.delete(j.clientId);
+              return {
+                ...j,
+                url: a.url,
+                historyId: a.historyId || j.historyId,
+                status: "completed" as const,
+                error: undefined,
+                targetSeconds:
+                  j.targetSeconds || inferTargetSecondsFromAsset(a),
+              };
+            }
+
+            if (a.status === "failed") {
+              changed = true;
+              if (j.assetId) activePreviewPolls.delete(j.assetId);
+              if (j.historyId) activePreviewPolls.delete(j.historyId);
+              if (j.clientId) activePreviewPolls.delete(j.clientId);
+              return {
+                ...j,
+                status: "failed" as const,
+                error: a.error || "فشل التوليد",
+                historyId: a.historyId || j.historyId,
+              };
+            }
+
+            // Privacy/mute retry may replace historyId while status stays running.
+            if (a.historyId && a.historyId !== j.historyId) {
+              changed = true;
+              return { ...j, historyId: a.historyId, assetId: a.id || j.assetId };
+            }
+            return j;
+          });
+          return changed ? next : prev;
+        });
+      } catch {
+        // ignore — next tick retries
+      }
+    };
+
+    void reconcile();
+    const id = window.setInterval(() => void reconcile(), 6_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [user?.id, hasRunningJobs, setJobsDeferred]);
+
+  // Clear the big clock when nothing is actually running anymore.
+  useEffect(() => {
+    if (!hasRunningJobs && !generating) {
+      setGenStartedAt(null);
+      setStatus((s) =>
+        s && /جاري التوليد|توليد قيد|توليد سابق/i.test(s) ? null : s,
+      );
+    }
+  }, [hasRunningJobs, generating]);
 
   // Free first visit: lock Veronix defaults to 4s model / 480p (+ stock intro).
   useEffect(() => {
@@ -1106,6 +1214,109 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     activePreviewPolls.add(pollKey);
 
     const match = { clientId, assetId, historyId: historyId || undefined };
+    let liveHistoryId = historyId || "";
+
+    const markCompleted = async (url: string, hid?: string) => {
+      const finalHistoryId = hid || liveHistoryId || undefined;
+      if (brandOutro) {
+        await applyBrandOutro({
+          url,
+          historyId: finalHistoryId,
+          assetId,
+          mediaType,
+          clientId,
+        });
+      } else if (mediaType === "video") {
+        if (applyClarity) setStatus("تحسين الوضوح…");
+        try {
+          const graded = await finalizePaidVideo({
+            url,
+            historyId: finalHistoryId,
+            assetId,
+          });
+          setJobsDeferred((prev) =>
+            patchJob(prev, match, {
+              url: graded,
+              mediaType,
+              historyId: finalHistoryId,
+              assetId,
+              status: "completed",
+            }),
+          );
+        } catch {
+          setJobsDeferred((prev) =>
+            patchJob(prev, match, {
+              url,
+              mediaType,
+              historyId: finalHistoryId,
+              assetId,
+              status: "completed",
+            }),
+          );
+        }
+        setStatus(null);
+      } else {
+        setJobsDeferred((prev) =>
+          patchJob(prev, match, {
+            url,
+            mediaType,
+            historyId: finalHistoryId,
+            assetId,
+            status: "completed",
+          }),
+        );
+        setStatus(null);
+      }
+      setGenStartedAt(null);
+      await onUserRefresh().catch(() => undefined);
+    };
+
+    /** Prefer DB asset — Assets may finish before BytePlus poll returns a URL. */
+    const tryAssetReady = async (): Promise<boolean> => {
+      if (!assetId) return false;
+      try {
+        const { res, data } = await fetchJson<{
+          status?: string;
+          urls?: string[];
+          error?: string;
+          note?: string;
+          creditsRefunded?: boolean;
+        }>(`/api/status?assetId=${encodeURIComponent(assetId)}`);
+        if (!res.ok) return false;
+        const st = String(data.status || "").toUpperCase();
+        const url = data.urls?.[0];
+        if (url) {
+          await markCompleted(url, liveHistoryId);
+          return true;
+        }
+        if (st === "FAILED" || st === "CANCELLED") {
+          const failMsg =
+            data.creditsRefunded || data.note
+              ? data.error?.includes("تم استرجاع")
+                ? data.error
+                : `${data.error || "فشل التوليد"}\nفشل التوليد · تم استرجاع الكريديت`
+              : data.error || "فشل التوليد";
+          setJobsDeferred((prev) =>
+            patchJob(prev, match, {
+              url: "",
+              mediaType,
+              historyId: liveHistoryId || undefined,
+              assetId,
+              status: "failed",
+              error: failMsg,
+            }),
+          );
+          setError(failMsg);
+          setGenStartedAt(null);
+          await onUserRefresh().catch(() => undefined);
+          return true;
+        }
+      } catch {
+        // ignore
+      }
+      return false;
+    };
+
     try {
     for (let i = 0; i < PREVIEW_POLL_ATTEMPTS; i += 1) {
       if (Date.now() - startedAt >= MAX_GENERATE_WALL_MS) {
@@ -1121,10 +1332,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       }
       await new Promise((r) => setTimeout(r, mediaType === "image" ? 2500 : PREVIEW_POLL_MS));
       try {
+        // Every other tick: trust Assets/DB first (fixes "ready in Assets, spinning on Create").
+        if (i % 2 === 0 && (await tryAssetReady())) return;
+
         const statusQs = new URLSearchParams();
-        if (historyId) statusQs.set("historyId", historyId);
-        if (assetId) statusQs.set("assetId", assetId);
-        if (!historyId && !assetId) return;
+        if (liveHistoryId) statusQs.set("historyId", liveHistoryId);
+        else if (assetId) statusQs.set("assetId", assetId);
+        if (!liveHistoryId && !assetId) return;
         const { res, data } = await fetchJson<{
           status?: string;
           urls?: string[];
@@ -1132,61 +1346,21 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           note?: string;
           creditsRefunded?: boolean;
           pollAfterSeconds?: number;
+          historyId?: string;
         }>(`/api/status?${statusQs.toString()}`);
-        if (!res.ok) continue;
+        if (!res.ok) {
+          if (await tryAssetReady()) return;
+          continue;
+        }
         const st = String(data.status || "").toUpperCase();
         const url = data.urls?.[0];
         if (url) {
-          if (brandOutro) {
-            await applyBrandOutro({
-              url,
-              historyId,
-              assetId,
-              mediaType,
-              clientId,
-            });
-          } else if (mediaType === "video") {
-            if (applyClarity) setStatus("تحسين الوضوح…");
-            try {
-              const graded = await finalizePaidVideo({ url, historyId, assetId });
-              setJobsDeferred((prev) =>
-                patchJob(prev, match, {
-                  url: graded,
-                  mediaType,
-                  historyId,
-                  assetId,
-                  status: "completed",
-                }),
-              );
-            } catch {
-              setJobsDeferred((prev) =>
-                patchJob(prev, match, {
-                  url,
-                  mediaType,
-                  historyId,
-                  assetId,
-                  status: "completed",
-                }),
-              );
-            }
-            setStatus(null);
-          } else {
-            setJobsDeferred((prev) =>
-              patchJob(prev, match, {
-                url,
-                mediaType,
-                historyId,
-                assetId,
-                status: "completed",
-              }),
-            );
-            setStatus(null);
-          }
-          setGenStartedAt(null);
-          await onUserRefresh().catch(() => undefined);
+          await markCompleted(url, liveHistoryId);
           return;
         }
         if (st === "FAILED" || st === "CANCELLED") {
+          // BytePlus may fail an old historyId after privacy-retry; check DB asset first.
+          if (await tryAssetReady()) return;
           const failMsg =
             data.creditsRefunded || data.note
               ? data.error?.includes("تم استرجاع")
@@ -1197,7 +1371,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             patchJob(prev, match, {
               url: "",
               mediaType,
-              historyId,
+              historyId: liveHistoryId || undefined,
               assetId,
               status: "failed",
               error: failMsg,
@@ -1216,17 +1390,25 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               (match.assetId && j.assetId === match.assetId) ||
               (match.historyId && j.historyId === match.historyId),
           );
+          // If a parallel reconciler already completed this card, stop polling.
+          if (cur && cur.status === "completed" && cur.url) {
+            return prev;
+          }
           if (
             cur &&
             cur.status === "running" &&
-            (cur.historyId || "") === (historyId || "") &&
+            (cur.historyId || "") === (liveHistoryId || "") &&
             (cur.assetId || "") === (assetId || "")
           ) {
+            // Pick up privacy-retry historyId written by Assets sync.
+            if (cur.historyId && cur.historyId !== liveHistoryId) {
+              liveHistoryId = cur.historyId;
+            }
             return prev;
           }
           return patchJob(prev, match, {
             status: "running",
-            historyId: historyId || undefined,
+            historyId: liveHistoryId || undefined,
             assetId,
             mediaType,
             startedAt,
@@ -1242,10 +1424,15 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         // Keep waiting — tunnel blips should not abort a long Seedance job.
       }
     }
+    // Last chance: Assets often has the clip even when BytePlus poll timed out.
+    if (await tryAssetReady()) return;
     setStatus("ما زال التوليد جاريًا — افتح Assets لمتابعة النتيجة");
     await onUserRefresh().catch(() => undefined);
     } finally {
       activePreviewPolls.delete(pollKey);
+      if (liveHistoryId) activePreviewPolls.delete(liveHistoryId);
+      if (assetId) activePreviewPolls.delete(assetId);
+      if (clientId) activePreviewPolls.delete(clientId);
     }
   }
 
