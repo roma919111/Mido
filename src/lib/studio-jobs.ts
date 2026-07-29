@@ -143,15 +143,28 @@ export function syncRunningJobsFromAssets(
   const clearedKeys: string[] = [];
   let changed = false;
 
+  /** Strip AI framing so Create prompt still matches Assets prompt. */
   const normPrompt = (p?: string) =>
     String(p || "")
+      .replace(/شخصية رقمية مولّدة بالذكاء الاصطناعي[^\n]*/giu, "")
+      .replace(/AI-generated digital[^\n]*/gi, "")
+      .replace(/Not a real-person[^\n]*/gi, "")
+      .replace(/Digital cinematic[^\n]*/gi, "")
       .replace(/\s+/g, " ")
       .trim()
-      .slice(0, 120)
+      .slice(0, 160)
       .toLowerCase();
 
+  const isReadyAsset = (a: AssetSyncRow | undefined) =>
+    Boolean(
+      a &&
+        a.status === "completed" &&
+        a.id &&
+        (Boolean(a.url && String(a.url).trim()) || Boolean(a.historyId)),
+    );
+
   const takeCompleted = (a: AssetSyncRow | undefined, j: StudioJob): StudioJob | null => {
-    if (!a || a.status !== "completed" || !a.url) return null;
+    if (!isReadyAsset(a) || !a) return null;
     if (usedAssetIds.has(a.id)) return null;
     usedAssetIds.add(a.id);
     changed = true;
@@ -161,7 +174,7 @@ export function syncRunningJobsFromAssets(
     if (j.clientId) clearedKeys.push(j.clientId);
     return {
       ...j,
-      url: a.url,
+      url: a.url || j.url || "",
       historyId: a.historyId || j.historyId,
       assetId: a.id || j.assetId,
       status: "completed",
@@ -211,43 +224,47 @@ export function syncRunningJobsFromAssets(
     return j;
   });
 
-  // Second pass: unmatched running ← unmatched completed (prompt then FIFO).
-  const unmatchedCompleted = rows
-    .filter(
-      (a) =>
-        a.status === "completed" &&
-        a.url &&
-        a.id &&
-        !usedAssetIds.has(a.id),
-    )
-    .sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
+  const unmatchedCompleted = () =>
+    rows
+      .filter((a) => isReadyAsset(a) && a.id && !usedAssetIds.has(a.id))
+      .sort((a, b) =>
+        String(a.createdAt || "").localeCompare(String(b.createdAt || "")),
+      );
 
+  // Second pass: unmatched running ← unmatched completed (prompt then FIFO).
   next = next.map((j) => {
     if (j.status !== "running") return j;
+    const pool = unmatchedCompleted();
     const jp = normPrompt(j.prompt);
     const started = j.startedAt || 0;
     let pick =
       jp &&
-      unmatchedCompleted.find((a) => {
+      pool.find((a) => {
         if (usedAssetIds.has(a.id)) return false;
-        if (opts?.mediaType && a.mediaType && a.mediaType !== j.mediaType) return false;
         if (a.mediaType && a.mediaType !== j.mediaType) return false;
-        if (normPrompt(a.prompt) !== jp) return false;
+        const ap = normPrompt(a.prompt);
+        if (!ap || ap !== jp) {
+          // Allow substring match either direction (framing / truncation).
+          if (!ap || !jp || (!ap.includes(jp) && !jp.includes(ap))) return false;
+        }
         if (started > 0 && a.createdAt) {
           const t = Date.parse(a.createdAt);
-          if (Number.isFinite(t) && t + 60_000 < started) return false;
+          if (Number.isFinite(t) && t + 120_000 < started) return false;
         }
         return true;
       });
 
     if (!pick) {
-      pick = unmatchedCompleted.find((a) => {
+      pick = pool.find((a) => {
         if (usedAssetIds.has(a.id)) return false;
         if (a.mediaType && a.mediaType !== j.mediaType) return false;
         if (started > 0 && a.createdAt) {
           const t = Date.parse(a.createdAt);
-          // Asset created within job window (or up to 25 min after start).
-          if (Number.isFinite(t) && (t + 30_000 < started || t - started > 25 * 60_000)) {
+          // Wider window: asset up to 2 min before start, or 40 min after.
+          if (
+            Number.isFinite(t) &&
+            (t + 120_000 < started || t - started > 40 * 60_000)
+          ) {
             return false;
           }
         }
@@ -259,6 +276,25 @@ export function syncRunningJobsFromAssets(
     const done = takeCompleted(pick, j);
     return done || j;
   });
+
+  // Third pass: if Assets has no running rows left, force-pair remaining
+  // Create "running" ghosts to newest unmatched completed clips.
+  const serverStillRunning = rows.some((a) => a.status === "running");
+  if (!serverStillRunning) {
+    const leftover = next.filter((j) => j.status === "running");
+    if (leftover.length) {
+      const pool = unmatchedCompleted().reverse(); // newest first
+      let pi = 0;
+      next = next.map((j) => {
+        if (j.status !== "running") return j;
+        while (pi < pool.length && usedAssetIds.has(pool[pi]!.id)) pi += 1;
+        const pick = pool[pi];
+        if (!pick) return j;
+        pi += 1;
+        return takeCompleted(pick, j) || j;
+      });
+    }
+  }
 
   return { jobs: next, changed, clearedKeys };
 }

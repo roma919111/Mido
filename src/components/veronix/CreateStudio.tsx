@@ -705,6 +705,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           if (!changed) return prev;
           for (const key of clearedKeys) activePreviewPolls.delete(key);
           writeStoredJobs(next);
+          if (!next.some((j) => j.status === "running")) {
+            setGenerating(false);
+            setGenStartedAt(null);
+          }
           return next;
         });
       } catch {
