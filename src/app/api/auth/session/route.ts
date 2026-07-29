@@ -1,28 +1,24 @@
 import { NextResponse } from "next/server";
-import { getOpenArtMcpEndpoint } from "@/lib/openart-mcp";
-import { getEnvAccessToken, hasOwnerCredentials, loadOwnerAuthSession } from "@/lib/owner-credentials";
+import { isBytePlusConfigured, getBytePlusBaseUrl } from "@/lib/byteplus-ark";
 
 export const runtime = "nodejs";
 
 /**
- * Platform connection status (owner account behind the scenes).
- * Customers are never asked to log in.
+ * Platform connection status — BytePlus ModelArk only.
  */
 export async function GET() {
-  const envToken = Boolean(getEnvAccessToken());
-  const ownerSession = await loadOwnerAuthSession();
-  const ownerOAuth = Boolean(ownerSession.tokens?.access_token);
-  const connected = await hasOwnerCredentials();
+  const connected = isBytePlusConfigured();
 
   return NextResponse.json({
-    // Customers always "authenticated" from UX perspective when platform is connected.
     platformConnected: connected,
     authenticated: connected,
-    authMethod: envToken ? "env" : ownerOAuth ? "owner-oauth" : null,
+    authMethod: connected ? "byteplus" : null,
     needsAuth: false,
     needsOwnerSetup: !connected,
     customerLoginRequired: false,
-    mcpEndpoint: getOpenArtMcpEndpoint(),
-    billing: "owner_account",
+    provider: connected ? "byteplus" : "unconfigured",
+    arkBaseUrl: connected ? getBytePlusBaseUrl() : null,
+    mcpEndpoint: null,
+    billing: "customer_wallet",
   });
 }
