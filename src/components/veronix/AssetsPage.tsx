@@ -9,7 +9,7 @@ import {
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Download, Loader2, Pause, Pencil, Play, Trash2, Volume2, VolumeX } from "lucide-react";
+import { Download, Loader2, Pencil, Play, Trash2, Volume2, VolumeX } from "lucide-react";
 import { AppHeader, type CustomerUser } from "./AppHeader";
 import { BottomNav } from "./BottomNav";
 import { fetchJson } from "@/lib/fetch-json";
@@ -78,14 +78,6 @@ async function captureVideoFrame(
   }
 }
 
-function formatClipDuration(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) return "—";
-  const total = Math.max(1, Math.round(seconds));
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
-
 function FeedVideoSlide({
   item,
   active,
@@ -109,16 +101,9 @@ function FeedVideoSlide({
   const [deleting, setDeleting] = useState(false);
   const [posterFailed, setPosterFailed] = useState(false);
   const [promptExpanded, setPromptExpanded] = useState(false);
-  const [videoReady, setVideoReady] = useState(false);
   const [playing, setPlaying] = useState(false);
   /** Only attach video src after Play — neighbors stay on poster (CDN bytes). */
   const [armed, setArmed] = useState(false);
-  const [durationSec, setDurationSec] = useState<number | null>(
-    () =>
-      typeof item.targetSeconds === "number" && item.targetSeconds > 0
-        ? item.targetSeconds
-        : null,
-  );
 
   const mediaUrl = veronixMediaSrc({
     historyId: item.historyId,
@@ -141,23 +126,13 @@ function FeedVideoSlide({
     Boolean(mediaUrl) &&
     item.status !== "failed" &&
     item.status !== "running";
-  const displayDuration =
-    durationSec && durationSec > 0
-      ? durationSec
-      : inferTargetSecondsFromAsset(item);
 
   useEffect(() => {
     setPromptExpanded(false);
-    setVideoReady(false);
     setPosterFailed(false);
     setPlaying(false);
     setArmed(false);
-    setDurationSec(
-      typeof item.targetSeconds === "number" && item.targetSeconds > 0
-        ? item.targetSeconds
-        : null,
-    );
-  }, [item.id, item.targetSeconds]);
+  }, [item.id]);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -362,48 +337,33 @@ function FeedVideoSlide({
             controls={false}
             controlsList="nodownload"
             onClick={togglePlay}
-            onLoadedMetadata={(e) => {
-              const d = e.currentTarget.duration;
-              if (Number.isFinite(d) && d > 0) setDurationSec(d);
-              setVideoReady(true);
-            }}
-            onLoadedData={() => setVideoReady(true)}
-            onCanPlay={() => setVideoReady(true)}
             onPlaying={() => {
-              setVideoReady(true);
               setPlaying(true);
             }}
             onPause={() => setPlaying(false)}
             onError={() => {
               setPosterFailed(true);
-              setVideoReady(false);
               setPlaying(false);
             }}
             className="absolute inset-0 h-full w-full object-contain bg-black"
           />
 
-          {/* Native-like: Play / Pause + duration at the bottom */}
-          <div className="pointer-events-none absolute inset-x-0 bottom-28 z-30 flex items-end justify-between px-5 sm:bottom-32">
+          {/* Center Play — hidden while watching (tap video to pause). */}
+          {!playing ? (
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 togglePlay();
               }}
-              className="pointer-events-auto flex h-14 w-14 items-center justify-center rounded-full bg-white/90 text-black shadow-lg transition active:scale-95"
-              aria-label={playing ? "إيقاف مؤقت" : "تشغيل"}
+              className="absolute inset-0 z-30 flex items-center justify-center"
+              aria-label="تشغيل"
             >
-              {playing ? (
-                <Pause className="h-6 w-6" fill="currentColor" />
-              ) : (
-                <Play className="h-6 w-6 translate-x-0.5" fill="currentColor" />
-              )}
+              <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white/90 text-black shadow-lg transition active:scale-95">
+                <Play className="h-7 w-7 translate-x-0.5" fill="currentColor" />
+              </span>
             </button>
-            <span className="rounded-full bg-black/65 px-2.5 py-1 text-xs font-bold tabular-nums text-white ring-1 ring-white/25">
-              {formatClipDuration(displayDuration)}
-              {!videoReady ? " · …" : ""}
-            </span>
-          </div>
+          ) : null}
         </>
       ) : (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center">
@@ -443,9 +403,12 @@ function FeedVideoSlide({
       )}
 
       {/* Soft bottom gradient for prompt readability */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[42%] bg-gradient-to-t from-black/85 via-black/35 to-transparent" />
+      {!playing ? (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[42%] bg-gradient-to-t from-black/85 via-black/35 to-transparent" />
+      ) : null}
 
-      {/* Side actions — raised above BottomNav; Download always under Edit */}
+      {/* Side actions — hidden while watching */}
+      {!playing ? (
       <div className="absolute bottom-48 left-3 z-40 flex flex-col items-center gap-2.5 sm:bottom-52 sm:left-5">
         <div className="flex flex-col items-center gap-1">
           <button
@@ -523,8 +486,10 @@ function FeedVideoSlide({
           {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
         </button>
       </div>
+      ) : null}
 
-      {/* Title + truncated description with «عرض المزيد» */}
+      {/* Title + truncated description — hidden while watching */}
+      {!playing ? (
       <div
         className="pointer-events-none absolute inset-x-0 bottom-[4.75rem] z-20 px-4 pb-[env(safe-area-inset-bottom)] pl-20 sm:px-6 sm:pl-24"
         dir="rtl"
@@ -568,6 +533,7 @@ function FeedVideoSlide({
           ) : null}
         </div>
       </div>
+      ) : null}
     </section>
   );
 }

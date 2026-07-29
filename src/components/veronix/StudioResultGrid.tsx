@@ -3,7 +3,6 @@
 import { memo, useEffect, useRef, useState } from "react";
 import {
   Loader2,
-  Pause,
   Pencil,
   Play,
   Share2,
@@ -15,14 +14,6 @@ import { writeEditDraft } from "@/lib/edit-draft";
 import { fetchJson } from "@/lib/fetch-json";
 import { useRouter } from "next/navigation";
 import { GenerateClock } from "@/components/veronix/GenerateClock";
-
-function formatDuration(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) return "0:00";
-  const total = Math.max(0, Math.floor(seconds));
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
 
 function jobVisualEqual(a: StudioJob, b: StudioJob): boolean {
   return (
@@ -53,7 +44,6 @@ const ResultCard = memo(function ResultCard({
   const [deleting, setDeleting] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [armed, setArmed] = useState(false);
-  const [durationSec, setDurationSec] = useState(0);
   const waiting = job.status === "running";
   const failed = job.status === "failed";
   const clockStart =
@@ -88,7 +78,6 @@ const ResultCard = memo(function ResultCard({
   useEffect(() => {
     setPlaying(false);
     setArmed(false);
-    setDurationSec(0);
     const el = videoRef.current;
     if (el) {
       try {
@@ -234,35 +223,26 @@ const ResultCard = memo(function ResultCard({
               controlsList="nodownload"
               className="h-full w-full object-contain"
               onClick={togglePlay}
-              onLoadedMetadata={(e) => {
-                const d = e.currentTarget.duration;
-                if (Number.isFinite(d) && d > 0) setDurationSec(d);
-              }}
               onPlay={() => setPlaying(true)}
               onPause={() => setPlaying(false)}
               onEnded={() => setPlaying(false)}
             />
-            {/* Native media-player controls at the bottom */}
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex items-end justify-between bg-gradient-to-t from-black/75 via-black/25 to-transparent px-2.5 pb-2 pt-8">
+            {/* Center Play — disappears while playing; tap video to pause. */}
+            {!playing ? (
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   togglePlay();
                 }}
-                className="pointer-events-auto flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-black shadow"
-                aria-label={playing ? "إيقاف مؤقت" : "تشغيل"}
+                className="absolute inset-0 z-20 flex items-center justify-center"
+                aria-label="تشغيل"
               >
-                {playing ? (
-                  <Pause className="h-4 w-4" fill="currentColor" />
-                ) : (
-                  <Play className="h-4 w-4 translate-x-[1px]" fill="currentColor" />
-                )}
+                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white/90 text-black shadow">
+                  <Play className="h-5 w-5 translate-x-[1px]" fill="currentColor" />
+                </span>
               </button>
-              <span className="rounded bg-black/55 px-1.5 py-0.5 font-mono text-[11px] font-bold tabular-nums text-white">
-                {formatDuration(durationSec || job.targetSeconds || 0)}
-              </span>
-            </div>
+            ) : null}
           </>
         ) : imgSrc ? (
           // eslint-disable-next-line @next/next/no-img-element

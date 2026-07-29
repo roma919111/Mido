@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Outfit, Syne } from "next/font/google";
-import { WhatsAppSupport } from "@/components/veronix/WhatsAppSupport";
 import "./globals.css";
 
 const syne = Syne({
@@ -116,7 +115,6 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
         {children}
-        <WhatsAppSupport />
       </body>
     </html>
   );
