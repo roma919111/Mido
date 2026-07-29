@@ -116,7 +116,7 @@ interface CreateStudioProps {
 
 export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioProps) {
   const router = useRouter();
-  const { t, dir } = useLocale();
+  const { t, dir, locale } = useLocale();
   /** Assets → Edit: keep restored duration/ratio/clarity until the user changes model. */
   const restoreFromEditRef = useRef(false);
   /** `undefined` = not booted yet; `null` = no edit draft. */
@@ -2186,8 +2186,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         !user?.freeVeronixUsed &&
         (user?.credits ?? 0) <= 0 && (
           <div className="rounded-2xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-50">
-            أول فيديو على <span className="font-semibold">Veronix</span> مجاني مرة واحدة —{" "}
-            <span className="font-semibold">مقدمة Veronix + 4 ثوانٍ · 480p</span>.
+            {t.create.freeTrialBanner}
           </div>
         )}
 
@@ -2195,8 +2194,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         <div className="flex gap-2">
           {(
             [
-              { id: "image" as const, label: "صورة" },
-              { id: "video" as const, label: "فيديو" },
+              { id: "image" as const, label: t.create.mediaImage },
+              { id: "video" as const, label: t.create.mediaVideo },
             ] as const
           ).map((item) => (
             <button
@@ -2215,10 +2214,12 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
       {lockedMedia && (
         <div className="inline-flex items-center gap-2 rounded-full border border-[#22f0ff]/25 bg-[#22f0ff]/10 px-3 py-1.5 text-xs font-semibold text-[#22f0ff]">
-          {lockedMedia === "video" ? "استوديو الفيديو" : "استوديو الصور"}
+          {lockedMedia === "video" ? t.create.studioVideo : t.create.studioImage}
           <span className="text-white/40">·</span>
           <span className="font-normal text-white/55">
-            {lockedMedia === "video" ? "موديلات الفيديو فقط" : "موديلات الصور فقط"}
+            {lockedMedia === "video"
+              ? t.create.modelsVideoOnly
+              : t.create.modelsImageOnly}
           </span>
         </div>
       )}
@@ -2255,14 +2256,19 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             >
               {model.available
                 ? model.name
-                : `${model.name} · قريبًا`}
+                : `${model.name} · ${t.create.comingSoon}`}
             </option>
           ))}
         </select>
-        {selectedModel?.tagline ? (
+        {selectedModel?.id === VERONIX_MODEL_ID ||
+        selectedModel?.id === "vyronix-image" ? (
+          <p className="mt-2 text-xs text-white/45">{t.create.createdBy}</p>
+        ) : selectedModel?.tagline ? (
           <p className="mt-2 text-xs text-white/45">{selectedModel.tagline}</p>
         ) : (
-          <p className="mt-2 text-xs text-white/45">اختيار موديل واحد فقط</p>
+          <p className="mt-2 text-xs text-white/45">
+            {locale === "en" ? "Pick one model only" : "اختيار موديل واحد فقط"}
+          </p>
         )}
       </label>
 
@@ -2297,9 +2303,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 />
                 <div className="hidden absolute inset-0 flex flex-col items-center justify-center gap-1 px-2 text-center">
                   <span className="text-[10px] font-semibold text-rose-200">
-                    الصورة لا تظهر
+                    {t.create.imageBroken}
                   </span>
-                  <span className="text-[9px] text-white/45">أعد رفعها</span>
+                  <span className="text-[9px] text-white/45">{t.create.reupload}</span>
                 </div>
                 <button
                   type="button"
@@ -2317,9 +2323,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                   <X className="h-3 w-3" />
                 </button>
               </div>
-              <label className="block space-y-0.5" dir="rtl">
+              <label className="block space-y-0.5" dir={dir}>
                 <span className="block text-center text-[10px] font-semibold text-[#22f0ff]">
-                  اسم الشخصية
+                  {t.create.characterName}
                 </span>
                 <input
                   type="text"
@@ -2335,7 +2341,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                       return next;
                     });
                   }}
-                  placeholder="مثال: محمد"
+                  placeholder={t.create.characterNamePlaceholder}
                   className="w-full rounded-lg border border-[#22f0ff]/35 bg-black/50 px-1.5 py-1.5 text-center text-xs font-semibold text-white outline-none placeholder:font-normal placeholder:text-white/35 focus:border-[#22f0ff]"
                   maxLength={40}
                   autoComplete="off"
@@ -2346,7 +2352,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           {refPreviews.length < 4 && (
             <label className="flex aspect-[3/4] w-[8.5rem] cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border border-dashed border-white/20 text-white/60 sm:w-[9.5rem]">
               <ImagePlus className="h-5 w-5" />
-              <span className="text-[10px]">إضافة</span>
+              <span className="text-[10px]">{t.create.add}</span>
               <input
                 type="file"
                 accept="image/*"
@@ -2581,14 +2587,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                   checked={applyClarity}
                   onChange={(e) => setApplyClarity(e.target.checked)}
                 />
-                ترقية وضوح 480→720
+                {t.create.clarityUpgrade}
                 <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-200 ring-1 ring-emerald-300/30">
                   {t.create.clarityFree}
                 </span>
               </label>
             ) : !freeSettingsLocked ? (
               <p className="mt-2 text-xs text-white/40">
-                720p أصلي — لا حاجة لترقية وضوح إضافية
+                {t.create.native720Note}
               </p>
             ) : null}
           </div>
@@ -2599,7 +2605,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         {!freeTrial ? (
           <div
             className="flex shrink-0 flex-col items-center justify-center gap-1 rounded-2xl border border-white/12 bg-[#141821] px-2.5 py-2"
-            aria-label="عدد الفيديوهات"
+            aria-label={t.create.outputCount}
           >
             <span className="text-[10px] font-semibold text-white/55">عدد</span>
             <div className="flex items-center gap-1.5">

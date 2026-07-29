@@ -94,7 +94,7 @@ export function BottomNav() {
 
   return (
     <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-[120] border-t border-white/10 bg-[#0b0d12]/96 pb-[env(safe-area-inset-bottom)] backdrop-blur-md">
-      <div className="pointer-events-auto mx-auto grid max-w-lg grid-cols-5 items-end px-2 pt-2">
+      <div className="pointer-events-auto mx-auto grid h-[4.35rem] max-w-lg grid-cols-5 items-center px-1.5">
         {items.map((item) => {
           const Icon = item.icon;
           const active = item.center
@@ -108,11 +108,11 @@ export function BottomNav() {
               <div
                 key="create"
                 ref={menuRef}
-                className="relative -mt-6 flex flex-col items-center justify-center"
+                className="relative flex flex-col items-center justify-center"
               >
                 {createOpen && (
                   <div
-                    className="absolute bottom-[4.85rem] left-1/2 z-[130] w-[min(92vw,20.5rem)] -translate-x-1/2"
+                    className="absolute bottom-[4.6rem] left-1/2 z-[130] w-[min(92vw,20.5rem)] -translate-x-1/2"
                     dir={dir}
                   >
                     <div className="overflow-hidden rounded-[22px] border border-white/12 bg-[#12161f] shadow-[0_22px_55px_rgba(0,0,0,0.55)]">
@@ -173,27 +173,27 @@ export function BottomNav() {
                   onClick={() => setCreateOpen((v) => !v)}
                   className="relative flex flex-col items-center justify-center"
                 >
-                  {/* Veronix create mark: squircle + cyan/violet core (logo ai. colors) */}
+                  {/* Veronix create mark — sized to fit the fixed nav row on mobile */}
                   <span
-                    className={`relative flex h-[3.6rem] w-[3.6rem] items-center justify-center rounded-[1.15rem] transition duration-200 ${
+                    className={`relative flex h-12 w-12 items-center justify-center rounded-[0.95rem] transition duration-200 ${
                       createOpen || active ? "scale-[1.04]" : ""
                     }`}
                   >
                     <span
                       aria-hidden
-                      className="absolute -inset-1 rounded-[1.35rem] bg-[conic-gradient(from_210deg,#22f0ff,#7c5cff,#22f0ff)] opacity-90 blur-[1px]"
+                      className="absolute -inset-0.5 rounded-[1.1rem] bg-[conic-gradient(from_210deg,#22f0ff,#7c5cff,#22f0ff)] opacity-90 blur-[0.5px]"
                     />
                     <span
                       aria-hidden
-                      className="absolute inset-0 rounded-[1.15rem] bg-[#0b0d12] ring-1 ring-white/15"
+                      className="absolute inset-0 rounded-[0.95rem] bg-[#0b0d12] ring-1 ring-white/15"
                     />
-                    <span className="relative flex h-[2.85rem] w-[2.85rem] items-center justify-center rounded-[0.95rem] bg-[linear-gradient(145deg,#7c5cff_0%,#4fd8ff_55%,#22f0ff_100%)] shadow-[0_10px_28px_rgba(34,240,255,0.35),inset_0_1px_0_rgba(255,255,255,0.35)]">
-                      <span className="absolute left-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-white/90" />
+                    <span className="relative flex h-10 w-10 items-center justify-center rounded-[0.8rem] bg-[linear-gradient(145deg,#7c5cff_0%,#4fd8ff_55%,#22f0ff_100%)] shadow-[0_8px_20px_rgba(34,240,255,0.3),inset_0_1px_0_rgba(255,255,255,0.35)]">
+                      <span className="absolute left-1 top-1 h-1 w-1 rounded-full bg-white/90" />
                       <Icon className="relative h-5 w-5 text-[#0b0d12]" strokeWidth={2.4} />
                     </span>
                   </span>
                   <span
-                    className={`mt-1 text-[10px] font-semibold ${
+                    className={`mt-0.5 text-[10px] font-semibold leading-none ${
                       active || createOpen ? "text-[#22f0ff]" : "text-white/80"
                     }`}
                   >
@@ -220,7 +220,7 @@ export function BottomNav() {
                   prefetchAssets();
                 }
               }}
-              className={`flex flex-col items-center gap-1 py-2 text-[10px] font-medium ${
+              className={`flex flex-col items-center justify-center gap-1 py-1 text-[10px] font-medium ${
                 active ? "text-white" : "text-white/45"
               }`}
             >

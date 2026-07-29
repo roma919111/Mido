@@ -139,6 +139,7 @@ export type Dictionary = {
     charactersOptional: string;
     charactersHint: string;
     characterName: string;
+    characterNamePlaceholder: string;
     enhance: string;
     enhancing: string;
     generate: string;
@@ -150,6 +151,47 @@ export type Dictionary = {
     audio: string;
     promptVideo: string;
     promptImage: string;
+    mediaImage: string;
+    mediaVideo: string;
+    add: string;
+    imageBroken: string;
+    reupload: string;
+    studioVideo: string;
+    studioImage: string;
+    modelsVideoOnly: string;
+    modelsImageOnly: string;
+    comingSoon: string;
+    createdBy: string;
+    freeTrialBanner: string;
+    outputCount: string;
+    native720Note: string;
+    clarityUpgrade: string;
+  };
+  assets: {
+    video: string;
+    photos: string;
+    browse: string;
+    grid: string;
+    play: string;
+    pause: string;
+    edit: string;
+    delete: string;
+    download: string;
+    showMore: string;
+    showLess: string;
+    noPrompt: string;
+    swipeUp: string;
+    gridHint: string;
+    generating: string;
+    failed: string;
+    failedRefunded: string;
+    creditReturned: string;
+    withAudio: string;
+    noAudio: string;
+    clarityMark: string;
+    mute: string;
+    unmute: string;
+    zoom: string;
   };
   lang: {
     ar: string;
@@ -318,6 +360,7 @@ export const ar: Dictionary = {
     charactersHint:
       "سمِّ كل شخصية ثم اذكر اسمها في الوصف مباشرة — مثل «محمد ذهب إلى الحديقة» بدون @.",
     characterName: "اسم الشخصية",
+    characterNamePlaceholder: "مثال: محمد",
     enhance: "تحسين الوصف",
     enhancing: "جاري التحسين…",
     generate: "Generate",
@@ -329,6 +372,48 @@ export const ar: Dictionary = {
     audio: "توليد صوت",
     promptVideo: "صف مشهد الفيديو والحركة…",
     promptImage: "صف الصورة بالتفصيل…",
+    mediaImage: "صورة",
+    mediaVideo: "فيديو",
+    add: "إضافة",
+    imageBroken: "الصورة لا تظهر",
+    reupload: "أعد رفعها",
+    studioVideo: "استوديو الفيديو",
+    studioImage: "استوديو الصور",
+    modelsVideoOnly: "موديلات الفيديو فقط",
+    modelsImageOnly: "موديلات الصور فقط",
+    comingSoon: "قريبًا",
+    createdBy: "تم إنشاؤه بواسطة VYRONIX",
+    freeTrialBanner:
+      "أول فيديو على Veronix مجاني مرة واحدة — مقدمة Veronix + 4 ثوانٍ · 480p.",
+    outputCount: "عدد الفيديوهات",
+    native720Note: "720p أصلي — لا حاجة لترقية وضوح إضافية",
+    clarityUpgrade: "ترقية وضوح 480→720",
+  },
+  assets: {
+    video: "فيديو",
+    photos: "صور",
+    browse: "تصفح",
+    grid: "فرز",
+    play: "تشغيل",
+    pause: "إيقاف",
+    edit: "تعديل",
+    delete: "حذف",
+    download: "تحميل",
+    showMore: "عرض المزيد",
+    showLess: "عرض أقل",
+    noPrompt: "بدون وصف",
+    swipeUp: "اسحب للأعلى",
+    gridHint: "شبكة الفيديوهات",
+    generating: "جاري التوليد",
+    failed: "فشل التوليد",
+    failedRefunded: "فشل التوليد · تم استرجاع الكريديت",
+    creditReturned: "أُعيد الكريديت إلى رصيدك",
+    withAudio: "بصوت",
+    noAudio: "بدون صوت",
+    clarityMark: "وضوح",
+    mute: "كتم الصوت",
+    unmute: "تشغيل الصوت",
+    zoom: "زوم الشبكة",
   },
   lang: {
     ar: "العربية",
@@ -497,6 +582,7 @@ export const en: Dictionary = {
     charactersHint:
       "Name each character, then mention the name in your prompt — e.g. “Sara walked to the park” (no @ needed).",
     characterName: "Character name",
+    characterNamePlaceholder: "e.g. Sara",
     enhance: "Enhance prompt",
     enhancing: "Enhancing…",
     generate: "Generate",
@@ -508,6 +594,48 @@ export const en: Dictionary = {
     audio: "Generate audio",
     promptVideo: "Describe the video scene and motion…",
     promptImage: "Describe the image in detail…",
+    mediaImage: "Image",
+    mediaVideo: "Video",
+    add: "Add",
+    imageBroken: "Image won’t load",
+    reupload: "Upload again",
+    studioVideo: "Video studio",
+    studioImage: "Image studio",
+    modelsVideoOnly: "Video models only",
+    modelsImageOnly: "Image models only",
+    comingSoon: "Coming soon",
+    createdBy: "Created by VYRONIX",
+    freeTrialBanner:
+      "Your first Veronix video is free once — Veronix intro + 4s · 480p.",
+    outputCount: "Video count",
+    native720Note: "Native 720p — no extra clarity upgrade needed",
+    clarityUpgrade: "Clarity upgrade 480→720",
+  },
+  assets: {
+    video: "Video",
+    photos: "Photos",
+    browse: "Browse",
+    grid: "Grid",
+    play: "Play",
+    pause: "Pause",
+    edit: "Edit",
+    delete: "Delete",
+    download: "Download",
+    showMore: "Show more",
+    showLess: "Show less",
+    noPrompt: "No description",
+    swipeUp: "Swipe up",
+    gridHint: "Video grid",
+    generating: "Generating",
+    failed: "Generation failed",
+    failedRefunded: "Generation failed · credits refunded",
+    creditReturned: "Credits were returned to your balance",
+    withAudio: "With audio",
+    noAudio: "No audio",
+    clarityMark: "clarity",
+    mute: "Mute",
+    unmute: "Unmute",
+    zoom: "Grid zoom",
   },
   lang: {
     ar: "العربية",

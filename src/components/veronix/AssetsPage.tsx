@@ -13,6 +13,7 @@ import {
   Download,
   LayoutGrid,
   Loader2,
+  Pause,
   Pencil,
   Play,
   Rows3,
@@ -24,6 +25,7 @@ import {
 } from "lucide-react";
 import { AppHeader, type CustomerUser } from "./AppHeader";
 import { BottomNav } from "./BottomNav";
+import { useLocale } from "@/components/veronix/LocaleProvider";
 import { fetchJson } from "@/lib/fetch-json";
 import {
   clearEtaStart,
@@ -88,26 +90,29 @@ function readStoredGridZoom(): number {
 }
 
 /** Build generation notes: clarity, duration, aspect, audio. */
-function videoMetaChips(item: AssetItem): string[] {
+function videoMetaChips(
+  item: AssetItem,
+  labels: { withAudio: string; noAudio: string; clarityMark: string },
+): string[] {
   const chips: string[] = [];
   const res = item.resolution?.trim();
   if (res) {
-    chips.push(item.preferClarity ? `${res} · وضوح` : res);
+    chips.push(item.preferClarity ? `${res} · ${labels.clarityMark}` : res);
   } else if (item.preferClarity) {
-    chips.push("وضوح محسّن");
+    chips.push(labels.clarityMark);
   }
 
   if (typeof item.targetSeconds === "number" && item.targetSeconds > 0) {
-    chips.push(`${Math.round(item.targetSeconds)}ث`);
+    chips.push(`${Math.round(item.targetSeconds)}s`);
   } else {
     const fromPrompt = /دمج\s+(\d+)\s+لقطات/u.exec(item.prompt || "");
     if (fromPrompt) {
       const shots = Number(fromPrompt[1]);
-      if (Number.isFinite(shots) && shots > 0) chips.push(`${shots * 4}ث`);
+      if (Number.isFinite(shots) && shots > 0) chips.push(`${shots * 4}s`);
     } else {
       const secMatch = /(\d+)\s*ث/u.exec(item.prompt || "");
       const sec = secMatch ? Number(secMatch[1]) : NaN;
-      if (Number.isFinite(sec) && sec >= 4) chips.push(`${sec}ث`);
+      if (Number.isFinite(sec) && sec >= 4) chips.push(`${sec}s`);
     }
   }
 
@@ -121,7 +126,7 @@ function videoMetaChips(item: AssetItem): string[] {
         ? item.jobMeta.generateAudio
         : undefined;
   if (typeof audio === "boolean") {
-    chips.push(audio ? "بصوت" : "بدون صوت");
+    chips.push(audio ? labels.withAudio : labels.noAudio);
   }
   return chips;
 }
@@ -133,12 +138,17 @@ function VideoMetaNotes({
   item: AssetItem;
   className?: string;
 }) {
-  const chips = videoMetaChips(item);
+  const { t, dir } = useLocale();
+  const chips = videoMetaChips(item, {
+    withAudio: t.assets.withAudio,
+    noAudio: t.assets.noAudio,
+    clarityMark: t.assets.clarityMark,
+  });
   if (!chips.length) return null;
   return (
     <div
       className={`flex flex-wrap items-center gap-1.5 ${className}`}
-      dir="rtl"
+      dir={dir}
     >
       {chips.map((chip) => (
         <span
@@ -204,6 +214,7 @@ function FeedVideoSlide({
   onDeleted: (id: string) => void;
 }) {
   const router = useRouter();
+  const { t, dir } = useLocale();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [editing, setEditing] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -261,27 +272,47 @@ function FeedVideoSlide({
     }
   }, [active, muted, canPlay]);
 
-  const togglePlay = () => {
+  /** Button-only play — call play() in the same user gesture (mobile-safe). */
+  const handlePlayClick = () => {
     const el = videoRef.current;
     if (!el || !canPlay || !mediaUrl) return;
+
+    const tryPlay = () => {
+      void el
+        .play()
+        .then(() => setPlaying(true))
+        .catch(() => setPlaying(false));
+    };
+
     if (!armed) {
       setArmed(true);
-      // src attaches on next paint — play from effect below
+      el.src = mediaUrl;
+      el.load();
+      if (el.readyState >= 2) {
+        tryPlay();
+      } else {
+        const onReady = () => {
+          el.removeEventListener("canplay", onReady);
+          tryPlay();
+        };
+        el.addEventListener("canplay", onReady);
+        // Fallback if canplay already fired.
+        window.setTimeout(() => {
+          if (el.paused && el.readyState >= 2) tryPlay();
+        }, 50);
+      }
       return;
     }
-    if (el.paused) {
-      void el.play().catch(() => undefined);
-    } else {
-      el.pause();
-    }
+
+    tryPlay();
   };
 
-  useEffect(() => {
-    if (!armed || !active || !canPlay) return;
+  const handlePauseClick = () => {
     const el = videoRef.current;
     if (!el) return;
-    void el.play().catch(() => undefined);
-  }, [armed, active, canPlay, src]);
+    el.pause();
+    setPlaying(false);
+  };
 
   const handleEdit = async () => {
     if (editing) return;
@@ -418,7 +449,9 @@ function FeedVideoSlide({
 
   const handleDelete = async () => {
     if (deleting) return;
-    const ok = window.confirm("حذف هذا الفيديو من Assets؟");
+    const ok = window.confirm(
+      dir === "rtl" ? "حذف هذا الفيديو من Assets؟" : "Delete this video from Assets?",
+    );
     if (!ok) return;
     setDeleting(true);
     try {
@@ -427,10 +460,10 @@ function FeedVideoSlide({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: item.id }),
       });
-      if (!res.ok) throw new Error(data.error || "تعذر الحذف");
+      if (!res.ok) throw new Error(data.error || "delete failed");
       onDeleted(item.id);
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : "تعذر الحذف");
+      window.alert(err instanceof Error ? err.message : "delete failed");
     } finally {
       setDeleting(false);
     }
@@ -439,7 +472,7 @@ function FeedVideoSlide({
   return (
     <section
       data-asset-id={item.id}
-      className="relative h-[calc(100dvh-4.35rem)] w-full snap-start snap-always overflow-hidden bg-black"
+      className="relative h-[calc(100dvh-5.5rem-env(safe-area-inset-bottom))] w-full snap-start snap-always overflow-hidden bg-black"
     >
       {canPlay ? (
         <>
@@ -463,34 +496,45 @@ function FeedVideoSlide({
             preload={armed && active ? "auto" : "none"}
             controls={false}
             controlsList="nodownload"
-            onClick={togglePlay}
-            onPlaying={() => {
-              setPlaying(true);
-            }}
+            onPlaying={() => setPlaying(true)}
             onPause={() => setPlaying(false)}
             onError={() => {
               setPosterFailed(true);
               setPlaying(false);
             }}
-            className="absolute inset-0 h-full w-full object-contain bg-black"
+            className="pointer-events-none absolute inset-0 h-full w-full object-contain bg-black"
           />
 
-          {/* Center Play — hidden while watching (tap video to pause). */}
-          {!playing ? (
+          {/* Center Play / Pause buttons only — no tap-on-video. */}
+          {playing ? (
+            <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handlePauseClick();
+                }}
+                className="pointer-events-auto flex h-14 w-14 items-center justify-center rounded-full bg-black/55 text-white shadow-lg ring-1 ring-white/30 transition active:scale-95"
+                aria-label={t.assets.pause}
+              >
+                <Pause className="h-6 w-6" fill="currentColor" />
+              </button>
+            </div>
+          ) : (
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                togglePlay();
+                handlePlayClick();
               }}
               className="absolute inset-0 z-30 flex items-center justify-center"
-              aria-label="تشغيل"
+              aria-label={t.assets.play}
             >
               <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white/90 text-black shadow-lg transition active:scale-95">
                 <Play className="h-7 w-7 translate-x-0.5" fill="currentColor" />
               </span>
             </button>
-          ) : null}
+          )}
         </>
       ) : (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center">
@@ -505,11 +549,12 @@ function FeedVideoSlide({
           ) : null}
           <span className="relative z-10 text-base font-semibold text-white">
             {item.status === "running"
-              ? "جاري التوليد"
+              ? t.assets.generating
               : item.status === "failed"
-                ? item.error?.includes("تم استرجاع")
-                  ? "فشل التوليد · تم استرجاع الكريديت"
-                  : "فشل التوليد"
+                ? item.error?.includes("تم استرجاع") ||
+                  item.error?.toLowerCase().includes("refund")
+                  ? t.assets.failedRefunded
+                  : t.assets.failed
                 : item.status}
           </span>
           {item.status === "running" && (
@@ -521,20 +566,22 @@ function FeedVideoSlide({
               />
             </div>
           )}
-          {item.status === "failed" && item.error?.includes("تم استرجاع") ? (
+          {item.status === "failed" &&
+          (item.error?.includes("تم استرجاع") ||
+            item.error?.toLowerCase().includes("refund")) ? (
             <p className="relative z-10 mt-1 max-w-xs text-xs text-emerald-200/90">
-              أُعيد الكريديت إلى رصيدك
+              {t.assets.creditReturned}
             </p>
           ) : null}
         </div>
       )}
 
-      {/* Soft bottom gradient for prompt readability */}
+      {/* Soft bottom gradient for prompt readability — paused / stopped */}
       {!playing ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[42%] bg-gradient-to-t from-black/85 via-black/35 to-transparent" />
       ) : null}
 
-      {/* Side actions — hidden while watching */}
+      {/* Side actions — visible when paused (after Pause or before Play) */}
       {!playing ? (
       <div className="absolute bottom-36 left-3 z-40 flex flex-col items-center gap-2.5 sm:bottom-40 sm:left-5">
         <div className="flex flex-col items-center gap-1">
@@ -546,7 +593,7 @@ function FeedVideoSlide({
             }}
             disabled={editing || item.status === "running"}
             className="flex h-12 w-12 items-center justify-center rounded-full bg-white/12 text-white ring-1 ring-white/25 backdrop-blur-md disabled:opacity-40"
-            aria-label="تعديل"
+            aria-label={t.assets.edit}
           >
             {editing ? (
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -554,7 +601,7 @@ function FeedVideoSlide({
               <Pencil className="h-5 w-5" />
             )}
           </button>
-          <span className="text-[10px] font-semibold text-white/80">تعديل</span>
+          <span className="text-[10px] font-semibold text-white/80">{t.assets.edit}</span>
         </div>
 
         <div className="flex flex-col items-center gap-1">
@@ -566,7 +613,7 @@ function FeedVideoSlide({
             }}
             disabled={deleting}
             className="flex h-11 w-11 items-center justify-center rounded-full bg-rose-500/20 text-rose-100 ring-1 ring-rose-300/30 backdrop-blur-md disabled:opacity-40"
-            aria-label="حذف"
+            aria-label={t.assets.delete}
           >
             {deleting ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -574,7 +621,7 @@ function FeedVideoSlide({
               <Trash2 className="h-4 w-4" />
             )}
           </button>
-          <span className="text-[10px] font-semibold text-white/80">حذف</span>
+          <span className="text-[10px] font-semibold text-white/80">{t.assets.delete}</span>
         </div>
 
         <div className="flex flex-col items-center gap-1">
@@ -590,7 +637,7 @@ function FeedVideoSlide({
               !(item.url || item.historyId)
             }
             className="flex h-11 w-11 items-center justify-center rounded-full bg-white/12 text-white ring-1 ring-white/25 backdrop-blur-md disabled:opacity-40"
-            aria-label="تحميل"
+            aria-label={t.assets.download}
           >
             {downloading ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -598,7 +645,7 @@ function FeedVideoSlide({
               <Download className="h-4 w-4" />
             )}
           </button>
-          <span className="text-[10px] font-semibold text-white/80">تحميل</span>
+          <span className="text-[10px] font-semibold text-white/80">{t.assets.download}</span>
         </div>
 
         <button
@@ -608,22 +655,22 @@ function FeedVideoSlide({
             onToggleMute();
           }}
           className="mt-1 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white ring-1 ring-white/20 backdrop-blur-md"
-          aria-label={muted ? "تشغيل الصوت" : "كتم الصوت"}
+          aria-label={muted ? t.assets.unmute : t.assets.mute}
         >
           {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
         </button>
       </div>
       ) : null}
 
-      {/* Title + truncated description — hidden while watching */}
+      {/* Title + meta — shown when paused / stopped */}
       {!playing ? (
       <div
         className="pointer-events-none absolute inset-x-0 bottom-20 z-20 px-4 pb-[env(safe-area-inset-bottom)] pl-20 sm:px-6 sm:pl-24"
-        dir="rtl"
+        dir={dir}
       >
         <div className="pointer-events-auto max-w-[min(100%,28rem)]">
           <p className="mb-1 text-[11px] font-semibold tracking-wide text-[#22f0ff]/90">
-            تم إنشاؤه بواسطة VYRONIX
+            {t.create.createdBy}
           </p>
           <h2 className="text-base font-extrabold leading-snug text-white sm:text-lg">
             {title}
@@ -647,7 +694,7 @@ function FeedVideoSlide({
                     }}
                     className="text-xs font-semibold text-white/95 underline-offset-2 hover:underline"
                   >
-                    {promptExpanded ? "عرض أقل" : "عرض المزيد"}
+                    {promptExpanded ? t.assets.showLess : t.assets.showMore}
                   </button>
                 ) : null}
                 <VideoMetaNotes item={item} />
@@ -655,7 +702,7 @@ function FeedVideoSlide({
             </div>
           ) : (
             <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5">
-              <p className="text-sm text-white/50">بدون وصف</p>
+              <p className="text-sm text-white/50">{t.assets.noPrompt}</p>
               <VideoMetaNotes item={item} />
             </div>
           )}
@@ -884,6 +931,7 @@ function useActiveSlide(
 }
 
 export function AssetsPage() {
+  const { t, dir, locale } = useLocale();
   const [user, setUser] = useState<CustomerUser | null>(null);
   const [assets, setAssets] = useState<AssetItem[]>(() => readAssetsCache() || []);
   const [error, setError] = useState<string | null>(null);
@@ -1049,12 +1097,12 @@ export function AssetsPage() {
               }}
             />
           </div>
-          <div className="pointer-events-auto px-4 pb-3" dir="rtl">
+          <div className="pointer-events-auto px-4 pb-3" dir={dir}>
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="font-display text-lg font-extrabold">Assets</p>
                 <p className="text-[11px] text-white/45">
-                  {viewMode === "browse" ? "اسحب للأعلى" : "شبكة الفيديوهات"}
+                  {viewMode === "browse" ? t.assets.swipeUp : t.assets.gridHint}
                 </p>
               </div>
               <div className="flex gap-2">
@@ -1063,14 +1111,14 @@ export function AssetsPage() {
                   onClick={() => setFilter("video")}
                   className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-black"
                 >
-                  فيديو
+                  {t.assets.video}
                 </button>
                 <button
                   type="button"
                   onClick={() => setFilter("image")}
                   className="rounded-full border border-white/20 px-3 py-1 text-xs font-semibold text-white/80"
                 >
-                  صور
+                  {t.assets.photos}
                 </button>
               </div>
             </div>
@@ -1087,7 +1135,7 @@ export function AssetsPage() {
                   }`}
                 >
                   <Rows3 className="h-3.5 w-3.5" />
-                  تصفح
+                  {t.assets.browse}
                 </button>
                 <button
                   type="button"
@@ -1099,7 +1147,7 @@ export function AssetsPage() {
                   }`}
                 >
                   <LayoutGrid className="h-3.5 w-3.5" />
-                  فرز
+                  {t.assets.grid}
                 </button>
               </div>
 
@@ -1114,7 +1162,7 @@ export function AssetsPage() {
                     value={gridZoom}
                     onChange={(e) => setVideoGridZoom(Number(e.target.value))}
                     className="h-1.5 w-full min-w-[5.5rem] accent-[#22f0ff]"
-                    aria-label="زوم الشبكة"
+                    aria-label={t.assets.zoom}
                   />
                   <ZoomIn className="h-3.5 w-3.5 shrink-0 text-white/55" />
                   <span className="shrink-0 text-[10px] font-semibold text-white/70">
@@ -1156,7 +1204,7 @@ export function AssetsPage() {
         {!error && videos.length > 0 && viewMode === "browse" && (
           <div
             ref={feedRef}
-            className="h-[calc(100dvh-4.35rem)] snap-y snap-mandatory overflow-y-scroll overscroll-y-contain"
+            className="h-[calc(100dvh-5.5rem-env(safe-area-inset-bottom))] snap-y snap-mandatory overflow-y-scroll overscroll-y-contain"
             style={{ scrollSnapType: "y mandatory" }}
           >
             {videos.map((item, index) => {
@@ -1187,7 +1235,7 @@ export function AssetsPage() {
         )}
 
         {!error && videos.length > 0 && viewMode === "grid" && (
-          <div className="h-[calc(100dvh-4.35rem)] overflow-y-auto overscroll-y-contain px-3 pb-6 pt-36">
+          <div className="h-[calc(100dvh-5.5rem-env(safe-area-inset-bottom))] overflow-y-auto overscroll-y-contain px-3 pb-6 pt-36">
             <div
               className="mx-auto grid max-w-6xl gap-2 sm:gap-3"
               style={{
@@ -1222,11 +1270,13 @@ export function AssetsPage() {
           });
         }}
       />
-      <main className="mx-auto max-w-6xl px-4 pb-28 pt-6 sm:px-6" dir="rtl">
+      <main className="mx-auto max-w-6xl px-4 pb-28 pt-6 sm:px-6" dir={dir}>
         <div className="flex items-center justify-between gap-3">
           <div>
             <h1 className="font-display text-3xl font-extrabold">Assets</h1>
-            <p className="mt-1 text-sm text-white/50">صورك المحفوظة</p>
+            <p className="mt-1 text-sm text-white/50">
+              {locale === "en" ? "Your saved images" : "صورك المحفوظة"}
+            </p>
           </div>
           <div className="flex gap-2">
             <button
@@ -1234,14 +1284,14 @@ export function AssetsPage() {
               onClick={() => setFilter("video")}
               className="rounded-full border border-white/20 px-3 py-1.5 text-xs font-semibold text-white/80"
             >
-              فيديو
+              {t.assets.video}
             </button>
             <button
               type="button"
               onClick={() => setFilter("image")}
               className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-black"
             >
-              صور
+              {t.assets.photos}
             </button>
           </div>
         </div>
