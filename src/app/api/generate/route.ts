@@ -619,28 +619,41 @@ export async function POST(request: Request) {
         const videoUrl = finished.content?.video_url || "";
 
         if (videoUrl) {
-          // Clarity only when the customer opted in (keeps Assets/generate fast).
-          const finalUrl =
-            body.sequencePart || !preferClarity
-              ? videoUrl
-              : await ensureClarityUrl(videoUrl);
+          // Persist CDN immediately. Clarity runs async so 720p status polls
+          // never hang / time out waiting on ffmpeg.
           await updateAsset(asset.id, user.id, {
             historyId,
-            url: finalUrl,
+            url: videoUrl,
             status: "completed",
             error: undefined,
             hidden: Boolean(body.sequencePart),
             preferClarity,
           });
           if (!body.sequencePart) {
-            warmVideoPosterBackground({ url: finalUrl, historyId });
+            warmVideoPosterBackground({ url: videoUrl, historyId });
+          }
+          if (!body.sequencePart && preferClarity && uiResolution !== "720p") {
+            void (async () => {
+              try {
+                const graded = await ensureClarityUrl(videoUrl);
+                if (graded && graded !== videoUrl) {
+                  await updateAsset(asset.id, user.id, { url: graded });
+                  warmVideoPosterBackground({ url: graded, historyId });
+                }
+              } catch (err) {
+                console.warn(
+                  "[veronix] generate clarity skipped:",
+                  err instanceof Error ? err.message : err,
+                );
+              }
+            })();
           }
           results.push({
             assetId: asset.id,
             modelId: quote.modelId,
             historyId,
             status: "completed",
-            urls: [finalUrl],
+            urls: [videoUrl],
             creditsUsed: quote.totalCredits,
             freeTrial,
             needsBrandOutro: freeTrial,

@@ -8,7 +8,7 @@ import { updateAsset } from "@/lib/db";
 import { cacheVideoLocally } from "@/lib/video-stitch";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 180;
 
 type Body = {
   videoUrl?: string;

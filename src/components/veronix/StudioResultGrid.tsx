@@ -12,6 +12,7 @@ import { veronixMediaSrc, veronixPosterSrc } from "@/lib/media-proxy";
 import type { StudioJob } from "@/lib/studio-jobs";
 import { writeEditDraft } from "@/lib/edit-draft";
 import { fetchJson } from "@/lib/fetch-json";
+import { inferTargetSecondsFromAsset } from "@/lib/generate-eta";
 import { useRouter } from "next/navigation";
 import { GenerateClock } from "@/components/veronix/GenerateClock";
 
@@ -160,7 +161,9 @@ const ResultCard = memo(function ResultCard({
               startFrame: null,
               referenceImages: characters,
               sourceAssetId: job.assetId,
-              duration: asset?.targetSeconds || job.targetSeconds,
+              duration: asset
+                ? inferTargetSecondsFromAsset(asset)
+                : job.targetSeconds,
               aspectRatio: asset?.aspectRatio,
               resolution: asset?.resolution,
               preferClarity: asset?.preferClarity,
@@ -184,6 +187,9 @@ const ResultCard = memo(function ResultCard({
         referenceImages: characters,
         sourceAssetId: job.assetId,
         duration: job.targetSeconds,
+        aspectRatio: undefined,
+        resolution: undefined,
+        preferClarity: undefined,
       });
       router.push(
         job.mediaType === "image"

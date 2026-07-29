@@ -161,6 +161,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const [enhancing, setEnhancing] = useState(false);
   /** Allows starting a new Generate while a previous job continues in Assets. */
   const genRunIdRef = useRef(0);
+  /** Assets → Edit: keep restored duration/ratio/clarity until the user changes model. */
+  const restoreFromEditRef = useRef(false);
   /**
    * Multi-beat stitch is no longer the paid default — duration is a native
    * 4–15s Seedance clip. Flag kept for any restored running multi jobs.
@@ -336,12 +338,15 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     if (lockedMedia && draft.media !== lockedMedia) {
       if (lockedMedia !== "video") return;
     }
+    restoreFromEditRef.current = true;
     setPrompt(stripInternalPromptNotes(draft.prompt || ""));
 
     if (draft.media === "video" || lockedMedia === "video") {
-      if (typeof draft.duration === "number" && draft.duration >= 4) {
-        setDuration(Math.min(15, Math.max(4, Math.round(draft.duration))));
-      }
+      const restoredDuration =
+        typeof draft.duration === "number" && draft.duration >= 4
+          ? Math.min(15, Math.max(4, Math.round(draft.duration)))
+          : null;
+      if (restoredDuration != null) setDuration(restoredDuration);
       if (draft.resolution && ["480p", "720p"].includes(draft.resolution)) {
         setResolution(draft.resolution);
       }
@@ -680,6 +685,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     if (media !== "video" || !selectedModel || freeSettingsLocked) return;
     // Never reset the slider mid-generate (e.g. catalog refresh was wiping 32s → 8s).
     if (generating || hasRunningJobs) return;
+    // Assets → Edit restored duration/ratio/clarity — do not wipe them.
+    if (restoreFromEditRef.current) return;
     applyVideoModelDefaults(selectedModel);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- apply when model identity changes
   }, [
@@ -768,10 +775,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           videoModels.find((m) => m.available) ||
           null;
         setSelectedModelId(next?.id || VERONIX_MODEL_ID);
-        applyVideoModelDefaults(next);
-      } else {
-        setAspectRatio("16:9");
+        if (!restoreFromEditRef.current) applyVideoModelDefaults(next);
       }
+      // Do not force 16:9 on catalog refresh — that wiped Edit-restored ratios.
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- apply defaults only on media/catalog identity changes
   }, [media, imageModels, videoModels, selectedModelId, user?.freeVeronixUsed]);
@@ -1079,6 +1085,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     assetId?: string;
   }): Promise<string> {
     if (!applyClarity) return input.url;
+    // Native 720p already meets the free upgrade target — skip heavy re-encode
+    // that was timing out status/cache and looking like "720p clarity fails".
+    if (String(resolution).toLowerCase() === "720p") return input.url;
     const { res, data } = await fetchJson<{ error?: string; url?: string }>(
       "/api/media/cache",
       {
@@ -1093,7 +1102,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       },
     );
     if (!res.ok || !data.url) {
-      throw new Error(data.error || "Unable to fetch video for clarity grade");
+      console.warn("[veronix] clarity cache failed:", data.error || res.status);
+      return input.url;
     }
     return data.url;
   }
@@ -2153,6 +2163,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           value={selectedModelId}
           onChange={(e) => {
             const id = e.target.value;
+            restoreFromEditRef.current = false;
             setSelectedModelId(id);
             const videoModel = videoModels.find((m) => m.id === id);
             if (videoModel) {

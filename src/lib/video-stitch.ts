@@ -79,27 +79,30 @@ async function downloadToFile(url: string, dest: string) {
  * Mild denoise + edge restore only — no cinematic grade / glow / heavy sat.
  */
 export async function applyClarityGrade(inputPath: string, outputPath: string): Promise<void> {
-  // Scale so the shorter side reaches 720 (or long side 1280 if already tall),
-  // then light denoise + soft unsharp. Preserves original aspect ratio.
-  const cleanScale =
-    "scale=" +
-    "w='if(gte(iw\\,ih)\\,min(1280\\,iw*720/ih)\\,720)':" +
-    "h='if(gte(iw\\,ih)\\,720\\,min(1280\\,ih*720/iw))':" +
-    "flags=lanczos," +
-    "scale=trunc(iw/2)*2:trunc(ih/2)*2";
-
-  const attempts: Array<{ vf: string }> = [
+  // Prefer short-side 720 with even dims. Avoid fragile nested if() graphs that
+  // fail on some Railway ffmpeg builds; fall back to simple scale ladders.
+  const attempts: Array<{ vf: string; extra?: string[] }> = [
     {
-      vf: `${cleanScale},hqdn3d=0.8:0.8:2:2,unsharp=5:5:0.55:5:5:0.0,format=yuv420p`,
+      // Landscape → height 720; portrait → width 720. Then even dims + light polish.
+      vf:
+        "scale='if(gte(iw\\,ih)\\,-2\\,720)':'if(gte(iw\\,ih)\\,720\\,-2)':flags=lanczos," +
+        "scale=trunc(iw/2)*2:trunc(ih/2)*2," +
+        "hqdn3d=0.8:0.8:2:2,unsharp=5:5:0.55:5:5:0.0,format=yuv420p",
     },
     {
-      vf: `${cleanScale},unsharp=5:5:0.5:5:5:0.0,format=yuv420p`,
+      vf:
+        "scale='if(gte(iw\\,ih)\\,-2\\,720)':'if(gte(iw\\,ih)\\,720\\,-2)':flags=lanczos," +
+        "scale=trunc(iw/2)*2:trunc(ih/2)*2,unsharp=5:5:0.5:5:5:0.0,format=yuv420p",
+    },
+    {
+      vf: "scale=-2:720:flags=lanczos,scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p",
     },
     {
       vf: "scale=1280:-2:flags=lanczos,scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p",
     },
   ];
 
+  let lastErr = "";
   for (const attempt of attempts) {
     try {
       await run("ffmpeg", [
@@ -108,6 +111,10 @@ export async function applyClarityGrade(inputPath: string, outputPath: string): 
         inputPath,
         "-vf",
         attempt.vf,
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a?",
         "-c:v",
         "libx264",
         "-preset",
@@ -118,15 +125,50 @@ export async function applyClarityGrade(inputPath: string, outputPath: string): 
         "yuv420p",
         "-c:a",
         "aac",
+        "-ac",
+        "2",
+        "-ar",
+        "44100",
         "-movflags",
         "+faststart",
+        ...(attempt.extra || []),
         outputPath,
       ]);
       return;
-    } catch {
-      // try next graph
+    } catch (err) {
+      lastErr = err instanceof Error ? err.message : String(err);
     }
   }
+
+  // Last resort: video-only scale (drop broken audio tracks).
+  try {
+    await run("ffmpeg", [
+      "-y",
+      "-i",
+      inputPath,
+      "-vf",
+      "scale=-2:720:flags=lanczos,scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p",
+      "-map",
+      "0:v:0",
+      "-an",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-crf",
+      "18",
+      "-pix_fmt",
+      "yuv420p",
+      "-movflags",
+      "+faststart",
+      outputPath,
+    ]);
+    return;
+  } catch (err) {
+    lastErr = err instanceof Error ? err.message : String(err);
+  }
+
+  console.warn("[veronix] clarity grade failed, keeping source:", lastErr.slice(-400));
   await copyFile(inputPath, outputPath);
 }
 

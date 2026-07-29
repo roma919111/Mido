@@ -108,19 +108,37 @@ export async function GET(request: Request) {
         const keepHidden = existing?.mode === "sequence-part";
         if (urls[0]) {
           const wantClarity = Boolean(existing?.preferClarity);
-          const graded =
-            keepHidden || !wantClarity
-              ? urls[0]
-              : await ensureClarityUrl(urls[0]);
+          // Never block status polling on ffmpeg clarity — that timed out 720p
+          // jobs and looked like "clarity always fails". Save CDN first; grade async.
           await updateAsset(targetId, user.id, {
             historyId,
-            url: graded,
+            url: urls[0],
             status: "completed",
             error: undefined,
             hidden: keepHidden ? true : false,
           }).catch(() => null);
-          urls[0] = graded;
-          warmVideoPosterBackground({ url: graded, historyId });
+          warmVideoPosterBackground({ url: urls[0], historyId });
+          if (wantClarity && !keepHidden) {
+            // Native 720p already meets the free upgrade target.
+            const already720 =
+              String(existing?.resolution || "").toLowerCase() === "720p";
+            if (!already720) {
+              void (async () => {
+                try {
+                  const graded = await ensureClarityUrl(urls[0]!);
+                  if (graded && graded !== urls[0]) {
+                    await updateAsset(targetId, user.id, { url: graded });
+                    warmVideoPosterBackground({ url: graded, historyId });
+                  }
+                } catch (err) {
+                  console.warn(
+                    "[veronix] async clarity skipped:",
+                    err instanceof Error ? err.message : err,
+                  );
+                }
+              })();
+            }
+          }
         } else if (status === "FAILED") {
           const refund = await refundFailedAssetCredits({
             userId: user.id,

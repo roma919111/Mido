@@ -316,7 +316,7 @@ async function syncRunningAssets(userId: string) {
     }
   }
 
-  // Lazy clarity only for videos the customer opted into.
+  // Lazy clarity only for videos the customer opted into (skip native 720p).
   for (const asset of latest
     .filter(
       (a) =>
@@ -325,6 +325,7 @@ async function syncRunningAssets(userId: string) {
         a.mode !== "sequence-part" &&
         a.hidden !== true &&
         a.preferClarity === true &&
+        String(a.resolution || "").toLowerCase() !== "720p" &&
         needsClarityGrade(a.url),
     )
     .slice(0, 4)) {

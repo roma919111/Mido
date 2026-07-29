@@ -20,6 +20,7 @@ export function needsClarityGrade(url: string | undefined | null): boolean {
 
 /**
  * Grade a completed visible video URL. On failure returns the original URL.
+ * Never throws — callers must stay non-blocking (status / Assets polls).
  */
 export async function ensureClarityUrl(
   url: string,

@@ -252,7 +252,7 @@ function FeedVideoSlide({
         startFrame: null,
         referenceImages: characters,
         sourceAssetId: item.id,
-        duration: item.targetSeconds,
+        duration: inferTargetSecondsFromAsset(item),
         resolution: item.resolution,
         aspectRatio: item.aspectRatio,
         preferClarity: item.preferClarity,
@@ -809,7 +809,7 @@ export function AssetsPage() {
           <div className="pointer-events-auto flex items-center justify-between px-4 pb-3" dir="rtl">
             <div>
               <p className="font-display text-lg font-extrabold">Assets</p>
-              <p className="text-[11px] text-white/45">اسحب للأعلى مثل تيك توك</p>
+              <p className="text-[11px] text-white/45">اسحب للأعلى</p>
             </div>
             <div className="flex gap-2">
               <button
