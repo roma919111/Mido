@@ -44,7 +44,8 @@ export function PromptInput({
         onChange={(e) => onChange(e.target.value)}
         rows={5}
         placeholder={placeholder}
-        className="w-full resize-y rounded-2xl border border-white/10 bg-[rgba(8,10,14,0.75)] px-4 py-3 text-[15px] leading-relaxed text-white outline-none transition placeholder:text-white/30 focus:border-[var(--accent)]/50 focus:shadow-[0_0_0_3px_rgba(46,230,166,0.12)]"
+        autoComplete="off"
+        className="relative z-20 w-full resize-y rounded-2xl border border-white/10 bg-[rgba(8,10,14,0.95)] px-4 py-3 text-[15px] leading-relaxed text-white outline-none transition placeholder:text-white/30 focus:border-[var(--accent)]/50 focus:shadow-[0_0_0_3px_rgba(46,230,166,0.12)]"
       />
     </div>
   );
