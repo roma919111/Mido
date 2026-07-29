@@ -37,8 +37,8 @@ export type VideoFormFallback = {
 };
 
 /** Fallback OpenArt form options when live form sync is unavailable. */
-/** Clarity ladder shown in Create (480p → highest). */
-export const VIDEO_CLARITY_LADDER = ["480p", "720p", "1080p", "4k"] as const;
+/** Clarity ladder shown in Create — 480p / 720p only (no 1080p / 4K). */
+export const VIDEO_CLARITY_LADDER = ["480p", "720p"] as const;
 
 export const VIDEO_FORM_FALLBACKS: Record<string, VideoFormFallback> = {
   "byte-plus-seedance-2-mini": {

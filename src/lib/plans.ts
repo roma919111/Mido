@@ -19,6 +19,10 @@ export interface TopUpPack {
   description: string;
 }
 
+/**
+ * Credits sized so balances feel large (1 credit ≈ $0.0001 sell).
+ * Feature counts assume 4s · 480p video (~1,266 credits) and images (~620).
+ */
 export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
   {
     id: "free",
@@ -32,17 +36,17 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     id: "mini",
     name: "برو",
     priceUsd: 10,
-    monthlyCredits: 7200,
-    description: "باقة شهرية مناسبة للإنتاج المنتظم.",
-    features: ["١٥٠ فيديو ~", "١٢٠٠ صورة ~"],
+    monthlyCredits: 150_000,
+    description: "باقة شهرية مناسبة للإنتاج المنتظم — وضوح 480p و720p.",
+    features: ["٢٤٢ صورة", "١١٨ فيديو"],
   },
   {
     id: "pro",
     name: "الترا",
     priceUsd: 15,
-    monthlyCredits: 14400,
-    description: "أعلى باقة لصنّاع المحتوى بكثافة عالية.",
-    features: ["٣٠٠ فيديو ~", "١٢٠٠٠ صورة ~"],
+    monthlyCredits: 260_000,
+    description: "أعلى باقة لصنّاع المحتوى بكثافة عالية — وضوح 480p و720p.",
+    features: ["٤١٩ صورة", "٢٠٥ فيديو"],
     highlight: true,
   },
 ];
@@ -52,21 +56,21 @@ export const TOPUP_PACKS: TopUpPack[] = [
     id: "topup-2000",
     name: "شحن سريع",
     priceUsd: 4,
-    credits: 2000,
+    credits: 35_000,
     description: "دفعة سريعة لجلسة توليد واحدة أو اثنتين.",
   },
   {
     id: "topup-5000",
     name: "شحن متوازن",
     priceUsd: 8,
-    credits: 5000,
+    credits: 75_000,
     description: "الأكثر توازناً لصنّاع المحتوى الأسبوعي.",
   },
   {
     id: "topup-10000",
     name: "شحن احترافي",
     priceUsd: 14,
-    credits: 10000,
+    credits: 140_000,
     description: "رصيد كبير للإنتاج المتواصل دون انقطاع.",
   },
 ];

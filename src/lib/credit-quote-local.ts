@@ -1,7 +1,7 @@
 /**
  * Client-safe credit pricing (no node:fs).
- * Same seeded table ×1.8 as the server — used for instant UI display only.
- * Real wallet debit happens in /api/generate.
+ * Veronix video/image use BytePlus token math (+55% markup).
+ * Other catalog models keep the legacy seeded table ×1.8 for display only.
  */
 
 import { getCatalogModel, resolveMcpModel, type CatalogModel } from "@/lib/model-catalog";
@@ -14,6 +14,14 @@ import {
   type QuoteInput,
   type QuoteResult,
 } from "@/lib/credit-multiplier";
+import {
+  VERONIX_PROFIT_MARKUP,
+  isVeronixImageModel,
+  isVeronixVideoModel,
+  normalizeVideoResolution,
+  quoteVeronixImageCredits,
+  quoteVeronixVideoCredits,
+} from "@/lib/byteplus-pricing";
 
 function fallbackEstimate(input: QuoteInput): number {
   if (input.media === "image") return 15;
@@ -97,8 +105,61 @@ function buildParams(
   };
 }
 
+function quoteBytePlusResult(
+  input: QuoteInput,
+  mcpModel: string,
+  mode: string,
+  params: Record<string, unknown>,
+  available: boolean,
+): QuoteResult | null {
+  if (input.media === "video" && isVeronixVideoModel(input.modelId, mcpModel)) {
+    const resolution = normalizeVideoResolution(
+      typeof params.resolution === "string"
+        ? params.resolution
+        : input.resolution,
+    );
+    const totalCredits = quoteVeronixVideoCredits({
+      duration: input.duration,
+      resolution,
+      videoCount: input.videoCount ?? 1,
+    });
+    return {
+      modelId: input.modelId,
+      mcpModel,
+      mode,
+      totalCredits,
+      unitCredits: totalCredits,
+      openArtCredits: totalCredits,
+      multiplier: VERONIX_PROFIT_MARKUP,
+      available: available || true,
+      config: { ...params, resolution },
+      pricingNote: `BytePlus tokens × $${0.0021}/1K × ${VERONIX_PROFIT_MARKUP} markup`,
+      source: "estimate",
+    };
+  }
+
+  if (input.media === "image" && isVeronixImageModel(input.modelId, mcpModel)) {
+    const totalCredits = quoteVeronixImageCredits(input.imageCount ?? 1);
+    return {
+      modelId: input.modelId,
+      mcpModel,
+      mode,
+      totalCredits,
+      unitCredits: totalCredits,
+      openArtCredits: totalCredits,
+      multiplier: VERONIX_PROFIT_MARKUP,
+      available: available || true,
+      config: params,
+      pricingNote: `BytePlus image $${0.04} × ${VERONIX_PROFIT_MARKUP} markup`,
+      source: "estimate",
+    };
+  }
+
+  return null;
+}
+
 /**
- * Instant UI pricing from the seeded cost table (no network / no node:fs).
+ * Instant UI pricing — duration/resolution changes update credits immediately.
  */
 export function quoteCreditsLocal(input: QuoteInput): QuoteResult {
   const catalog = getCatalogModel(input.modelId);
@@ -106,6 +167,10 @@ export function quoteCreditsLocal(input: QuoteInput): QuoteResult {
   const available = Boolean(catalog?.available && catalog.mcpId);
   const mode = resolveMode(catalog, input);
   const params = buildParams(input, mcpModel);
+
+  const bytePlus = quoteBytePlusResult(input, mcpModel, mode, params, available);
+  if (bytePlus) return bytePlus;
+
   const mappedRes =
     typeof params.resolution === "string"
       ? params.resolution
@@ -145,14 +210,6 @@ export function quoteCreditsLocal(input: QuoteInput): QuoteResult {
 
   const openArtCredits = fallbackEstimate(input);
   const totalCredits = toVeronixCredits(openArtCredits);
-  const isVyronixImage =
-    input.media === "image" &&
-    (input.modelId === "vyronix-image" || mcpModel.includes("seedream"));
-  const isVyronixVideo =
-    input.media === "video" &&
-    (input.modelId === "veronix" ||
-      input.modelId === "seedance-2-mini" ||
-      mcpModel.includes("seedance"));
 
   return {
     modelId: input.modelId,
@@ -165,13 +222,7 @@ export function quoteCreditsLocal(input: QuoteInput): QuoteResult {
     available,
     config: params,
     pricingNote: withMultiplierNote(
-      isVyronixImage
-        ? "VYRONIX image studio (BytePlus)"
-        : isVyronixVideo
-          ? "VYRONIX video studio (BytePlus)"
-          : available
-            ? "Local estimate"
-            : "Estimate for unavailable model",
+      available ? "Local estimate" : "Estimate for unavailable model",
     ),
     source: "estimate",
   };

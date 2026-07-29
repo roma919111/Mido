@@ -301,8 +301,7 @@ async function enrichVideoFormOptions(catalog: SyncedCatalogFile): Promise<void>
       model.audioDefault = options.audioDefault;
       model.audioParam = options.audioParam;
 
-      // Veronix Create UI: always offer 4–15s and the full clarity ladder
-      // (480p → 4K), even if OpenArt’s form enum is narrower.
+      // Veronix Create UI: always offer 4–15s and 480p/720p only.
       if (
         model.id === VERONIX_MODEL_ID ||
         model.mcpId === "byte-plus-seedance-2-mini"

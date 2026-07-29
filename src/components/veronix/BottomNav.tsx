@@ -128,7 +128,7 @@ export function BottomNav() {
                             <Clapperboard className="h-6 w-6" />
                           </span>
                           <span className="text-sm font-bold text-white">فيديو VYRONIX</span>
-                          <span className="text-[11px] text-white/45">4–15 ثانية · حتى 4K</span>
+                          <span className="text-[11px] text-white/45">4–15 ثانية · 480p / 720p</span>
                         </button>
                         <button
                           type="button"

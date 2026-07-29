@@ -28,6 +28,7 @@ import {
   getCatalogModel,
   setLiveCatalogCache,
 } from "@/lib/model-catalog";
+import { normalizeVideoResolution } from "@/lib/byteplus-pricing";
 import { loadSyncedCatalog } from "@/lib/openart-catalog-sync";
 import {
   buildSeedanceCharacterPrompt,
@@ -442,7 +443,9 @@ export async function POST(request: Request) {
       const catalog = getCatalogModel(quote.modelId);
       const uiResolution = freeTrial
         ? FREE_VERONIX_RESOLUTION
-        : body.resolution || catalog?.resolutionDefault || "720p";
+        : normalizeVideoResolution(
+            body.resolution || catalog?.resolutionDefault || "720p",
+          );
       const bounds = durationBoundsForModel(catalog);
       const requestedDuration = body.duration ?? bounds.max;
       const modelDuration = freeTrial

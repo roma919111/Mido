@@ -271,7 +271,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const selectedModel = allModels.find((m) => m.id === selectedModelId) ?? null;
   const durationBounds = durationBoundsForModel(selectedModel);
   const formOptions = formOptionsForModel(selectedModel);
-  /** Paid Veronix: always show full clarity ladder 480p → 4K. */
+  /** Paid Veronix: 480p / 720p only. */
   const resolutionOptions =
     selectedModelId === VERONIX_MODEL_ID && !freeSettingsLocked
       ? [...VIDEO_CLARITY_LADDER]
@@ -695,6 +695,23 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     selectedModel?.mcpId,
     generating,
     hasRunningJobs,
+  ]);
+
+  // Drop legacy 1080p / 4K selections — Veronix only sells 480p / 720p.
+  useEffect(() => {
+    if (media !== "video" || freeSettingsLocked) return;
+    if (!resolutionOptions.length) return;
+    if (!resolutionOptions.includes(resolution)) {
+      setResolution(
+        formOptions.resolutionDefault || resolutionOptions[0] || "720p",
+      );
+    }
+  }, [
+    media,
+    freeSettingsLocked,
+    resolution,
+    resolutionOptions,
+    formOptions.resolutionDefault,
   ]);
 
   const countdownTargetSeconds =
@@ -2429,7 +2446,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               <span className="text-white/70">المدة</span>
               <span className="font-semibold tabular-nums text-[#22f0ff]">
                 {Math.min(sliderMax, Math.max(sliderMin, duration))}ث
-                {freeSettingsLocked ? " · مجاني أول مرة" : ""}
+                {freeSettingsLocked ? " · مجاني أول مرة" : ` · −${creditCost.toLocaleString("en-US")} كريدت`}
               </span>
             </div>
             <input

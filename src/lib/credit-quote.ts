@@ -8,6 +8,14 @@ import {
   type QuoteInput,
   type QuoteResult,
 } from "@/lib/credit-multiplier";
+import {
+  VERONIX_PROFIT_MARKUP,
+  isVeronixImageModel,
+  isVeronixVideoModel,
+  normalizeVideoResolution,
+  quoteVeronixImageCredits,
+  quoteVeronixVideoCredits,
+} from "@/lib/byteplus-pricing";
 
 export {
   VERONIX_CREDIT_MULTIPLIER,
@@ -107,6 +115,59 @@ function buildParams(
   };
 }
 
+function quoteBytePlusResult(
+  input: QuoteInput,
+  mcpModel: string,
+  mode: string,
+  params: Record<string, unknown>,
+  available: boolean,
+): QuoteResult | null {
+  if (input.media === "video" && isVeronixVideoModel(input.modelId, mcpModel)) {
+    const resolution = normalizeVideoResolution(
+      typeof params.resolution === "string"
+        ? params.resolution
+        : input.resolution,
+    );
+    const totalCredits = quoteVeronixVideoCredits({
+      duration: input.duration,
+      resolution,
+      videoCount: input.videoCount ?? 1,
+    });
+    return {
+      modelId: input.modelId,
+      mcpModel,
+      mode,
+      totalCredits,
+      unitCredits: totalCredits,
+      openArtCredits: totalCredits,
+      multiplier: VERONIX_PROFIT_MARKUP,
+      available: available || true,
+      config: { ...params, resolution },
+      pricingNote: `BytePlus tokens × $0.0021/1K × ${VERONIX_PROFIT_MARKUP} markup`,
+      source: "estimate",
+    };
+  }
+
+  if (input.media === "image" && isVeronixImageModel(input.modelId, mcpModel)) {
+    const totalCredits = quoteVeronixImageCredits(input.imageCount ?? 1);
+    return {
+      modelId: input.modelId,
+      mcpModel,
+      mode,
+      totalCredits,
+      unitCredits: totalCredits,
+      openArtCredits: totalCredits,
+      multiplier: VERONIX_PROFIT_MARKUP,
+      available: available || true,
+      config: params,
+      pricingNote: `BytePlus image $0.04 × ${VERONIX_PROFIT_MARKUP} markup`,
+      source: "estimate",
+    };
+  }
+
+  return null;
+}
+
 function quoteResultFromCached(
   input: QuoteInput,
   mcpModel: string,
@@ -146,14 +207,6 @@ function quoteEstimateResult(
 ): QuoteResult {
   const openArtCredits = fallbackEstimate(input);
   const totalCredits = toVeronixCredits(openArtCredits);
-  const isVyronixImage =
-    input.media === "image" &&
-    (input.modelId === "vyronix-image" || mcpModel.includes("seedream"));
-  const isVyronixVideo =
-    input.media === "video" &&
-    (input.modelId === "veronix" ||
-      input.modelId === "seedance-2-mini" ||
-      mcpModel.includes("seedance"));
 
   return {
     modelId: input.modelId,
@@ -166,13 +219,7 @@ function quoteEstimateResult(
     available,
     config: params,
     pricingNote: withMultiplierNote(
-      isVyronixImage
-        ? "VYRONIX image studio (BytePlus)"
-        : isVyronixVideo
-          ? "VYRONIX video studio (BytePlus)"
-          : available
-            ? "Local estimate"
-            : "Estimate for unavailable model",
+      available ? "Local estimate" : "Estimate for unavailable model",
     ),
     source: "estimate",
   };
@@ -213,6 +260,10 @@ export async function quoteOpenArtCredits(
   const mode = resolveMode(catalog, input);
   const params = buildParams(input, mcpModel);
 
+  // Veronix / BytePlus always use token formula — never OpenArt cache.
+  const bytePlus = quoteBytePlusResult(input, mcpModel, mode, params, available);
+  if (bytePlus) return bytePlus;
+
   if (allowCache) {
     const fromCache = await quoteFromCache(input, mcpModel, mode, params);
     if (fromCache) {
@@ -234,10 +285,11 @@ export async function quoteMultipleModels(
     quotes.push(await quoteOpenArtCredits({ ...base, modelId }, options));
   }
   const totalCredits = quotes.reduce((sum, q) => sum + q.totalCredits, 0);
-  return { quotes, totalCredits, multiplier: VERONIX_CREDIT_MULTIPLIER };
+  const multiplier = quotes[0]?.multiplier ?? VERONIX_CREDIT_MULTIPLIER;
+  return { quotes, totalCredits, multiplier };
 }
 
-/** All live catalog models that must always go through ×1.8. */
+/** All live catalog models that must always go through pricing. */
 export function listPricedCatalogModels() {
   return getActiveCatalog().all.filter((m) => m.available && m.mcpId);
 }
