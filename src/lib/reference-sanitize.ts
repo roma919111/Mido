@@ -156,12 +156,13 @@ export const AI_DIGITAL_FILTER_ENABLED = true;
 /**
  * Filter preset:
  * - `"lite"`  → AI look only (smooth + color + sharpen). NO soft-glow / bloom /
- *               background isolation / cinematic tint. Active trial mode.
+ *               background isolation / cinematic tint. Active now — avoids the
+ *               near black-and-white crush from full contrast/bloom/isolation.
  * - `"full"`  → frozen «نجحت المهمة» pipeline (eee7049). Restore when the owner
  *               says the emergency word: **طوارئ**
  */
 export type AiFilterPreset = "lite" | "full";
-export const AI_FILTER_PRESET: AiFilterPreset = "full";
+export const AI_FILTER_PRESET: AiFilterPreset = "lite";
 
 async function plainCompressForBytePlus(bytes: Buffer): Promise<Buffer> {
   const { buf } = await normalizeCanvas(bytes);
@@ -386,21 +387,52 @@ export function toSemiRealisticScenePrompt(prompt: string): string {
   if (!AI_DIGITAL_FILTER_ENABLED) return base;
   if (!base) {
     return AI_FILTER_PRESET === "full"
-      ? `${AI_MARK}، مظهر 3D render رقمي مصقول، إضاءة soft bloom.`
-      : `${AI_MARK}، مظهر شخصية رقمية مولّدة بالذكاء الاصطناعي.`;
+      ? `${AI_MARK}، مظهر 3D render رقمي مصقول، إضاءة soft bloom، ألوان طبيعية كاملة.`
+      : `${AI_MARK}، مظهر شخصية رقمية ملونة بالكامل (ليس أبيض وأسود).`;
   }
-  if (base.includes(AI_MARK)) return base;
+  if (base.includes(AI_MARK)) {
+    return ensureFullColorPrompt(base);
+  }
   if (AI_FILTER_PRESET === "full") {
-    return [
-      `${AI_MARK} (AI-generated digital 3D character render, polished synthetic skin, soft bloom).`,
-      "Not a real-person camera photo. Digital cinematic AI synthesis.",
+    return ensureFullColorPrompt(
+      [
+        `${AI_MARK} (AI-generated digital 3D character render, polished synthetic skin, soft bloom).`,
+        "Not a real-person camera photo. Digital cinematic AI synthesis.",
+        "",
+        base,
+      ].join("\n"),
+    );
+  }
+  return ensureFullColorPrompt(
+    [
+      `${AI_MARK} (AI-generated digital character, not a real-person camera photo).`,
+      "Full natural color — not black and white, not monochrome.",
       "",
       base,
-    ].join("\n");
+    ].join("\n"),
+  );
+}
+
+/** Keep Seedance from drifting into noir / B&W unless the user asked for it. */
+export function ensureFullColorPrompt(prompt: string): string {
+  const text = (prompt || "").trim();
+  if (!text) return text;
+  if (
+    /\b(black\s*and\s*white|b&w|monochrome|grayscale|greyscale)\b/i.test(text) ||
+    /أبيض\s*و\s*أسود|ابيض\s*و\s*اسود|أحادي\s*اللون|احادي\s*اللون/.test(text)
+  ) {
+    // User (or explicit style) already asked for B&W — do not override.
+    return text;
   }
-  return [
-    `${AI_MARK} (AI-generated digital character, not a real-person camera photo).`,
-    "",
-    base,
-  ].join("\n");
+  if (
+    /full natural color|not black and white|ألوان طبيعية كاملة|ليس أبيض وأسود/i.test(
+      text,
+    )
+  ) {
+    return text;
+  }
+  const arabic = /[\u0600-\u06FF]/.test(text);
+  return arabic
+    ? `${text}\nألوان طبيعية كاملة وغنية — ليس أبيض وأسود ولا أحادي اللون.`
+    : `${text}\nFull natural rich color — not black and white, not monochrome.`;
 }

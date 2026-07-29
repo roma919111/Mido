@@ -405,8 +405,8 @@ const MOOD_RULES: Array<{
     key: "epic",
     ar: /ملحمي|أسطوري|بطولي|درامي/,
     en: /\b(epic|legendary|heroic|dramatic)\b/i,
-    lineAr: "مزاج درامي ملحمي وتباين سينمائي قوي",
-    lineEn: "epic dramatic mood with strong cinematic contrast",
+    lineAr: "مزاج درامي ملحمي بألوان سينمائية غنية (ليس أبيض وأسود)",
+    lineEn: "epic dramatic mood with rich cinematic color (not black and white)",
   },
   {
     key: "calm",
@@ -419,8 +419,8 @@ const MOOD_RULES: Array<{
     key: "dark",
     ar: /مظلم|غامض|رعب|مرعب/,
     en: /\b(dark|mystery|horror|eerie|moody)\b/i,
-    lineAr: "مزاج غامض مظلم بظلال عميقة",
-    lineEn: "dark mysterious mood with deep shadows",
+    lineAr: "مزاج غامض مظلم بظلال عميقة وألوان طبيعية كاملة",
+    lineEn: "dark mysterious mood with deep shadows and full natural color",
   },
 ];
 
@@ -565,16 +565,16 @@ function lightLine(analysis: SceneAnalysis, seed: number): string {
     return analysis.arabic
       ? pick(
           [
-            "إضاءة ليلية سينمائية مع تباين درامي ولمعات دقيقة",
-            "ضوء محيطي خافت وظلال عميقة تعزّز الدراما",
+            "إضاءة ليلية سينمائية ملونة مع ظلال عميقة ولمعات دقيقة (ألوان كاملة، ليس أبيض وأسود)",
+            "ضوء محيطي خافت ملون وظلال عميقة تعزّز الدراما مع الحفاظ على الألوان الطبيعية",
           ],
           seed,
           6,
         )
       : pick(
           [
-            "cinematic night lighting with dramatic contrast and tiny highlights",
-            "soft ambient light and deep shadows that heighten drama",
+            "cinematic night lighting with rich natural color, deep shadows, and tiny highlights (full color, not black and white)",
+            "soft colored ambient light and deep shadows that heighten drama while keeping natural color",
           ],
           seed,
           6,
@@ -618,12 +618,12 @@ function moodLine(analysis: SceneAnalysis): string | null {
 function qualityCloser(analysis: SceneAnalysis, video: boolean): string {
   if (analysis.arabic) {
     return video
-      ? "مشهد سينمائي واقعي، حركة متّسقة زمنياً، بدون تشويش أو عناصر عشوائية"
-      : "جودة فوتورياليستية احترافية، تفاصيل نظيفة، بدون تشويش أو عناصر عشوائية";
+      ? "مشهد سينمائي واقعي بألوان طبيعية كاملة، حركة متّسقة زمنياً، بدون أبيض وأسود وبدون تشويش أو عناصر عشوائية"
+      : "جودة فوتورياليستية احترافية بألوان طبيعية كاملة، تفاصيل نظيفة، بدون أبيض وأسود وبدون تشويش";
   }
   return video
-    ? "cinematic realistic scene, temporally consistent motion, no flicker or random artifacts"
-    : "photorealistic professional quality, clean detail, no noise or random artifacts";
+    ? "cinematic realistic scene in full natural color, temporally consistent motion, not black and white, no flicker or random artifacts"
+    : "photorealistic professional quality in full natural color, clean detail, not black and white, no noise or random artifacts";
 }
 
 function buildArabicVideo(analysis: SceneAnalysis, seed: number): string {

@@ -49,7 +49,10 @@ import {
   orderCharacterRefsForBinding,
   stripInternalPromptNotes,
 } from "@/lib/character-names";
-import { toSemiRealisticScenePrompt } from "@/lib/reference-sanitize";
+import {
+  ensureFullColorPrompt,
+  toSemiRealisticScenePrompt,
+} from "@/lib/reference-sanitize";
 import { translateBytePlusError } from "@/lib/byteplus-errors";
 import { saveLocalImage } from "@/lib/local-media";
 import { warmVideoPosterBackground } from "@/lib/poster-cache";
@@ -575,6 +578,9 @@ export async function POST(request: Request) {
           finalPrompt = toSemiRealisticScenePrompt(
             buildSeedanceCharacterPrompt(cleanPrompt, keptRefs),
           );
+        } else {
+          // Text / start-frame video: still lock full color unless user asked B&W.
+          finalPrompt = ensureFullColorPrompt(cleanPrompt);
         }
 
         if (refList.length > 0 && keptRefs.length === 0) {

@@ -222,6 +222,7 @@ Rules:
 - Keep every action and detail from the source; do not invent a new plot
 - Add AI enhancements: camera move, pacing, lighting, atmosphere, natural motion, color grade
 - Natural cinematic film look (live-action style). Do NOT write the words CGI, 3D, render, or Unreal
+- Keep full natural rich color. Do NOT make the scene black and white, monochrome, or grayscale unless the source explicitly asks for that
 - 2–5 sentences max
 - Do not mention brand names or technical pipeline jargon
 - Output MUST be English only (no Arabic)
@@ -244,8 +245,8 @@ ${settingLine}`;
   const bits = [
     isMostlyEnglish(act) ? act : act,
     forImage
-      ? "Rich color grade, soft cinematic lighting, intentional composition, sharp subject detail."
-      : "Smooth natural motion, tracking camera, rich color grade, soft cinematic lighting.",
+      ? "Rich natural color grade, soft cinematic lighting, intentional composition, sharp subject detail. Full color, not black and white."
+      : "Smooth natural motion, tracking camera, rich natural color grade, soft cinematic lighting. Full color, not black and white.",
   ];
   if (entityLine) bits.push(entityLine);
   if (settingLine) bits.push(settingLine);
@@ -286,7 +287,8 @@ Requirements:
 3) Enrich with AI cinematic enhancements: lighting, camera, motion, atmosphere, color grade, composition
 4) Do NOT invent a new story or change who does what
 5) Do NOT write CGI, 3D, render, Unreal, or brand/pipeline jargon
-6) ${forImage ? "2–4 sentences" : "2–5 sentences"}
+6) Keep full natural rich color — never black and white / monochrome / grayscale unless the source explicitly asks for that
+7) ${forImage ? "2–4 sentences" : "2–5 sentences"}
 Return JSON only: {"prompt":"...","english":true}
 
 SOURCE:
