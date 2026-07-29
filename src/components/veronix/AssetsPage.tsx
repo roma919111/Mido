@@ -111,6 +111,8 @@ function FeedVideoSlide({
   const [promptExpanded, setPromptExpanded] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const [playing, setPlaying] = useState(false);
+  /** Only attach video src after Play — neighbors stay on poster (CDN bytes). */
+  const [armed, setArmed] = useState(false);
   const [durationSec, setDurationSec] = useState<number | null>(
     () =>
       typeof item.targetSeconds === "number" && item.targetSeconds > 0
@@ -118,14 +120,12 @@ function FeedVideoSlide({
         : null,
   );
 
-  const src =
-    loadMedia
-      ? veronixMediaSrc({
-          historyId: item.historyId,
-          url: item.url,
-          mediaType: "video",
-        })
-      : null;
+  const mediaUrl = veronixMediaSrc({
+    historyId: item.historyId,
+    url: item.url,
+    mediaType: "video",
+  });
+  const src = loadMedia && armed ? mediaUrl : null;
   // Prefer URL-based posters (CDN) — skip BytePlus history lookup on cold open.
   const poster =
     loadMedia
@@ -138,7 +138,7 @@ function FeedVideoSlide({
   const title = assetPromptTitle(item.prompt);
   const promptLong = prompt.length > 110;
   const canPlay =
-    Boolean(src) &&
+    Boolean(mediaUrl) &&
     item.status !== "failed" &&
     item.status !== "running";
   const displayDuration =
@@ -151,6 +151,7 @@ function FeedVideoSlide({
     setVideoReady(false);
     setPosterFailed(false);
     setPlaying(false);
+    setArmed(false);
     setDurationSec(
       typeof item.targetSeconds === "number" && item.targetSeconds > 0
         ? item.targetSeconds
@@ -162,27 +163,41 @@ function FeedVideoSlide({
     const el = videoRef.current;
     if (!el || !canPlay) return;
     el.muted = muted;
-    // Normal media player: never autoplay. Pause when leaving the slide.
+    // Normal media player: never autoplay. Pause + unload when leaving the slide.
     if (!active) {
       el.pause();
       setPlaying(false);
+      setArmed(false);
       try {
-        el.currentTime = 0;
+        el.removeAttribute("src");
+        el.load();
       } catch {
         // ignore
       }
     }
-  }, [active, muted, canPlay, src]);
+  }, [active, muted, canPlay]);
 
   const togglePlay = () => {
     const el = videoRef.current;
-    if (!el || !canPlay) return;
+    if (!el || !canPlay || !mediaUrl) return;
+    if (!armed) {
+      setArmed(true);
+      // src attaches on next paint — play from effect below
+      return;
+    }
     if (el.paused) {
       void el.play().catch(() => undefined);
     } else {
       el.pause();
     }
   };
+
+  useEffect(() => {
+    if (!armed || !active || !canPlay) return;
+    const el = videoRef.current;
+    if (!el) return;
+    void el.play().catch(() => undefined);
+  }, [armed, active, canPlay, src]);
 
   const handleEdit = async () => {
     if (editing) return;
@@ -326,14 +341,24 @@ function FeedVideoSlide({
     >
       {canPlay ? (
         <>
+          {/* Poster always for active+neighbors; video bytes only after Play. */}
+          {!armed && poster && !posterFailed ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={poster}
+              alt=""
+              className="absolute inset-0 h-full w-full object-contain bg-black"
+              onError={() => setPosterFailed(true)}
+            />
+          ) : null}
           <video
             ref={videoRef}
-            src={active || loadMedia ? src || undefined : undefined}
+            src={src || undefined}
             poster={!posterFailed && poster ? poster : undefined}
             playsInline
             loop
             muted={muted}
-            preload={active || loadMedia ? "metadata" : "none"}
+            preload={armed && active ? "auto" : "none"}
             controls={false}
             controlsList="nodownload"
             onClick={togglePlay}

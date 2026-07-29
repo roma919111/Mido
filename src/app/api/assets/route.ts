@@ -24,6 +24,7 @@ import { concatVideos } from "@/lib/video-stitch";
 import { tickUserMultiShotJobs, isMultiShotStillGenerating } from "@/lib/multi-shot-job";
 import { estimateGenerateSeconds } from "@/lib/generate-eta";
 import { appendVyronixOutro } from "@/lib/veronix-outro";
+import { warmVideoPosterBackground } from "@/lib/poster-cache";
 
 export const runtime = "nodejs";
 export const maxDuration = 180;
@@ -115,6 +116,10 @@ async function stitchPendingJobs(userId: string) {
         hidden: false,
         targetSeconds: urls.length * PRODUCT_PER_SHOT_SECONDS,
       });
+      warmVideoPosterBackground({
+        url: finalUrl,
+        historyId: pending.historyId,
+      });
       for (const p of parts) {
         if (p.hidden !== true) {
           await updateAsset(p.id, userId, { hidden: true });
@@ -170,6 +175,12 @@ async function syncRunningAssets(userId: string) {
             error: undefined,
             hidden: asset.mode === "sequence-part" ? true : asset.hidden === true,
           });
+          if (asset.mode !== "sequence-part" && finalUrl) {
+            warmVideoPosterBackground({
+              url: finalUrl,
+              historyId: asset.historyId,
+            });
+          }
         } else if (status === "FAILED") {
           const rawErr =
             typeof task.error === "string"
@@ -285,6 +296,10 @@ async function syncRunningAssets(userId: string) {
     try {
       const branded = await appendVyronixOutro(asset.url);
       await updateAsset(asset.id, userId, { url: branded, status: "completed" });
+      warmVideoPosterBackground({
+        url: branded,
+        historyId: asset.historyId,
+      });
     } catch {
       // retry next load
     }
@@ -306,6 +321,10 @@ async function syncRunningAssets(userId: string) {
       const graded = await ensureClarityUrl(asset.url);
       if (graded && graded !== asset.url) {
         await updateAsset(asset.id, userId, { url: graded });
+        warmVideoPosterBackground({
+          url: graded,
+          historyId: asset.historyId,
+        });
       }
     } catch {
       // retry next load

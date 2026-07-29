@@ -37,6 +37,7 @@ import {
 import { toSemiRealisticScenePrompt } from "@/lib/reference-sanitize";
 import { translateBytePlusError } from "@/lib/byteplus-errors";
 import { saveLocalImage } from "@/lib/local-media";
+import { warmVideoPosterBackground } from "@/lib/poster-cache";
 import type { VisualReference } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -588,6 +589,9 @@ export async function POST(request: Request) {
             hidden: Boolean(body.sequencePart),
             preferClarity,
           });
+          if (!body.sequencePart) {
+            warmVideoPosterBackground({ url: finalUrl, historyId });
+          }
           results.push({
             assetId: asset.id,
             modelId: quote.modelId,

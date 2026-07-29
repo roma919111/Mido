@@ -9,6 +9,7 @@ import { findAssetByHistoryId, findAssetById, updateAsset } from "@/lib/db";
 import { ensureClarityUrl } from "@/lib/ensure-clarity";
 import { refundFailedAssetCredits } from "@/lib/credit-refund";
 import { translateBytePlusError } from "@/lib/byteplus-errors";
+import { warmVideoPosterBackground } from "@/lib/poster-cache";
 
 export const runtime = "nodejs";
 
@@ -119,6 +120,7 @@ export async function GET(request: Request) {
             hidden: keepHidden ? true : false,
           }).catch(() => null);
           urls[0] = graded;
+          warmVideoPosterBackground({ url: graded, historyId });
         } else if (status === "FAILED") {
           const refund = await refundFailedAssetCredits({
             userId: user.id,

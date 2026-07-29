@@ -114,15 +114,18 @@ export function veronixDownloadPath(input: {
   return buildMediaApiPath(input, "download");
 }
 
-/** Playback / preview source through Veronix (hides OpenArt CDN). */
+/** Playback / preview source.
+ * Remote BytePlus/CDN https URLs play directly (provider servers carry the bytes).
+ * Local `/generations/*` still go through Veronix stream proxy.
+ */
 export function veronixMediaSrc(input: {
   historyId?: string | null;
   url?: string | null;
   mediaType?: "image" | "video";
 }): string | null {
   const raw = input.url?.trim() || "";
-  // Images: load BytePlus/CDN URLs directly — mobile-stable (avoids long proxy streams).
-  if (input.mediaType === "image" && /^https?:\/\//i.test(raw)) {
+  // Images + videos: load allowed CDN URLs directly — avoids saturating our Node proxy.
+  if (/^https?:\/\//i.test(raw)) {
     try {
       if (isAllowedMediaHost(new URL(raw).hostname)) return raw;
     } catch {

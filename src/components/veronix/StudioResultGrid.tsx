@@ -52,6 +52,7 @@ const ResultCard = memo(function ResultCard({
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [playing, setPlaying] = useState(false);
+  const [armed, setArmed] = useState(false);
   const [durationSec, setDurationSec] = useState(0);
   const waiting = job.status === "running";
   const failed = job.status === "failed";
@@ -59,7 +60,7 @@ const ResultCard = memo(function ResultCard({
     typeof job.startedAt === "number" && job.startedAt > 0
       ? job.startedAt
       : Date.now();
-  const src =
+  const mediaUrl =
     job.url && job.mediaType === "video"
       ? veronixMediaSrc({
           historyId: job.historyId,
@@ -67,6 +68,7 @@ const ResultCard = memo(function ResultCard({
           mediaType: "video",
         })
       : null;
+  const src = armed ? mediaUrl : null;
   const posterSrc =
     job.url && job.mediaType === "video"
       ? veronixPosterSrc({
@@ -85,21 +87,34 @@ const ResultCard = memo(function ResultCard({
 
   useEffect(() => {
     setPlaying(false);
+    setArmed(false);
     setDurationSec(0);
     const el = videoRef.current;
     if (el) {
       try {
         el.pause();
-        el.currentTime = 0;
+        el.removeAttribute("src");
+        el.load();
       } catch {
         // ignore
       }
     }
-  }, [src]);
+  }, [mediaUrl]);
+
+  useEffect(() => {
+    if (!armed || !mediaUrl) return;
+    const el = videoRef.current;
+    if (!el) return;
+    void el.play().catch(() => undefined);
+  }, [armed, mediaUrl, src]);
 
   const togglePlay = () => {
     const el = videoRef.current;
-    if (!el || !src) return;
+    if (!el || !mediaUrl) return;
+    if (!armed) {
+      setArmed(true);
+      return;
+    }
     if (el.paused) {
       void el.play().catch(() => undefined);
     } else {
@@ -198,15 +213,23 @@ const ResultCard = memo(function ResultCard({
       </div>
 
       <div className="relative aspect-video bg-black/50">
-        {src ? (
+        {mediaUrl ? (
           <>
+            {!armed && posterSrc ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={posterSrc}
+                alt=""
+                className="absolute inset-0 h-full w-full object-contain"
+              />
+            ) : null}
             <video
               ref={videoRef}
-              key={src}
-              src={src}
+              key={mediaUrl}
+              src={src || undefined}
               poster={posterSrc || undefined}
               playsInline
-              preload="metadata"
+              preload={armed ? "auto" : "none"}
               controls={false}
               controlsList="nodownload"
               className="h-full w-full object-contain"

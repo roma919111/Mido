@@ -34,6 +34,7 @@ import { MAX_SHOTS, PRODUCT_PER_SHOT_SECONDS } from "@/lib/shot-plan";
 import { cacheVideoLocally, concatVideos, extractLastFrameJpeg } from "@/lib/video-stitch";
 import { ensureClarityUrl } from "@/lib/ensure-clarity";
 import { estimateGenerateSeconds } from "@/lib/generate-eta";
+import { warmVideoPosterBackground } from "@/lib/poster-cache";
 
 export type MultiShotBeat = { prompt: string; action: string };
 
@@ -545,7 +546,7 @@ async function finalizeMultiShotJob(
     }
     const actualSeconds = meta.partUrls.length * meta.perShotSeconds;
     const planned = meta.targetSeconds || meta.shots.length * meta.perShotSeconds;
-    return updateAsset(pending.id, userId, {
+    const updated = await updateAsset(pending.id, userId, {
       url: finalUrl,
       status: "completed",
       mode: "sequence-concat",
@@ -558,6 +559,11 @@ async function finalizeMultiShotJob(
       targetSeconds: actualSeconds,
       jobMeta: { ...meta, nextIndex: meta.shots.length },
     });
+    warmVideoPosterBackground({
+      url: finalUrl,
+      historyId: pending.historyId,
+    });
+    return updated;
   } catch (err) {
     return updateAsset(pending.id, userId, {
       status: "failed",
