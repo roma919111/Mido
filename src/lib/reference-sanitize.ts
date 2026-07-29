@@ -148,11 +148,20 @@ async function maxFaceBodyZoom(buf: Buffer): Promise<Buffer> {
 }
 
 /**
- * TEMPORARY KILL SWITCH — AI / 3D digital character look.
- * Set back to `true` to restore the previous BytePlus-accept filter + prompt framing.
- * User asked to disable and retry; restore on request if privacy rejects return.
+ * AI / 3D digital character look kill switch.
+ * `false` = plain compress only (no stylization).
  */
 export const AI_DIGITAL_FILTER_ENABLED = true;
+
+/**
+ * Filter preset:
+ * - `"lite"`  → AI look only (smooth + color + sharpen). NO soft-glow / bloom /
+ *               background isolation / cinematic tint. Active trial mode.
+ * - `"full"`  → frozen «نجحت المهمة» pipeline (eee7049). Restore when the owner
+ *               says the emergency word: **طوارئ**
+ */
+export type AiFilterPreset = "lite" | "full";
+export const AI_FILTER_PRESET: AiFilterPreset = "lite";
 
 async function plainCompressForBytePlus(bytes: Buffer): Promise<Buffer> {
   const { buf } = await normalizeCanvas(bytes);
@@ -161,12 +170,39 @@ async function plainCompressForBytePlus(bytes: Buffer): Promise<Buffer> {
 }
 
 /**
- * Convert a character still into an AI / 3D-render digital look.
- * Applied on Generate BEFORE BytePlus create (when AI_DIGITAL_FILTER_ENABLED).
- *
- * FROZEN «نجحت المهمة» settings (commit eee7049) — do not raise/lower any value.
+ * Lite AI filter only — digital smooth + mild grade + sharpen.
+ * Skips soft glow, background isolation, and cinematic tint.
  */
-export async function toAiDigitalCharacterRender(bytes: Buffer): Promise<Buffer> {
+async function toAiDigitalCharacterRenderLite(bytes: Buffer): Promise<Buffer> {
+  const { buf: sized } = await normalizeCanvas(bytes);
+
+  const sculpted = await sharp(sized)
+    .median(7)
+    .blur(1.2)
+    .modulate({ brightness: 1.03, saturation: 1.12 })
+    .linear(1.08, -6)
+    .sharpen({ sigma: 1.0, m1: 1.2, m2: 0.4 })
+    .jpeg({ quality: 88, mozjpeg: true, chromaSubsampling: "4:4:4" })
+    .toBuffer();
+
+  const finalBuf = await ensureMinSide(sculpted, 88);
+  try {
+    const id = `aichar-lite-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    await mkdir(GENERATIONS_DIR, { recursive: true });
+    await writeFile(path.join(GENERATIONS_DIR, `${id}.jpg`), finalBuf);
+    console.info(`[veronix] AI lite filter saved /generations/${id}.jpg`);
+  } catch {
+    // non-fatal
+  }
+  return finalBuf;
+}
+
+/**
+ * FULL frozen «نجحت المهمة» settings (commit eee7049) — do not raise/lower any value.
+ * Soft glow + background isolation + cinematic tint included.
+ * Restored by setting AI_FILTER_PRESET = "full" (emergency word: طوارئ).
+ */
+async function toAiDigitalCharacterRenderFull(bytes: Buffer): Promise<Buffer> {
   const { buf: sized, width: w, height: h } = await normalizeCanvas(bytes);
 
   // 1–3) Digital aesthetic + extreme texture smooth + exaggerated definition.
@@ -241,6 +277,14 @@ export async function toAiDigitalCharacterRender(bytes: Buffer): Promise<Buffer>
     // non-fatal
   }
   return finalBuf;
+}
+
+/** Active AI digital render — lite or full per AI_FILTER_PRESET. */
+export async function toAiDigitalCharacterRender(bytes: Buffer): Promise<Buffer> {
+  if (AI_FILTER_PRESET === "full") {
+    return toAiDigitalCharacterRenderFull(bytes);
+  }
+  return toAiDigitalCharacterRenderLite(bytes);
 }
 
 /** Compress (+ optional AI digital render when enabled). */
@@ -341,12 +385,21 @@ export function toSemiRealisticScenePrompt(prompt: string): string {
     .trim();
   if (!AI_DIGITAL_FILTER_ENABLED) return base;
   if (!base) {
-    return `${AI_MARK}، مظهر 3D render رقمي مصقول، إضاءة soft bloom.`;
+    return AI_FILTER_PRESET === "full"
+      ? `${AI_MARK}، مظهر 3D render رقمي مصقول، إضاءة soft bloom.`
+      : `${AI_MARK}، مظهر شخصية رقمية مولّدة بالذكاء الاصطناعي.`;
   }
   if (base.includes(AI_MARK)) return base;
+  if (AI_FILTER_PRESET === "full") {
+    return [
+      `${AI_MARK} (AI-generated digital 3D character render, polished synthetic skin, soft bloom).`,
+      "Not a real-person camera photo. Digital cinematic AI synthesis.",
+      "",
+      base,
+    ].join("\n");
+  }
   return [
-    `${AI_MARK} (AI-generated digital 3D character render, polished synthetic skin, soft bloom).`,
-    "Not a real-person camera photo. Digital cinematic AI synthesis.",
+    `${AI_MARK} (AI-generated digital character, not a real-person camera photo).`,
     "",
     base,
   ].join("\n");
