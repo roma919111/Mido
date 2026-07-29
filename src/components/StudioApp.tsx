@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { fetchJson } from "@/lib/fetch-json";
 import { estimateCredits } from "@/lib/models";
 import type {
   AccountInfo,
@@ -113,14 +114,15 @@ export function StudioApp() {
 
   async function refreshAccount() {
     try {
-      const res = await fetch("/api/account");
-      const data = (await res.json()) as AccountInfo & {
-        error?: string;
-        details?: unknown;
-        raw?: unknown;
-        mcpEndpoint?: string;
-        live?: boolean;
-      };
+      const { res, data } = await fetchJson<
+        AccountInfo & {
+          error?: string;
+          details?: unknown;
+          raw?: unknown;
+          mcpEndpoint?: string;
+          live?: boolean;
+        }
+      >("/api/account");
 
       setLiveMcpResponse(
         formatLivePayload({
@@ -200,8 +202,11 @@ export function StudioApp() {
       form.append("purpose", purpose);
       form.append("label", file.name || (target === "start" ? "start-frame" : "reference"));
 
-      const res = await fetch("/api/upload", { method: "POST", body: form });
-      const data = await res.json();
+      const { res, data } = await fetchJson<{
+        error?: string;
+        mcpEndpoint?: string;
+        visualReference?: VisualReference;
+      }>("/api/upload", { method: "POST", body: form });
 
       setLiveMcpResponse(
         formatLivePayload({
@@ -238,15 +243,25 @@ export function StudioApp() {
     setEnhancing(true);
     setError(null);
     try {
-      const res = await fetch("/api/enhance", {
+      const imageUrls = [startFrame?.url, referenceImage?.url].filter(
+        (u): u is string => Boolean(u && String(u).trim()),
+      );
+      const { res, data } = await fetchJson<{
+        error?: string;
+        enhanced?: string;
+        visionUsed?: boolean;
+        chained?: boolean;
+      }>("/api/enhance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, mode }),
+        body: JSON.stringify({ prompt, mode, imageUrls }),
       });
-      const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Enhance failed");
       setPrompt(data.enhanced as string);
-      setStatusMessage("Prompt enhanced for stronger composition and lighting.");
+      const bits = ["تم تحسين الوصف"];
+      if (data.visionUsed) bits.push("مع مطابقة الصورة");
+      if (data.chained) bits.push("مع تسلسل الحالة");
+      setStatusMessage(bits.join(" · "));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Enhance failed");
     } finally {
@@ -254,15 +269,56 @@ export function StudioApp() {
     }
   }
 
+  function extractGenerateError(data: {
+    error?: string;
+    details?: unknown;
+  }): string {
+    if (typeof data.error === "string" && data.error.trim()) {
+      if (data.error.includes("insufficient") || data.error.includes("Not enough OpenArt credits")) {
+        return "رصيد OpenArt للمنصة خلص. اشحن الكريدت من حساب المالك ثم حاول مرة ثانية.";
+      }
+      return data.error;
+    }
+    const details = data.details as { error?: string; failedCode?: string } | undefined;
+    if (typeof details?.error === "string") return details.error;
+    return "Generation failed";
+  }
+
+  async function postGenerate(body: Record<string, unknown>) {
+    const paths = ["/api/create", "/api/generate"] as const;
+    let lastError: Error | null = null;
+
+    for (const path of paths) {
+      try {
+        const { res, data } = await fetchJson<
+          GenerateResponse & {
+            error?: string;
+            details?: unknown;
+            raw?: unknown;
+          }
+        >(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify(body),
+        });
+        return { res, data, path };
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error("Generation request failed");
+      }
+    }
+
+    throw lastError ?? new Error("Generation request failed");
+  }
+
   async function handleGenerate() {
     const currentPrompt = prompt.trim();
     if (!currentPrompt) {
-      setError("Write a prompt before generating.");
+      setError("اكتب وصفًا قبل الضغط على Generate.");
       setStatusMessage(null);
       return;
     }
     if (mode === "image-to-video" && !startFrame) {
-      setError("Upload a Start Frame for Image-to-Video.");
+      setError("ارفع Start Frame لوضع Image-to-Video.");
       setStatusMessage(null);
       return;
     }
@@ -286,28 +342,20 @@ export function StudioApp() {
     setGallery((prev) => [optimistic, ...prev]);
 
     try {
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode,
-          prompt: currentPrompt,
-          duration,
-          quality,
-          startFrame,
-          referenceImage,
-          waitForResult: true,
-        }),
+      // Avoid long waits behind temporary tunnels (they return HTML 502 pages).
+      const { res, data, path } = await postGenerate({
+        mode,
+        prompt: currentPrompt,
+        duration,
+        quality,
+        startFrame,
+        referenceImage,
+        waitForResult: false,
       });
-      const data = (await res.json()) as GenerateResponse & {
-        error?: string;
-        details?: unknown;
-        raw?: unknown;
-      };
 
       setLiveMcpResponse(
         formatLivePayload({
-          route: `POST /api/generate → ${data.tool ?? (isVideoMode ? "openart_generate_video" : "openart_generate_image")}`,
+          route: `POST ${path} → ${data.tool ?? (isVideoMode ? "openart_generate_video" : "openart_generate_image")}`,
           httpStatus: res.status,
           mcpEndpoint: data.mcpEndpoint ?? MCP_ENDPOINT,
           live: data.live,
@@ -316,7 +364,7 @@ export function StudioApp() {
       );
 
       if (!res.ok) {
-        throw new Error(data.error || formatLivePayload(data));
+        throw new Error(extractGenerateError(data));
       }
 
       const url = data.urls?.[0] ?? "";
@@ -347,9 +395,9 @@ export function StudioApp() {
       if (status === "completed") {
         setStatusMessage("Live OpenArt MCP generation complete.");
       } else if (status === "failed") {
-        setError(data.error || "Generation failed");
+        setError(extractGenerateError(data));
       } else {
-        setStatusMessage("Still generating on OpenArt MCP — raw wait payload shown below.");
+        setStatusMessage("طلب التوليد وصل OpenArt — راقب المعرض أو حدّث الصفحة.");
       }
 
       await refreshAccount();
@@ -372,10 +420,13 @@ export function StudioApp() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden pb-28 sm:pb-0">
-      <div className="pointer-events-none absolute inset-0 studio-backdrop" />
-      <div className="pointer-events-none absolute -left-24 top-24 h-72 w-72 rounded-full bg-[rgba(46,230,166,0.12)] blur-3xl animate-float" />
-      <div className="pointer-events-none absolute -right-16 top-48 h-80 w-80 rounded-full bg-[rgba(255,176,92,0.1)] blur-3xl animate-float-delayed" />
+    <div className="relative min-h-screen overflow-x-hidden">
+      {/* Decorative layer must never capture taps (esp. ::before pseudo-elements). */}
+      <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <div className="absolute inset-0 studio-backdrop" />
+        <div className="absolute -left-24 top-24 h-72 w-72 rounded-full bg-[rgba(46,230,166,0.12)] blur-3xl animate-float" />
+        <div className="absolute -right-16 top-48 h-80 w-80 rounded-full bg-[rgba(255,176,92,0.1)] blur-3xl animate-float-delayed" />
+      </div>
 
       <Header
         plan={account.plan}
@@ -398,7 +449,7 @@ export function StudioApp() {
         </div>
       )}
 
-      <main className="relative z-10 mx-auto w-full max-w-6xl px-4 pb-28 pt-8 sm:px-6">
+      <main className="relative z-10 mx-auto w-full max-w-6xl px-4 pb-16 pt-8 sm:px-6">
         <section className="animate-fade-up mb-8 max-w-3xl">
           <p className="mb-3 text-xs uppercase tracking-[0.24em] text-[var(--accent)]/80">
             Creative workbench
@@ -412,8 +463,8 @@ export function StudioApp() {
           </p>
         </section>
 
-        <section className="animate-fade-up animation-delay-1 rounded-[28px] border border-white/10 bg-[rgba(12,14,20,0.72)] p-4 shadow-[0_30px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:p-6">
-          <div className="space-y-5">
+        <section className="animate-fade-up animation-delay-1 relative z-20 isolate rounded-[28px] border border-white/10 bg-[rgba(12,14,20,0.92)] p-4 shadow-[0_30px_80px_rgba(0,0,0,0.35)] sm:p-6">
+          <div className="relative z-20 space-y-5">
             <ModeSwitcher mode={mode} onChange={setMode} />
 
             <PromptInput
@@ -475,18 +526,31 @@ export function StudioApp() {
               />
             )}
 
+            <GenerateButton
+              label={isVideoMode ? "Generate Video" : "Generate Image"}
+              credits={creditCost}
+              loading={generating}
+              hint={
+                !prompt.trim()
+                  ? "اكتب وصفًا فوق ثم اضغط Generate"
+                  : mode === "image-to-video" && !startFrame
+                    ? "ارفع Start Frame أولاً لوضع Image-to-Video"
+                    : "جاهز — اضغط Generate"
+              }
+              onClick={() => {
+                void handleGenerate();
+              }}
+            />
+
             {liveMcpResponse && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs uppercase tracking-[0.18em] text-cyan-300/80">
-                    Live OpenArt MCP response
-                  </p>
-                  <p className="text-[10px] text-white/35">{MCP_ENDPOINT}</p>
-                </div>
-                <pre className="max-h-80 overflow-auto rounded-2xl border border-white/10 bg-black/40 p-4 text-xs leading-relaxed text-white/75">
+              <details className="rounded-2xl border border-white/10 bg-black/30 p-3">
+                <summary className="cursor-pointer text-xs uppercase tracking-[0.18em] text-cyan-300/80">
+                  Live OpenArt MCP response
+                </summary>
+                <pre className="mt-3 max-h-60 overflow-auto text-xs leading-relaxed text-white/70">
                   {liveMcpResponse}
                 </pre>
-              </div>
+              </details>
             )}
           </div>
         </section>
@@ -497,23 +561,6 @@ export function StudioApp() {
       </main>
 
       <Footer />
-
-      {/* Keep outside backdrop-blur sections so fixed positioning works on mobile. */}
-      <GenerateButton
-        label={isVideoMode ? "Generate Video" : "Generate Image"}
-        credits={creditCost}
-        loading={generating}
-        hint={
-          !prompt.trim()
-            ? "Tip: type your prompt above, then tap Generate."
-            : mode === "image-to-video" && !startFrame
-              ? "Tip: upload a Start Frame for Image-to-Video."
-              : "Ready — tap Generate anytime."
-        }
-        onClick={() => {
-          void handleGenerate();
-        }}
-      />
     </div>
   );
 }
