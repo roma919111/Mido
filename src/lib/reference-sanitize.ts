@@ -152,7 +152,7 @@ async function maxFaceBodyZoom(buf: Buffer): Promise<Buffer> {
  * Set back to `true` to restore the previous BytePlus-accept filter + prompt framing.
  * User asked to disable and retry; restore on request if privacy rejects return.
  */
-export const AI_DIGITAL_FILTER_ENABLED = false;
+export const AI_DIGITAL_FILTER_ENABLED = true;
 
 async function plainCompressForBytePlus(bytes: Buffer): Promise<Buffer> {
   const { buf } = await normalizeCanvas(bytes);

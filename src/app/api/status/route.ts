@@ -97,7 +97,7 @@ export async function GET(request: Request) {
     let creditsRefunded = false;
     let failureError = errMsg
       ? translateBytePlusError(errMsg)
-      : "فشل التوليد من BytePlus لسبب غير معروف.";
+      : "فشل التوليد من Veronix لسبب غير معروف.";
 
     if (user && (urls[0] || status === "FAILED")) {
       const byHistory = await findAssetByHistoryId(user.id, historyId);
@@ -149,7 +149,7 @@ export async function GET(request: Request) {
   } catch (error) {
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "BytePlus status failed",
+        error: error instanceof Error ? error.message : "Veronix status failed",
         historyId,
         live: true,
         provider: "byteplus",

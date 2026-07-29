@@ -175,8 +175,8 @@ async function syncRunningAssets(userId: string) {
             typeof task.error === "string"
               ? task.error
               : task.error && typeof task.error === "object"
-                ? String(task.error.message || task.error.code || "BytePlus generation failed")
-                : "BytePlus generation failed";
+                ? String(task.error.message || task.error.code || "Veronix generation failed")
+                : "Veronix generation failed";
           const errMsg = translateBytePlusError(rawErr);
           const alreadyMuted = Boolean(asset.error?.includes("[muted-retry]"));
           const alreadyPrivacy = Boolean(asset.error?.includes("[privacy-retry]"));

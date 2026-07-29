@@ -132,7 +132,7 @@ export async function POST(request: Request) {
     if (!isBytePlusConfigured()) {
       return NextResponse.json(
         {
-          error: "توليد الوسائط عبر BytePlus غير مُعدّ على السيرفر (BYTEPLUS_API_KEY).",
+          error: "توليد الوسائط عبر Veronix غير مُعدّ على السيرفر. راجع إعدادات المسؤول.",
           provider: "byteplus",
           needsOwnerSetup: true,
         },
@@ -614,9 +614,9 @@ export async function POST(request: Request) {
                 ? String(
                     finished.error.message ||
                       finished.error.code ||
-                      "BytePlus generation failed",
+                      "Veronix generation failed",
                   )
-                : "BytePlus generation failed";
+                : "Veronix generation failed";
           const errMsg = translateBytePlusError(rawErr);
           if (freeTrial) {
             await updateAsset(asset.id, user.id, {
@@ -675,7 +675,7 @@ export async function POST(request: Request) {
           quote,
         });
       } catch (err) {
-        const raw = err instanceof Error ? err.message : "BytePlus generation failed";
+        const raw = err instanceof Error ? err.message : "Veronix generation failed";
         const message = translateBytePlusError(raw);
         console.error("[veronix] BytePlus generation failed (no OpenArt fallback):", raw);
         if (freeTrial) {

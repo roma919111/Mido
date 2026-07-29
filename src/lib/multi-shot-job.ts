@@ -204,7 +204,7 @@ async function tickMultiShotJobUnlocked(
   if (!isBytePlusConfigured()) {
     await updateAsset(pending.id, userId, {
       status: "failed",
-      error: "BytePlus غير مُعدّ على السيرفر",
+      error: "Veronix غير مُعدّ على السيرفر",
     });
     return null;
   }
@@ -353,7 +353,7 @@ async function tickMultiShotJobUnlocked(
       await refundFailedAssetCredits({
         userId,
         assetId: part.id,
-        errorMessage: st === "FAILED" ? "BytePlus generation failed" : "timeout",
+        errorMessage: st === "FAILED" ? "Veronix generation failed" : "timeout",
       });
       await updateAsset(part.id, userId, { hidden: true });
       meta.nextIndex += 1;
@@ -434,7 +434,7 @@ async function resumeRunningPart(
       if (mapBytePlusStatus(task.status) === "FAILED") {
         await updateAsset(part.id, userId, {
           status: "failed",
-          error: "BytePlus generation failed",
+          error: "Veronix generation failed",
           hidden: true,
         });
         meta.nextIndex = Math.max(meta.nextIndex, beatIndex + 1);

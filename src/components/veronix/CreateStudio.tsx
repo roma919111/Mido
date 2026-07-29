@@ -1834,9 +1834,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     <div className="mx-auto w-full max-w-6xl space-y-4 px-3 pb-8 pt-4 sm:px-6" dir="rtl">
       {platformReady === false && (
         <div className="rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-50">
-          التوليد غير مُعدّ على السيرفر. يلزم ضبط{" "}
-          <code className="rounded bg-black/30 px-1.5 py-0.5 text-[#22f0ff]">BYTEPLUS_API_KEY</code>{" "}
-          ثم إعادة التشغيل.
+          التوليد غير مُعدّ على السيرفر. يلزم ضبط مفتاح Veronix لدى المسؤول ثم إعادة التشغيل.
         </div>
       )}
 
