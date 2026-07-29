@@ -6,9 +6,10 @@ import {
   type SceneState,
 } from "@/lib/prompt-enhance";
 import {
-  enhanceToEnglishCinematic,
+  enhanceToCinematic,
+  hasArabic,
+  isMostlyArabic,
   isMostlyEnglish,
-  translatePromptToEnglish,
 } from "@/lib/prompt-translate";
 import type { GenerationMode } from "@/lib/types";
 
@@ -41,7 +42,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T
 /**
  * Improve Description:
  * 1) Optional vision grounding from refs
- * 2) Translate + AI cinematic polish → English only
+ * 2) AI cinematic polish in the customer's language (Arabic stays Arabic)
  */
 export async function POST(request: Request) {
   try {
@@ -60,8 +61,9 @@ export async function POST(request: Request) {
       : [];
 
     const isVideo = String(mode).includes("video");
+    const preferArabic = isMostlyArabic(prompt) || hasArabic(prompt);
 
-    // Vision / context grounding (may keep Arabic coreIdea briefly).
+    // Vision / context grounding (keeps Arabic core when the customer wrote Arabic).
     const result = await withTimeout(
       enhancePromptWithContext(prompt, String(mode), {
         imageUrls,
@@ -72,7 +74,7 @@ export async function POST(request: Request) {
       {
         enhanced: enhancePrompt(prompt, String(mode)),
         finalState: {
-          arabic: /[\u0600-\u06FF]/.test(prompt),
+          arabic: preferArabic,
           entities: [],
           finalPose: "",
           lastAction: prompt,
@@ -88,9 +90,8 @@ export async function POST(request: Request) {
 
     const sourceForPolish = (result.coreIdea || prompt).trim();
 
-    // Translate + AI enhance into one English cinematic prompt.
     const cinematic = await withTimeout(
-      enhanceToEnglishCinematic(sourceForPolish, {
+      enhanceToCinematic(sourceForPolish, {
         entities: result.finalState?.entities,
         setting: result.finalState?.setting,
         media: isVideo ? "video" : "image",
@@ -98,30 +99,22 @@ export async function POST(request: Request) {
       28_000,
       {
         prompt: "",
+        language: preferArabic ? ("ar" as const) : ("en" as const),
         translated: false,
         providerOk: false,
       },
     );
 
     let enhanced = (cinematic.prompt || "").trim();
+    let language = cinematic.language;
 
-    // Hard guarantee: if still not English, force translate then polish again.
-    if (!enhanced || !isMostlyEnglish(enhanced)) {
-      const englishSource = await withTimeout(
-        translatePromptToEnglish(sourceForPolish),
-        14_000,
-        sourceForPolish,
-      );
-      const retry = await withTimeout(
-        enhanceToEnglishCinematic(englishSource, {
-          entities: result.finalState?.entities,
-          setting: result.finalState?.setting,
-          media: isVideo ? "video" : "image",
-        }),
-        20_000,
-        { prompt: englishSource, translated: false, providerOk: false },
-      );
-      enhanced = (retry.prompt || englishSource || sourceForPolish).trim();
+    // Fallback: local Arabic/English template enhance from grounded idea.
+    if (!enhanced || (preferArabic && !hasArabic(enhanced))) {
+      const local = (result.enhanced || enhancePrompt(sourceForPolish, String(mode))).trim();
+      if (local) {
+        enhanced = local;
+        language = hasArabic(local) ? "ar" : "en";
+      }
     }
 
     if (!enhanced) {
@@ -131,28 +124,44 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!isMostlyEnglish(enhanced)) {
-      return NextResponse.json(
-        {
-          error:
-            "تعذر ترجمة الوصف إلى الإنجليزية. تأكد من تفعيل مفتاح Gemini أو OpenAI على السيرفر ثم أعد المحاولة.",
-        },
-        { status: 503 },
-      );
+    // English-only sources must stay English; Arabic sources must stay Arabic.
+    if (preferArabic && !hasArabic(enhanced)) {
+      const local = (result.enhanced || sourceForPolish).trim();
+      if (hasArabic(local)) {
+        enhanced = local;
+        language = "ar";
+      } else {
+        return NextResponse.json(
+          {
+            error:
+              "تعذر تحسين الوصف بالعربية. تأكد من تفعيل مفتاح Gemini أو OpenAI على السيرفر ثم أعد المحاولة.",
+          },
+          { status: 503 },
+        );
+      }
+    }
+
+    if (!preferArabic && !isMostlyEnglish(enhanced) && !hasArabic(enhanced)) {
+      // Keep whatever we have if neither detector matches (numbers/symbols).
     }
 
     return NextResponse.json({
       original: prompt,
-      english: enhanced,
+      english: language === "en" ? enhanced : undefined,
+      arabic: language === "ar" ? enhanced : undefined,
       enhanced,
       enhancedFull: result.enhanced || enhanced,
       coreIdea: result.coreIdea,
-      finalState: result.finalState,
+      finalState: {
+        ...result.finalState,
+        arabic: language === "ar" || Boolean(result.finalState?.arabic),
+      },
       visionUsed: result.visionUsed,
       needsVisionKey: result.needsVisionKey,
       chained: result.chained,
       entityBrief: result.entityBrief,
-      translated: true,
+      translated: language === "en" && preferArabic,
+      language,
       multiShot: false,
       shotCount: 1,
       shotReason: null,
@@ -168,12 +177,16 @@ export async function POST(request: Request) {
         enhancePromptVariant(
           enhanced,
           String(mode),
-          "Emphasize mood and texture",
+          language === "ar"
+            ? "مع تركيز أقوى على المزاج والملمس البصري"
+            : "Emphasize mood and texture",
         ),
         enhancePromptVariant(
           enhanced,
           String(mode),
-          "Emphasize motion and action",
+          language === "ar"
+            ? "مع تركيز أقوى على فيزياء الحركة والتفاصيل الثانوية"
+            : "Emphasize motion and action",
         ),
       ],
     });

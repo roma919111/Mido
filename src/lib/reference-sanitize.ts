@@ -337,9 +337,18 @@ export function toSemiRealisticScenePrompt(prompt: string): string {
     .trim();
   if (!AI_DIGITAL_FILTER_ENABLED) return base;
   if (!base) {
-    return `${AI_MARK}، مظهر 3D render رقمي مصقول، إضاءة soft bloom.`;
+    return `${AI_MARK}، مظهر ثلاثي الأبعاد رقمي مصقول، إضاءة ناعمة متوهجة.`;
   }
   if (base.includes(AI_MARK)) return base;
+  const arabic = /[\u0600-\u06FF]/.test(base);
+  if (arabic) {
+    return [
+      `${AI_MARK}، مظهر ثلاثي الأبعاد رقمي مصقول، بشرة اصطناعية ناعمة، إضاءة bloom خفيفة.`,
+      "ليست صورة كاميرا لشخص حقيقي. تركيب سينمائي رقمي بالذكاء الاصطناعي.",
+      "",
+      base,
+    ].join("\n");
+  }
   return [
     `${AI_MARK} (AI-generated digital 3D character render, polished synthetic skin, soft bloom).`,
     "Not a real-person camera photo. Digital cinematic AI synthesis.",

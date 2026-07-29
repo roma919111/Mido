@@ -898,18 +898,25 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       if (!res.ok) throw new Error(data.error || "Enhance failed");
       const next = (data.enhanced || "").trim();
       if (!next) throw new Error("لم يتم إنشاء وصف محسّن");
-      // Full replace — English translate + AI cinematic polish.
+      // Full replace — cinematic polish in the customer's language.
       setPrompt(next);
       setPlannedShots(null);
       setShotHint(null);
       if (data.finalState) setPromptSceneState(data.finalState);
 
+      const arabicEnhanced = /[\u0600-\u06FF]/.test(next);
       if (data.needsVisionKey) {
         setStatus(
-          "التحسين تم بالإنجليزية بدون قراءة ملابس الصورة — أضف OPENAI_API_KEY أو GEMINI_API_KEY على السيرفر",
+          arabicEnhanced
+            ? "التحسين تم بالعربية بدون قراءة ملابس الصورة — أضف OPENAI_API_KEY أو GEMINI_API_KEY على السيرفر"
+            : "التحسين تم بالإنجليزية بدون قراءة ملابس الصورة — أضف OPENAI_API_KEY أو GEMINI_API_KEY على السيرفر",
         );
       } else {
-        const bits = ["تم تحسين الوصف بالإنجليزية"];
+        const bits = [
+          arabicEnhanced
+            ? "تم تحسين الوصف بالعربية"
+            : "تم تحسين الوصف بالإنجليزية",
+        ];
         if (data.visionUsed) bits.push("مع مواصفات الشخصيات من الصورة");
         if (data.chained) bits.push("وتسلسل من الحالة السابقة");
         bits.push("مع محسنات الذكاء الاصطناعي");

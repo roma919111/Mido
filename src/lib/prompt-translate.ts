@@ -1,6 +1,6 @@
 /**
- * Translate user prompts to English for Seedance / BytePlus generation,
- * and polish into a cinematic AI-enhanced English description.
+ * Polish creative prompts for Veronix generation.
+ * Arabic input → Arabic cinematic polish; English input → English polish.
  */
 
 function envKey(name: string): string | undefined {
@@ -24,6 +24,17 @@ export function isMostlyEnglish(text: string): boolean {
   if (!letters.length) return false;
   const latin = (letters.match(/[A-Za-z]/g) || []).length;
   return latin / letters.length >= 0.85;
+}
+
+/** Enough Arabic letters to treat the prompt as Arabic-first. */
+export function isMostlyArabic(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  if (!hasArabic(trimmed)) return false;
+  const letters = trimmed.replace(/[^A-Za-z\u0600-\u06FF]/g, "");
+  if (!letters.length) return true;
+  const arabic = (letters.match(/[\u0600-\u06FF]/g) || []).length;
+  return arabic / letters.length >= 0.35;
 }
 
 function geminiKey(): string | null {
@@ -247,8 +258,7 @@ ${settingLine}`;
 }
 
 /**
- * One-shot: translate + AI enhance into a single English cinematic prompt.
- * Preferred path for the Improve Description button.
+ * One-shot: AI enhance into a polished cinematic English prompt.
  */
 export async function enhanceToEnglishCinematic(
   text: string,
@@ -313,6 +323,99 @@ ${settingLine}`;
     prompt: polished || english || trimmed,
     translated: isMostlyEnglish(polished || english),
     providerOk: Boolean(geminiKey() || openaiKey()),
+  };
+}
+
+/**
+ * Polish into cinematic Arabic — keep Arabic script for generation.
+ * Used when the customer wrote Arabic (Improve Description + Generate).
+ */
+export async function enhanceToArabicCinematic(
+  text: string,
+  opts?: {
+    entities?: string[];
+    setting?: string;
+    media?: "image" | "video";
+  },
+): Promise<{ prompt: string; translated: boolean; providerOk: boolean }> {
+  const trimmed = text.trim();
+  if (!trimmed) return { prompt: "", translated: false, providerOk: false };
+
+  const forImage = opts?.media === "image";
+  const entityLine =
+    opts?.entities && opts.entities.length
+      ? `الشخصيات/الملابس: ${opts.entities.join("؛ ")}`
+      : "";
+  const settingLine = opts?.setting ? `المكان: ${opts.setting}` : "";
+
+  const geminiPrompt = `أنت خبير هندسة أوصاف لتوليد ${forImage ? "الصور" : "الفيديو"} بالذكاء الاصطناعي.
+المهمة: حوّل وصف المستخدم إلى وصف سينمائي عربي واحد محسّن.
+المتطلبات:
+1) الناتج يجب أن يكون بالعربية الفصحى الواضحة (حروف عربية) — لا تترجم إلى الإنجليزية
+2) حافظ على كل الشخصيات والأفعال والأماكن والملابس والتفاصيل من المصدر
+3) أثرِ الوصف بإضاءة وكاميرا وحركة وأجواء وتدرجات لونية وتركيب سينمائي
+4) لا تخترع قصة جديدة ولا تغيّر من يفعل ماذا
+5) لا تكتب مصطلحات CGI أو 3D render أو Unreal أو أسماء علامات تقنية
+6) ${forImage ? "جملتان إلى أربع جمل" : "جملتان إلى خمس جمل"}
+أرجع JSON فقط: {"prompt":"...","arabic":true}
+
+المصدر:
+${trimmed.slice(0, 4000)}
+${entityLine}
+${settingLine}`;
+
+  const parsed = await llmJson(
+    geminiPrompt,
+    "You rewrite creative prompts into rich cinematic Modern Standard Arabic for AI generation. Never translate to English. Return JSON only.",
+    geminiPrompt,
+  );
+  const p = typeof parsed?.prompt === "string" ? parsed.prompt.trim() : "";
+  if (p.length >= 8 && hasArabic(p)) {
+    return {
+      prompt: stripEnhanceJargon(p),
+      translated: false,
+      providerOk: true,
+    };
+  }
+
+  return {
+    prompt: trimmed,
+    translated: false,
+    providerOk: Boolean(geminiKey() || openaiKey()),
+  };
+}
+
+/**
+ * Language-aware enhance: Arabic stays Arabic; otherwise English cinematic.
+ */
+export async function enhanceToCinematic(
+  text: string,
+  opts?: {
+    entities?: string[];
+    setting?: string;
+    media?: "image" | "video";
+  },
+): Promise<{
+  prompt: string;
+  language: "ar" | "en";
+  translated: boolean;
+  providerOk: boolean;
+}> {
+  if (isMostlyArabic(text) || (hasArabic(text) && !isMostlyEnglish(text))) {
+    const ar = await enhanceToArabicCinematic(text, opts);
+    return {
+      prompt: ar.prompt,
+      language: "ar",
+      translated: false,
+      providerOk: ar.providerOk,
+    };
+  }
+  const en = await enhanceToEnglishCinematic(text, opts);
+  return {
+    prompt: en.prompt,
+    language: "en",
+    translated: en.translated,
+    providerOk: en.providerOk,
   };
 }
 

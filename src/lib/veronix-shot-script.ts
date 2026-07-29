@@ -18,7 +18,7 @@ export type TimedBeat = {
   role: ShotRole;
   /** Arabic line for the recommendation UI */
   labelAr: string;
-  /** English/action text for the generation script */
+  /** Action text used inside the generation script (same language as customer) */
   text: string;
 };
 
@@ -72,8 +72,14 @@ function roleLabelAr(role: ShotRole, action: string): string {
   return `المفعول به / نتيجة: ${action}`;
 }
 
-function roleTextEn(role: ShotRole, action: string): string {
+function roleText(role: ShotRole, action: string, arabic: boolean): string {
   if (role === "action") return action;
+  if (arabic) {
+    if (role === "subject_state") {
+      return `لقطة قريبة على حالة الفاعل أثناء: ${action}`;
+    }
+    return `ركز على المفعول به / نتيجة: ${action}`;
+  }
   if (role === "subject_state") {
     return `Close beat on the subject's state while: ${action}`;
   }
@@ -86,7 +92,7 @@ function roleTextEn(role: ShotRole, action: string): string {
  */
 export function buildVeronixShotScript(input: {
   originalPrompt: string;
-  /** Optional AI-enhanced English (preferred inside scriptPrompt). */
+  /** Optional AI-enhanced prompt (same language preferred for scriptPrompt). */
   enhancedPrompt?: string;
   totalSeconds: number;
 }): VeronixShotScript {
@@ -96,12 +102,17 @@ export function buildVeronixShotScript(input: {
   );
   const actions = extractActionBeats(input.originalPrompt);
   const enhanced = (input.enhancedPrompt || "").trim();
+  const arabic =
+    isArabic(enhanced) ||
+    isArabic(input.originalPrompt) ||
+    actions.some((a) => isArabic(a));
   const beats: TimedBeat[] = [];
   let t = 0;
   let actionIdx = 0;
 
   while (t < totalSeconds) {
-    const action = actions[actionIdx % actions.length] || cleanCore(input.originalPrompt);
+    const action =
+      actions[actionIdx % actions.length] || cleanCore(input.originalPrompt);
     actionIdx += 1;
     const remaining = totalSeconds - t;
 
@@ -131,7 +142,7 @@ export function buildVeronixShotScript(input: {
         endSec,
         role: slot.role,
         labelAr: roleLabelAr(slot.role, action),
-        text: roleTextEn(slot.role, action),
+        text: roleText(slot.role, action, arabic),
       });
       t = endSec;
     }
@@ -144,7 +155,7 @@ export function buildVeronixShotScript(input: {
         endSec: t + 1,
         role: "action",
         labelAr: roleLabelAr("action", action),
-        text: roleTextEn("action", action),
+        text: roleText("action", action, arabic),
       });
       t += 1;
     }
@@ -164,15 +175,27 @@ export function buildVeronixShotScript(input: {
     )
     .join("\n");
 
-  const scriptPrompt = [
-    enhanced || cleanCore(input.originalPrompt),
-    "",
-    "Veronix timed shot script — follow this exact pacing inside one continuous clip:",
-    timelineEn,
-    "Keep continuity between beats. Natural cinematic motion. One continuous video.",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const sceneCore = enhanced || cleanCore(input.originalPrompt);
+
+  const scriptPrompt = arabic
+    ? [
+        sceneCore,
+        "",
+        "سيناريو لقطات فيرونيكس الزمني — التزم بهذا التوقيت داخل فيديو واحد متصل:",
+        timelineAr,
+        "حافظ على الاستمرارية بين اللقطات. حركة سينمائية طبيعية. فيديو واحد متصل.",
+      ]
+        .filter(Boolean)
+        .join("\n")
+    : [
+        sceneCore,
+        "",
+        "Veronix timed shot script — follow this exact pacing inside one continuous clip:",
+        timelineEn,
+        "Keep continuity between beats. Natural cinematic motion. One continuous video.",
+      ]
+        .filter(Boolean)
+        .join("\n");
 
   return {
     beats,
