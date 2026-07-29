@@ -156,13 +156,14 @@ export const AI_DIGITAL_FILTER_ENABLED = true;
 /**
  * Filter preset:
  * - `"lite"`  → AI look only (smooth + color + sharpen). NO soft-glow / bloom /
- *               background isolation / cinematic tint. Active now — avoids the
- *               near black-and-white crush from full contrast/bloom/isolation.
- * - `"full"`  → frozen «نجحت المهمة» pipeline (eee7049). Restore when the owner
- *               says the emergency word: **طوارئ**
+ *               background isolation / cinematic tint. Weaker vs facial privacy.
+ * - `"full"`  → frozen «نجحت المهمة» pipeline (eee7049). Active — needed so
+ *               BytePlus accepts character stills (facial privacy). Color is
+ *               protected separately via `ensureFullColorPrompt` (not by
+ *               weakening these frozen filter numbers).
  */
 export type AiFilterPreset = "lite" | "full";
-export const AI_FILTER_PRESET: AiFilterPreset = "lite";
+export const AI_FILTER_PRESET: AiFilterPreset = "full";
 
 async function plainCompressForBytePlus(bytes: Buffer): Promise<Buffer> {
   const { buf } = await normalizeCanvas(bytes);
@@ -396,8 +397,8 @@ export function toSemiRealisticScenePrompt(prompt: string): string {
   if (AI_FILTER_PRESET === "full") {
     return ensureFullColorPrompt(
       [
-        `${AI_MARK} (AI-generated digital 3D character render, polished synthetic skin, soft bloom).`,
-        "Not a real-person camera photo. Digital cinematic AI synthesis.",
+        `${AI_MARK} (AI-generated digital 3D character render, polished synthetic skin, soft bloom, full vivid natural color).`,
+        "Not a real-person camera photo. Digital cinematic AI synthesis — full color, not black and white.",
         "",
         base,
       ].join("\n"),
