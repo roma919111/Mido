@@ -119,6 +119,16 @@ const ResultCard = memo(function ResultCard({
     }
   };
 
+  const openInAssets = () => {
+    if (waiting) return;
+    const type = job.mediaType === "image" ? "image" : "video";
+    const qs = new URLSearchParams({ type });
+    if (job.assetId) qs.set("id", job.assetId);
+    router.push(`/assets?${qs.toString()}`);
+  };
+
+  const canOpenAssets = !waiting && (Boolean(job.assetId) || job.status === "completed");
+
   const handleEdit = async () => {
     if (editing || waiting) return;
     setEditing(true);
@@ -361,7 +371,24 @@ const ResultCard = memo(function ResultCard({
         {waiting ? <GenerateClock startedAt={clockStart} size="compact" /> : null}
       </div>
 
-      <div className="relative aspect-video bg-black/50">
+      <div
+        className={`relative aspect-video bg-black/50 ${
+          canOpenAssets ? "cursor-pointer" : ""
+        }`}
+        onClick={() => {
+          if (canOpenAssets) openInAssets();
+        }}
+        role={canOpenAssets ? "link" : undefined}
+        tabIndex={canOpenAssets ? 0 : undefined}
+        onKeyDown={(e) => {
+          if (!canOpenAssets) return;
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            openInAssets();
+          }
+        }}
+        aria-label={canOpenAssets ? t.nav.assets : undefined}
+      >
         {mediaUrl ? (
           <>
             {!armed && posterSrc ? (
@@ -369,7 +396,7 @@ const ResultCard = memo(function ResultCard({
               <img
                 src={posterSrc}
                 alt=""
-                className="absolute inset-0 h-full w-full object-cover"
+                className="pointer-events-none absolute inset-0 h-full w-full object-cover"
               />
             ) : null}
             <video
@@ -381,8 +408,7 @@ const ResultCard = memo(function ResultCard({
               preload={armed ? "auto" : "none"}
               controls={false}
               controlsList="nodownload"
-              className="h-full w-full object-cover"
-              onClick={togglePlay}
+              className="pointer-events-none h-full w-full object-cover"
               onPlay={() => setPlaying(true)}
               onPause={() => setPlaying(false)}
               onEnded={() => setPlaying(false)}
@@ -394,21 +420,30 @@ const ResultCard = memo(function ResultCard({
                   e.stopPropagation();
                   togglePlay();
                 }}
-                className="absolute inset-0 z-20 flex items-center justify-center"
+                className="absolute bottom-2 start-2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-black shadow"
                 aria-label={t.assets.play}
               >
-                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white/90 text-black shadow">
-                  <Play className="h-5 w-5 translate-x-[1px]" fill="currentColor" />
-                </span>
+                <Play className="h-4 w-4 translate-x-[1px]" fill="currentColor" />
               </button>
-            ) : null}
+            ) : (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  togglePlay();
+                }}
+                className="absolute bottom-2 start-2 z-20 rounded-full bg-black/70 px-2 py-1 text-[10px] font-semibold text-white"
+              >
+                {t.assets.pause}
+              </button>
+            )}
           </>
         ) : imgSrc ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={imgSrc}
             alt="preview"
-            className="h-full w-full object-cover"
+            className="pointer-events-none h-full w-full object-cover"
           />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-1 px-2 text-center">
@@ -428,6 +463,15 @@ const ResultCard = memo(function ResultCard({
             )}
           </div>
         )}
+        {job.mediaType === "image" ? (
+          <span className="pointer-events-none absolute end-2 top-2 rounded-md bg-black/65 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[#b9a6ff]">
+            {t.create.resultImages}
+          </span>
+        ) : job.url || waiting ? (
+          <span className="pointer-events-none absolute end-2 top-2 rounded-md bg-black/65 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[#22f0ff]">
+            {t.create.resultVideos}
+          </span>
+        ) : null}
       </div>
 
       <div className="border-t border-white/8 px-2 py-1 text-center text-[9px] text-white/45">
@@ -530,11 +574,20 @@ export const StudioResultGrid = memo(function StudioResultGrid({
     else setTab("all");
   }, [jobs.length, videos.length, images.length]);
 
-  if (!jobs.length) return null;
+  const visibleJobs = useMemo(() => {
+    const list =
+      tab === "all" ? jobs : tab === "video" ? videos : images;
+    return [...list].sort((a, b) => {
+      const ta =
+        typeof a.startedAt === "number" && a.startedAt > 0 ? a.startedAt : 0;
+      const tb =
+        typeof b.startedAt === "number" && b.startedAt > 0 ? b.startedAt : 0;
+      if (tb !== ta) return tb - ta;
+      return 0;
+    });
+  }, [tab, jobs, videos, images]);
 
-  const showVideos = tab === "all" || tab === "video";
-  const showImages = tab === "all" || tab === "image";
-  const sideBySide = tab === "all" && videos.length > 0 && images.length > 0;
+  if (!jobs.length) return null;
 
   return (
     <div className="space-y-3" dir={dir}>
@@ -559,6 +612,7 @@ export const StudioResultGrid = memo(function StudioResultGrid({
               }`}
             >
               {item.label}
+              {item.id === "all" && jobs.length ? ` · ${jobs.length}` : null}
               {item.id === "video" && videos.length
                 ? ` · ${videos.length}`
                 : null}
@@ -570,53 +624,16 @@ export const StudioResultGrid = memo(function StudioResultGrid({
         </div>
       </div>
 
-      {sideBySide ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <section className="min-w-0 space-y-2">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-[#22f0ff]/90">
-              {t.create.resultVideos}
-            </p>
-            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-1 lg:grid-cols-2">
-              {videos.map((job) => (
-                <ResultCard
-                  key={job.clientId}
-                  job={job}
-                  onShare={onShare}
-                  onDelete={onDelete}
-                />
-              ))}
-            </div>
-          </section>
-          <section className="min-w-0 space-y-2">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-[#b9a6ff]">
-              {t.create.resultImages}
-            </p>
-            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-1 lg:grid-cols-2">
-              {images.map((job) => (
-                <ResultCard
-                  key={job.clientId}
-                  job={job}
-                  onShare={onShare}
-                  onDelete={onDelete}
-                />
-              ))}
-            </div>
-          </section>
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-1.5 sm:gap-2 lg:grid-cols-4">
-          {(showVideos ? videos : [])
-            .concat(showImages ? images : [])
-            .map((job) => (
-              <ResultCard
-                key={job.clientId}
-                job={job}
-                onShare={onShare}
-                onDelete={onDelete}
-              />
-            ))}
-        </div>
-      )}
+      <div className="grid grid-cols-2 gap-1.5 sm:gap-2 lg:grid-cols-4">
+        {visibleJobs.map((job) => (
+          <ResultCard
+            key={job.clientId}
+            job={job}
+            onShare={onShare}
+            onDelete={onDelete}
+          />
+        ))}
+      </div>
 
       {tab === "video" && !videos.length ? (
         <p className="text-xs text-white/45">{t.create.resultEmpty}</p>

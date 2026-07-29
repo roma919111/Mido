@@ -1268,6 +1268,35 @@ export function AssetsPage() {
     setGridZoom(readStoredGridZoom());
   }, []);
 
+  // Create Result preview → Assets deep link: /assets?type=image|video&id=…
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const sp = new URLSearchParams(window.location.search);
+    const typeRaw = (sp.get("type") || sp.get("media") || "").toLowerCase();
+    const id = (sp.get("id") || sp.get("focus") || sp.get("asset") || "").trim();
+    let changed = false;
+    if (typeRaw === "image" || typeRaw === "photo" || typeRaw === "photos") {
+      setFilter("image");
+      changed = true;
+    } else if (typeRaw === "video" || typeRaw === "videos") {
+      setFilter("video");
+      changed = true;
+    }
+    if (id) {
+      setFocusAssetId(id);
+      setViewMode("browse");
+      try {
+        sessionStorage.setItem(VIEW_MODE_KEY, "browse");
+      } catch {
+        // ignore
+      }
+      changed = true;
+    }
+    if (changed) {
+      window.history.replaceState({}, "", "/assets");
+    }
+  }, []);
+
   const setVideoViewMode = useCallback((mode: VideoViewMode) => {
     setViewMode(mode);
     try {
