@@ -484,7 +484,7 @@ function FeedVideoSlide({
   return (
     <section
       data-asset-id={item.id}
-      className="relative h-[calc(100dvh-5.5rem-env(safe-area-inset-bottom))] w-full snap-start snap-always overflow-hidden bg-black"
+      className="relative h-[calc(100dvh-5.25rem-env(safe-area-inset-bottom))] w-full snap-start snap-always overflow-hidden bg-black"
     >
       {canPlay ? (
         <>
@@ -494,7 +494,7 @@ function FeedVideoSlide({
             <img
               src={poster}
               alt=""
-              className="absolute inset-0 h-full w-full object-contain bg-black"
+              className="absolute inset-0 h-full w-full object-cover bg-black"
               onError={() => setPosterFailed(true)}
             />
           ) : null}
@@ -522,7 +522,7 @@ function FeedVideoSlide({
               setPosterFailed(true);
               setPlaying(false);
             }}
-            className="pointer-events-none absolute inset-0 h-full w-full object-contain bg-black"
+            className="pointer-events-none absolute inset-0 h-full w-full object-cover bg-black"
           />
 
           {/* Center Play / Pause buttons only — no tap-on-video. */}
@@ -603,7 +603,7 @@ function FeedVideoSlide({
 
       {/* Side actions — visible when paused (after Pause or before Play) */}
       {!playing ? (
-      <div className="absolute bottom-36 left-3 z-40 flex flex-col items-center gap-2.5 sm:bottom-40 sm:left-5">
+      <div className="absolute bottom-28 left-2 z-40 flex flex-col items-center gap-2 sm:bottom-32 sm:left-4">
         <div className="flex flex-col items-center gap-1">
           <button
             type="button"
@@ -685,7 +685,7 @@ function FeedVideoSlide({
       {/* Title + meta — shown when paused / stopped */}
       {!playing ? (
       <div
-        className="pointer-events-none absolute inset-x-0 bottom-20 z-20 px-4 pb-[env(safe-area-inset-bottom)] pl-20 sm:px-6 sm:pl-24"
+        className="pointer-events-none absolute inset-x-0 bottom-16 z-20 px-3 pb-[env(safe-area-inset-bottom)] pl-16 sm:bottom-20 sm:px-6 sm:pl-24"
         dir={dir}
       >
         <div className="pointer-events-auto max-w-[min(100%,28rem)]">
@@ -745,21 +745,29 @@ function GridVideoTile({
   item: AssetItem;
   onOpen: (id: string) => void;
 }) {
+  const { dir } = useLocale();
   const poster = veronixPosterSrc({
     url: item.url,
     historyId: item.historyId,
   });
   const title = assetPromptTitle(item.prompt) || "فيديو";
   const running = item.status === "running" || item.status === "pending";
+  const ratio = String(item.aspectRatio || "16:9").trim();
+  const portrait =
+    ratio === "9:16" || ratio === "3:4" || ratio === "2:3" || ratio === "4:5";
 
   return (
     <button
       type="button"
       onClick={() => onOpen(item.id)}
-      className="group relative overflow-hidden rounded-xl bg-[#10141c] text-right ring-1 ring-white/10 transition hover:ring-white/25"
-      dir="rtl"
+      className="group relative overflow-hidden rounded-lg bg-[#10141c] text-right ring-1 ring-white/10 transition hover:ring-white/25"
+      dir={dir}
     >
-      <div className="relative aspect-[9/16] bg-black/50">
+      <div
+        className={`relative bg-black/50 ${
+          portrait ? "aspect-[3/4]" : "aspect-video"
+        }`}
+      >
         {poster ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -780,16 +788,16 @@ function GridVideoTile({
           </div>
         ) : (
           <div className="absolute inset-0 flex items-center justify-center opacity-80 transition group-hover:opacity-100">
-            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20 ring-1 ring-white/30 backdrop-blur-md">
-              <Play className="h-4 w-4 fill-white text-white" />
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20 ring-1 ring-white/30 backdrop-blur-md">
+              <Play className="h-3.5 w-3.5 fill-white text-white" />
             </span>
           </div>
         )}
-        <div className="absolute inset-x-0 bottom-0 p-2">
-          <p className="line-clamp-2 text-[11px] font-semibold leading-snug text-white">
+        <div className="absolute inset-x-0 bottom-0 p-1.5">
+          <p className="line-clamp-1 text-[10px] font-semibold leading-snug text-white sm:line-clamp-2 sm:text-[11px]">
             {title}
           </p>
-          <VideoMetaNotes item={item} className="mt-1.5" />
+          <VideoMetaNotes item={item} className="mt-1" />
         </div>
       </div>
     </button>
@@ -1107,6 +1115,7 @@ export function AssetsPage() {
         <div className="pointer-events-none absolute inset-x-0 top-0 z-30 bg-gradient-to-b from-black/80 via-black/50 to-transparent">
           <div className="pointer-events-auto">
             <AppHeader
+              compact
               user={user}
               onLogout={() => {
                 void fetch("/api/auth/customer/logout", { method: "POST" }).then(() => {
@@ -1117,38 +1126,38 @@ export function AssetsPage() {
               }}
             />
           </div>
-          <div className="pointer-events-auto px-4 pb-3" dir={dir}>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="font-display text-lg font-extrabold">Assets</p>
-                <p className="text-[11px] text-white/45">
+          <div className="pointer-events-auto px-3 pb-2 sm:px-4" dir={dir}>
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="font-display text-base font-extrabold sm:text-lg">Assets</p>
+                <p className="text-[10px] text-white/45 sm:text-[11px]">
                   {viewMode === "browse" ? t.assets.swipeUp : t.assets.gridHint}
                 </p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex shrink-0 gap-1.5">
                 <button
                   type="button"
                   onClick={() => setFilter("video")}
-                  className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-black"
+                  className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black sm:px-3 sm:text-xs"
                 >
                   {t.assets.video}
                 </button>
                 <button
                   type="button"
                   onClick={() => setFilter("image")}
-                  className="rounded-full border border-white/20 px-3 py-1 text-xs font-semibold text-white/80"
+                  className="rounded-full border border-white/20 px-2.5 py-1 text-[11px] font-semibold text-white/80 sm:px-3 sm:text-xs"
                 >
                   {t.assets.photos}
                 </button>
               </div>
             </div>
 
-            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               <div className="flex rounded-full bg-white/10 p-0.5 ring-1 ring-white/15">
                 <button
                   type="button"
                   onClick={() => setVideoViewMode("browse")}
-                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold transition ${
+                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold transition sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-[11px] ${
                     viewMode === "browse"
                       ? "bg-white text-black"
                       : "text-white/75 hover:text-white"
@@ -1160,7 +1169,7 @@ export function AssetsPage() {
                 <button
                   type="button"
                   onClick={() => setVideoViewMode("grid")}
-                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold transition ${
+                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold transition sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-[11px] ${
                     viewMode === "grid"
                       ? "bg-white text-black"
                       : "text-white/75 hover:text-white"
@@ -1172,7 +1181,7 @@ export function AssetsPage() {
               </div>
 
               {viewMode === "grid" ? (
-                <div className="flex min-w-0 flex-1 items-center gap-2 rounded-full bg-white/10 px-2.5 py-1 ring-1 ring-white/15">
+                <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-full bg-white/10 px-2 py-1 ring-1 ring-white/15">
                   <ZoomOut className="h-3.5 w-3.5 shrink-0 text-white/55" />
                   <input
                     type="range"
@@ -1181,7 +1190,7 @@ export function AssetsPage() {
                     step={1}
                     value={gridZoom}
                     onChange={(e) => setVideoGridZoom(Number(e.target.value))}
-                    className="h-1.5 w-full min-w-[5.5rem] accent-[#22f0ff]"
+                    className="h-1.5 w-full min-w-[4.5rem] accent-[#22f0ff]"
                     aria-label={t.assets.zoom}
                   />
                   <ZoomIn className="h-3.5 w-3.5 shrink-0 text-white/55" />
@@ -1224,7 +1233,7 @@ export function AssetsPage() {
         {!error && videos.length > 0 && viewMode === "browse" && (
           <div
             ref={feedRef}
-            className="h-[calc(100dvh-5.5rem-env(safe-area-inset-bottom))] snap-y snap-mandatory overflow-y-scroll overscroll-y-contain"
+            className="h-[calc(100dvh-5.25rem-env(safe-area-inset-bottom))] snap-y snap-mandatory overflow-y-scroll overscroll-y-contain"
             style={{ scrollSnapType: "y mandatory" }}
           >
             {videos.map((item, index) => {
@@ -1255,9 +1264,9 @@ export function AssetsPage() {
         )}
 
         {!error && videos.length > 0 && viewMode === "grid" && (
-          <div className="h-[calc(100dvh-5.5rem-env(safe-area-inset-bottom))] overflow-y-auto overscroll-y-contain px-3 pb-6 pt-36">
+          <div className="h-[calc(100dvh-5.25rem-env(safe-area-inset-bottom))] overflow-y-auto overscroll-y-contain px-1.5 pb-4 pt-28 sm:px-3 sm:pt-32">
             <div
-              className="mx-auto grid max-w-6xl gap-2 sm:gap-3"
+              className="mx-auto grid max-w-6xl gap-1 sm:gap-1.5"
               style={{
                 gridTemplateColumns: `repeat(${gridZoom}, minmax(0, 1fr))`,
               }}
@@ -1332,7 +1341,7 @@ export function AssetsPage() {
           <p className="mt-8 text-sm text-white/45">لا توجد صور بعد.</p>
         )}
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-4 grid gap-2 sm:mt-6 sm:grid-cols-2 sm:gap-3 lg:grid-cols-3">
           {images.map((item) => (
             <ImageTile
               key={item.id}

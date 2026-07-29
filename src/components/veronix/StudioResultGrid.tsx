@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   Loader2,
   Pencil,
@@ -15,6 +15,7 @@ import { fetchJson } from "@/lib/fetch-json";
 import { inferTargetSecondsFromAsset } from "@/lib/generate-eta";
 import { useRouter } from "next/navigation";
 import { GenerateClock } from "@/components/veronix/GenerateClock";
+import { useLocale } from "@/components/veronix/LocaleProvider";
 
 function jobVisualEqual(a: StudioJob, b: StudioJob): boolean {
   return (
@@ -40,6 +41,7 @@ const ResultCard = memo(function ResultCard({
   onDelete: (job: StudioJob) => void;
 }) {
   const router = useRouter();
+  const { t } = useLocale();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -215,7 +217,7 @@ const ResultCard = memo(function ResultCard({
     setDeleting(true);
     try {
       if (job.assetId) {
-        await fetchJson(`/api/assets`, {
+        await fetchJson("/api/assets", {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: job.assetId }),
@@ -233,7 +235,11 @@ const ResultCard = memo(function ResultCard({
     <div className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-[#141821]">
       <div className="flex items-center justify-between gap-1 border-b border-white/8 px-2 py-1.5">
         <p className="truncate text-[11px] font-semibold text-white/80">
-          {waiting ? "جاري التوليد" : failed ? "فشل التوليد" : "جاهز"}
+          {waiting
+            ? t.assets.generating
+            : failed
+              ? t.assets.failed
+              : t.create.resultReady}
         </p>
         {waiting ? <GenerateClock startedAt={clockStart} size="compact" /> : null}
       </div>
@@ -246,7 +252,7 @@ const ResultCard = memo(function ResultCard({
               <img
                 src={posterSrc}
                 alt=""
-                className="absolute inset-0 h-full w-full object-contain"
+                className="absolute inset-0 h-full w-full object-cover"
               />
             ) : null}
             <video
@@ -258,13 +264,12 @@ const ResultCard = memo(function ResultCard({
               preload={armed ? "auto" : "none"}
               controls={false}
               controlsList="nodownload"
-              className="h-full w-full object-contain"
+              className="h-full w-full object-cover"
               onClick={togglePlay}
               onPlay={() => setPlaying(true)}
               onPause={() => setPlaying(false)}
               onEnded={() => setPlaying(false)}
             />
-            {/* Center Play — disappears while playing; tap video to pause. */}
             {!playing ? (
               <button
                 type="button"
@@ -273,7 +278,7 @@ const ResultCard = memo(function ResultCard({
                   togglePlay();
                 }}
                 className="absolute inset-0 z-20 flex items-center justify-center"
-                aria-label="تشغيل"
+                aria-label={t.assets.play}
               >
                 <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white/90 text-black shadow">
                   <Play className="h-5 w-5 translate-x-[1px]" fill="currentColor" />
@@ -286,21 +291,23 @@ const ResultCard = memo(function ResultCard({
           <img
             src={imgSrc}
             alt="preview"
-            className="h-full w-full object-contain"
+            className="h-full w-full object-cover"
           />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-1 px-2 text-center">
             {waiting ? (
               <div className="flex flex-col items-center gap-1.5">
                 <GenerateClock startedAt={clockStart} size="large" />
-                <p className="text-xs font-semibold text-white/80">جاري التوليد</p>
+                <p className="text-xs font-semibold text-white/80">
+                  {t.assets.generating}
+                </p>
               </div>
             ) : failed ? (
               <p className="text-[11px] font-semibold leading-snug text-rose-200">
-                {job.error || "فشل التوليد"}
+                {job.error || t.assets.failed}
               </p>
             ) : (
-              <p className="text-xs text-white/40">لا توجد معاينة بعد</p>
+              <p className="text-xs text-white/40">{t.create.resultEmpty}</p>
             )}
           </div>
         )}
@@ -322,7 +329,7 @@ const ResultCard = memo(function ResultCard({
           ) : (
             <Pencil className="h-4 w-4 text-[#22f0ff]" />
           )}
-          تعديل
+          {t.assets.edit}
         </button>
         <button
           type="button"
@@ -331,7 +338,7 @@ const ResultCard = memo(function ResultCard({
           className="inline-flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-xl border border-white/20 bg-white/10 px-1 py-1.5 text-[11px] font-bold text-white disabled:opacity-40"
         >
           <Share2 className="h-4 w-4 text-[#22f0ff]" />
-          شير
+          {t.create.resultShare}
         </button>
         <button
           type="button"
@@ -344,7 +351,7 @@ const ResultCard = memo(function ResultCard({
           ) : (
             <Trash2 className="h-4 w-4" />
           )}
-          حذف
+          {t.assets.delete}
         </button>
       </div>
     </div>
@@ -355,6 +362,8 @@ const ResultCard = memo(function ResultCard({
   prev.onDelete === next.onDelete,
 );
 
+type PreviewTab = "all" | "video" | "image";
+
 export const StudioResultGrid = memo(function StudioResultGrid({
   jobs,
   onShare,
@@ -364,20 +373,121 @@ export const StudioResultGrid = memo(function StudioResultGrid({
   onShare: (job: StudioJob) => void;
   onDelete: (job: StudioJob) => void;
 }) {
+  const { t, dir } = useLocale();
+  const [tab, setTab] = useState<PreviewTab>("all");
+  const seeded = useRef(false);
+
+  const videos = useMemo(
+    () => jobs.filter((j) => j.mediaType === "video"),
+    [jobs],
+  );
+  const images = useMemo(
+    () => jobs.filter((j) => j.mediaType === "image"),
+    [jobs],
+  );
+
+  useEffect(() => {
+    if (seeded.current || !jobs.length) return;
+    seeded.current = true;
+    if (videos.length && !images.length) setTab("video");
+    else if (images.length && !videos.length) setTab("image");
+    else setTab("all");
+  }, [jobs.length, videos.length, images.length]);
+
   if (!jobs.length) return null;
+
+  const showVideos = tab === "all" || tab === "video";
+  const showImages = tab === "all" || tab === "image";
+  const sideBySide = tab === "all" && videos.length > 0 && images.length > 0;
+
   return (
-    <div className="space-y-3">
-      <p className="text-sm font-semibold text-white">معاينة النتيجة</p>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        {jobs.map((job) => (
-          <ResultCard
-            key={job.clientId}
-            job={job}
-            onShare={onShare}
-            onDelete={onDelete}
-          />
-        ))}
+    <div className="space-y-3" dir={dir}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-white">{t.create.resultPreview}</p>
+        <div className="flex rounded-full bg-white/10 p-0.5 ring-1 ring-white/15">
+          {(
+            [
+              { id: "all" as const, label: t.create.resultAll },
+              { id: "video" as const, label: t.create.resultVideos },
+              { id: "image" as const, label: t.create.resultImages },
+            ] as const
+          ).map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setTab(item.id)}
+              className={`rounded-full px-2.5 py-1 text-[10px] font-semibold transition sm:px-3 sm:text-[11px] ${
+                tab === item.id
+                  ? "bg-white text-black"
+                  : "text-white/70 hover:text-white"
+              }`}
+            >
+              {item.label}
+              {item.id === "video" && videos.length
+                ? ` · ${videos.length}`
+                : null}
+              {item.id === "image" && images.length
+                ? ` · ${images.length}`
+                : null}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {sideBySide ? (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <section className="min-w-0 space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[#22f0ff]/90">
+              {t.create.resultVideos}
+            </p>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-1 lg:grid-cols-2">
+              {videos.map((job) => (
+                <ResultCard
+                  key={job.clientId}
+                  job={job}
+                  onShare={onShare}
+                  onDelete={onDelete}
+                />
+              ))}
+            </div>
+          </section>
+          <section className="min-w-0 space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[#b9a6ff]">
+              {t.create.resultImages}
+            </p>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-1 lg:grid-cols-2">
+              {images.map((job) => (
+                <ResultCard
+                  key={job.clientId}
+                  job={job}
+                  onShare={onShare}
+                  onDelete={onDelete}
+                />
+              ))}
+            </div>
+          </section>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-1.5 sm:gap-2 lg:grid-cols-4">
+          {(showVideos ? videos : [])
+            .concat(showImages ? images : [])
+            .map((job) => (
+              <ResultCard
+                key={job.clientId}
+                job={job}
+                onShare={onShare}
+                onDelete={onDelete}
+              />
+            ))}
+        </div>
+      )}
+
+      {tab === "video" && !videos.length ? (
+        <p className="text-xs text-white/45">{t.create.resultEmpty}</p>
+      ) : null}
+      {tab === "image" && !images.length ? (
+        <p className="text-xs text-white/45">{t.create.resultEmpty}</p>
+      ) : null}
     </div>
   );
 });

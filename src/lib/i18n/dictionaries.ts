@@ -166,6 +166,13 @@ export type Dictionary = {
     outputCount: string;
     native720Note: string;
     clarityUpgrade: string;
+    resultPreview: string;
+    resultVideos: string;
+    resultImages: string;
+    resultAll: string;
+    resultReady: string;
+    resultShare: string;
+    resultEmpty: string;
   };
   assets: {
     video: string;
@@ -388,6 +395,13 @@ export const ar: Dictionary = {
     outputCount: "عدد الفيديوهات",
     native720Note: "720p أصلي — لا حاجة لترقية وضوح إضافية",
     clarityUpgrade: "ترقية وضوح 480→720",
+    resultPreview: "معاينة النتيجة",
+    resultVideos: "فيديو",
+    resultImages: "صور",
+    resultAll: "الكل",
+    resultReady: "جاهز",
+    resultShare: "شير",
+    resultEmpty: "لا توجد معاينة بعد",
   },
   assets: {
     video: "فيديو",
@@ -610,6 +624,13 @@ export const en: Dictionary = {
     outputCount: "Video count",
     native720Note: "Native 720p — no extra clarity upgrade needed",
     clarityUpgrade: "Clarity upgrade 480→720",
+    resultPreview: "Result preview",
+    resultVideos: "Video",
+    resultImages: "Images",
+    resultAll: "All",
+    resultReady: "Ready",
+    resultShare: "Share",
+    resultEmpty: "No preview yet",
   },
   assets: {
     video: "Video",
