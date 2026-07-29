@@ -161,7 +161,7 @@ export const AI_DIGITAL_FILTER_ENABLED = true;
  *               says the emergency word: **طوارئ**
  */
 export type AiFilterPreset = "lite" | "full";
-export const AI_FILTER_PRESET: AiFilterPreset = "lite";
+export const AI_FILTER_PRESET: AiFilterPreset = "full";
 
 async function plainCompressForBytePlus(bytes: Buffer): Promise<Buffer> {
   const { buf } = await normalizeCanvas(bytes);
