@@ -36,6 +36,11 @@ yarn-error.log*
 
 # server-side owner OpenArt credentials (never commit)
 .data/
+.data/veronix-db.json
+.data/google-oauth.enc
+
+# Railway local link/config (may contain project ids; keep out of git)
+.railway/
 
 # vercel
 .vercel
@@ -43,3 +48,4 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+tmp/
