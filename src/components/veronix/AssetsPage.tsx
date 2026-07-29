@@ -97,8 +97,19 @@ function videoMetaChips(item: AssetItem): string[] {
     chips.push("وضوح محسّن");
   }
 
-  const secs = inferTargetSecondsFromAsset(item);
-  if (secs > 0) chips.push(`${secs}ث`);
+  if (typeof item.targetSeconds === "number" && item.targetSeconds > 0) {
+    chips.push(`${Math.round(item.targetSeconds)}ث`);
+  } else {
+    const fromPrompt = /دمج\s+(\d+)\s+لقطات/u.exec(item.prompt || "");
+    if (fromPrompt) {
+      const shots = Number(fromPrompt[1]);
+      if (Number.isFinite(shots) && shots > 0) chips.push(`${shots * 4}ث`);
+    } else {
+      const secMatch = /(\d+)\s*ث/u.exec(item.prompt || "");
+      const sec = secMatch ? Number(secMatch[1]) : NaN;
+      if (Number.isFinite(sec) && sec >= 4) chips.push(`${sec}ث`);
+    }
+  }
 
   const ar = item.aspectRatio?.trim();
   if (ar) chips.push(ar);
