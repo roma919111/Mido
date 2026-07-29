@@ -7,6 +7,7 @@ import { AppHeader, type CustomerUser } from "./AppHeader";
 import { SiteFooter } from "./SiteFooter";
 import { BottomNav } from "./BottomNav";
 import {
+  canDowngradeToPlan,
   canPurchasePlan,
   canTopUp,
   canUpgradeToPlan,
@@ -35,8 +36,8 @@ export function PricingPage() {
   const onFree = isFreePlan(currentPlanId);
   const topUpsAllowed = canTopUp(currentPlanId);
 
-  const upgradeTargets = useMemo(
-    () => SUBSCRIPTION_PLANS.filter((p) => canUpgradeToPlan(currentPlanId, p.id)),
+  const switchTargets = useMemo(
+    () => SUBSCRIPTION_PLANS.filter((p) => canPurchasePlan(currentPlanId, p.id)),
     [currentPlanId],
   );
 
@@ -188,21 +189,15 @@ export function PricingPage() {
         <p className="mt-2 text-white/50">
           {onFree
             ? "أنت على الباقة الأساسية. رقِّ لباقة مدفوعة للحصول على كريدت شهري وإمكانية الشحن."
-            : onHighest
-              ? "أنت على أعلى باقة. يمكنك إضافة كريدت أو الرجوع للباقة الأساسية لإيقاف الاستقطاع."
-              : "لا يمكن إعادة اختيار نفس الباقة — الترقية للأعلى أو الرجوع للأساسية فقط."}
+            : "يمكنك الترقية أو الرجوع لأي باقة أخرى، أو إضافة كريدت. نفس الباقة لا تُعاد شراؤها."}
         </p>
 
         <div className="mt-6 grid gap-4 md:grid-cols-3">
           {SUBSCRIPTION_PLANS.map((plan) => {
             const isCurrent = currentPlanId === plan.id;
             const canUpgrade = canUpgradeToPlan(currentPlanId, plan.id);
+            const canDowngrade = canDowngradeToPlan(currentPlanId, plan.id);
             const canBuy = canPurchasePlan(currentPlanId, plan.id);
-            const isLowerPaid =
-              isPaidPlan(currentPlanId) &&
-              isPaidPlan(plan.id) &&
-              !isCurrent &&
-              !canUpgrade;
             const switchingToFree = plan.id === "free" && canBuy;
             const disabled = Boolean(busy) || !canBuy;
 
@@ -211,13 +206,13 @@ export function PricingPage() {
                 key={plan.id}
                 className={`relative rounded-3xl border p-5 ${
                   isCurrent
-                    ? "border-[#22f0ff]/60 bg-[rgba(34,240,255,0.08)]"
+                    ? "border-[#22f0ff]/60 bg-[rgba(34,240,255,0.08)] opacity-80"
                     : canUpgrade || plan.highlight
                       ? "border-[#22f0ff]/40 bg-[rgba(34,240,255,0.05)]"
-                      : switchingToFree
+                      : switchingToFree || canDowngrade
                         ? "border-white/20 bg-[#141821]"
                         : "border-white/10 bg-[#141821]"
-                } ${isLowerPaid || isCurrent ? "opacity-80" : ""}`}
+                }`}
               >
                 {isCurrent && (
                   <span className="absolute left-4 top-4 rounded-full bg-[#22f0ff]/20 px-2.5 py-1 text-[11px] font-semibold text-[#22f0ff]">
@@ -228,6 +223,11 @@ export function PricingPage() {
                   <span className="absolute left-4 top-4 inline-flex items-center gap-1 rounded-full bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-2.5 py-1 text-[11px] font-semibold text-white">
                     <ArrowUpRight className="h-3 w-3" />
                     ترقية
+                  </span>
+                )}
+                {canDowngrade && !switchingToFree && (
+                  <span className="absolute left-4 top-4 rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/80">
+                    رجوع
                   </span>
                 )}
                 {switchingToFree && (
@@ -272,7 +272,7 @@ export function PricingPage() {
                   className={`mt-5 w-full rounded-2xl py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
                     canUpgrade
                       ? "bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] text-white"
-                      : switchingToFree
+                      : switchingToFree || canDowngrade
                         ? "border border-white/20 bg-white/10 text-white"
                         : isCurrent
                           ? "border border-white/15 bg-white/5 text-white/70"
@@ -283,12 +283,12 @@ export function PricingPage() {
                     ? "جارٍ المعالجة…"
                     : isCurrent
                       ? "باقتك الحالية"
-                      : isLowerPaid
-                        ? "باقة أدنى — غير متاحة"
-                        : switchingToFree
-                          ? "الرجوع للباقة الأساسية"
-                          : canUpgrade
-                            ? `رقِّ إلى الباقة ${plan.name}`
+                      : switchingToFree
+                        ? "الرجوع للباقة الأساسية"
+                        : canUpgrade
+                          ? `رقِّ إلى الباقة ${plan.name}`
+                          : canDowngrade
+                            ? `الرجوع إلى الباقة ${plan.name}`
                             : `اختر الباقة ${plan.name}`}
                 </button>
               </div>
@@ -296,9 +296,9 @@ export function PricingPage() {
           })}
         </div>
 
-        {upgradeTargets.length > 0 && (
+        {switchTargets.length > 0 && (
           <p className="mt-3 text-center text-xs text-white/40">
-            الترقية المتاحة: {upgradeTargets.map((p) => p.name).join(" · ")}
+            التحويل المتاح: {switchTargets.map((p) => p.name).join(" · ")}
           </p>
         )}
 

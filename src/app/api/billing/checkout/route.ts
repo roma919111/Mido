@@ -6,8 +6,6 @@ import {
   getPlan,
   getTopUp,
   isFreePlan,
-  isHighestPlan,
-  isPaidPlan,
   type PlanId,
 } from "@/lib/plans";
 import {
@@ -79,18 +77,8 @@ export async function POST(request: Request) {
     if (user.planId === planId || (isFreePlan(user.planId) && planId === "free")) {
       return NextResponse.json(
         {
-          error: "هذه باقتك الحالية. يمكنك الترقية لباقة أعلى أو الرجوع للمجانية من باقة مدفوعة.",
+          error: "هذه باقتك الحالية. اختر باقة أخرى للترقية أو الرجوع.",
           code: "same_plan",
-        },
-        { status: 409 },
-      );
-    }
-
-    if (isHighestPlan(user.planId) && isPaidPlan(planId)) {
-      return NextResponse.json(
-        {
-          error: "أنت على أعلى باقة. أضف كريدت أو ارجع للباقة الأساسية.",
-          code: "highest_plan_topup_or_free",
         },
         { status: 409 },
       );
@@ -99,8 +87,8 @@ export async function POST(request: Request) {
     if (!canPurchasePlan(user.planId, planId)) {
       return NextResponse.json(
         {
-          error: "لا يمكن الرجوع لباقة مدفوعة أدنى. الترقية للأعلى أو الرجوع للمجانية فقط.",
-          code: "downgrade_blocked",
+          error: "لا يمكن التحويل إلى هذه الباقة.",
+          code: "switch_blocked",
         },
         { status: 409 },
       );
@@ -123,10 +111,10 @@ export async function POST(request: Request) {
     if (!(await isStripeConfigured())) {
       return NextResponse.json(
         {
-            error: "الدفع غير مفعّل. افتح /setup/stripe وأدخل مفاتيح Stripe أولًا.",
-            code: "stripe_required",
-            needsStripeSetup: true,
-            setupUrl: "/setup/stripe",
+          error: "الدفع غير مفعّل. افتح /setup/stripe وأدخل مفاتيح Stripe أولًا.",
+          code: "stripe_required",
+          needsStripeSetup: true,
+          setupUrl: "/setup/stripe",
         },
         { status: 503 },
       );

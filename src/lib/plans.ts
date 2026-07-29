@@ -161,17 +161,26 @@ export function canUpgradeToPlan(
   return target > current;
 }
 
+/** True when moving to a strictly lower paid/free plan. */
+export function canDowngradeToPlan(
+  currentPlanId: string | null | undefined,
+  targetPlanId: string,
+): boolean {
+  const current = getPlanRank(currentPlanId);
+  const target = getPlanRank(targetPlanId);
+  if (current < 0 || target < 0) return false;
+  return target < current;
+}
+
 /** Switch back to free from any paid plan. */
 export function canSwitchToFree(currentPlanId: string | null | undefined): boolean {
   return isPaidPlan(currentPlanId);
 }
 
 /**
- * Purchase rules:
- * - Free → paid upgrade OK
- * - Paid → higher paid upgrade OK
- * - Paid → free switch OK
- * - Same plan / downgrade between paid plans blocked
+ * Purchase / switch rules:
+ * - Any plan → any other plan is allowed (upgrade or downgrade)
+ * - Same plan blocked
  */
 export function canPurchasePlan(
   currentPlanId: string | null | undefined,
@@ -180,14 +189,5 @@ export function canPurchasePlan(
   if (!getPlan(targetPlanId)) return false;
   const current = normalizePlanId(currentPlanId);
   if (current === targetPlanId) return false;
-
-  if (targetPlanId === "free") {
-    return canSwitchToFree(current);
-  }
-
-  if (isFreePlan(current)) {
-    return isPaidPlan(targetPlanId);
-  }
-
-  return canUpgradeToPlan(current, targetPlanId);
+  return true;
 }
