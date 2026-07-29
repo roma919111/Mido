@@ -330,7 +330,7 @@ function FeedVideoSlide({
   return (
     <section
       data-asset-id={item.id}
-      className="relative h-[100dvh] w-full snap-start snap-always overflow-hidden bg-black"
+      className="relative h-[calc(100dvh-4.35rem)] w-full snap-start snap-always overflow-hidden bg-black"
     >
       {canPlay ? (
         <>
@@ -427,7 +427,7 @@ function FeedVideoSlide({
 
       {/* Side actions — hidden while watching */}
       {!playing ? (
-      <div className="absolute bottom-48 left-3 z-40 flex flex-col items-center gap-2.5 sm:bottom-52 sm:left-5">
+      <div className="absolute bottom-36 left-3 z-40 flex flex-col items-center gap-2.5 sm:bottom-40 sm:left-5">
         <div className="flex flex-col items-center gap-1">
           <button
             type="button"
@@ -509,7 +509,7 @@ function FeedVideoSlide({
       {/* Title + truncated description — hidden while watching */}
       {!playing ? (
       <div
-        className="pointer-events-none absolute inset-x-0 bottom-[4.75rem] z-20 px-4 pb-[env(safe-area-inset-bottom)] pl-20 sm:px-6 sm:pl-24"
+        className="pointer-events-none absolute inset-x-0 bottom-20 z-20 px-4 pb-[env(safe-area-inset-bottom)] pl-20 sm:px-6 sm:pl-24"
         dir="rtl"
       >
         <div className="pointer-events-auto max-w-[min(100%,28rem)]">
@@ -874,7 +874,7 @@ export function AssetsPage() {
         {!error && videos.length > 0 && (
           <div
             ref={feedRef}
-            className="h-[100dvh] snap-y snap-mandatory overflow-y-scroll overscroll-y-contain"
+            className="h-[calc(100dvh-4.35rem)] snap-y snap-mandatory overflow-y-scroll overscroll-y-contain"
             style={{ scrollSnapType: "y mandatory" }}
           >
             {videos.map((item, index) => {

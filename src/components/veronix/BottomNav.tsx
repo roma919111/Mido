@@ -93,8 +93,8 @@ export function BottomNav() {
   }, [createOpen]);
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-white/10 bg-[#0b0d12]/95 pb-[env(safe-area-inset-bottom)]">
-      <div className="mx-auto grid max-w-lg grid-cols-5 items-end px-2 pt-2">
+    <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-[120] border-t border-white/10 bg-[#0b0d12]/96 pb-[env(safe-area-inset-bottom)] backdrop-blur-md">
+      <div className="pointer-events-auto mx-auto grid max-w-lg grid-cols-5 items-end px-2 pt-2">
         {items.map((item) => {
           const Icon = item.icon;
           const active = item.center
@@ -108,11 +108,11 @@ export function BottomNav() {
               <div
                 key="create"
                 ref={menuRef}
-                className="relative -mt-5 flex flex-col items-center justify-center"
+                className="relative -mt-6 flex flex-col items-center justify-center"
               >
                 {createOpen && (
                   <div
-                    className="absolute bottom-[4.75rem] left-1/2 z-[60] w-[min(92vw,20.5rem)] -translate-x-1/2"
+                    className="absolute bottom-[4.85rem] left-1/2 z-[130] w-[min(92vw,20.5rem)] -translate-x-1/2"
                     dir={dir}
                   >
                     <div className="overflow-hidden rounded-[22px] border border-white/12 bg-[#12161f] shadow-[0_22px_55px_rgba(0,0,0,0.55)]">
@@ -173,12 +173,28 @@ export function BottomNav() {
                   onClick={() => setCreateOpen((v) => !v)}
                   className="relative flex flex-col items-center justify-center"
                 >
-                  <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] shadow-[0_10px_30px_rgba(124,92,255,0.45)] ring-4 ring-[#0b0d12]">
-                    <Icon className="h-6 w-6 text-white" />
+                  {/* Veronix create mark: squircle + cyan/violet core (logo ai. colors) */}
+                  <span
+                    className={`relative flex h-[3.6rem] w-[3.6rem] items-center justify-center rounded-[1.15rem] transition duration-200 ${
+                      createOpen || active ? "scale-[1.04]" : ""
+                    }`}
+                  >
+                    <span
+                      aria-hidden
+                      className="absolute -inset-1 rounded-[1.35rem] bg-[conic-gradient(from_210deg,#22f0ff,#7c5cff,#22f0ff)] opacity-90 blur-[1px]"
+                    />
+                    <span
+                      aria-hidden
+                      className="absolute inset-0 rounded-[1.15rem] bg-[#0b0d12] ring-1 ring-white/15"
+                    />
+                    <span className="relative flex h-[2.85rem] w-[2.85rem] items-center justify-center rounded-[0.95rem] bg-[linear-gradient(145deg,#7c5cff_0%,#4fd8ff_55%,#22f0ff_100%)] shadow-[0_10px_28px_rgba(34,240,255,0.35),inset_0_1px_0_rgba(255,255,255,0.35)]">
+                      <span className="absolute left-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-white/90" />
+                      <Icon className="relative h-5 w-5 text-[#0b0d12]" strokeWidth={2.4} />
+                    </span>
                   </span>
                   <span
                     className={`mt-1 text-[10px] font-semibold ${
-                      active || createOpen ? "text-white" : "text-white/80"
+                      active || createOpen ? "text-[#22f0ff]" : "text-white/80"
                     }`}
                   >
                     {item.label}
