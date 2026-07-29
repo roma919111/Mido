@@ -97,7 +97,8 @@ const STALE_RUNNING_GRACE_MS = 12 * 60 * 1000;
 const activePreviewPolls = new Set<string>();
 
 const IMAGE_ASPECTS = ["1:1", "16:9", "9:16", "4:3", "3:4"] as const;
-const VIDEO_ASPECT = "16:9";
+/** Seedance-supported video aspect ratios. */
+const VIDEO_ASPECTS = ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"] as const;
 
 interface CreateStudioProps {
   user: CustomerUser | null;
@@ -123,7 +124,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   );
   const [duration, setDuration] = useState<number>(FREE_VERONIX_DURATION_SECONDS);
   const [generateAudio, setGenerateAudio] = useState(false);
-  /** OmarFX clarity grade — opt-in (slower). */
+  /** Free clean upscale (480→~720) — opt-in. */
   const [applyClarity, setApplyClarity] = useState(false);
   const [refs, setRefs] = useState<VisualReference[]>([]);
   const [refPreviews, setRefPreviews] = useState<string[]>([]);
@@ -227,7 +228,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         modelId: selectedModelId,
         media,
         mode: quoteMode,
-        aspectRatio: media === "video" ? VIDEO_ASPECT : aspectRatio,
+        aspectRatio,
         resolution:
           media === "video" ? resolution : resolution || DEFAULT_IMAGE_RESOLUTION,
         duration: media === "video" ? duration : undefined,
@@ -292,7 +293,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     : durationBounds.max;
 
   const applyVideoModelDefaults = (model: CatalogModel | null | undefined) => {
-    setAspectRatio(VIDEO_ASPECT);
+    setAspectRatio("16:9");
     if (!model) return;
     const options = formOptionsForModel(model);
     const freeLocked =
@@ -328,7 +329,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     if (lockedMedia) setMedia(lockedMedia);
   }, [lockedMedia]);
 
-  // Assets → Edit: restore prompt + character images (+ optional start frame).
+  // Assets → Edit: restore prompt + characters + duration/resolution/ratio/clarity.
   useEffect(() => {
     const draft = readEditDraft();
     if (!draft) return;
@@ -336,6 +337,26 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       if (lockedMedia !== "video") return;
     }
     setPrompt(stripInternalPromptNotes(draft.prompt || ""));
+
+    if (draft.media === "video" || lockedMedia === "video") {
+      if (typeof draft.duration === "number" && draft.duration >= 4) {
+        setDuration(Math.min(15, Math.max(4, Math.round(draft.duration))));
+      }
+      if (draft.resolution && ["480p", "720p"].includes(draft.resolution)) {
+        setResolution(draft.resolution);
+      }
+      if (
+        draft.aspectRatio &&
+        (VIDEO_ASPECTS as readonly string[]).includes(draft.aspectRatio)
+      ) {
+        setAspectRatio(draft.aspectRatio);
+      }
+      if (typeof draft.preferClarity === "boolean") {
+        setApplyClarity(draft.preferClarity);
+      }
+    } else if (draft.aspectRatio) {
+      setAspectRatio(draft.aspectRatio);
+    }
 
     const chars = (draft.referenceImages || [])
       .filter((r) => r?.url)
@@ -358,7 +379,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       setStatus(
         missingNames
           ? `تم تحميل ${chars.length} صورة — سمِّ الشخصيات واذكر الأسماء في الوصف ثم Generate`
-          : `تم تحميل ${chars.length} شخصية — تأكد أن الأسماء مذكورة في الوصف ثم Generate`,
+          : `تم تحميل إعدادات التعديل (${chars.length} شخصية) — راجع الوضوح/المدة/النسبة ثم Generate`,
       );
     } else if (draft.startFrame?.url) {
       // Always map edit stills into character slots (never Start Frame).
@@ -381,7 +402,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         "تم تحميل صورة للتعديل في خانة الشخصيات — سمِّها واذكر الاسم في الوصف",
       );
     } else {
-      setStatus("تم تحميل الوصف للتعديل — عدّل ثم Generate");
+      setStatus("تم تحميل إعدادات التعديل — راجع الوضوح/المدة/النسبة ثم Generate");
     }
     clearEditDraft();
   }, [lockedMedia]);
@@ -429,7 +450,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               targetSeconds?: number;
               error?: string;
             }>;
-          }>("/api/assets");
+          }>("/api/assets?sync=1");
           if (!cancelled && res.ok) {
             const assets = (data.assets || []).filter(
               (a) =>
@@ -651,7 +672,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     if (!freeSettingsLocked) return;
     setDuration(FREE_VERONIX_DURATION_SECONDS);
     setResolution(FREE_VERONIX_RESOLUTION);
-    setAspectRatio(VIDEO_ASPECT);
+    setAspectRatio("16:9");
   }, [freeSettingsLocked]);
 
   // Paid / post-trial: select model → duration max + synced resolution/audio defaults.
@@ -749,7 +770,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         setSelectedModelId(next?.id || VERONIX_MODEL_ID);
         applyVideoModelDefaults(next);
       } else {
-        setAspectRatio(VIDEO_ASPECT);
+        setAspectRatio("16:9");
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- apply defaults only on media/catalog identity changes
@@ -1230,7 +1251,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           clientId,
         });
       } else if (mediaType === "video") {
-        if (applyClarity) setStatus("تحسين الوضوح…");
+        if (applyClarity) setStatus("ترقية الوضوح مجاناً…");
         try {
           const graded = await finalizePaidVideo({
             url,
@@ -1535,7 +1556,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         media,
         mode: input.mode,
         prompt: input.prompt,
-        aspectRatio: media === "video" ? VIDEO_ASPECT : aspectRatio,
+        aspectRatio,
         resolution:
           media === "video" ? resolution : resolution || DEFAULT_IMAGE_RESOLUTION,
         duration: media === "video" ? input.duration : undefined,
@@ -1935,7 +1956,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           } else if (media === "video") {
             let finalUrl = firstUrl;
             if (applyClarity) {
-              setStatus("تحسين الوضوح…");
+              setStatus("ترقية الوضوح مجاناً…");
               try {
                 finalUrl = await finalizePaidVideo({
                   url: firstUrl,
@@ -2368,23 +2389,22 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           <label className="space-y-1 text-xs text-white/50">
             النسبة
             <select
-              value={media === "video" ? VIDEO_ASPECT : aspectRatio}
-              onChange={(e) => {
-                if (media === "video") return;
-                setAspectRatio(e.target.value);
-              }}
-              disabled={media === "video"}
-              className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white disabled:opacity-70"
+              value={
+                media === "video"
+                  ? (VIDEO_ASPECTS as readonly string[]).includes(aspectRatio)
+                    ? aspectRatio
+                    : "16:9"
+                  : aspectRatio
+              }
+              onChange={(e) => setAspectRatio(e.target.value)}
+              disabled={freeSettingsLocked}
+              className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white disabled:opacity-60"
             >
-              {media === "video" ? (
-                <option value={VIDEO_ASPECT}>{VIDEO_ASPECT} · ثابت</option>
-              ) : (
-                IMAGE_ASPECTS.map((a) => (
-                  <option key={a} value={a}>
-                    {a}
-                  </option>
-                ))
-              )}
+              {(media === "video" ? VIDEO_ASPECTS : IMAGE_ASPECTS).map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
             </select>
           </label>
           {media === "video" && resolutionOptions.length > 0 && (
@@ -2475,8 +2495,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                   checked={applyClarity}
                   onChange={(e) => setApplyClarity(e.target.checked)}
                 />
-                تحسين الوضوح
-                <span className="text-[10px] text-white/40">(اختياري · أبطأ قليلاً)</span>
+                ترقية وضوح 480→720
+                <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-200 ring-1 ring-emerald-300/30">
+                  مجاني
+                </span>
               </label>
             ) : null}
           </div>

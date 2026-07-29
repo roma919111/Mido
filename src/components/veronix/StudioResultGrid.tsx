@@ -129,6 +129,10 @@ const ResultCard = memo(function ResultCard({
             assets?: Array<{
               id: string;
               prompt?: string;
+              targetSeconds?: number;
+              aspectRatio?: string;
+              resolution?: string;
+              preferClarity?: boolean;
               referenceImages?: Array<{
                 id?: string;
                 url: string;
@@ -150,6 +154,23 @@ const ResultCard = memo(function ResultCard({
                   label: r.label || "",
                 }));
             }
+            writeEditDraft({
+              prompt: editPrompt,
+              media: job.mediaType,
+              startFrame: null,
+              referenceImages: characters,
+              sourceAssetId: job.assetId,
+              duration: asset?.targetSeconds || job.targetSeconds,
+              aspectRatio: asset?.aspectRatio,
+              resolution: asset?.resolution,
+              preferClarity: asset?.preferClarity,
+            });
+            router.push(
+              job.mediaType === "image"
+                ? "/create/image?edit=1"
+                : "/create/video?edit=1",
+            );
+            return;
           }
         } catch {
           // keep local prompt
@@ -162,6 +183,7 @@ const ResultCard = memo(function ResultCard({
         startFrame: null,
         referenceImages: characters,
         sourceAssetId: job.assetId,
+        duration: job.targetSeconds,
       });
       router.push(
         job.mediaType === "image"

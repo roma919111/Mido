@@ -52,6 +52,10 @@ export interface AssetRecord {
   deletedAt?: string;
   /** Chosen output length (seconds) — drives generate ETA countdown in UI */
   targetSeconds?: number;
+  /** Aspect ratio used for this generation (e.g. 16:9, 9:16). */
+  aspectRatio?: string;
+  /** Resolution tier (480p / 720p for video). */
+  resolution?: string;
   /** Server-side multi-shot job plan / progress */
   jobMeta?: import("@/lib/multi-shot-job").MultiShotJobMeta;
   /**
@@ -377,6 +381,8 @@ export async function createAsset(
         typeof input.targetSeconds === "number" && input.targetSeconds > 0
           ? Math.round(input.targetSeconds)
           : undefined,
+      aspectRatio: input.aspectRatio?.trim() || undefined,
+      resolution: input.resolution?.trim() || undefined,
       jobMeta: input.jobMeta,
       referenceImages: Array.isArray(input.referenceImages)
         ? input.referenceImages.slice(0, 4)

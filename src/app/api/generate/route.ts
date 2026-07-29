@@ -29,6 +29,20 @@ import {
   setLiveCatalogCache,
 } from "@/lib/model-catalog";
 import { normalizeVideoResolution } from "@/lib/byteplus-pricing";
+
+const ALLOWED_VIDEO_RATIOS = new Set([
+  "16:9",
+  "9:16",
+  "1:1",
+  "4:3",
+  "3:4",
+  "21:9",
+]);
+
+function normalizeVideoRatio(raw?: string | null): string {
+  const r = String(raw || "16:9").trim();
+  return ALLOWED_VIDEO_RATIOS.has(r) ? r : "16:9";
+}
 import { loadSyncedCatalog } from "@/lib/openart-catalog-sync";
 import {
   buildSeedanceCharacterPrompt,
@@ -254,6 +268,14 @@ export async function POST(request: Request) {
           model: VERONIX_IMAGE_MODEL_ID,
           creditsUsed: quote.totalCredits,
           status: "running",
+          aspectRatio: String(body.aspectRatio || "1:1").trim() || "1:1",
+          resolution:
+            body.resolution && /^(1K|2K|4K)$/i.test(body.resolution)
+              ? body.resolution.toUpperCase()
+              : "2K",
+          referenceImages: await persistableReferenceImages(
+            Array.isArray(body.referenceImages) ? body.referenceImages : undefined,
+          ),
         });
         const refUrl = await resolveImageReference(body.referenceImages);
         const size =
@@ -478,6 +500,8 @@ export async function POST(request: Request) {
         // Intermediate beats never appear in Assets — only the stitched final.
         hidden: Boolean(body.sequencePart),
         targetSeconds: modelDuration,
+        aspectRatio: String(body.aspectRatio || "16:9").trim() || "16:9",
+        resolution: uiResolution,
         referenceImages: savedRefs,
         preferClarity,
       });
@@ -526,10 +550,15 @@ export async function POST(request: Request) {
           );
         }
 
+        const videoRatio = normalizeVideoRatio(body.aspectRatio);
+        // Keep stored aspectRatio in sync with what we send to BytePlus.
+        if (asset.aspectRatio !== videoRatio) {
+          await updateAsset(asset.id, user.id, { aspectRatio: videoRatio });
+        }
         const createInput = {
           prompt: finalPrompt,
           duration: modelDuration,
-          ratio: "16:9" as const,
+          ratio: videoRatio,
           generateAudio: freeTrial ? true : Boolean(body.generateAudio),
           watermark: false,
           startFrameUrl: startUrl,

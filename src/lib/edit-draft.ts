@@ -1,6 +1,6 @@
 /**
  * Hand-off from Assets Edit → CreateStudio
- * (prompt + character refs + optional start frame).
+ * Restores prompt, characters, duration, resolution, aspect, clarity.
  */
 
 import type { VisualReference } from "@/lib/types";
@@ -14,6 +14,10 @@ export type CreateEditDraft = {
   /** Character stills (+ names in `label`) restored into Create */
   referenceImages?: VisualReference[];
   sourceAssetId?: string;
+  duration?: number;
+  resolution?: string;
+  aspectRatio?: string;
+  preferClarity?: boolean;
 };
 
 export function writeEditDraft(draft: CreateEditDraft) {

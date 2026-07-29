@@ -1,5 +1,5 @@
 /**
- * Ensure a visible Assets video has the OmarFX clarity grade applied.
+ * Ensure a visible Assets video has the free clarity upscale applied.
  * Intermediate sequence-part beats stay raw (stitch applies clarity on concat).
  */
 

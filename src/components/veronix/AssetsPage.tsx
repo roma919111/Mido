@@ -252,6 +252,10 @@ function FeedVideoSlide({
         startFrame: null,
         referenceImages: characters,
         sourceAssetId: item.id,
+        duration: item.targetSeconds,
+        resolution: item.resolution,
+        aspectRatio: item.aspectRatio,
+        preferClarity: item.preferClarity,
       });
       router.push("/create/video?edit=1");
     } finally {
@@ -604,6 +608,8 @@ function ImageTile({
                   startFrame: null,
                   referenceImages: characters,
                   sourceAssetId: item.id,
+                  aspectRatio: item.aspectRatio,
+                  resolution: item.resolution,
                 });
                 router.push("/create/image?edit=1");
               })();

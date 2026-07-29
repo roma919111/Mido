@@ -75,76 +75,53 @@ async function downloadToFile(url: string, dest: string) {
 }
 
 /**
- * OmarFX-style clarity grade: denoise → sharpen → color → soft glow.
- * Never throws — copies input if every filter graph fails.
+ * Free clarity upgrade: clean 480p → ~720p upscale.
+ * Mild denoise + edge restore only — no cinematic grade / glow / heavy sat.
  */
 export async function applyClarityGrade(inputPath: string, outputPath: string): Promise<void> {
-  const attempts: Array<{ complex?: string; vf?: string }> = [
+  // Scale so the shorter side reaches 720 (or long side 1280 if already tall),
+  // then light denoise + soft unsharp. Preserves original aspect ratio.
+  const cleanScale =
+    "scale=" +
+    "w='if(gte(iw\\,ih)\\,min(1280\\,iw*720/ih)\\,720)':" +
+    "h='if(gte(iw\\,ih)\\,720\\,min(1280\\,ih*720/iw))':" +
+    "flags=lanczos," +
+    "scale=trunc(iw/2)*2:trunc(ih/2)*2";
+
+  const attempts: Array<{ vf: string }> = [
     {
-      complex:
-        "[0:v]scale=1280:720:flags=lanczos," +
-        "hqdn3d=1.2:1.2:3:3," +
-        "cas=strength=0.55," +
-        "unsharp=5:5:1.2:5:5:0.0," +
-        "eq=contrast=1.18:saturation=1.35:brightness=0.02:gamma=1.05," +
-        "split=2[base][g];" +
-        "[g]eq=brightness=0.08:saturation=1.1,gblur=sigma=10[glow];" +
-        "[base][glow]blend=all_mode=screen:all_opacity=0.18,format=yuv420p[v]",
+      vf: `${cleanScale},hqdn3d=0.8:0.8:2:2,unsharp=5:5:0.55:5:5:0.0,format=yuv420p`,
     },
     {
-      vf: "scale=1280:720:flags=lanczos,hqdn3d=1.2:1.2:3:3,cas=strength=0.5,unsharp=5:5:1.0:5:5:0.0,eq=contrast=1.15:saturation=1.25:brightness=0.02:gamma=1.04,format=yuv420p",
+      vf: `${cleanScale},unsharp=5:5:0.5:5:5:0.0,format=yuv420p`,
     },
     {
-      // Wide compatibility — no cas/hqdn3d required.
-      vf: "scale=1280:720:flags=lanczos,unsharp=5:5:1.0:5:5:0.0,eq=contrast=1.12:saturation=1.2:brightness=0.01:gamma=1.03,format=yuv420p",
+      vf: "scale=1280:-2:flags=lanczos,scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p",
     },
   ];
 
   for (const attempt of attempts) {
     try {
-      if (attempt.complex) {
-        await run("ffmpeg", [
-          "-y",
-          "-i",
-          inputPath,
-          "-filter_complex",
-          attempt.complex,
-          "-map",
-          "[v]",
-          "-map",
-          "0:a?",
-          "-c:v",
-          "libx264",
-          "-preset",
-          "veryfast",
-          "-pix_fmt",
-          "yuv420p",
-          "-c:a",
-          "aac",
-          "-movflags",
-          "+faststart",
-          outputPath,
-        ]);
-      } else {
-        await run("ffmpeg", [
-          "-y",
-          "-i",
-          inputPath,
-          "-vf",
-          attempt.vf!,
-          "-c:v",
-          "libx264",
-          "-preset",
-          "veryfast",
-          "-pix_fmt",
-          "yuv420p",
-          "-c:a",
-          "aac",
-          "-movflags",
-          "+faststart",
-          outputPath,
-        ]);
-      }
+      await run("ffmpeg", [
+        "-y",
+        "-i",
+        inputPath,
+        "-vf",
+        attempt.vf,
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "18",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-movflags",
+        "+faststart",
+        outputPath,
+      ]);
       return;
     } catch {
       // try next graph

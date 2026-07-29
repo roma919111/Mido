@@ -16,6 +16,9 @@ export type CachedAssetItem = {
   historyId?: string;
   error?: string;
   targetSeconds?: number;
+  aspectRatio?: string;
+  resolution?: string;
+  preferClarity?: boolean;
   referenceImages?: import("@/lib/types").VisualReference[];
 };
 
