@@ -349,7 +349,6 @@ export function PricingPage() {
             <div className="grid gap-4 p-5 sm:grid-cols-3 sm:p-7">
               {TOPUP_PACKS.map((pack, index) => {
                 const featured = index === 1;
-                const perThousand = ((pack.priceUsd / pack.credits) * 1000).toFixed(2);
                 return (
                   <div
                     key={pack.id}
@@ -373,9 +372,19 @@ export function PricingPage() {
                       +{pack.credits.toLocaleString("en-US")}
                       <span className="mr-1 text-sm font-normal text-white/50">كريدت</span>
                     </p>
-                    <p className="mt-1 text-xs text-white/35" dir="ltr">
-                      ~${perThousand} / 1k credits
-                    </p>
+                    <ul className="mt-3 space-y-2">
+                      {pack.features.map((feature) => (
+                        <li
+                          key={feature}
+                          className="flex items-start gap-2 text-sm text-white/70"
+                        >
+                          <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#22f0ff]/15 text-[#22f0ff] ring-1 ring-[#22f0ff]/30">
+                            <Check className="h-3 w-3" strokeWidth={3} />
+                          </span>
+                          <span>{feature}</span>
+                        </li>
+                      ))}
+                    </ul>
                     <p className="mt-3 flex-1 text-sm leading-relaxed text-white/45">
                       {pack.description}
                     </p>
@@ -400,7 +409,8 @@ export function PricingPage() {
               <div className="rounded-3xl border border-dashed border-white/15 bg-white/[0.03] px-5 py-8 text-center">
                 <p className="font-display text-lg font-semibold">الشحن مقفل على الباقة الأساسية</p>
                 <p className="mx-auto mt-2 max-w-md text-sm text-white/50">
-                  اختر باقة برو (7,200 كريدت / 10$) أو الترا (14,400 كريدت / 15$) لتفعيل الشحن الشهري والإضافي.
+                  اختر باقة برو (150,000 كريدت / $10) أو الترا (260,000 كريدت / $15)
+                  لتفعيل الشحن $4 / $8 / $14.
                 </p>
                 <div className="mt-5 flex flex-wrap justify-center gap-3">
                   {SUBSCRIPTION_PLANS.filter((p) => isPaidPlan(p.id)).map((plan) => (

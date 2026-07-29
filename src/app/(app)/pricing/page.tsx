@@ -5,7 +5,7 @@ import { PricingPage } from "@/components/veronix/PricingPage";
 export const metadata: Metadata = {
   title: "الباقات والأسعار",
   description:
-    "باقات Veronix.ai الشهرية وشحن الكريدت: الأساسية، برو 7200، الترا 14400. دفع آمن عبر Stripe.",
+    "باقات Veronix.ai: برو 150,000 كريدت، الترا 260,000 كريدت، وشحن $4 / $8 / $14. وضوح 480p و720p. دفع آمن عبر Stripe.",
   alternates: { canonical: "https://vyronix.app/pricing" },
 };
 
