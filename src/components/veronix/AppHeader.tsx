@@ -46,11 +46,12 @@ export function AppHeader({ user, onLogout, compact = false }: AppHeaderProps) {
         }`}
       >
         <Link href="/" className="min-w-0 shrink-0">
-          <BrandLogo size="sm" className="sm:hidden" />
-          <BrandLogo
-            size={compact ? "sm" : "md"}
-            className="hidden sm:inline-flex"
-          />
+          <span className="inline-flex sm:hidden">
+            <BrandLogo size="sm" />
+          </span>
+          <span className="hidden sm:inline-flex">
+            <BrandLogo size={compact ? "sm" : "md"} />
+          </span>
         </Link>
 
         <div className="flex min-w-0 shrink items-center gap-1 sm:gap-2">

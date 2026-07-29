@@ -2272,76 +2272,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         )}
       </label>
 
-      <div className="rounded-2xl border border-white/10 bg-[#141821] p-3">
-        {linkedCharacters.length > 0 ? (
-          <div className="mb-2 flex flex-wrap items-center gap-1.5" dir="rtl">
-            <span className="text-[10px] text-white/40">تم الربط:</span>
-            {linkedCharacters.map((c) => (
-              <span
-                key={c.id}
-                className="inline-flex items-center gap-1 rounded-full border border-[#22f0ff]/30 bg-[#22f0ff]/10 px-2 py-0.5 text-[11px] font-semibold text-[#22f0ff]"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={veronixRefImageSrc(c.url) || c.url}
-                  alt=""
-                  className="h-4 w-4 rounded-full object-cover"
-                />
-                {normalizeCharacterName(c.label)}
-              </span>
-            ))}
-          </div>
-        ) : refNames.some((n) => isCharacterName(n)) ? (
-          <p className="mb-2 text-[11px] text-white/35" dir="rtl">
-            اكتب اسم الشخصية في الوصف للربط التلقائي — مثال: «محمد ذهب إلى الحديقة»
-          </p>
-        ) : null}
-        <textarea
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          rows={4}
-          placeholder={
-            media === "image" ? t.create.promptImage : t.create.promptVideo
-          }
-          className="w-full resize-y bg-transparent text-[14px] leading-relaxed text-white outline-none placeholder:text-white/35 sm:text-[15px]"
-        />
-        <div className="mt-2 flex flex-wrap gap-2">
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/70"
-          >
-            <Camera className="h-3.5 w-3.5" />
-            Camera
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleEnhance()}
-            disabled={enhancing || !prompt.trim()}
-            className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/70 disabled:opacity-50"
-          >
-            {enhancing ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-[#22f0ff]" />
-            ) : (
-              <WandSparkles className="h-3.5 w-3.5 text-[#22f0ff]" />
-            )}
-            {enhancing ? t.create.enhancing : t.create.enhance}
-          </button>
-          {promptSceneState ? (
-            <button
-              type="button"
-              onClick={() => {
-                setPromptSceneState(null);
-                setStatus("تم مسح سلسلة الحالة — المشهد التالي يبدأ من الصفر");
-              }}
-              className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/50"
-              title="إعادة ضبط تسلسل الأفعال"
-            >
-              تصفير التسلسل
-            </button>
-          ) : null}
-        </div>
-      </div>
-
       <div className="rounded-2xl border border-dashed border-white/15 bg-[#141821] p-3 sm:p-4">
         <p className="mb-1 text-sm font-medium text-white/80">
           {t.create.characters}{" "}
@@ -2466,6 +2396,76 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           ))}
         </div>
       )}
+
+      <div className="rounded-2xl border border-white/10 bg-[#141821] p-3">
+        {linkedCharacters.length > 0 ? (
+          <div className="mb-2 flex flex-wrap items-center gap-1.5" dir="rtl">
+            <span className="text-[10px] text-white/40">تم الربط:</span>
+            {linkedCharacters.map((c) => (
+              <span
+                key={c.id}
+                className="inline-flex items-center gap-1 rounded-full border border-[#22f0ff]/30 bg-[#22f0ff]/10 px-2 py-0.5 text-[11px] font-semibold text-[#22f0ff]"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={veronixRefImageSrc(c.url) || c.url}
+                  alt=""
+                  className="h-4 w-4 rounded-full object-cover"
+                />
+                {normalizeCharacterName(c.label)}
+              </span>
+            ))}
+          </div>
+        ) : refNames.some((n) => isCharacterName(n)) ? (
+          <p className="mb-2 text-[11px] text-white/35" dir="rtl">
+            اكتب اسم الشخصية في الوصف للربط التلقائي — مثال: «محمد ذهب إلى الحديقة»
+          </p>
+        ) : null}
+        <textarea
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          rows={4}
+          placeholder={
+            media === "image" ? t.create.promptImage : t.create.promptVideo
+          }
+          className="w-full resize-y bg-transparent text-[14px] leading-relaxed text-white outline-none placeholder:text-white/35 sm:text-[15px]"
+        />
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/70"
+          >
+            <Camera className="h-3.5 w-3.5" />
+            Camera
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleEnhance()}
+            disabled={enhancing || !prompt.trim()}
+            className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/70 disabled:opacity-50"
+          >
+            {enhancing ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-[#22f0ff]" />
+            ) : (
+              <WandSparkles className="h-3.5 w-3.5 text-[#22f0ff]" />
+            )}
+            {enhancing ? t.create.enhancing : t.create.enhance}
+          </button>
+          {promptSceneState ? (
+            <button
+              type="button"
+              onClick={() => {
+                setPromptSceneState(null);
+                setStatus("تم مسح سلسلة الحالة — المشهد التالي يبدأ من الصفر");
+              }}
+              className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/50"
+              title="إعادة ضبط تسلسل الأفعال"
+            >
+              تصفير التسلسل
+            </button>
+          ) : null}
+        </div>
+      </div>
 
       <div className="rounded-2xl border border-white/10 bg-[#141821] p-3 sm:p-4">
         <p className="mb-2.5 text-sm font-semibold text-white">Output</p>

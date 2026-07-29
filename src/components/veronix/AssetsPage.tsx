@@ -136,9 +136,12 @@ function videoMetaChips(
 function VideoMetaNotes({
   item,
   className = "",
+  compact = false,
 }: {
   item: AssetItem;
   className?: string;
+  /** Single condensed line for tight grid cells. */
+  compact?: boolean;
 }) {
   const { t, dir } = useLocale();
   const chips = videoMetaChips(item, {
@@ -147,9 +150,19 @@ function VideoMetaNotes({
     clarityMark: t.assets.clarityMark,
   });
   if (!chips.length) return null;
+  if (compact) {
+    return (
+      <p
+        className={`truncate text-[9px] font-medium tracking-wide text-white/75 ${className}`}
+        dir={dir}
+      >
+        {chips.join(" · ")}
+      </p>
+    );
+  }
   return (
     <div
-      className={`flex flex-wrap items-center gap-1.5 ${className}`}
+      className={`flex flex-wrap items-center gap-1 ${className}`}
       dir={dir}
     >
       {chips.map((chip) => (
@@ -760,7 +773,7 @@ function GridVideoTile({
     <button
       type="button"
       onClick={() => onOpen(item.id)}
-      className="group relative overflow-hidden rounded-lg bg-[#10141c] text-right ring-1 ring-white/10 transition hover:ring-white/25"
+      className="group relative overflow-hidden rounded-xl bg-[#10141c] text-right ring-1 ring-white/10 transition hover:ring-white/25"
       dir={dir}
     >
       <div
@@ -781,23 +794,23 @@ function GridVideoTile({
             <Play className="h-8 w-8" />
           </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-transparent" />
         {running ? (
           <div className="absolute inset-0 flex items-center justify-center bg-black/45">
             <Loader2 className="h-6 w-6 animate-spin text-[#22f0ff]" />
           </div>
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center opacity-80 transition group-hover:opacity-100">
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20 ring-1 ring-white/30 backdrop-blur-md">
+          <div className="absolute inset-0 flex items-center justify-center opacity-70 transition group-hover:opacity-100">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-black/45 ring-1 ring-white/25">
               <Play className="h-3.5 w-3.5 fill-white text-white" />
             </span>
           </div>
         )}
-        <div className="absolute inset-x-0 bottom-0 p-1.5">
-          <p className="line-clamp-1 text-[10px] font-semibold leading-snug text-white sm:line-clamp-2 sm:text-[11px]">
+        <div className="absolute inset-x-0 bottom-0 space-y-0.5 p-2">
+          <p className="line-clamp-2 text-[11px] font-semibold leading-snug text-white">
             {title}
           </p>
-          <VideoMetaNotes item={item} className="mt-1" />
+          <VideoMetaNotes item={item} compact />
         </div>
       </div>
     </button>
@@ -1126,38 +1139,40 @@ export function AssetsPage() {
               }}
             />
           </div>
-          <div className="pointer-events-auto px-3 pb-2 sm:px-4" dir={dir}>
-            <div className="flex items-center justify-between gap-2">
+          <div className="pointer-events-auto px-3 pb-2.5 pt-1 sm:px-4" dir={dir}>
+            <div className="flex items-end justify-between gap-2">
               <div className="min-w-0">
-                <p className="font-display text-base font-extrabold sm:text-lg">Assets</p>
-                <p className="text-[10px] text-white/45 sm:text-[11px]">
+                <p className="font-display text-lg font-extrabold leading-none sm:text-xl">
+                  {t.nav.assets}
+                </p>
+                <p className="mt-1 text-[10px] text-white/45 sm:text-[11px]">
                   {viewMode === "browse" ? t.assets.swipeUp : t.assets.gridHint}
                 </p>
               </div>
-              <div className="flex shrink-0 gap-1.5">
+              <div className="flex shrink-0 gap-1">
                 <button
                   type="button"
                   onClick={() => setFilter("video")}
-                  className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black sm:px-3 sm:text-xs"
+                  className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black"
                 >
                   {t.assets.video}
                 </button>
                 <button
                   type="button"
                   onClick={() => setFilter("image")}
-                  className="rounded-full border border-white/20 px-2.5 py-1 text-[11px] font-semibold text-white/80 sm:px-3 sm:text-xs"
+                  className="rounded-full border border-white/20 px-2.5 py-1 text-[11px] font-semibold text-white/80"
                 >
                   {t.assets.photos}
                 </button>
               </div>
             </div>
 
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              <div className="flex rounded-full bg-white/10 p-0.5 ring-1 ring-white/15">
+            <div className="mt-2 flex items-center gap-2">
+              <div className="flex shrink-0 rounded-full bg-white/10 p-0.5 ring-1 ring-white/15">
                 <button
                   type="button"
                   onClick={() => setVideoViewMode("browse")}
-                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold transition sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-[11px] ${
+                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold transition ${
                     viewMode === "browse"
                       ? "bg-white text-black"
                       : "text-white/75 hover:text-white"
@@ -1169,7 +1184,7 @@ export function AssetsPage() {
                 <button
                   type="button"
                   onClick={() => setVideoViewMode("grid")}
-                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold transition sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-[11px] ${
+                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold transition ${
                     viewMode === "grid"
                       ? "bg-white text-black"
                       : "text-white/75 hover:text-white"
@@ -1190,11 +1205,11 @@ export function AssetsPage() {
                     step={1}
                     value={gridZoom}
                     onChange={(e) => setVideoGridZoom(Number(e.target.value))}
-                    className="h-1.5 w-full min-w-[4.5rem] accent-[#22f0ff]"
+                    className="h-1.5 w-full min-w-0 accent-[#22f0ff]"
                     aria-label={t.assets.zoom}
                   />
                   <ZoomIn className="h-3.5 w-3.5 shrink-0 text-white/55" />
-                  <span className="shrink-0 text-[10px] font-semibold text-white/70">
+                  <span className="shrink-0 text-[10px] font-semibold tabular-nums text-white/70">
                     {gridZoom}×
                   </span>
                 </div>
@@ -1264,9 +1279,9 @@ export function AssetsPage() {
         )}
 
         {!error && videos.length > 0 && viewMode === "grid" && (
-          <div className="h-[calc(100dvh-5.25rem-env(safe-area-inset-bottom))] overflow-y-auto overscroll-y-contain px-1.5 pb-4 pt-28 sm:px-3 sm:pt-32">
+          <div className="h-[calc(100dvh-5.25rem-env(safe-area-inset-bottom))] overflow-y-auto overscroll-y-contain px-2 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[7.75rem] sm:px-3 sm:pt-36">
             <div
-              className="mx-auto grid max-w-6xl gap-1 sm:gap-1.5"
+              className="mx-auto grid max-w-6xl gap-2 sm:gap-2.5"
               style={{
                 gridTemplateColumns: `repeat(${gridZoom}, minmax(0, 1fr))`,
               }}
@@ -1302,7 +1317,7 @@ export function AssetsPage() {
       <main className="mx-auto max-w-6xl px-4 pb-28 pt-6 sm:px-6" dir={dir}>
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h1 className="font-display text-3xl font-extrabold">Assets</h1>
+            <h1 className="font-display text-3xl font-extrabold">{t.nav.assets}</h1>
             <p className="mt-1 text-sm text-white/50">
               {locale === "en" ? "Your saved images" : "صورك المحفوظة"}
             </p>
