@@ -16,7 +16,10 @@ import {
 } from "@/lib/db";
 import { PRODUCT_PER_SHOT_SECONDS } from "@/lib/shot-plan";
 import { VERONIX_MODEL_ID } from "@/lib/free-trial";
-import { toSemiRealisticScenePrompt } from "@/lib/reference-sanitize";
+import {
+  stylizeReferenceImage,
+  toSemiRealisticScenePrompt,
+} from "@/lib/reference-sanitize";
 import { translateBytePlusError } from "@/lib/byteplus-errors";
 import { ensureClarityUrl, needsClarityGrade } from "@/lib/ensure-clarity";
 import { refundFailedAssetCredits } from "@/lib/credit-refund";
@@ -214,15 +217,23 @@ async function syncRunningAssets(userId: string) {
                 .map((r) => r?.url)
                 .filter((u): u is string => Boolean(u))
                 .slice(0, 4);
-              // Keep character stills when possible — prompt-only drops identity.
+              // Re-apply frozen AI digital filter (second pass) before privacy retry.
+              const styledRefs: string[] = [];
+              for (const u of charRefs) {
+                try {
+                  styledRefs.push(await stylizeReferenceImage(u));
+                } catch {
+                  styledRefs.push(u);
+                }
+              }
               const retry = await createBytePlusVideoTask({
                 prompt: toSemiRealisticScenePrompt(asset.prompt),
                 duration,
                 ratio: "16:9",
                 generateAudio: false,
                 watermark: false,
-                referenceImageUrls: charRefs.length ? charRefs : undefined,
-                imageRole: charRefs.length ? "reference_image" : undefined,
+                referenceImageUrls: styledRefs.length ? styledRefs : undefined,
+                imageRole: styledRefs.length ? "reference_image" : undefined,
               });
               await updateAsset(asset.id, userId, {
                 historyId: toBytePlusHistoryId(retry.id),
