@@ -780,6 +780,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     formOptions.resolutionDefault,
   ]);
 
+  // Native 720p already meets the free upgrade target — never keep the checkbox on.
+  useEffect(() => {
+    if (media !== "video") return;
+    if (String(resolution).toLowerCase() === "720p" && applyClarity) {
+      setApplyClarity(false);
+    }
+  }, [media, resolution, applyClarity]);
+
   const countdownTargetSeconds =
     preview?.targetSeconds ||
     (media === "video"
@@ -1636,7 +1644,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           media === "video" ? resolution : resolution || DEFAULT_IMAGE_RESOLUTION,
         duration: media === "video" ? input.duration : undefined,
         generateAudio: media === "video" ? generateAudio : undefined,
-        clarity: media === "video" ? applyClarity : undefined,
+        clarity:
+          media === "video"
+            ? applyClarity && String(resolution).toLowerCase() !== "720p"
+            : undefined,
         startFrame: input.startFrame ?? null,
         endFrame: input.endFrame ?? null,
         referenceImages: input.referenceImages ?? refs,
@@ -2483,7 +2494,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                     ? resolution
                     : formOptions.resolutionDefault || resolutionOptions[0]
                 }
-                onChange={(e) => setResolution(e.target.value)}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setResolution(next);
+                  // Free upgrade is 480→~720 only — never re-encode native 720p.
+                  if (String(next).toLowerCase() === "720p") {
+                    setApplyClarity(false);
+                  }
+                }}
                 disabled={freeSettingsLocked}
                 className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white disabled:opacity-60"
               >
@@ -2555,7 +2573,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 لا يتوفر خيار صوت منفصل لهذا الموديل
               </p>
             )}
-            {!freeSettingsLocked ? (
+            {!freeSettingsLocked &&
+            String(resolution).toLowerCase() !== "720p" ? (
               <label className="mt-2 flex items-center gap-2 text-sm text-white/70">
                 <input
                   type="checkbox"
@@ -2567,6 +2586,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                   {t.create.clarityFree}
                 </span>
               </label>
+            ) : !freeSettingsLocked ? (
+              <p className="mt-2 text-xs text-white/40">
+                720p أصلي — لا حاجة لترقية وضوح إضافية
+              </p>
             ) : null}
           </div>
         )}

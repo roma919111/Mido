@@ -6,7 +6,7 @@ import {
 } from "@/lib/byteplus-ark";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { findAssetByHistoryId, findAssetById, updateAsset } from "@/lib/db";
-import { ensureClarityUrl } from "@/lib/ensure-clarity";
+import { ensureClarityUrl, shouldApplyClarityGrade } from "@/lib/ensure-clarity";
 import { refundFailedAssetCredits } from "@/lib/credit-refund";
 import { translateBytePlusError } from "@/lib/byteplus-errors";
 import { warmVideoPosterBackground } from "@/lib/poster-cache";
@@ -107,7 +107,11 @@ export async function GET(request: Request) {
         const existing = byHistory;
         const keepHidden = existing?.mode === "sequence-part";
         if (urls[0]) {
-          const wantClarity = Boolean(existing?.preferClarity);
+          const wantClarity = shouldApplyClarityGrade({
+            preferClarity: existing?.preferClarity,
+            resolution: existing?.resolution,
+            mode: existing?.mode,
+          });
           // Never block status polling on ffmpeg clarity — that timed out 720p
           // jobs and looked like "clarity always fails". Save CDN first; grade async.
           await updateAsset(targetId, user.id, {
@@ -119,25 +123,20 @@ export async function GET(request: Request) {
           }).catch(() => null);
           warmVideoPosterBackground({ url: urls[0], historyId });
           if (wantClarity && !keepHidden) {
-            // Native 720p already meets the free upgrade target.
-            const already720 =
-              String(existing?.resolution || "").toLowerCase() === "720p";
-            if (!already720) {
-              void (async () => {
-                try {
-                  const graded = await ensureClarityUrl(urls[0]!);
-                  if (graded && graded !== urls[0]) {
-                    await updateAsset(targetId, user.id, { url: graded });
-                    warmVideoPosterBackground({ url: graded, historyId });
-                  }
-                } catch (err) {
-                  console.warn(
-                    "[veronix] async clarity skipped:",
-                    err instanceof Error ? err.message : err,
-                  );
+            void (async () => {
+              try {
+                const graded = await ensureClarityUrl(urls[0]!);
+                if (graded && graded !== urls[0]) {
+                  await updateAsset(targetId, user.id, { url: graded });
+                  warmVideoPosterBackground({ url: graded, historyId });
                 }
-              })();
-            }
+              } catch (err) {
+                console.warn(
+                  "[veronix] async clarity skipped:",
+                  err instanceof Error ? err.message : err,
+                );
+              }
+            })();
           }
         } else if (status === "FAILED") {
           const refund = await refundFailedAssetCredits({

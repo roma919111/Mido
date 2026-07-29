@@ -32,7 +32,7 @@ import { toSemiRealisticScenePrompt } from "@/lib/reference-sanitize";
 import { stylizeReferenceImage } from "@/lib/reference-sanitize";
 import { MAX_SHOTS, PRODUCT_PER_SHOT_SECONDS } from "@/lib/shot-plan";
 import { cacheVideoLocally, concatVideos, extractLastFrameJpeg } from "@/lib/video-stitch";
-import { ensureClarityUrl } from "@/lib/ensure-clarity";
+import { ensureClarityUrl, shouldApplyClarityGrade } from "@/lib/ensure-clarity";
 import { estimateGenerateSeconds } from "@/lib/generate-eta";
 import { warmVideoPosterBackground } from "@/lib/poster-cache";
 
@@ -535,16 +535,15 @@ async function finalizeMultiShotJob(
   }
 
   try {
-    const wantClarity = pending.preferClarity === true;
+    const wantClarity = shouldApplyClarityGrade(pending);
+    // Complete with raw stitch first so Assets never hangs on ffmpeg clarity.
     let finalUrl: string;
     if (meta.partUrls.length === 1) {
-      finalUrl = wantClarity
-        ? await ensureClarityUrl(meta.partUrls[0]!)
-        : meta.partUrls[0]!;
+      finalUrl = meta.partUrls[0]!;
     } else {
       finalUrl = await concatVideos(meta.partUrls, {
         maxSecondsPerClip: meta.perShotSeconds,
-        clarity: wantClarity,
+        clarity: false,
       });
     }
     const actualSeconds = meta.partUrls.length * meta.perShotSeconds;
@@ -566,6 +565,31 @@ async function finalizeMultiShotJob(
       url: finalUrl,
       historyId: pending.historyId,
     });
+    if (wantClarity) {
+      void (async () => {
+        try {
+          const graded =
+            meta.partUrls.length === 1
+              ? await ensureClarityUrl(meta.partUrls[0]!)
+              : await concatVideos(meta.partUrls, {
+                  maxSecondsPerClip: meta.perShotSeconds,
+                  clarity: true,
+                });
+          if (graded && graded !== finalUrl) {
+            await updateAsset(pending.id, userId, { url: graded });
+            warmVideoPosterBackground({
+              url: graded,
+              historyId: pending.historyId,
+            });
+          }
+        } catch (err) {
+          console.warn(
+            "[veronix] multi-shot clarity skipped:",
+            err instanceof Error ? err.message : err,
+          );
+        }
+      })();
+    }
     return updated;
   } catch (err) {
     return updateAsset(pending.id, userId, {

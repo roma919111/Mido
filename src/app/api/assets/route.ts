@@ -21,7 +21,11 @@ import {
   toSemiRealisticScenePrompt,
 } from "@/lib/reference-sanitize";
 import { translateBytePlusError } from "@/lib/byteplus-errors";
-import { ensureClarityUrl, needsClarityGrade } from "@/lib/ensure-clarity";
+import {
+  ensureClarityUrl,
+  needsClarityGrade,
+  shouldApplyClarityGrade,
+} from "@/lib/ensure-clarity";
 import { refundFailedAssetCredits } from "@/lib/credit-refund";
 import { concatVideos } from "@/lib/video-stitch";
 import { tickUserMultiShotJobs, isMultiShotStillGenerating } from "@/lib/multi-shot-job";
@@ -96,17 +100,16 @@ async function stitchPendingJobs(userId: string) {
     if (urls.length === 1 && ageMs < Math.max(etaMs, 90_000)) continue;
 
     try {
-      const wantClarity = pending.preferClarity === true;
+      const wantClarity = shouldApplyClarityGrade(pending);
+      // Persist the stitch first — never block completion on ffmpeg clarity.
       let finalUrl: string;
       if (urls.length >= 2) {
         finalUrl = await concatVideos(urls, {
           maxSecondsPerClip: PRODUCT_PER_SHOT_SECONDS,
-          clarity: wantClarity,
+          clarity: false,
         });
       } else {
-        finalUrl = wantClarity
-          ? await ensureClarityUrl(urls[0]!)
-          : urls[0]!;
+        finalUrl = urls[0]!;
       }
       await updateAsset(pending.id, userId, {
         url: finalUrl,
@@ -127,6 +130,32 @@ async function stitchPendingJobs(userId: string) {
         if (p.hidden !== true) {
           await updateAsset(p.id, userId, { hidden: true });
         }
+      }
+      if (wantClarity) {
+        void (async () => {
+          try {
+            const graded = wantClarity
+              ? urls.length >= 2
+                ? await concatVideos(urls, {
+                    maxSecondsPerClip: PRODUCT_PER_SHOT_SECONDS,
+                    clarity: true,
+                  })
+                : await ensureClarityUrl(urls[0]!)
+              : finalUrl;
+            if (graded && graded !== finalUrl) {
+              await updateAsset(pending.id, userId, { url: graded });
+              warmVideoPosterBackground({
+                url: graded,
+                historyId: pending.historyId,
+              });
+            }
+          } catch (err) {
+            console.warn(
+              "[veronix] stitch clarity skipped:",
+              err instanceof Error ? err.message : err,
+            );
+          }
+        })();
       }
     } catch (err) {
       console.warn(
@@ -164,25 +193,42 @@ async function syncRunningAssets(userId: string) {
               // keep remote URL
             }
           }
-          // Visible finals: clarity only when customer opted in.
-          if (
-            finalUrl &&
-            asset.mode !== "sequence-part" &&
-            asset.preferClarity
-          ) {
-            finalUrl = await ensureClarityUrl(finalUrl);
-          }
+          // Persist CDN/outro immediately. Never await ffmpeg clarity here —
+          // that timed out /api/assets?sync=1 and made native 720p look failed.
+          const cdnUrl = finalUrl;
           await updateAsset(asset.id, userId, {
-            url: finalUrl,
+            url: cdnUrl,
             status: "completed",
             error: undefined,
             hidden: asset.mode === "sequence-part" ? true : asset.hidden === true,
           });
-          if (asset.mode !== "sequence-part" && finalUrl) {
+          if (asset.mode !== "sequence-part" && cdnUrl) {
             warmVideoPosterBackground({
-              url: finalUrl,
+              url: cdnUrl,
               historyId: asset.historyId,
             });
+          }
+          if (
+            cdnUrl &&
+            shouldApplyClarityGrade(asset)
+          ) {
+            void (async () => {
+              try {
+                const graded = await ensureClarityUrl(cdnUrl);
+                if (graded && graded !== cdnUrl) {
+                  await updateAsset(asset.id, userId, { url: graded });
+                  warmVideoPosterBackground({
+                    url: graded,
+                    historyId: asset.historyId,
+                  });
+                }
+              } catch (err) {
+                console.warn(
+                  "[veronix] assets sync clarity skipped:",
+                  err instanceof Error ? err.message : err,
+                );
+              }
+            })();
           }
         } else if (status === "FAILED") {
           const rawErr =
@@ -229,11 +275,12 @@ async function syncRunningAssets(userId: string) {
               const retry = await createBytePlusVideoTask({
                 prompt: toSemiRealisticScenePrompt(asset.prompt),
                 duration,
-                ratio: "16:9",
+                ratio: String(asset.aspectRatio || "16:9").trim() || "16:9",
                 generateAudio: false,
                 watermark: false,
                 referenceImageUrls: styledRefs.length ? styledRefs : undefined,
                 imageRole: styledRefs.length ? "reference_image" : undefined,
+                resolution: asset.resolution || undefined,
               });
               await updateAsset(asset.id, userId, {
                 historyId: toBytePlusHistoryId(retry.id),
@@ -264,9 +311,10 @@ async function syncRunningAssets(userId: string) {
                   .replace(/\n\n\(جارٍ توليد ودمج[\s\S]*$/u, "")
                   .trim(),
                 duration,
-                ratio: "16:9",
+                ratio: String(asset.aspectRatio || "16:9").trim() || "16:9",
                 generateAudio: false,
                 watermark: false,
+                resolution: asset.resolution || undefined,
               });
               await updateAsset(asset.id, userId, {
                 historyId: toBytePlusHistoryId(retry.id),
@@ -324,8 +372,7 @@ async function syncRunningAssets(userId: string) {
         a.mediaType === "video" &&
         a.mode !== "sequence-part" &&
         a.hidden !== true &&
-        a.preferClarity === true &&
-        String(a.resolution || "").toLowerCase() !== "720p" &&
+        shouldApplyClarityGrade(a) &&
         needsClarityGrade(a.url),
     )
     .slice(0, 4)) {

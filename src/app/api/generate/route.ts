@@ -16,7 +16,7 @@ import {
   resolveImageReference,
   VERONIX_IMAGE_MODEL_ID,
 } from "@/lib/byteplus-image";
-import { ensureClarityUrl } from "@/lib/ensure-clarity";
+import { ensureClarityUrl, shouldApplyClarityGrade } from "@/lib/ensure-clarity";
 import {
   FREE_VERONIX_MODEL_DURATION_SECONDS,
   FREE_VERONIX_RESOLUTION,
@@ -633,7 +633,13 @@ export async function POST(request: Request) {
           if (!body.sequencePart) {
             warmVideoPosterBackground({ url: videoUrl, historyId });
           }
-          if (!body.sequencePart && preferClarity && uiResolution !== "720p") {
+          if (
+            !body.sequencePart &&
+            shouldApplyClarityGrade({
+              preferClarity,
+              resolution: uiResolution,
+            })
+          ) {
             void (async () => {
               try {
                 const graded = await ensureClarityUrl(videoUrl);
