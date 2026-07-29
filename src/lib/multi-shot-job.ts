@@ -115,8 +115,11 @@ export async function startMultiShotJob(input: {
     status: "running",
     hidden: false,
     targetSeconds,
+    aspectRatio: "16:9",
+    resolution: input.resolution || "720p",
     jobMeta: meta,
     preferClarity: Boolean(input.preferClarity),
+    generateAudio: Boolean(input.generateAudio),
   });
 }
 

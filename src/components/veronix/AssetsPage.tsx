@@ -9,7 +9,19 @@ import {
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Download, Loader2, Pencil, Play, Trash2, Volume2, VolumeX } from "lucide-react";
+import {
+  Download,
+  LayoutGrid,
+  Loader2,
+  Pencil,
+  Play,
+  Rows3,
+  Trash2,
+  Volume2,
+  VolumeX,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
 import { AppHeader, type CustomerUser } from "./AppHeader";
 import { BottomNav } from "./BottomNav";
 import { fetchJson } from "@/lib/fetch-json";
@@ -41,7 +53,93 @@ import { displayBytePlusAssetError } from "@/lib/byteplus-errors";
 import type { VisualReference } from "@/lib/types";
 import { GenerateClock } from "@/components/veronix/GenerateClock";
 
-type AssetItem = CachedAssetItem;
+type AssetItem = CachedAssetItem & {
+  jobMeta?: { generateAudio?: boolean };
+};
+
+type VideoViewMode = "browse" | "grid";
+
+const VIEW_MODE_KEY = "vyronix-assets-video-view";
+const GRID_ZOOM_KEY = "vyronix-assets-grid-zoom";
+const GRID_ZOOM_MIN = 1;
+const GRID_ZOOM_MAX = 4;
+
+function readStoredViewMode(): VideoViewMode {
+  if (typeof window === "undefined") return "browse";
+  try {
+    const v = sessionStorage.getItem(VIEW_MODE_KEY);
+    return v === "grid" ? "grid" : "browse";
+  } catch {
+    return "browse";
+  }
+}
+
+function readStoredGridZoom(): number {
+  if (typeof window === "undefined") return 2;
+  try {
+    const n = Number(sessionStorage.getItem(GRID_ZOOM_KEY));
+    if (Number.isFinite(n)) {
+      return Math.min(GRID_ZOOM_MAX, Math.max(GRID_ZOOM_MIN, Math.round(n)));
+    }
+  } catch {
+    // ignore
+  }
+  return 2;
+}
+
+/** Build generation notes: clarity, duration, aspect, audio. */
+function videoMetaChips(item: AssetItem): string[] {
+  const chips: string[] = [];
+  const res = item.resolution?.trim();
+  if (res) {
+    chips.push(item.preferClarity ? `${res} · وضوح` : res);
+  } else if (item.preferClarity) {
+    chips.push("وضوح محسّن");
+  }
+
+  const secs = inferTargetSecondsFromAsset(item);
+  if (secs > 0) chips.push(`${secs}ث`);
+
+  const ar = item.aspectRatio?.trim();
+  if (ar) chips.push(ar);
+
+  const audio =
+    typeof item.generateAudio === "boolean"
+      ? item.generateAudio
+      : typeof item.jobMeta?.generateAudio === "boolean"
+        ? item.jobMeta.generateAudio
+        : undefined;
+  if (typeof audio === "boolean") {
+    chips.push(audio ? "بصوت" : "بدون صوت");
+  }
+  return chips;
+}
+
+function VideoMetaNotes({
+  item,
+  className = "",
+}: {
+  item: AssetItem;
+  className?: string;
+}) {
+  const chips = videoMetaChips(item);
+  if (!chips.length) return null;
+  return (
+    <div
+      className={`flex flex-wrap items-center gap-1.5 ${className}`}
+      dir="rtl"
+    >
+      {chips.map((chip) => (
+        <span
+          key={chip}
+          className="rounded-md bg-white/12 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-white/90 ring-1 ring-white/15"
+        >
+          {chip}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 function RunningCountdown({
   assetId,
@@ -528,21 +626,27 @@ function FeedVideoSlide({
               >
                 {prompt}
               </p>
-              {promptLong ? (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setPromptExpanded((v) => !v);
-                  }}
-                  className="mt-1 text-xs font-semibold text-white/95 underline-offset-2 hover:underline"
-                >
-                  {promptExpanded ? "عرض أقل" : "عرض المزيد"}
-                </button>
-              ) : null}
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                {promptLong ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPromptExpanded((v) => !v);
+                    }}
+                    className="text-xs font-semibold text-white/95 underline-offset-2 hover:underline"
+                  >
+                    {promptExpanded ? "عرض أقل" : "عرض المزيد"}
+                  </button>
+                ) : null}
+                <VideoMetaNotes item={item} />
+              </div>
             </div>
           ) : (
-            <p className="mt-1 text-sm text-white/50">بدون وصف</p>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+              <p className="text-sm text-white/50">بدون وصف</p>
+              <VideoMetaNotes item={item} />
+            </div>
           )}
           {item.error ? (
             <p className="mt-1 whitespace-pre-line text-xs font-medium leading-relaxed text-rose-300">
@@ -553,6 +657,64 @@ function FeedVideoSlide({
       </div>
       ) : null}
     </section>
+  );
+}
+
+function GridVideoTile({
+  item,
+  onOpen,
+}: {
+  item: AssetItem;
+  onOpen: (id: string) => void;
+}) {
+  const poster = veronixPosterSrc({
+    url: item.url,
+    historyId: item.historyId,
+  });
+  const title = assetPromptTitle(item.prompt) || "فيديو";
+  const running = item.status === "running" || item.status === "pending";
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(item.id)}
+      className="group relative overflow-hidden rounded-xl bg-[#10141c] text-right ring-1 ring-white/10 transition hover:ring-white/25"
+      dir="rtl"
+    >
+      <div className="relative aspect-[9/16] bg-black/50">
+        {poster ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={poster}
+            alt=""
+            className="h-full w-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center text-white/30">
+            <Play className="h-8 w-8" />
+          </div>
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
+        {running ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/45">
+            <Loader2 className="h-6 w-6 animate-spin text-[#22f0ff]" />
+          </div>
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center opacity-80 transition group-hover:opacity-100">
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20 ring-1 ring-white/30 backdrop-blur-md">
+              <Play className="h-4 w-4 fill-white text-white" />
+            </span>
+          </div>
+        )}
+        <div className="absolute inset-x-0 bottom-0 p-2">
+          <p className="line-clamp-2 text-[11px] font-semibold leading-snug text-white">
+            {title}
+          </p>
+          <VideoMetaNotes item={item} className="mt-1.5" />
+        </div>
+      </div>
+    </button>
   );
 }
 
@@ -715,9 +877,39 @@ export function AssetsPage() {
   const [assets, setAssets] = useState<AssetItem[]>(() => readAssetsCache() || []);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<"video" | "image">("video");
+  const [viewMode, setViewMode] = useState<VideoViewMode>("browse");
+  const [gridZoom, setGridZoom] = useState(2);
+  const [focusAssetId, setFocusAssetId] = useState<string | null>(null);
   const [muted, setMuted] = useState(true);
   const [loading, setLoading] = useState(() => !readAssetsCache()?.length);
   const feedRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setViewMode(readStoredViewMode());
+    setGridZoom(readStoredGridZoom());
+  }, []);
+
+  const setVideoViewMode = useCallback((mode: VideoViewMode) => {
+    setViewMode(mode);
+    try {
+      sessionStorage.setItem(VIEW_MODE_KEY, mode);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const setVideoGridZoom = useCallback((zoom: number) => {
+    const next = Math.min(
+      GRID_ZOOM_MAX,
+      Math.max(GRID_ZOOM_MIN, Math.round(zoom)),
+    );
+    setGridZoom(next);
+    try {
+      sessionStorage.setItem(GRID_ZOOM_KEY, String(next));
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const loadAssets = useCallback(async (opts?: { sync?: boolean }) => {
     const qs = opts?.sync ? "?sync=1" : "";
@@ -802,12 +994,36 @@ export function AssetsPage() {
 
   const videos = assets.filter((a) => a.mediaType === "video");
   const images = assets.filter((a) => a.mediaType === "image");
-  const activeId = useActiveSlide(feedRef, videos.length);
+  const activeId = useActiveSlide(
+    feedRef,
+    viewMode === "browse" ? videos.length : 0,
+  );
+
+  useEffect(() => {
+    if (viewMode !== "browse" || !focusAssetId) return;
+    const root = feedRef.current;
+    if (!root) return;
+    const el = root.querySelector<HTMLElement>(
+      `[data-asset-id="${CSS.escape(focusAssetId)}"]`,
+    );
+    if (el) {
+      el.scrollIntoView({ block: "start" });
+    }
+    setFocusAssetId(null);
+  }, [viewMode, focusAssetId, videos.length]);
+
+  const openVideoInBrowse = useCallback(
+    (id: string) => {
+      setFocusAssetId(id);
+      setVideoViewMode("browse");
+    },
+    [setVideoViewMode],
+  );
 
   if (filter === "video") {
     return (
       <div className="relative min-h-[100dvh] bg-black text-white">
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-30 bg-gradient-to-b from-black/70 to-transparent">
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-30 bg-gradient-to-b from-black/80 via-black/50 to-transparent">
           <div className="pointer-events-auto">
             <AppHeader
               user={user}
@@ -820,26 +1036,79 @@ export function AssetsPage() {
               }}
             />
           </div>
-          <div className="pointer-events-auto flex items-center justify-between px-4 pb-3" dir="rtl">
-            <div>
-              <p className="font-display text-lg font-extrabold">Assets</p>
-              <p className="text-[11px] text-white/45">اسحب للأعلى</p>
+          <div className="pointer-events-auto px-4 pb-3" dir="rtl">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-display text-lg font-extrabold">Assets</p>
+                <p className="text-[11px] text-white/45">
+                  {viewMode === "browse" ? "اسحب للأعلى" : "شبكة الفيديوهات"}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFilter("video")}
+                  className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-black"
+                >
+                  فيديو
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilter("image")}
+                  className="rounded-full border border-white/20 px-3 py-1 text-xs font-semibold text-white/80"
+                >
+                  صور
+                </button>
+              </div>
             </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setFilter("video")}
-                className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-black"
-              >
-                فيديو
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilter("image")}
-                className="rounded-full border border-white/20 px-3 py-1 text-xs font-semibold text-white/80"
-              >
-                صور
-              </button>
+
+            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+              <div className="flex rounded-full bg-white/10 p-0.5 ring-1 ring-white/15">
+                <button
+                  type="button"
+                  onClick={() => setVideoViewMode("browse")}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold transition ${
+                    viewMode === "browse"
+                      ? "bg-white text-black"
+                      : "text-white/75 hover:text-white"
+                  }`}
+                >
+                  <Rows3 className="h-3.5 w-3.5" />
+                  تصفح
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVideoViewMode("grid")}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold transition ${
+                    viewMode === "grid"
+                      ? "bg-white text-black"
+                      : "text-white/75 hover:text-white"
+                  }`}
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" />
+                  فرز
+                </button>
+              </div>
+
+              {viewMode === "grid" ? (
+                <div className="flex min-w-0 flex-1 items-center gap-2 rounded-full bg-white/10 px-2.5 py-1 ring-1 ring-white/15">
+                  <ZoomOut className="h-3.5 w-3.5 shrink-0 text-white/55" />
+                  <input
+                    type="range"
+                    min={GRID_ZOOM_MIN}
+                    max={GRID_ZOOM_MAX}
+                    step={1}
+                    value={gridZoom}
+                    onChange={(e) => setVideoGridZoom(Number(e.target.value))}
+                    className="h-1.5 w-full min-w-[5.5rem] accent-[#22f0ff]"
+                    aria-label="زوم الشبكة"
+                  />
+                  <ZoomIn className="h-3.5 w-3.5 shrink-0 text-white/55" />
+                  <span className="shrink-0 text-[10px] font-semibold text-white/70">
+                    {gridZoom}×
+                  </span>
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
@@ -871,7 +1140,7 @@ export function AssetsPage() {
           </div>
         )}
 
-        {!error && videos.length > 0 && (
+        {!error && videos.length > 0 && viewMode === "browse" && (
           <div
             ref={feedRef}
             className="h-[calc(100dvh-4.35rem)] snap-y snap-mandatory overflow-y-scroll overscroll-y-contain"
@@ -884,23 +1153,42 @@ export function AssetsPage() {
               );
               const loadMedia = Math.abs(index - activeIndex) <= 1;
               return (
-              <FeedVideoSlide
-                key={item.id}
-                item={item}
-                active={activeId === item.id}
-                loadMedia={loadMedia}
-                muted={muted}
-                onToggleMute={() => setMuted((m) => !m)}
-                onDeleted={(id) => {
-                  setAssets((prev) => {
-                    const next = prev.filter((a) => a.id !== id);
-                    writeAssetsCache(next);
-                    return next;
-                  });
-                }}
-              />
+                <FeedVideoSlide
+                  key={item.id}
+                  item={item}
+                  active={activeId === item.id}
+                  loadMedia={loadMedia}
+                  muted={muted}
+                  onToggleMute={() => setMuted((m) => !m)}
+                  onDeleted={(id) => {
+                    setAssets((prev) => {
+                      const next = prev.filter((a) => a.id !== id);
+                      writeAssetsCache(next);
+                      return next;
+                    });
+                  }}
+                />
               );
             })}
+          </div>
+        )}
+
+        {!error && videos.length > 0 && viewMode === "grid" && (
+          <div className="h-[calc(100dvh-4.35rem)] overflow-y-auto overscroll-y-contain px-3 pb-6 pt-36">
+            <div
+              className="mx-auto grid max-w-6xl gap-2 sm:gap-3"
+              style={{
+                gridTemplateColumns: `repeat(${gridZoom}, minmax(0, 1fr))`,
+              }}
+            >
+              {videos.map((item) => (
+                <GridVideoTile
+                  key={item.id}
+                  item={item}
+                  onOpen={openVideoInBrowse}
+                />
+              ))}
+            </div>
           </div>
         )}
 

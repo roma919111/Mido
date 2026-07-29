@@ -65,6 +65,8 @@ export interface AssetRecord {
   referenceImages?: import("@/lib/types").VisualReference[];
   /** Customer opted into OmarFX clarity grade for this video. */
   preferClarity?: boolean;
+  /** Whether the generation requested native audio. */
+  generateAudio?: boolean;
   createdAt: string;
 }
 
@@ -388,6 +390,10 @@ export async function createAsset(
         ? input.referenceImages.slice(0, 4)
         : undefined,
       preferClarity: Boolean(input.preferClarity),
+      generateAudio:
+        typeof input.generateAudio === "boolean"
+          ? input.generateAudio
+          : undefined,
       createdAt: new Date().toISOString(),
     };
     db.assets.unshift(asset);

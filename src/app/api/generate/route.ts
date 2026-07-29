@@ -504,6 +504,7 @@ export async function POST(request: Request) {
         resolution: uiResolution,
         referenceImages: savedRefs,
         preferClarity,
+        generateAudio: freeTrial ? true : Boolean(body.generateAudio),
       });
 
       try {

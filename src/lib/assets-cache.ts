@@ -19,6 +19,7 @@ export type CachedAssetItem = {
   aspectRatio?: string;
   resolution?: string;
   preferClarity?: boolean;
+  generateAudio?: boolean;
   referenceImages?: import("@/lib/types").VisualReference[];
 };
 
