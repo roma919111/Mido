@@ -342,19 +342,18 @@ function roleText(role: ShotRole, text: string, arabic: boolean): string {
 }
 
 /**
- * Pack timed beats into `totalSeconds`:
- * each cycle = action 2s → object state 1s → result 1s, then repeat.
+ * Pack timed beats — one cycle per unique action (never repeats a done verb).
+ * Ideal length = actions × 4s. Longer requested durations are capped to that.
  */
 export function buildVeronixShotScript(input: {
   originalPrompt: string;
   /** Optional AI-enhanced prompt (preferred for extraction + script body). */
   enhancedPrompt?: string;
   totalSeconds: number;
+  /** Optional slider bounds used when computing the no-repeat duration. */
+  minSeconds?: number;
+  maxSeconds?: number;
 }): VeronixShotScript {
-  const totalSeconds = Math.max(
-    1,
-    Math.min(60, Math.round(Number(input.totalSeconds) || 4)),
-  );
   const enhanced = (input.enhancedPrompt || "").trim();
   const source = enhanced || input.originalPrompt;
   const actions = extractActionBeats(source);
@@ -365,16 +364,23 @@ export function buildVeronixShotScript(input: {
     isArabic(input.originalPrompt) ||
     actions.some((a) => isArabic(a));
 
+  const minSec = Math.max(1, Math.floor(input.minSeconds || 4));
+  const maxSec = Math.max(minSec, Math.floor(input.maxSeconds || 60));
+  const ideal = idealScriptSeconds(source, { min: minSec, max: maxSec });
+  // Never stretch past unique actions — that caused verb repeats at 15s.
+  const totalSeconds = Math.min(
+    ideal,
+    Math.max(minSec, Math.round(Number(input.totalSeconds) || ideal)),
+  );
+
   const beats: TimedBeat[] = [];
   let t = 0;
-  let cycleIdx = 0;
+  const cycleCount = Math.max(1, actions.length);
 
-  while (t < totalSeconds) {
+  for (let cycleIdx = 0; cycleIdx < cycleCount && t < totalSeconds; cycleIdx += 1) {
     const actionRaw =
-      actions[cycleIdx % Math.max(1, actions.length)] ||
-      cleanCore(input.originalPrompt);
+      actions[cycleIdx] || cleanCore(input.originalPrompt);
     const action = shortenAction(actionRaw);
-    cycleIdx += 1;
     const remaining = totalSeconds - t;
 
     const objectFallback = arabic
@@ -386,13 +392,13 @@ export function buildVeronixShotScript(input: {
 
     const objectLine = pickDistinct(
       objectStates,
-      cycleIdx - 1,
+      cycleIdx,
       action,
       objectFallback,
     );
     const resultLine = pickDistinct(
       results,
-      cycleIdx - 1,
+      cycleIdx,
       action,
       resultFallback,
     );
@@ -429,18 +435,6 @@ export function buildVeronixShotScript(input: {
       });
       t = endSec;
     }
-
-    if (t < totalSeconds && slots.every((s) => s.want < 1)) {
-      beats.push({
-        index: beats.length + 1,
-        startSec: t,
-        endSec: t + 1,
-        role: "action",
-        labelAr: roleLabelAr("action", action),
-        text: roleText("action", action, arabic),
-      });
-      t += 1;
-    }
   }
 
   const timelineAr = beats
@@ -458,13 +452,15 @@ export function buildVeronixShotScript(input: {
     .join("\n");
 
   const sceneCore = enhanced || cleanCore(input.originalPrompt);
+  const actionCount = Math.max(1, actions.length);
 
   const scriptPrompt = arabic
     ? [
         sceneCore,
         "",
         "سيناريو لقطات فيرونيكس الزمني — التزم بهذا التوقيت داخل فيديو واحد متصل:",
-        "كل دورة = فعل (2ث) ثم حالة المفعول به (1ث) ثم النتيجة/ردّة الفعل (1ث). لا تكرر نص الفعل في لقطات الحالة والنتيجة.",
+        `المدة المثالية بدون تكرار أفعال: ${totalSeconds}ث (${actionCount} فعل × ${CYCLE}ث).`,
+        "كل دورة = فعل (2ث) ثم حالة المفعول به (1ث) ثم النتيجة/ردّة الفعل (1ث). لا تكرر فعلاً نُفّذ مسبقاً.",
         timelineAr,
         "حافظ على الاستمرارية بين اللقطات. حركة سينمائية طبيعية. فيديو واحد متصل.",
       ]
@@ -474,7 +470,8 @@ export function buildVeronixShotScript(input: {
         sceneCore,
         "",
         "Veronix timed shot script — follow this exact pacing inside one continuous clip:",
-        "Each cycle = action (2s) → object state (1s) → result/reaction (1s). Do not repeat the verb line in state/result beats.",
+        `Ideal no-repeat duration: ${totalSeconds}s (${actionCount} actions × ${CYCLE}s).`,
+        "Each cycle = action (2s) → object state (1s) → result/reaction (1s). Do not repeat a verb already used.",
         timelineEn,
         "Keep continuity between beats. Natural cinematic motion. One continuous video.",
       ]
@@ -487,6 +484,24 @@ export function buildVeronixShotScript(input: {
     summaryAr: timelineAr,
     totalSeconds,
   };
+}
+
+/** Seconds for one action→state→result cycle. */
+export const SHOT_CYCLE_SECONDS = CYCLE;
+
+/**
+ * Duration that fits unique actions once (no verb repeats).
+ * Defaults: min 4, max 15 (paid Seedance range).
+ */
+export function idealScriptSeconds(
+  prompt: string,
+  bounds?: { min?: number; max?: number },
+): number {
+  const min = Math.max(1, Math.floor(bounds?.min ?? 4));
+  const max = Math.max(min, Math.floor(bounds?.max ?? 15));
+  const actions = extractActionBeats(prompt);
+  const cycles = Math.max(1, actions.length || 1);
+  return Math.min(max, Math.max(min, cycles * CYCLE));
 }
 
 /** Approximate cycle count helper (for UI copy). */

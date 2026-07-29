@@ -39,6 +39,7 @@ import {
 import { quoteCreditsLocal } from "@/lib/credit-quote-local";
 import {
   buildVeronixShotScript,
+  idealScriptSeconds,
   type VeronixShotScript,
 } from "@/lib/veronix-shot-script";
 import type { VisualReference } from "@/lib/types";
@@ -1012,6 +1013,16 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       setShotHint(null);
       if (data.finalState) setPromptSceneState(data.finalState);
 
+      // Recommend duration that fits unique actions once (no verb repeats).
+      let recommendedSec: number | null = null;
+      if (media === "video" && !freeSettingsLocked) {
+        recommendedSec = idealScriptSeconds(next, {
+          min: sliderMin,
+          max: sliderMax,
+        });
+        setDuration(recommendedSec);
+      }
+
       const arabicEnhanced = /[\u0600-\u06FF]/.test(next);
       if (data.needsVisionKey) {
         setStatus(
@@ -1028,6 +1039,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         if (data.visionUsed) bits.push("مع مواصفات الشخصيات من الصورة");
         if (data.chained) bits.push("وتسلسل من الحالة السابقة");
         bits.push("مع محسنات الذكاء الاصطناعي");
+        if (recommendedSec != null) {
+          bits.push(`المدة المقترحة ${recommendedSec}ث بدون تكرار أفعال`);
+        }
         setStatus(bits.join(" · "));
       }
     } catch (err) {
@@ -1648,7 +1662,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     }
 
     const original = prompt.trim();
-    const totalSeconds = Math.min(sliderMax, Math.max(sliderMin, duration));
     setGenConfirmOriginal(original);
     setGenConfirmOpen(true);
     setGenConfirmLoading(true);
@@ -1681,11 +1694,19 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         // Local script still works from the original Arabic/English prompt.
       }
 
+      const sourceForIdeal = enhanced || original;
+      const recommendedSec = idealScriptSeconds(sourceForIdeal, {
+        min: sliderMin,
+        max: sliderMax,
+      });
       const script = buildVeronixShotScript({
         originalPrompt: original,
         enhancedPrompt: enhanced || undefined,
-        totalSeconds,
+        totalSeconds: recommendedSec,
+        minSeconds: sliderMin,
+        maxSeconds: sliderMax,
       });
+      // Do not overwrite the slider here — «البرومبت الأصلي» keeps the customer's duration.
       setGenConfirmScript(script);
     } catch (err) {
       setGenConfirmOpen(false);
@@ -1700,19 +1721,35 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   async function acceptVeronixRecommendation() {
     const script = genConfirmScript;
     setGenConfirmOpen(false);
+    setGenConfirmScript(null);
     if (!script) return;
-    void runGenerateWithPrompt(script.scriptPrompt);
+    const sec = Math.min(
+      sliderMax,
+      Math.max(sliderMin, script.totalSeconds || duration),
+    );
+    setDuration(sec);
+    void runGenerateWithPrompt(script.scriptPrompt, { durationSeconds: sec });
   }
 
-  async function cancelVeronixRecommendation() {
+  async function acceptOriginalPrompt() {
     const original = genConfirmOriginal || prompt.trim();
     setGenConfirmOpen(false);
     setGenConfirmScript(null);
-    // Cancel = generate from the customer's original prompt (no shot script).
+    // Original prompt at the customer's chosen slider duration.
     void runGenerateWithPrompt(original);
   }
 
-  async function runGenerateWithPrompt(promptForGenerate: string) {
+  function dismissGenerateConfirm() {
+    setGenConfirmOpen(false);
+    setGenConfirmLoading(false);
+    setGenConfirmScript(null);
+    setStatus(null);
+  }
+
+  async function runGenerateWithPrompt(
+    promptForGenerate: string,
+    opts?: { durationSeconds?: number },
+  ) {
     if (!validateGenerateReady()) return;
     const userPrompt = prompt.trim();
     const finalUserPrompt = (promptForGenerate || userPrompt).trim();
@@ -1733,7 +1770,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     const startedAt = Date.now();
     const outputTargetSeconds =
       media === "video"
-        ? Math.min(sliderMax, Math.max(sliderMin, duration))
+        ? Math.min(
+            sliderMax,
+            Math.max(sliderMin, opts?.durationSeconds ?? duration),
+          )
         : 1;
     const placeholders: StudioJob[] = Array.from({ length: requestCount }, () => ({
       clientId: newStudioClientId(),
@@ -1796,7 +1836,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       const { res, data } = await createOneClip({
         prompt: finalPrompt,
         mode,
-        duration,
+        duration: outputTargetSeconds,
         startFrame: activeRefs.length ? null : startFrame,
         endFrame: activeRefs.length ? null : endFrame,
         referenceImages: activeRefs,
@@ -2541,7 +2581,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 توصية فيرونيكس
               </p>
               <p className="mt-1 text-sm text-white/55">
-                سكريبت لقطات موقت داخل مدة الفيديو ({genConfirmScript?.totalSeconds || duration}ث)
+                سكريبت لقطات بدون تكرار أفعال
+                {genConfirmScript
+                  ? ` · المدة المقترحة ${genConfirmScript.totalSeconds}ث`
+                  : ""}
               </p>
             </div>
             <div className="max-h-[45vh] overflow-y-auto px-4 py-3">
@@ -2556,10 +2599,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 </pre>
               )}
               <p className="mt-3 text-[11px] leading-relaxed text-white/40">
-                «توصية فيرونيكس» = توليد بالسكريبت المحسّن · «إلغاء» = توليد بوصفك الأصلي كما هو
+                توصية فيرونيكس = السكريبت المحسّن · البرومبت الأصلي = وصفك كما هو · إلغاء = إغلاق بدون توليد
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-2 border-t border-white/10 p-3">
+            <div className="grid grid-cols-1 gap-2 border-t border-white/10 p-3 sm:grid-cols-3">
               <button
                 type="button"
                 disabled={genConfirmLoading || !genConfirmScript || generating}
@@ -2571,7 +2614,15 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               <button
                 type="button"
                 disabled={genConfirmLoading || generating}
-                onClick={() => void cancelVeronixRecommendation()}
+                onClick={() => void acceptOriginalPrompt()}
+                className="rounded-2xl border border-[#22f0ff]/35 bg-[#22f0ff]/10 px-3 py-3 text-sm font-bold text-[#22f0ff] disabled:opacity-50"
+              >
+                البرومبت الأصلي
+              </button>
+              <button
+                type="button"
+                disabled={generating}
+                onClick={() => dismissGenerateConfirm()}
                 className="rounded-2xl border border-white/15 bg-white/5 px-3 py-3 text-sm font-bold text-white/85 disabled:opacity-50"
               >
                 إلغاء
