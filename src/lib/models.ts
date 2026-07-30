@@ -1,8 +1,10 @@
+import { toVeronixCredits } from "@/lib/credit-quote";
 import type { GenerationMode, VideoDuration, VideoQuality, VisualReference } from "./types";
 
 export const IMAGE_MODEL = "nano-banana-2-lite";
 export const VIDEO_MODEL = "pixverseV6";
 
+/** OpenArt base costs (legacy StudioApp). Always convert with toVeronixCredits. */
 export const CREDIT_COSTS = {
   image: 15,
   video: {
@@ -16,8 +18,11 @@ export function estimateCredits(
   duration: VideoDuration = 5,
   quality: VideoQuality = "standard",
 ): number {
-  if (mode === "text-to-image") return CREDIT_COSTS.image;
-  return CREDIT_COSTS.video[quality][duration];
+  const openArt =
+    mode === "text-to-image"
+      ? CREDIT_COSTS.image
+      : CREDIT_COSTS.video[quality][duration];
+  return toVeronixCredits(openArt);
 }
 
 export function qualityToResolution(quality: VideoQuality): "720p" | "1080p" {
