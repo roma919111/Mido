@@ -32,6 +32,16 @@ export type Dictionary = {
     homeH1: string;
     homeSeoP: string;
     homeBullets: string[];
+    keywords: string[];
+    faqDescription: string;
+    loginDescription: string;
+    signupDescription: string;
+    createVideoDescription: string;
+    createImageDescription: string;
+    inspireTitle: string;
+    inspireDescription: string;
+    toolsTitle: string;
+    toolsDescription: string;
   };
   nav: {
     home: string;
@@ -248,6 +258,33 @@ export const ar: Dictionary = {
       "محفظة كريدت وباقات شهرية",
       "واجهة عربية وإنجليزية",
     ],
+    keywords: [
+      "Veronix",
+      "Veronix.ai",
+      "vyronix.app",
+      "توليد فيديو بالذكاء الاصطناعي",
+      "توليد صور بالذكاء الاصطناعي",
+      "استوديو AI",
+      "فيديو مجاني",
+      "AI video generator",
+      "AI image generator",
+    ],
+    faqDescription:
+      "أسئلة شائعة عن Veronix.ai: الفيديو المجاني، الكريدت، الباقات، الدفع عبر Stripe، والدعم على vyronix.app.",
+    loginDescription:
+      "سجّل دخولك إلى Veronix.ai لإدارة الكريدت ومتابعة توليد الصور والفيديو على vyronix.app.",
+    signupDescription:
+      "أنشئ حساب Veronix.ai وابدأ بأول فيديو مجاني — استوديو صور وفيديو بالذكاء الاصطناعي على vyronix.app.",
+    createVideoDescription:
+      "أنشئ فيديو بالذكاء الاصطناعي مع Veronix — وصف المشهد، مدة 4–15 ثانية، وضوح 480p أو 720p.",
+    createImageDescription:
+      "أنشئ صورًا بالذكاء الاصطناعي مع Veronix — جودة عالية بدون واترمارك على vyronix.app.",
+    inspireTitle: "إلهام",
+    inspireDescription:
+      "أفكار جاهزة للبدء على Veronix.ai — اختر وصفًا وانتقل مباشرة لإنشاء صورة أو فيديو.",
+    toolsTitle: "أدوات",
+    toolsDescription:
+      "اختصارات سريعة لصنّاع المحتوى على Veronix: إنشاء، الباقات، ومكتبة الأصول.",
   },
   nav: {
     home: "الرئيسية",
@@ -499,6 +536,33 @@ export const en: Dictionary = {
       "Credit wallet and monthly plans",
       "Arabic and English interface",
     ],
+    keywords: [
+      "Veronix",
+      "Veronix.ai",
+      "vyronix.app",
+      "AI video generator",
+      "AI image generator",
+      "AI studio",
+      "free AI video",
+      "text to video",
+      "text to image",
+    ],
+    faqDescription:
+      "FAQ for Veronix.ai: free video trial, credits, plans, Stripe checkout, and support on vyronix.app.",
+    loginDescription:
+      "Log in to Veronix.ai to manage credits and keep generating AI images and videos on vyronix.app.",
+    signupDescription:
+      "Create a Veronix.ai account and start with a free first video — AI image & video studio on vyronix.app.",
+    createVideoDescription:
+      "Create AI video with Veronix — describe the scene, 4–15s clips, 480p or 720p on vyronix.app.",
+    createImageDescription:
+      "Create AI images with Veronix — high quality, no watermark, on vyronix.app.",
+    inspireTitle: "Inspire",
+    inspireDescription:
+      "Ready-made prompt ideas for Veronix.ai — pick a starting description and jump into Create.",
+    toolsTitle: "Tools",
+    toolsDescription:
+      "Quick shortcuts for Veronix creators: Create, pricing, and your Assets library.",
   },
   nav: {
     home: "Home",

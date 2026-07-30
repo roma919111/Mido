@@ -3,6 +3,12 @@ import { Outfit, Syne } from "next/font/google";
 import { LocaleProvider } from "@/components/veronix/LocaleProvider";
 import { PricingConfigHydrator } from "@/components/veronix/PricingConfigHydrator";
 import { getRequestDictionary, localeDir } from "@/lib/i18n";
+import {
+  OG_IMAGE,
+  SITE_NAME,
+  SITE_URL,
+  languageAlternates,
+} from "@/lib/seo";
 import "./globals.css";
 
 const syne = Syne({
@@ -20,61 +26,50 @@ const outfit = Outfit({
 export async function generateMetadata(): Promise<Metadata> {
   const { locale, t } = await getRequestDictionary();
   return {
-    metadataBase: new URL("https://vyronix.app"),
+    metadataBase: new URL(SITE_URL),
     title: {
       default: t.meta.titleDefault,
       template: t.meta.titleTemplate,
     },
     description: t.meta.description,
-    applicationName: "Veronix.ai",
-    keywords: [
-      "Veronix",
-      "Veronix.ai",
-      "vyronix.app",
-      "AI video",
-      "AI image",
-      "توليد فيديو",
-      "ذكاء اصطناعي",
-      "AI studio",
-    ],
-    authors: [{ name: "Veronix.ai", url: "https://vyronix.app" }],
-    creator: "Veronix.ai",
-    publisher: "Veronix.ai",
-    alternates: {
-      canonical: "https://vyronix.app",
-      languages: {
-        ar: "https://vyronix.app",
-        en: "https://vyronix.app",
-        "x-default": "https://vyronix.app",
-      },
-    },
+    applicationName: SITE_NAME,
+    keywords: t.meta.keywords,
+    authors: [{ name: SITE_NAME, url: SITE_URL }],
+    creator: SITE_NAME,
+    publisher: SITE_NAME,
+    category: "technology",
+    alternates: languageAlternates("/"),
     openGraph: {
       type: "website",
       locale: locale === "en" ? "en_US" : "ar_SA",
       alternateLocale: locale === "en" ? ["ar_SA"] : ["en_US"],
-      url: "https://vyronix.app",
-      siteName: "Veronix.ai",
+      url: SITE_URL,
+      siteName: SITE_NAME,
       title: t.meta.ogTitle,
       description: t.meta.ogDescription,
-      images: [
-        {
-          url: "/promo/poster.jpg",
-          width: 1920,
-          height: 1080,
-          alt: "Veronix.ai",
-        },
-      ],
+      images: [OG_IMAGE],
     },
     twitter: {
       card: "summary_large_image",
-      title: "Veronix.ai",
+      title: t.meta.ogTitle,
       description: t.meta.twitterDescription,
-      images: ["/promo/poster.jpg"],
+      images: [OG_IMAGE.url],
     },
     robots: {
       index: true,
       follow: true,
+      googleBot: {
+        index: true,
+        follow: true,
+        "max-image-preview": "large",
+        "max-snippet": -1,
+        "max-video-preview": -1,
+      },
     },
+    icons: {
+      icon: "/favicon.ico",
+    },
+    manifest: "/manifest.webmanifest",
   };
 }
 
@@ -90,11 +85,11 @@ export default async function RootLayout({
     {
       "@context": "https://schema.org",
       "@type": "Organization",
-      name: "Veronix.ai",
-      url: "https://vyronix.app",
-      logo: "https://vyronix.app/promo/poster.jpg",
+      name: SITE_NAME,
+      url: SITE_URL,
+      logo: `${SITE_URL}${OG_IMAGE.url}`,
       email: "support@vyronix.app",
-      sameAs: ["https://vyronix.app"],
+      sameAs: [SITE_URL],
       contactPoint: [
         {
           "@type": "ContactPoint",
@@ -107,34 +102,47 @@ export default async function RootLayout({
     {
       "@context": "https://schema.org",
       "@type": "WebSite",
-      name: "Veronix.ai",
-      url: "https://vyronix.app",
+      name: SITE_NAME,
+      url: SITE_URL,
       inLanguage: ["ar", "en"],
-      publisher: { "@type": "Organization", name: "Veronix.ai" },
-      potentialAction: {
-        "@type": "SearchAction",
-        target: "https://vyronix.app/?q={search_term_string}",
-        "query-input": "required name=search_term_string",
-      },
+      publisher: { "@type": "Organization", name: SITE_NAME },
     },
     {
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
-      name: "Veronix.ai",
+      name: SITE_NAME,
       applicationCategory: "MultimediaApplication",
       operatingSystem: "Web",
-      url: "https://vyronix.app",
+      url: SITE_URL,
       inLanguage: ["ar", "en"],
       offers: {
-        "@type": "Offer",
-        price: "0",
+        "@type": "AggregateOffer",
+        lowPrice: "0",
+        highPrice: "15",
         priceCurrency: "USD",
+        offerCount: 3,
         description:
           locale === "en"
-            ? "Free Veronix starter trial; paid plans via Stripe"
-            : "تجربة Veronix مجانية للبداية؛ باقات مدفوعة عبر Stripe",
+            ? "Free Veronix starter trial; paid plans from $10/mo via Stripe"
+            : "تجربة Veronix مجانية للبداية؛ باقات مدفوعة من 10$ شهريًا عبر Stripe",
       },
       description: t.meta.description,
+      featureList:
+        locale === "en"
+          ? [
+              "AI image generation",
+              "AI video generation",
+              "Credit wallet",
+              "Monthly plans",
+              "Arabic and English UI",
+            ]
+          : [
+              "توليد صور بالذكاء الاصطناعي",
+              "توليد فيديو بالذكاء الاصطناعي",
+              "محفظة كريدت",
+              "باقات شهرية",
+              "واجهة عربية وإنجليزية",
+            ],
     },
   ];
 

@@ -1,6 +1,19 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { AuthForm } from "@/components/veronix/AuthForm";
 import { BottomNav } from "@/components/veronix/BottomNav";
+import { getRequestDictionary } from "@/lib/i18n";
+import { buildPageMetadata } from "@/lib/seo";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const { locale, t } = await getRequestDictionary();
+  return buildPageMetadata({
+    locale,
+    title: t.auth.signupTitle,
+    description: t.meta.signupDescription,
+    path: "/signup",
+  });
+}
 
 export default function SignupPage() {
   return (

@@ -1,26 +1,18 @@
 import type { Metadata } from "next";
 import { VeronixApp } from "@/components/veronix/VeronixApp";
 import { getRequestDictionary } from "@/lib/i18n";
+import { buildPageMetadata } from "@/lib/seo";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const { t } = await getRequestDictionary();
-  return {
-    title: { absolute: t.meta.titleDefault },
+  const { locale, t } = await getRequestDictionary();
+  return buildPageMetadata({
+    locale,
+    title: t.meta.titleDefault,
     description: t.meta.description,
-    alternates: {
-      canonical: "https://vyronix.app/",
-      languages: {
-        ar: "https://vyronix.app/",
-        en: "https://vyronix.app/",
-        "x-default": "https://vyronix.app/",
-      },
-    },
-    openGraph: {
-      title: t.meta.ogTitle,
-      description: t.meta.ogDescription,
-      url: "https://vyronix.app/",
-    },
-  };
+    path: "/",
+    absoluteTitle: true,
+    ogTitle: t.meta.ogTitle,
+  });
 }
 
 export default async function HomePage() {
@@ -40,6 +32,8 @@ export default async function HomePage() {
         <a href="/about">{t.footer.about}</a>
         <a href="/faq">{t.footer.faq}</a>
         <a href="/contact">{t.footer.contact}</a>
+        <a href="/create/video">{t.nav.createVideo}</a>
+        <a href="/create/image">{t.nav.createImage}</a>
         <a href="/signup">{t.header.signup}</a>
       </section>
       <VeronixApp />
