@@ -11,6 +11,7 @@ import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile, stat } from "node:fs
 import { tmpdir } from "node:os";
 import path from "node:path";
 import sharp from "sharp";
+import { applyGbAigcLabeling } from "@/lib/gb-aigc-label";
 import { GENERATIONS_DIR, resolveGenerationFile } from "@/lib/veronix-outro";
 
 function run(cmd: string, args: string[]): Promise<void> {
@@ -346,20 +347,49 @@ export async function toAiDigitalCharacterRender(bytes: Buffer): Promise<Buffer>
   return toAiDigitalCharacterRenderLite(bytes);
 }
 
-/** Compress (+ optional AI digital render when enabled). */
-export async function compressReferenceForBytePlus(bytes: Buffer): Promise<Buffer> {
-  if (!AI_DIGITAL_FILTER_ENABLED) {
-    return plainCompressForBytePlus(bytes);
-  }
+/**
+ * Final post-pass: GB 45438-2025 explicit corner mark + AIGC EXIF/XMP,
+ * then re-export JPEG so Seedance scanners see Confirmed AI Content.
+ * Does not alter frozen AI digital filter numbers.
+ */
+async function finalizeForBytePlus(bytes: Buffer): Promise<Buffer> {
   try {
-    return await toAiDigitalCharacterRender(bytes);
+    const labeled = await applyGbAigcLabeling(bytes);
+    try {
+      const id = `aigc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      await mkdir(GENERATIONS_DIR, { recursive: true });
+      await writeFile(path.join(GENERATIONS_DIR, `${id}.jpg`), labeled);
+      console.info(`[veronix] GB45438 AIGC labeled /generations/${id}.jpg`);
+    } catch {
+      // non-fatal
+    }
+    return labeled;
   } catch (err) {
     console.warn(
-      "[veronix] AI digital render failed, falling back to compress:",
+      "[veronix] GB AIGC labeling failed, using unlabeled still:",
       err instanceof Error ? err.message : err,
     );
-    return plainCompressForBytePlus(bytes);
+    return bytes;
   }
+}
+
+/** Compress (+ optional AI digital render when enabled) + GB AIGC labeling. */
+export async function compressReferenceForBytePlus(bytes: Buffer): Promise<Buffer> {
+  let out: Buffer;
+  if (!AI_DIGITAL_FILTER_ENABLED) {
+    out = await plainCompressForBytePlus(bytes);
+  } else {
+    try {
+      out = await toAiDigitalCharacterRender(bytes);
+    } catch (err) {
+      console.warn(
+        "[veronix] AI digital render failed, falling back to compress:",
+        err instanceof Error ? err.message : err,
+      );
+      out = await plainCompressForBytePlus(bytes);
+    }
+  }
+  return finalizeForBytePlus(out);
 }
 
 export type SoftGradeLevel = "generate" | "retry";
@@ -383,9 +413,10 @@ export async function stylizeReferenceImage(sourceUrl: string): Promise<string> 
 
   try {
     const raw = await loadImageBytes(trimmed);
-    const out = AI_DIGITAL_FILTER_ENABLED
+    const rendered = AI_DIGITAL_FILTER_ENABLED
       ? await toAiDigitalCharacterRender(raw)
       : await plainCompressForBytePlus(raw);
+    const out = await finalizeForBytePlus(rendered);
     if (out.length < 400) throw new Error("AI digital render too small");
     await writeFile(outPublic, out);
     return `data:image/jpeg;base64,${out.toString("base64")}`;
@@ -413,6 +444,7 @@ export async function stylizeReferenceImage(sourceUrl: string): Promise<string> 
       if (st.size < 400) throw new Error("Stylized reference too small");
       let bytes: Buffer = await readFile(outPublic);
       bytes = Buffer.from(await ensureMinSide(bytes, 88));
+      bytes = await finalizeForBytePlus(bytes);
       await writeFile(outPublic, bytes);
       return `data:image/jpeg;base64,${bytes.toString("base64")}`;
     } finally {
