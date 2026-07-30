@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
   type RefObject,
 } from "react";
 import { flushSync } from "react-dom";
@@ -175,6 +176,73 @@ function VideoMetaNotes({
           {chip}
         </span>
       ))}
+    </div>
+  );
+}
+
+/** Collapsed 2-line prompt + tappable Show more opens a scrollable dropdown sheet. */
+function AssetPromptPanel({
+  prompt,
+  expanded,
+  long,
+  onToggle,
+  showMoreLabel,
+  showLessLabel,
+  footer,
+}: {
+  prompt: string;
+  expanded: boolean;
+  long: boolean;
+  onToggle: () => void;
+  showMoreLabel: string;
+  showLessLabel: string;
+  footer?: ReactNode;
+}) {
+  return (
+    <div className="mt-1.5">
+      {expanded ? (
+        <div className="overflow-hidden rounded-2xl border border-white/15 bg-black/80 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur-md">
+          <div className="max-h-[min(42vh,22rem)] overflow-y-auto overscroll-contain px-3 py-2.5">
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-white/90 sm:text-[15px]">
+              {prompt}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-white/10 px-3 py-2">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggle();
+              }}
+              className="rounded-full bg-white/12 px-2.5 py-1 text-xs font-semibold text-white ring-1 ring-white/20"
+            >
+              {showLessLabel}
+            </button>
+            {footer}
+          </div>
+        </div>
+      ) : (
+        <>
+          <p className="line-clamp-2 text-sm leading-relaxed text-white/80 sm:text-[15px]">
+            {prompt}
+          </p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+            {long ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggle();
+                }}
+                className="rounded-full bg-white/12 px-2.5 py-1 text-xs font-semibold text-white ring-1 ring-white/20"
+              >
+                {showMoreLabel}
+              </button>
+            ) : null}
+            {footer}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -615,9 +683,9 @@ function FeedVideoSlide({
             className="pointer-events-none absolute inset-0 h-full w-full object-cover bg-black"
           />
 
-          {/* Center Play / Pause buttons only — no tap-on-video. */}
-          {playing ? (
-            <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
+          {/* Center Play / Pause only — do not cover the prompt / Show more area. */}
+          <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center pb-28">
+            {playing ? (
               <button
                 type="button"
                 onClick={(e) => {
@@ -629,22 +697,20 @@ function FeedVideoSlide({
               >
                 <Pause className="h-6 w-6" fill="currentColor" />
               </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handlePlayClick();
-              }}
-              className="absolute inset-0 z-30 flex items-center justify-center"
-              aria-label={t.assets.play}
-            >
-              <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white/90 text-black shadow-lg transition active:scale-95">
+            ) : (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handlePlayClick();
+                }}
+                className="pointer-events-auto flex h-16 w-16 items-center justify-center rounded-full bg-white/90 text-black shadow-lg transition active:scale-95"
+                aria-label={t.assets.play}
+              >
                 <Play className="h-7 w-7 translate-x-0.5" fill="currentColor" />
-              </span>
-            </button>
-          )}
+              </button>
+            )}
+          </div>
         </>
       ) : (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center">
@@ -775,51 +841,41 @@ function FeedVideoSlide({
       </div>
       ) : null}
 
-      {/* Title + meta — shown when paused / stopped */}
-      {!playing ? (
+      {/* Title + meta — above play control so Show more is always tappable.
+          Keep visible while playing when the prompt sheet is open. */}
+      {!playing || promptExpanded ? (
       <div
-        className="pointer-events-none absolute inset-x-0 bottom-16 z-20 px-3 pb-[env(safe-area-inset-bottom)] pl-16 sm:bottom-20 sm:px-6 sm:pl-24"
+        className="pointer-events-none absolute inset-x-0 bottom-16 z-40 px-3 pb-[env(safe-area-inset-bottom)] pl-16 sm:bottom-20 sm:px-6 sm:pl-24"
         dir={dir}
       >
         <div className="pointer-events-auto max-w-[min(100%,28rem)]">
-          <p className="mb-1 text-[11px] font-semibold tracking-wide text-[#22f0ff]/90">
-            {t.create.createdBy}
-          </p>
-          <h2 className="text-base font-extrabold leading-snug text-white sm:text-lg">
-            {title}
-          </h2>
-          {prompt ? (
-            <div className="mt-1.5">
-              <p
-                className={`text-sm leading-relaxed text-white/80 sm:text-[15px] ${
-                  promptExpanded ? "" : "line-clamp-2"
-                }`}
-              >
-                {prompt}
+          {!playing ? (
+            <>
+              <p className="mb-1 text-[11px] font-semibold tracking-wide text-[#22f0ff]/90">
+                {t.create.createdBy}
               </p>
-              <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5">
-                {promptLong ? (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPromptExpanded((v) => !v);
-                    }}
-                    className="text-xs font-semibold text-white/95 underline-offset-2 hover:underline"
-                  >
-                    {promptExpanded ? t.assets.showLess : t.assets.showMore}
-                  </button>
-                ) : null}
-                <VideoMetaNotes item={item} />
-              </div>
-            </div>
-          ) : (
+              <h2 className="text-base font-extrabold leading-snug text-white sm:text-lg">
+                {title}
+              </h2>
+            </>
+          ) : null}
+          {prompt ? (
+            <AssetPromptPanel
+              prompt={prompt}
+              expanded={promptExpanded}
+              long={promptLong}
+              onToggle={() => setPromptExpanded((v) => !v)}
+              showMoreLabel={t.assets.showMore}
+              showLessLabel={t.assets.showLess}
+              footer={!playing ? <VideoMetaNotes item={item} /> : null}
+            />
+          ) : !playing ? (
             <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5">
               <p className="text-sm text-white/50">{t.assets.noPrompt}</p>
               <VideoMetaNotes item={item} />
             </div>
-          )}
-          {item.error ? (
+          ) : null}
+          {!playing && item.error ? (
             <p className="mt-1 whitespace-pre-line text-xs font-medium leading-relaxed text-rose-300">
               {displayBytePlusAssetError(item.error)}
             </p>
@@ -1217,7 +1273,7 @@ function FeedImageSlide({
       </div>
 
       <div
-        className="pointer-events-none absolute inset-x-0 bottom-16 z-20 px-3 pb-[env(safe-area-inset-bottom)] pl-16 sm:bottom-20 sm:px-6 sm:pl-24"
+        className="pointer-events-none absolute inset-x-0 bottom-16 z-40 px-3 pb-[env(safe-area-inset-bottom)] pl-16 sm:bottom-20 sm:px-6 sm:pl-24"
         dir={dir}
       >
         <div className="pointer-events-auto max-w-[min(100%,28rem)]">
@@ -1228,33 +1284,23 @@ function FeedImageSlide({
             {title}
           </h2>
           {prompt ? (
-            <div className="mt-1.5">
-              <p
-                className={`text-sm leading-relaxed text-white/80 sm:text-[15px] ${
-                  promptExpanded ? "" : "line-clamp-2"
-                }`}
-              >
-                {prompt}
-              </p>
-              <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5">
-                {promptLong ? (
-                  <button
-                    type="button"
-                    onClick={() => setPromptExpanded((v) => !v)}
-                    className="text-xs font-semibold text-white/95 underline-offset-2 hover:underline"
-                  >
-                    {promptExpanded ? t.assets.showLess : t.assets.showMore}
-                  </button>
-                ) : null}
-                {(item.resolution || item.aspectRatio) && (
+            <AssetPromptPanel
+              prompt={prompt}
+              expanded={promptExpanded}
+              long={promptLong}
+              onToggle={() => setPromptExpanded((v) => !v)}
+              showMoreLabel={t.assets.showMore}
+              showLessLabel={t.assets.showLess}
+              footer={
+                item.resolution || item.aspectRatio ? (
                   <p className="text-[10px] font-semibold text-white/70">
                     {[item.resolution, item.aspectRatio]
                       .filter(Boolean)
                       .join(" · ")}
                   </p>
-                )}
-              </div>
-            </div>
+                ) : null
+              }
+            />
           ) : (
             <p className="mt-1.5 text-sm text-white/50">{t.assets.noPrompt}</p>
           )}

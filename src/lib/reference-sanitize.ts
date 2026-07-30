@@ -287,29 +287,46 @@ async function toAiDigitalCharacterRenderFull(bytes: Buffer): Promise<Buffer> {
  * keeping the digital smooth/bloom look BytePlus needs for facial privacy.
  */
 async function recoverNaturalColorAfterFullFilter(bytes: Buffer): Promise<Buffer> {
+  const finish = async (buf: Buffer) => {
+    const finalBuf = await ensureMinSide(buf, 88);
+    try {
+      const id = `aichar-color-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      await mkdir(GENERATIONS_DIR, { recursive: true });
+      await writeFile(path.join(GENERATIONS_DIR, `${id}.jpg`), finalBuf);
+      console.info(`[veronix] color recovery after full filter /generations/${id}.jpg`);
+    } catch {
+      // non-fatal
+    }
+    return finalBuf;
+  };
+
+  // Strong saturation restore first (simple path — most reliable on Railway).
+  try {
+    const recovered = await sharp(bytes, { failOn: "none" })
+      .modulate({ saturation: 1.65, brightness: 1.06 })
+      .linear(0.88, 16)
+      .jpeg({ quality: 88, mozjpeg: true, chromaSubsampling: "4:4:4" })
+      .toBuffer();
+    return finish(recovered);
+  } catch (err) {
+    console.warn(
+      "[veronix] primary color recovery failed:",
+      err instanceof Error ? err.message : err,
+    );
+  }
+
+  // Fallback: neutralize warm tint, then boost color.
   const recovered = await sharp(bytes, { failOn: "none" })
-    // Counter the frozen warm tint (255,240,220) toward neutral daylight.
     .recomb([
-      [1.04, -0.02, 0.06],
-      [-0.03, 1.05, 0.03],
-      [0.06, 0.02, 1.08],
+      [1.06, -0.03, 0.08],
+      [-0.04, 1.07, 0.04],
+      [0.08, 0.02, 1.1],
     ])
-    .modulate({ saturation: 1.42, brightness: 1.05 })
-    // Open crushed shadows from frozen linear contrast without undoing digital look.
+    .modulate({ saturation: 1.55, brightness: 1.05 })
     .linear(0.9, 14)
     .jpeg({ quality: 88, mozjpeg: true, chromaSubsampling: "4:4:4" })
     .toBuffer();
-
-  const finalBuf = await ensureMinSide(recovered, 88);
-  try {
-    const id = `aichar-color-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    await mkdir(GENERATIONS_DIR, { recursive: true });
-    await writeFile(path.join(GENERATIONS_DIR, `${id}.jpg`), finalBuf);
-    console.info(`[veronix] color recovery after full filter /generations/${id}.jpg`);
-  } catch {
-    // non-fatal
-  }
-  return finalBuf;
+  return finish(recovered);
 }
 
 /** Active AI digital render — lite or full per AI_FILTER_PRESET. */
@@ -384,7 +401,7 @@ export async function stylizeReferenceImage(sourceUrl: string): Promise<string> 
         "-i",
         rawPath,
         "-vf",
-        "scale=1024:-2:flags=lanczos,eq=contrast=1.15:saturation=1.22:brightness=0.03,gblur=sigma=1.5,unsharp=5:5:1.2:5:5:0.0,format=yuvj420p",
+        "scale=1024:-2:flags=lanczos,eq=contrast=1.08:saturation=1.55:brightness=0.04,gblur=sigma=1.2,unsharp=5:5:0.9:5:5:0.0,format=yuvj420p",
         "-frames:v",
         "1",
         "-q:v",
@@ -474,6 +491,6 @@ export function ensureFullColorPrompt(prompt: string): string {
   }
   const arabic = /[\u0600-\u06FF]/.test(text);
   return arabic
-    ? `${text}\nألوان طبيعية كاملة وغنية — ليس أبيض وأسود ولا أحادي اللون.`
-    : `${text}\nFull natural rich color — not black and white, not monochrome.`;
+    ? `${text}\nألوان طبيعية كاملة وغنية ومشبعة — لقطة ملونة بالكامل، ليس أبيض وأسود ولا باهت ولا أحادي اللون.`
+    : `${text}\nFull vivid natural color photography — fully colored shot, not black and white, not washed out, not monochrome.`;
 }
