@@ -22,12 +22,14 @@ import {
 } from "@/lib/plans";
 import { fetchJson } from "@/lib/fetch-json";
 import { useLocale } from "@/components/veronix/LocaleProvider";
+import { useCustomerSession } from "@/components/veronix/useCustomerSession";
+import { writeCachedCustomer } from "@/lib/customer-session-cache";
 
 export function PricingPage() {
   const router = useRouter();
   const params = useSearchParams();
   const { t, dir, locale } = useLocale();
-  const [user, setUser] = useState<CustomerUser | null>(null);
+  const { user, setUser, sessionReady, logout } = useCustomerSession();
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [stripeReady, setStripeReady] = useState<boolean | null>(null);
@@ -52,9 +54,6 @@ export function PricingPage() {
         setStripeReady(false);
       }
 
-      const { data } = await fetchJson<{ user: CustomerUser | null }>("/api/auth/customer/me");
-      setUser(data.user);
-
       const sessionId = params.get("session_id");
       if (params.get("success") && sessionId) {
         setMessage("تم الدفع بنجاح — جارٍ تأكيد الرصيد…");
@@ -70,6 +69,7 @@ export function PricingPage() {
         });
         if (res.ok && confirm.user) {
           setUser(confirm.user);
+          writeCachedCustomer(confirm.user);
           setMessage(
             confirm.applied
               ? `تم تفعيل الباقة وإضافة الرصيد بنجاح (${confirm.user.credits.toLocaleString()} كريدت).`
@@ -85,7 +85,7 @@ export function PricingPage() {
       if (params.get("canceled")) setMessage("تم إلغاء عملية الدفع.");
       if (params.get("paywall")) setMessage("اشترك أو أضف كريدت قبل التوليد.");
     })();
-  }, [params]);
+  }, [params, setUser]);
 
   async function checkout(body: { planId?: PlanId; topUpId?: string }, busyKey: string) {
     if (!user) {
@@ -124,7 +124,10 @@ export function PricingPage() {
       if (data.ok) {
         // Free-plan switch only (no credits granted).
         setMessage(data.message || "تم التحديث بنجاح.");
-        if (data.user) setUser(data.user);
+        if (data.user) {
+          setUser(data.user);
+          writeCachedCustomer(data.user);
+        }
         return;
       }
       throw new Error("لم يكتمل الدفع. لن تُضاف كريدت بدون دفع ناجح.");
@@ -139,8 +142,9 @@ export function PricingPage() {
     <div className="min-h-screen bg-[#0b0d12] text-white">
       <AppHeader
         user={user}
+        sessionReady={sessionReady}
         onLogout={() => {
-          void fetch("/api/auth/customer/logout", { method: "POST" }).then(() => setUser(null));
+          void logout();
         }}
       />
       <main className="mx-auto max-w-5xl px-4 pb-28 pt-8 sm:px-6" dir={dir}>

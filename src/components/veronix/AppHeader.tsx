@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { Coins, LogOut, Shield, UserRound, Zap } from "lucide-react";
 import { BrandLogo } from "@/components/BrandLogo";
 import { LanguageSwitcher } from "@/components/veronix/LanguageSwitcher";
 import { useLocale } from "@/components/veronix/LocaleProvider";
 import { isAdminEmail } from "@/lib/admin-shared";
+import { readCachedCustomer } from "@/lib/customer-session-cache";
 
 export interface CustomerUser {
   id: string;
@@ -22,6 +24,11 @@ export interface AppHeaderProps {
   onLogout?: () => void;
   /** Denser header for overlay / create surfaces. */
   compact?: boolean;
+  /**
+   * false while `/api/auth/customer/me` is in flight.
+   * Keeps the header chrome stable (no Login flash) and animates credits.
+   */
+  sessionReady?: boolean;
 }
 
 function formatCredits(n: number): string {
@@ -31,8 +38,71 @@ function formatCredits(n: number): string {
   return String(n);
 }
 
-export function AppHeader({ user, onLogout, compact = false }: AppHeaderProps) {
+function easeOutCubic(t: number) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+/** Smart credits motion for ~2s while the session hydrates. */
+function CreditsMotion({
+  value,
+  animating,
+}: {
+  value: number;
+  animating: boolean;
+}) {
+  const [shown, setShown] = useState(value);
+
+  useEffect(() => {
+    if (!animating) {
+      setShown(value);
+      return;
+    }
+    const start = performance.now();
+    const duration = 2000;
+    const from = Math.max(0, Math.round(value * 0.82));
+    let raf = 0;
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = easeOutCubic(t);
+      const wobble =
+        Math.sin(t * Math.PI * 8) * (1 - t) * Math.max(40, value * 0.018);
+      setShown(Math.max(0, Math.round(from + (value - from) * eased + wobble)));
+      if (t < 1) raf = requestAnimationFrame(tick);
+      else setShown(value);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value, animating]);
+
+  return (
+    <span
+      className={`truncate tabular-nums ${animating ? "text-[#22f0ff]" : ""}`}
+    >
+      {formatCredits(shown)}
+    </span>
+  );
+}
+
+export function AppHeader({
+  user,
+  onLogout,
+  compact = false,
+  sessionReady = true,
+}: AppHeaderProps) {
   const { t } = useLocale();
+  const [cached] = useState<CustomerUser | null>(() => readCachedCustomer());
+  const hydrating = !sessionReady;
+  const displayUser = user ?? (hydrating ? cached : null);
+  const creditsValue = displayUser?.credits ?? 0;
+  // Keep logged-in chrome while hydrating so Login never flashes.
+  const showLoggedInChrome = Boolean(displayUser) || hydrating;
+  /** Credits number motion for ~2s on each page mount (BottomNav soft nav). */
+  const [creditsAnimating, setCreditsAnimating] = useState(true);
+  useEffect(() => {
+    setCreditsAnimating(true);
+    const t = window.setTimeout(() => setCreditsAnimating(false), 2000);
+    return () => window.clearTimeout(t);
+  }, []);
 
   return (
     <header
@@ -62,13 +132,19 @@ export function AppHeader({ user, onLogout, compact = false }: AppHeaderProps) {
               compact
                 ? "px-1.5 py-1 text-[10px] sm:px-2 sm:text-[11px]"
                 : "px-2 py-1 text-[11px] sm:px-3 sm:py-1.5 sm:text-sm"
-            }`}
-            title={user ? String(user.credits) : "0"}
+            } ${creditsAnimating || hydrating ? "ring-1 ring-[#22f0ff]/35" : ""}`}
+            title={String(creditsValue)}
+            aria-busy={hydrating || creditsAnimating}
           >
-            <Coins className="h-3 w-3 shrink-0 text-[#22f0ff] sm:h-3.5 sm:w-3.5" />
-            <span className="truncate">
-              {formatCredits(user ? user.credits : 0)}
-            </span>
+            <Coins
+              className={`h-3 w-3 shrink-0 text-[#22f0ff] sm:h-3.5 sm:w-3.5 ${
+                creditsAnimating || hydrating ? "animate-pulse" : ""
+              }`}
+            />
+            <CreditsMotion
+              value={creditsValue}
+              animating={creditsAnimating || hydrating}
+            />
           </div>
 
           <Link
@@ -82,7 +158,7 @@ export function AppHeader({ user, onLogout, compact = false }: AppHeaderProps) {
             </span>
           </Link>
 
-          {user && isAdminEmail(user.email) ? (
+          {displayUser && isAdminEmail(displayUser.email) ? (
             <Link
               href="/admin"
               className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-amber-300/30 bg-amber-300/10 text-amber-100 sm:h-9 sm:w-auto sm:gap-1 sm:px-3"
@@ -95,19 +171,20 @@ export function AppHeader({ user, onLogout, compact = false }: AppHeaderProps) {
             </Link>
           ) : null}
 
-          {user ? (
+          {showLoggedInChrome ? (
             <div className="flex shrink-0 items-center gap-1">
               <Link
                 href="/assets"
                 className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/80 sm:h-9 sm:w-9"
-                title={user.email}
+                title={displayUser?.email || t.nav.assets}
               >
                 <UserRound className="h-4 w-4" />
               </Link>
               <button
                 type="button"
                 onClick={onLogout}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 text-white/80 hover:border-rose-400/40 hover:text-rose-100 sm:h-9 sm:w-auto sm:gap-1.5 sm:px-3"
+                disabled={hydrating && !user}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 text-white/80 hover:border-rose-400/40 hover:text-rose-100 disabled:opacity-50 sm:h-9 sm:w-auto sm:gap-1.5 sm:px-3"
                 title={t.header.logout}
                 aria-label={t.header.logout}
               >

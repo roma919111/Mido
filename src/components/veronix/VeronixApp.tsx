@@ -1,37 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { AppHeader, type CustomerUser } from "./AppHeader";
+import { AppHeader } from "./AppHeader";
 import { BottomNav } from "./BottomNav";
 import { CreateStudio } from "./CreateStudio";
 import { SiteFooter } from "./SiteFooter";
 import { useLocale } from "@/components/veronix/LocaleProvider";
-import { fetchJson } from "@/lib/fetch-json";
+import { useCustomerSession } from "@/components/veronix/useCustomerSession";
 
 export function VeronixApp() {
   const { t, dir } = useLocale();
-  const [user, setUser] = useState<CustomerUser | null>(null);
-
-  const refreshUser = useCallback(async () => {
-    try {
-      const { data } = await fetchJson<{ user: CustomerUser | null }>(
-        "/api/auth/customer/me",
-      );
-      setUser(data.user);
-    } catch {
-      setUser(null);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refreshUser();
-  }, [refreshUser]);
-
-  async function logout() {
-    await fetch("/api/auth/customer/logout", { method: "POST" });
-    setUser(null);
-  }
+  const { user, sessionReady, refreshUser, logout } = useCustomerSession();
 
   const showFreeTrialHint =
     !user || (!user.freeVeronixUsed && (user.credits ?? 0) <= 0);
@@ -39,7 +18,11 @@ export function VeronixApp() {
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-[#0b0d12] text-white">
       <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 studio-backdrop" />
-      <AppHeader user={user} onLogout={() => void logout()} />
+      <AppHeader
+        user={user}
+        sessionReady={sessionReady}
+        onLogout={() => void logout()}
+      />
       <main className="w-full pb-28">
         <section className="relative w-full overflow-hidden border-b border-white/8">
           <div className="relative mx-auto w-full max-w-6xl">
