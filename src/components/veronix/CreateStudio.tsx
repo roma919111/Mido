@@ -9,7 +9,7 @@ import {
   startTransition,
   type SetStateAction,
 } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   Camera,
   ChevronDown,
@@ -122,8 +122,6 @@ interface CreateStudioProps {
 export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioProps) {
   const router = useRouter();
   const { t, dir, locale } = useLocale();
-  const searchParams = useSearchParams();
-  const editParam = searchParams.get("edit");
   /** Bumps when Assets/Create Edit writes a draft while Create stays mounted. */
   const [editTick, setEditTick] = useState(0);
   /** Assets → Edit: keep restored duration/ratio/clarity until the user changes model. */
@@ -449,8 +447,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       return;
     }
 
+    const editQuery =
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("edit") === "1"
+        ? "1"
+        : "";
     const editKey = [
-      editParam || "",
+      editQuery,
       String(draft.handoffAt || ""),
       draft.sourceAssetId || "",
       draft.startFrame?.url?.slice(0, 64) || "",
@@ -569,7 +572,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       const next = url.pathname + (url.searchParams.toString() ? `?${url.searchParams}` : "");
       window.history.replaceState({}, "", next);
     }
-  }, [lockedMedia, editParam, editTick]);
+  }, [lockedMedia, editTick]);
 
   // Drop sticky Edit boot after leaving Create (delayed so Strict Mode remount keeps it).
   useEffect(() => {
