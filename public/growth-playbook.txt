@@ -1,0 +1,18 @@
+# Veronix growth playbook (ship with the product)
+
+## On-site (done in this release)
+- Bilingual AR/EN chrome + marketing pages + language switcher
+- Stronger home hero: brand, one line, free-trial cue, Create + Pricing CTAs
+- SEO metadata / JSON-LD / FAQ schema aligned with both languages
+
+## Owner actions (outside the repo)
+1. **Meta / TikTok / YouTube Shorts** — 15–30s clips showing prompt → video; end card: vyronix.app + free first video
+2. **Google Ads** — brand + “AI video generator” / “مولد فيديو بالذكاء الاصطناعي” → /pricing and /
+3. **WhatsApp / Telegram creatives** — Arabic + English one-liners with signup link
+4. **Weekly cadence** — 5 short demos + 1 customer result post
+5. **Measure** — track signup, free trial start, paid conversion in Analytics
+
+## Suggested ad angles
+- “أول فيديو مجاني على Veronix”
+- “Arabic prompts → cinematic AI video”
+- “480p/720p credits you can see before Generate”

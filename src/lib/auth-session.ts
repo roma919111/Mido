@@ -4,6 +4,8 @@
  * Owner credentials live server-side (see owner-credentials.ts).
  */
 
+import { CANONICAL_APP_ORIGIN, getAppBaseUrl as getLockedAppBaseUrl } from "@/lib/app-url";
+
 export type OpenArtOAuthTokens = {
   access_token: string;
   token_type?: string;
@@ -27,12 +29,11 @@ export type OpenArtAuthSession = {
   oauthState?: string;
 };
 
-export function getAppBaseUrl(request?: Request): string {
-  const configured = process.env.APP_BASE_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (configured) return configured.replace(/\/$/, "");
-  if (process.env.VERCEL_URL?.trim()) return `https://${process.env.VERCEL_URL.trim()}`;
-  if (request) return new URL(request.url).origin;
-  return "http://localhost:3000";
+export function getAppBaseUrl(_request?: Request): string {
+  // Always prefer locked/canonical public origin — never request.host / localhost
+  // so OpenArt/Google/Stripe callbacks stay on vyronix.app.
+  void _request;
+  return getLockedAppBaseUrl() || CANONICAL_APP_ORIGIN;
 }
 
 export function getOAuthCallbackUrl(request?: Request): string {
