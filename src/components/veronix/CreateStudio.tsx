@@ -410,7 +410,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     if (freeLocked) {
       setDuration(FREE_VERONIX_DURATION_SECONDS);
       setResolution(FREE_VERONIX_RESOLUTION);
-      // Keep OpenArt audio for the free clip; stock intro also has sound.
+      // Keep OpenArt audio for the free clip; stock bumper also has sound.
       setGenerateAudio(true);
       return;
     }
@@ -866,7 +866,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     }
   }, [hasRunningJobs, generating]);
 
-  // Free first visit: lock Veronix defaults to 4s model / 480p (+ stock intro).
+  // Free first visit: lock Veronix defaults to 4s model / 480p (+ stock bumper).
   useEffect(() => {
     if (!freeSettingsLocked) return;
     // Never wipe Assets → Edit restored duration/ratio.
@@ -1358,7 +1358,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       );
       return;
     }
-    setStatus("جاري إضافة مقدمة Veronix…");
+    setStatus(
+      locale === "en"
+        ? "Adding Veronix bumper…"
+        : "جاري إضافة علامة Veronix…",
+    );
     setJobs((prev) =>
       patchJob(prev, match, {
         url: "",
