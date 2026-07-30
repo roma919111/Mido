@@ -1348,7 +1348,7 @@ function useActiveSlide(
 
 export function AssetsPage() {
   const { t, dir, locale } = useLocale();
-  const { user, setUser, sessionReady, logout } = useCustomerSession();
+  const { user, sessionReady, logout } = useCustomerSession();
   const [assets, setAssets] = useState<AssetItem[]>(() => readAssetsCache() || []);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<"video" | "image">("video");
