@@ -9,7 +9,7 @@ import {
   startTransition,
   type SetStateAction,
 } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Camera,
   ChevronDown,
@@ -68,7 +68,6 @@ import {
   armEditDraftDismiss,
   clearEditDraft,
   clampEditDuration,
-  dismissEditDraft,
   resolveEditBoot,
   type CreateEditDraft,
 } from "@/lib/edit-draft";
@@ -123,8 +122,20 @@ interface CreateStudioProps {
 export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioProps) {
   const router = useRouter();
   const { t, dir, locale } = useLocale();
+  const searchParams = useSearchParams();
+  const editParam = searchParams.get("edit");
+  /** Bumps when Assets/Create Edit writes a draft while Create stays mounted. */
+  const [editTick, setEditTick] = useState(0);
   /** Assets → Edit: keep restored duration/ratio/clarity until the user changes model. */
   const restoreFromEditRef = useRef(false);
+  /** Tracks last applied Edit hand-off so soft navigations re-apply drafts. */
+  const lastAppliedEditKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const onEditDraft = () => setEditTick(Date.now());
+    window.addEventListener("veronix:edit-draft", onEditDraft);
+    return () => window.removeEventListener("veronix:edit-draft", onEditDraft);
+  }, []);
   /** `undefined` = not booted yet; `null` = no edit draft. */
   const editBootRef = useRef<CreateEditDraft | null | undefined>(undefined);
   if (editBootRef.current === undefined && typeof window !== "undefined") {
@@ -135,12 +146,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       bootDraft.media &&
       bootDraft.media !== lockedMedia
     ) {
-      dismissEditDraft();
       bootDraft = null;
     }
     editBootRef.current = bootDraft;
     if (bootDraft) restoreFromEditRef.current = true;
-    else dismissEditDraft();
+    // Do NOT dismiss here — empty Create mounts must not wipe a live Assets→Edit hand-off.
   }
   const boot = editBootRef.current ?? null;
   const bootChars = (boot?.referenceImages || [])
@@ -426,10 +436,30 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     if (lockedMedia) setMedia(lockedMedia);
   }, [lockedMedia]);
 
-  // Assets → Edit: restore prompt + characters (+ re-assert duration after boot).
+  // Assets → Edit: restore prompt + characters. Re-runs on soft nav (?edit=1)
+  // because CreateStudio often stays mounted when already on /create/*.
   useEffect(() => {
-    const draft = editBootRef.current || resolveEditBoot();
+    const draft = resolveEditBoot() || editBootRef.current;
     if (!draft) return;
+    if (
+      lockedMedia &&
+      draft.media &&
+      draft.media !== lockedMedia
+    ) {
+      return;
+    }
+
+    const editKey = [
+      editParam || "",
+      String(draft.handoffAt || ""),
+      draft.sourceAssetId || "",
+      draft.startFrame?.url?.slice(0, 64) || "",
+      draft.referenceImages?.map((r) => r.url?.slice(0, 32)).join("|") || "",
+      draft.prompt?.slice(0, 48) || "",
+    ].join("::");
+    if (lastAppliedEditKeyRef.current === editKey) return;
+    lastAppliedEditKeyRef.current = editKey;
+
     restoreFromEditRef.current = true;
     editBootRef.current = draft;
 
@@ -539,7 +569,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       const next = url.pathname + (url.searchParams.toString() ? `?${url.searchParams}` : "");
       window.history.replaceState({}, "", next);
     }
-  }, [lockedMedia]);
+  }, [lockedMedia, editParam, editTick]);
 
   // Drop sticky Edit boot after leaving Create (delayed so Strict Mode remount keeps it).
   useEffect(() => {

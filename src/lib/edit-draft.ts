@@ -28,6 +28,8 @@ export type CreateEditDraft = {
    * (image → video) instead of a character slot.
    */
   useAsStartFrame?: boolean;
+  /** Unique per Edit tap so Create re-applies even for the same asset. */
+  handoffAt?: number;
 };
 
 /** Same-tab memory — survives storage quota failures + Strict Mode remount. */
@@ -127,12 +129,23 @@ export function writeEditDraft(draft: CreateEditDraft) {
     clearTimeout(dismissTimer);
     dismissTimer = null;
   }
-  stickyDraft = draft;
+  const next: CreateEditDraft = {
+    ...draft,
+    handoffAt: draft.handoffAt ?? Date.now(),
+  };
+  stickyDraft = next;
   editBootLive = true;
   try {
-    writeStore(EDIT_DRAFT_KEY, JSON.stringify(compactDraftForStorage(draft)));
+    writeStore(EDIT_DRAFT_KEY, JSON.stringify(compactDraftForStorage(next)));
   } catch {
     // Sticky memory still holds the full draft for this tab.
+  }
+  try {
+    window.dispatchEvent(
+      new CustomEvent("veronix:edit-draft", { detail: { handoffAt: next.handoffAt } }),
+    );
+  } catch {
+    // ignore
   }
 }
 
@@ -145,16 +158,27 @@ export function readEditDraft(): CreateEditDraft | null {
   if (typeof window === "undefined") return null;
   const stored = readStoredEditDraft();
   if (stored) {
-    // Prefer sticky character refs when storage was compacted/truncated.
+    // Prefer sticky stills when storage was compacted/truncated.
+    const stickyRefs = stickyDraft?.referenceImages?.length || 0;
+    const storedRefs = stored.referenceImages?.length || 0;
+    const stickyHasStart = Boolean(stickyDraft?.startFrame?.url);
+    const storedHasStart = Boolean(stored.startFrame?.url);
     if (
-      stickyDraft?.referenceImages?.length &&
-      (stickyDraft.referenceImages.length || 0) >
-        (stored.referenceImages?.length || 0)
+      stickyDraft &&
+      (stickyRefs > storedRefs || (stickyHasStart && !storedHasStart))
     ) {
       return {
         ...stored,
-        referenceImages: stickyDraft.referenceImages,
-        startFrame: stickyDraft.startFrame ?? stored.startFrame,
+        referenceImages:
+          stickyRefs > storedRefs
+            ? stickyDraft.referenceImages
+            : stored.referenceImages,
+        startFrame:
+          stickyHasStart && !storedHasStart
+            ? stickyDraft.startFrame
+            : stickyDraft.startFrame ?? stored.startFrame,
+        useAsStartFrame:
+          stickyDraft.useAsStartFrame ?? stored.useAsStartFrame,
       };
     }
     stickyDraft = stored;
@@ -251,5 +275,6 @@ export function resolveEditBoot(): CreateEditDraft | null {
     aspectRatio,
     preferClarity,
     useAsStartFrame: Boolean(draft?.useAsStartFrame),
+    handoffAt: draft?.handoffAt,
   };
 }

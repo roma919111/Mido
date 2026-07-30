@@ -290,13 +290,13 @@ async function recoverNaturalColorAfterFullFilter(bytes: Buffer): Promise<Buffer
   const recovered = await sharp(bytes, { failOn: "none" })
     // Counter the frozen warm tint (255,240,220) toward neutral daylight.
     .recomb([
-      [1.02, -0.01, 0.04],
-      [-0.02, 1.03, 0.02],
-      [0.04, 0.01, 1.06],
+      [1.04, -0.02, 0.06],
+      [-0.03, 1.05, 0.03],
+      [0.06, 0.02, 1.08],
     ])
-    .modulate({ saturation: 1.28, brightness: 1.04 })
+    .modulate({ saturation: 1.42, brightness: 1.05 })
     // Open crushed shadows from frozen linear contrast without undoing digital look.
-    .linear(0.92, 12)
+    .linear(0.9, 14)
     .jpeg({ quality: 88, mozjpeg: true, chromaSubsampling: "4:4:4" })
     .toBuffer();
 

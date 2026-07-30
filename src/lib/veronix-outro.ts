@@ -108,9 +108,12 @@ export function resolveGenerationFile(localPath: string): string | null {
 
 /**
  * Free-trial branding:
- * 1) Owner stock intro as-is (no overlays/trimming)
- * 2) Generated OpenArt clip (keeps its audio)
+ * 1) Generated model clip first (keeps natural colors at playback start)
+ * 2) Owner stock bumper as a true outro (no overlays/trimming)
  * Saved under `.data/generations` → `/generations/<id>.mp4`
+ *
+ * Stock used to be prepended; that made the opening look washed/pale before
+ * the real clip colors appeared.
  */
 export async function appendVyronixOutro(sourceUrl: string): Promise<string> {
   const id = `veronix-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -215,13 +218,13 @@ export async function appendVyronixOutro(sourceUrl: string): Promise<string> {
       ]);
     }
 
-    // Stock FIRST, then generated model clip (both with audio).
+    // Generated clip FIRST, then stock bumper (both with audio).
     await run("ffmpeg", [
       "-y",
       "-i",
-      stockNorm,
-      "-i",
       genNorm,
+      "-i",
+      stockNorm,
       "-filter_complex",
       "[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[v][a]",
       "-map",

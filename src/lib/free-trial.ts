@@ -1,17 +1,17 @@
-/** First-time free Veronix video: stock intro (as-is) + 4s model clip. */
+/** First-time free Veronix video: 4s model clip + stock bumper at the end. */
 
 export const VERONIX_MODEL_ID = "seedance-2-mini";
 
 /**
  * Locked duration sent to OpenArt / shown in free-trial controls.
- * Branding prepends the full stock intro separately.
+ * Branding appends the full stock bumper after the model clip.
  */
 export const FREE_VERONIX_DURATION_SECONDS = 4;
 
 /** Seconds sent to the OpenArt model (prompt content only). */
 export const FREE_VERONIX_MODEL_DURATION_SECONDS = 4;
 
-/** Official owner stock intro (do not edit the asset — concat as-is). */
+/** Official owner stock bumper (do not edit the asset — concat as-is). */
 export const FREE_VERONIX_STOCK_PATH = "public/promo/vyronix-outro-stock.mp4";
 
 /** Locked free-trial resolution. */

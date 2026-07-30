@@ -414,7 +414,7 @@ export const ar: Dictionary = {
     comingSoon: "قريبًا",
     createdBy: "تم إنشاؤه بواسطة VYRONIX",
     freeTrialBanner:
-      "أول فيديو على Veronix مجاني مرة واحدة — مقدمة Veronix + 4 ثوانٍ · 480p.",
+      "أول فيديو على Veronix مجاني مرة واحدة — 4 ثوانٍ · 480p + علامة Veronix في النهاية.",
     outputCount: "عدد الفيديوهات",
     output: "المخرجات",
     camera: "كاميرا",
@@ -665,7 +665,7 @@ export const en: Dictionary = {
     comingSoon: "Coming soon",
     createdBy: "Created by VYRONIX",
     freeTrialBanner:
-      "Your first Veronix video is free once — Veronix intro + 4s · 480p.",
+      "Your first Veronix video is free once — 4s · 480p + Veronix bumper at the end.",
     outputCount: "Video count",
     output: "Output",
     camera: "Camera",

@@ -237,6 +237,8 @@ function FeedVideoSlide({
   const [downloading, setDownloading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [posterFailed, setPosterFailed] = useState(false);
+  /** Drop HTML poster once frames paint so a washed first-frame/poster cannot linger. */
+  const [hidePoster, setHidePoster] = useState(false);
   const [promptExpanded, setPromptExpanded] = useState(false);
   const [playing, setPlaying] = useState(false);
   /** Only attach video src after Play — neighbors stay on poster (CDN bytes). */
@@ -274,6 +276,7 @@ function FeedVideoSlide({
   useEffect(() => {
     setPromptExpanded(false);
     setPosterFailed(false);
+    setHidePoster(false);
     setPlaying(false);
     setArmed(false);
   }, [item.id]);
@@ -292,6 +295,7 @@ function FeedVideoSlide({
       el.pause();
       setPlaying(false);
       setArmed(false);
+      setHidePoster(false);
       try {
         el.removeAttribute("src");
         el.load();
@@ -582,7 +586,9 @@ function FeedVideoSlide({
           <video
             ref={videoRef}
             src={src || undefined}
-            poster={!posterFailed && poster ? poster : undefined}
+            poster={
+              !hidePoster && !posterFailed && poster ? poster : undefined
+            }
             playsInline
             // Loop only after a full playthrough — do not remount src while buffering.
             loop
@@ -590,7 +596,10 @@ function FeedVideoSlide({
             preload={armed && active ? "auto" : "none"}
             controls={false}
             controlsList="nodownload noremoteplayback"
-            onPlaying={() => setPlaying(true)}
+            onPlaying={() => {
+              setPlaying(true);
+              setHidePoster(true);
+            }}
             onPause={() => {
               // Ignore transient pause events while the element is still the active source
               // and the user did not press Pause (e.g. brief stalls). Keep UI in sync only
