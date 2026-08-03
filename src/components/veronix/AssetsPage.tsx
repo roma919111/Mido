@@ -1112,6 +1112,7 @@ export function AssetsPage() {
             <AppHeader
               compact
               user={user}
+              ready={ready}
               onLogout={() => {
                 void logout().then(() => {
                   setAssets([]);
@@ -1285,6 +1286,7 @@ export function AssetsPage() {
     <div className="min-h-screen bg-[#0b0d12] text-white">
       <AppHeader
         user={user}
+        ready={ready}
         onLogout={() => {
           void logout().then(() => {
             setAssets([]);

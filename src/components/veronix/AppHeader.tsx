@@ -20,6 +20,8 @@ export interface CustomerUser {
 export interface AppHeaderProps {
   user: CustomerUser | null;
   onLogout?: () => void;
+  /** When false, hide guest login buttons until /me resolves (avoids flash). */
+  ready?: boolean;
   /** Denser header for overlay / create surfaces. */
   compact?: boolean;
 }
@@ -31,8 +33,14 @@ function formatCredits(n: number): string {
   return String(n);
 }
 
-export function AppHeader({ user, onLogout, compact = false }: AppHeaderProps) {
+export function AppHeader({
+  user,
+  onLogout,
+  ready = true,
+  compact = false,
+}: AppHeaderProps) {
   const { t } = useLocale();
+  const showGuestAuth = ready && !user;
 
   return (
     <header
@@ -46,11 +54,7 @@ export function AppHeader({ user, onLogout, compact = false }: AppHeaderProps) {
         }`}
       >
         <Link href="/" className="min-w-0 shrink-0">
-          <BrandLogo size="sm" className="sm:hidden" />
-          <BrandLogo
-            size={compact ? "sm" : "md"}
-            className="hidden sm:inline-flex"
-          />
+          <BrandLogo size={compact ? "sm" : "md"} />
         </Link>
 
         <div className="flex min-w-0 shrink items-center gap-1 sm:gap-2">
@@ -114,7 +118,7 @@ export function AppHeader({ user, onLogout, compact = false }: AppHeaderProps) {
                 <span className="hidden sm:inline sm:text-sm">{t.header.logout}</span>
               </button>
             </div>
-          ) : (
+          ) : showGuestAuth ? (
             <div className="flex shrink-0 items-center gap-1">
               <Link
                 href="/login"
@@ -129,7 +133,7 @@ export function AppHeader({ user, onLogout, compact = false }: AppHeaderProps) {
                 {t.header.signup}
               </Link>
             </div>
-          )}
+          ) : null}
         </div>
       </div>
     </header>

@@ -7,11 +7,11 @@ import { BottomNav } from "./BottomNav";
 import { useCustomerUser } from "@/hooks/useCustomerUser";
 
 function AuthPageBody({ mode }: { mode: "login" | "signup" }) {
-  const { user, logout } = useCustomerUser();
+  const { user, logout, ready } = useCustomerUser();
 
   return (
     <>
-      <AppHeader user={user} onLogout={() => void logout()} />
+      <AppHeader user={user} ready={ready} onLogout={() => void logout()} />
       <AuthForm mode={mode} embedded />
     </>
   );

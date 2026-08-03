@@ -3,26 +3,39 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import type { CustomerUser } from "@/components/veronix/AppHeader";
+import {
+  readCustomerSnapshot,
+  writeCustomerSnapshot,
+} from "@/lib/customer-user-cache";
 import { fetchJson } from "@/lib/fetch-json";
 
-/** Customer session — refreshes on route change and when tab becomes visible. */
+/** Customer session — hydrates from cache instantly; refreshes in background. */
 export function useCustomerUser() {
   const pathname = usePathname();
-  const [user, setUser] = useState<CustomerUser | null>(null);
+  const [user, setUserState] = useState<CustomerUser | null>(() =>
+    readCustomerSnapshot(),
+  );
   const [ready, setReady] = useState(false);
+
+  const applyUser = useCallback((next: CustomerUser | null) => {
+    setUserState(next);
+    writeCustomerSnapshot(next);
+  }, []);
 
   const refreshUser = useCallback(async () => {
     try {
-      const { data } = await fetchJson<{ user: CustomerUser | null }>(
+      const { res, data } = await fetchJson<{ user: CustomerUser | null }>(
         "/api/auth/customer/me",
       );
-      setUser(data.user);
+      if (res.ok) {
+        applyUser(data.user);
+      }
     } catch {
-      setUser(null);
+      // Keep cached session visible on transient network errors.
     } finally {
       setReady(true);
     }
-  }, []);
+  }, [applyUser]);
 
   useEffect(() => {
     void refreshUser();
@@ -38,8 +51,8 @@ export function useCustomerUser() {
 
   const logout = useCallback(async () => {
     await fetch("/api/auth/customer/logout", { method: "POST" });
-    setUser(null);
-  }, []);
+    applyUser(null);
+  }, [applyUser]);
 
-  return { user, setUser, refreshUser, logout, ready };
+  return { user, setUser: applyUser, refreshUser, logout, ready };
 }

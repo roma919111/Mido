@@ -7,6 +7,8 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { LanguageSwitcher } from "@/components/veronix/LanguageSwitcher";
 import { useLocale } from "@/components/veronix/LocaleProvider";
 import { fetchJson } from "@/lib/fetch-json";
+import type { CustomerUser } from "@/components/veronix/AppHeader";
+import { writeCustomerSnapshot } from "@/lib/customer-user-cache";
 
 interface AuthFormProps {
   mode: "login" | "signup";
@@ -60,6 +62,14 @@ export function AuthForm({ mode, embedded = false }: AuthFormProps) {
         body: JSON.stringify({ email, password, name }),
       });
       if (!res.ok) throw new Error(data.error || "Auth failed");
+      try {
+        const me = await fetchJson<{ user: CustomerUser | null }>(
+          "/api/auth/customer/me",
+        );
+        if (me.data.user) writeCustomerSnapshot(me.data.user);
+      } catch {
+        // best-effort — next page will refresh session
+      }
       if (paywall) router.push("/pricing?paywall=1");
       else router.push(next);
       router.refresh();
@@ -79,18 +89,16 @@ export function AuthForm({ mode, embedded = false }: AuthFormProps) {
       className="mx-auto flex max-w-md flex-col justify-center px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-6"
       dir={dir}
     >
-      <div className="flex items-center justify-between gap-3">
-        {!embedded ? (
+      {!embedded ? (
+        <div className="flex items-center justify-between gap-3">
           <Link href="/" className="w-fit">
             <BrandLogo size="lg" />
           </Link>
-        ) : (
-          <span />
-        )}
-        <LanguageSwitcher compact />
-      </div>
+          <LanguageSwitcher compact />
+        </div>
+      ) : null}
 
-      <h1 className="mt-6 font-display text-2xl font-bold">
+      <h1 className={`font-display text-2xl font-bold ${embedded ? "mt-0" : "mt-6"}`}>
         {mode === "login" ? t.auth.loginTitle : t.auth.signupTitle}
       </h1>
       <p className="mt-2 text-sm text-white/50">

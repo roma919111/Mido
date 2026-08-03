@@ -10,7 +10,7 @@ import { useCustomerUser } from "@/hooks/useCustomerUser";
 
 export function VeronixApp() {
   const { t, dir } = useLocale();
-  const { user, refreshUser, logout } = useCustomerUser();
+  const { user, refreshUser, logout, ready } = useCustomerUser();
 
   const showFreeTrialHint =
     !user || (!user.freeVeronixUsed && (user.credits ?? 0) <= 0);
@@ -18,7 +18,7 @@ export function VeronixApp() {
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-[#0b0d12] text-white">
       <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 studio-backdrop" />
-      <AppHeader user={user} onLogout={() => void logout()} />
+      <AppHeader user={user} ready={ready} onLogout={() => void logout()} />
       <main className="w-full pb-28">
         <section className="relative w-full overflow-hidden border-b border-white/8">
           <div className="relative mx-auto w-full max-w-6xl">
