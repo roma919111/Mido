@@ -803,22 +803,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           video: CatalogModel[];
         }>("/api/models");
         if (cancelled) return;
-        if (data.image?.length) {
-          setImageModels((prev) => {
-            const patch = new Map(data.image.map((m) => [m.id, m]));
-            return prev.map((m) =>
-              patch.has(m.id) ? { ...m, ...patch.get(m.id)! } : m,
-            );
-          });
-        }
-        if (data.video?.length) {
-          setVideoModels((prev) => {
-            const patch = new Map(data.video.map((m) => [m.id, m]));
-            return prev.map((m) =>
-              patch.has(m.id) ? { ...m, ...patch.get(m.id)! } : m,
-            );
-          });
-        }
+        if (data.image?.length) setImageModels(data.image);
+        if (data.video?.length) setVideoModels(data.video);
       } catch {
         // Keep static catalog already in state.
       }

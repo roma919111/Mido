@@ -14,7 +14,6 @@ import {
 import {
   createPixVerseVideoTask,
   isPixVerseConfigured,
-  mapPixVerseStatus,
   normalizePixVerseQuality,
   PIXVERSE_MODEL_ID,
   toPixVerseHistoryId,
@@ -166,14 +165,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = (await request.json()) as GenBody;
-    const prompt = body.prompt?.trim();
-    const requestedMedia = body.media ?? "video";
-
-    if (requestedMedia === "image" && !isBytePlusConfigured()) {
+    if (!isBytePlusConfigured()) {
       return NextResponse.json(
         {
-          error: "توليد الصور غير مُعدّ على السيرفر. راجع إعدادات المسؤول.",
+          error: "توليد الوسائط عبر Veronix غير مُعدّ على السيرفر. راجع إعدادات المسؤول.",
           provider: "byteplus",
           needsOwnerSetup: true,
         },
@@ -181,21 +176,9 @@ export async function POST(request: Request) {
       );
     }
 
-    if (
-      requestedMedia === "video" &&
-      !isBytePlusConfigured() &&
-      !isPixVerseConfigured()
-    ) {
-      return NextResponse.json(
-        {
-          error: "توليد الفيديو غير مُعدّ على السيرفر. راجع إعدادات المسؤول.",
-          provider: "unconfigured",
-          needsOwnerSetup: true,
-        },
-        { status: 503 },
-      );
-    }
-
+    const body = (await request.json()) as GenBody;
+    const prompt = body.prompt?.trim();
+    const requestedMedia = body.media ?? "video";
     const modelIds = [...new Set(body.modelIds?.filter(Boolean) ?? [])].slice(0, 4);
     const variantCount = Math.min(
       4,
@@ -391,10 +374,10 @@ export async function POST(request: Request) {
 
     // ——— Video studio (VYRONIX / Seedance) ———
     const media = "video" as const;
-    const allowedVideoModels = [VERONIX_MODEL_ID];
-    if (isPixVerseConfigured()) allowedVideoModels.push(PIXVERSE_MODEL_ID);
-
-    if (!modelIds.every((id) => allowedVideoModels.includes(id))) {
+    // Product: Veronix video — VYRONIX + optional PixVerse direct API.
+    const allowedVideo = [VERONIX_MODEL_ID];
+    if (isPixVerseConfigured()) allowedVideo.push(PIXVERSE_MODEL_ID);
+    if (!modelIds.every((id) => allowedVideo.includes(id))) {
       return NextResponse.json(
         {
           error: isPixVerseConfigured()
@@ -402,26 +385,6 @@ export async function POST(request: Request) {
             : "الموديل المتاح حالياً هو VYRONIX فقط.",
         },
         { status: 422 },
-      );
-    }
-
-    if (
-      modelIds.includes(PIXVERSE_MODEL_ID) &&
-      !isPixVerseConfigured()
-    ) {
-      return NextResponse.json(
-        { error: "PixVerse غير مُعدّ على السيرفر (PIXVERSE_API_KEY)." },
-        { status: 503 },
-      );
-    }
-
-    if (
-      modelIds.includes(VERONIX_MODEL_ID) &&
-      !isBytePlusConfigured()
-    ) {
-      return NextResponse.json(
-        { error: "VYRONIX غير مُعدّ على السيرفر (BYTEPLUS_API_KEY)." },
-        { status: 503 },
       );
     }
 
@@ -601,7 +564,7 @@ export async function POST(request: Request) {
             referenceImages: savedRefs,
           });
 
-          if (body.waitForResult !== true) {
+          if (body.waitForResult !== true && !body.sequencePart) {
             results.push({
               assetId: asset.id,
               modelId: quote.modelId,

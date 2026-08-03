@@ -15,7 +15,7 @@ import { VERONIX_IMAGE_MODEL_ID } from "@/lib/byteplus-image";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-/** Live providers only — UI keeps the full static catalog and merges these patches. */
+/** Product: Veronix video + VYRONIX image (BytePlus Seedream under the hood). */
 function productCatalog(video: CatalogModel[], image: CatalogModel[]) {
   const veronixVideo =
     video.find((m) => m.id === VERONIX_MODEL_ID) ||
@@ -25,7 +25,7 @@ function productCatalog(video: CatalogModel[], image: CatalogModel[]) {
         {
           ...veronixVideo,
           name: "VYRONIX",
-          available: isBytePlusConfigured(),
+          available: true,
           badge: "حصري",
           tagline: isBytePlusConfigured()
             ? "تم إنشاؤه بواسطة VYRONIX"
@@ -35,7 +35,7 @@ function productCatalog(video: CatalogModel[], image: CatalogModel[]) {
     : VIDEO_MODELS.filter((m) => m.id === VERONIX_MODEL_ID).map((m) => ({
         ...m,
         name: "VYRONIX",
-        available: isBytePlusConfigured(),
+        available: true,
       }));
 
   if (isPixVerseConfigured()) {
@@ -48,7 +48,6 @@ function productCatalog(video: CatalogModel[], image: CatalogModel[]) {
         name: "PixVerse V6",
         available: true,
         badge: "تجربة",
-        tagline: "API مباشر من PixVerse — Text/Image to Video",
       });
     }
   }
@@ -104,11 +103,7 @@ export async function GET(request: Request) {
       updatedAt: catalog.updatedAt,
       multiplier: VERONIX_CREDIT_MULTIPLIER,
       source: catalog.source,
-      provider:
-        isBytePlusConfigured() || isPixVerseConfigured()
-          ? "byteplus"
-          : "unconfigured",
-      pixverseDirect: isPixVerseConfigured(),
+      provider: isBytePlusConfigured() ? "byteplus" : "unconfigured",
       imageStudioEnabled: true,
     });
   } catch (error) {
@@ -121,11 +116,7 @@ export async function GET(request: Request) {
       synced: false,
       syncedNow: false,
       multiplier: VERONIX_CREDIT_MULTIPLIER,
-      provider:
-        isBytePlusConfigured() || isPixVerseConfigured()
-          ? "byteplus"
-          : "unconfigured",
-      pixverseDirect: isPixVerseConfigured(),
+      provider: isBytePlusConfigured() ? "byteplus" : "unconfigured",
       imageStudioEnabled: true,
       error: error instanceof Error ? error.message : "Catalog sync failed",
     });
