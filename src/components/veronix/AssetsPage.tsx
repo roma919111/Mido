@@ -961,7 +961,7 @@ function useActiveSlide(
 
 export function AssetsPage() {
   const { t, dir, locale } = useLocale();
-  const { user, ready, logout } = useCustomerUser();
+  const { user, ready, refreshing, logout } = useCustomerUser();
   const [assets, setAssets] = useState<AssetItem[]>(() => readAssetsCache() || []);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<"video" | "image">("video");
@@ -1113,6 +1113,7 @@ export function AssetsPage() {
               compact
               user={user}
               ready={ready}
+              refreshing={refreshing}
               onLogout={() => {
                 void logout().then(() => {
                   setAssets([]);
@@ -1287,6 +1288,7 @@ export function AssetsPage() {
       <AppHeader
         user={user}
         ready={ready}
+        refreshing={refreshing}
         onLogout={() => {
           void logout().then(() => {
             setAssets([]);

@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server";
-import {
-  getBytePlusVideoTask,
-  parseBytePlusHistoryId,
-} from "@/lib/byteplus-ark";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { updateAsset } from "@/lib/db";
+import { resolveHistoryVideoUrl } from "@/lib/resolve-history-url";
 import { cacheVideoLocally } from "@/lib/video-stitch";
 
 export const runtime = "nodejs";
@@ -19,12 +16,11 @@ type Body = {
 };
 
 async function resolveHistoryUrl(historyId: string): Promise<string> {
-  const bpId = parseBytePlusHistoryId(historyId);
-  if (!bpId) {
-    throw new Error("Unknown history id — OpenArt ids are no longer supported");
+  const url = await resolveHistoryVideoUrl(historyId);
+  if (!url) {
+    throw new Error("Unknown or incomplete history id");
   }
-  const task = await getBytePlusVideoTask(bpId);
-  return task.content?.video_url || "";
+  return url;
 }
 
 export async function POST(request: Request) {

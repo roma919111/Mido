@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Coins, LogOut, Shield, UserRound, Zap } from "lucide-react";
 import { BrandLogo } from "@/components/BrandLogo";
+import { AnimatedCredits } from "@/components/veronix/AnimatedCredits";
 import { LanguageSwitcher } from "@/components/veronix/LanguageSwitcher";
 import { useLocale } from "@/components/veronix/LocaleProvider";
 import { isAdminEmail } from "@/lib/admin-shared";
@@ -22,21 +23,17 @@ export interface AppHeaderProps {
   onLogout?: () => void;
   /** When false, hide guest login buttons until /me resolves (avoids flash). */
   ready?: boolean;
+  /** While true, credit badge pulses until live balance lands. */
+  refreshing?: boolean;
   /** Denser header for overlay / create surfaces. */
   compact?: boolean;
-}
-
-function formatCredits(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
-  if (n >= 10_000) return `${Math.round(n / 1000)}k`;
-  if (n >= 1_000) return `${(n / 1000).toFixed(1)}k`;
-  return String(n);
 }
 
 export function AppHeader({
   user,
   onLogout,
   ready = true,
+  refreshing = false,
   compact = false,
 }: AppHeaderProps) {
   const { t } = useLocale();
@@ -68,10 +65,16 @@ export function AppHeader({
             }`}
             title={user ? String(user.credits) : "0"}
           >
-            <Coins className="h-3 w-3 shrink-0 text-[#22f0ff] sm:h-3.5 sm:w-3.5" />
-            <span className="truncate">
-              {formatCredits(user ? user.credits : 0)}
-            </span>
+            <Coins
+              className={`h-3 w-3 shrink-0 text-[#22f0ff] sm:h-3.5 sm:w-3.5 ${
+                refreshing ? "animate-pulse" : ""
+              }`}
+            />
+            <AnimatedCredits
+              value={user ? user.credits : 0}
+              syncing={refreshing || !ready}
+              title={user ? String(user.credits) : "0"}
+            />
           </div>
 
           <Link

@@ -107,12 +107,7 @@ async function pixverseRequest<T>(
   return assertOk(data, pathname);
 }
 
-const ALLOWED_QUALITY = new Set(["360p", "540p", "720p", "1080p"]);
-
-export function normalizePixVerseQuality(raw?: string | null): string {
-  const q = String(raw || "720p").trim().toLowerCase();
-  return ALLOWED_QUALITY.has(q) ? q : "720p";
-}
+export { normalizePixVerseQuality } from "@/lib/pixverse-pricing";
 
 const ALLOWED_RATIO = new Set([
   "16:9",

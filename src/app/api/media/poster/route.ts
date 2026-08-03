@@ -2,12 +2,9 @@ import { NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import {
-  getBytePlusVideoTask,
-  parseBytePlusHistoryId,
-} from "@/lib/byteplus-ark";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { isAllowedMediaHost } from "@/lib/media-proxy";
+import { resolveHistoryVideoUrl } from "@/lib/resolve-history-url";
 import { resolveGenerationFile } from "@/lib/veronix-outro";
 import { extractFirstFrameJpeg } from "@/lib/video-stitch";
 
@@ -32,12 +29,7 @@ async function resolveVideoSource(request: Request): Promise<string | null> {
 
   const historyId = searchParams.get("historyId")?.trim();
   if (historyId) {
-    const bpId = parseBytePlusHistoryId(historyId);
-    if (bpId) {
-      const task = await getBytePlusVideoTask(bpId);
-      return task.content?.video_url || null;
-    }
-    return null;
+    return resolveHistoryVideoUrl(historyId);
   }
 
   const encoded = searchParams.get("u")?.trim();

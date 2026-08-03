@@ -62,6 +62,7 @@ import {
 } from "@/lib/generate-eta";
 import { veronixRefImageSrc } from "@/lib/media-proxy";
 import { PIXVERSE_MODEL_ID } from "@/lib/pixverse-constants";
+import { normalizePixVerseQuality } from "@/lib/pixverse-pricing";
 import {
   clearEditDraft,
   clampEditDuration,
@@ -262,28 +263,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       : startFrame || refs.length
         ? "image2video"
         : "text2video";
-  const localQuote = useMemo(
-    () =>
-      quoteCreditsLocal({
-        modelId: selectedModelId,
-        media,
-        mode: quoteMode,
-        aspectRatio,
-        resolution:
-          media === "video" ? resolution : resolution || DEFAULT_IMAGE_RESOLUTION,
-        duration: media === "video" ? duration : undefined,
-        generateAudio: media === "video" ? generateAudio : undefined,
-      }),
-    [
-      selectedModelId,
-      media,
-      quoteMode,
-      aspectRatio,
-      resolution,
-      duration,
-      generateAudio,
-    ],
-  );
   const freeTrial = isFreeVeronixEligible(user, {
     modelId: selectedModelId,
     media,
@@ -291,11 +270,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     resolution,
     multiShot: false,
   });
-  const creditCost = freeTrial ? 0 : localQuote.totalCredits;
-  /** Exact count for this tap — never more than remaining slots. */
-  const requestCountPreview = freeTrial
-    ? 1
-    : Math.min(Math.max(1, Math.min(4, outputCount)), Math.max(slotsLeft, 1));
 
   const linkedCharacters = useMemo(() => {
     // Match against typed names (refNames), not upload filenames on refs.
@@ -326,6 +300,55 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     selectedModelId === VERONIX_MODEL_ID && !freeSettingsLocked
       ? [...VIDEO_CLARITY_LADDER]
       : formOptions.resolutions;
+  /** Quote + API must use a tier this model actually supports (not stale Veronix 480p). */
+  const quotedVideoResolution = useMemo(() => {
+    if (media !== "video") {
+      return resolution || DEFAULT_IMAGE_RESOLUTION;
+    }
+    const raw = resolutionOptions.includes(resolution)
+      ? resolution
+      : formOptions.resolutionDefault || resolutionOptions[0] || resolution;
+    if (selectedModelId === PIXVERSE_MODEL_ID) {
+      return normalizePixVerseQuality(raw);
+    }
+    return raw;
+  }, [
+    media,
+    resolution,
+    resolutionOptions,
+    selectedModelId,
+    formOptions.resolutionDefault,
+  ]);
+  const localQuote = useMemo(
+    () =>
+      quoteCreditsLocal({
+        modelId: selectedModelId,
+        media,
+        mode: quoteMode,
+        aspectRatio,
+        resolution:
+          media === "video" ? quotedVideoResolution : resolution || DEFAULT_IMAGE_RESOLUTION,
+        duration: media === "video" ? duration : undefined,
+        generateAudio: media === "video" ? generateAudio : undefined,
+        hasVideoReferences:
+          selectedModelId === PIXVERSE_MODEL_ID && refVideos.length > 0,
+      }),
+    [
+      selectedModelId,
+      media,
+      quoteMode,
+      aspectRatio,
+      quotedVideoResolution,
+      duration,
+      generateAudio,
+      refVideos.length,
+    ],
+  );
+  const creditCost = freeTrial ? 0 : localQuote.totalCredits;
+  /** Exact count for this tap — never more than remaining slots. */
+  const requestCountPreview = freeTrial
+    ? 1
+    : Math.min(Math.max(1, Math.min(4, outputCount)), Math.max(slotsLeft, 1));
   /** Paid Veronix: native 4–15s slider (1s steps). Free trial: locked 4s. */
   const paidDurationMode = Boolean(
     media === "video" &&
@@ -1715,7 +1738,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         prompt: input.prompt,
         aspectRatio,
         resolution:
-          media === "video" ? resolution : resolution || DEFAULT_IMAGE_RESOLUTION,
+          media === "video" ? quotedVideoResolution : resolution || DEFAULT_IMAGE_RESOLUTION,
         duration: media === "video" ? input.duration : undefined,
         generateAudio: media === "video" ? generateAudio : undefined,
         clarity:
@@ -2636,9 +2659,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               {t.create.clarity}
               <select
                 value={
-                  resolutionOptions.includes(resolution)
-                    ? resolution
-                    : formOptions.resolutionDefault || resolutionOptions[0]
+                  selectedModelId === PIXVERSE_MODEL_ID
+                    ? quotedVideoResolution
+                    : resolutionOptions.includes(resolution)
+                      ? resolution
+                      : formOptions.resolutionDefault || resolutionOptions[0]
                 }
                 onChange={(e) => {
                   const next = e.target.value;

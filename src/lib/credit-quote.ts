@@ -17,6 +17,12 @@ import {
   quoteVeronixImageCredits,
   quoteVeronixVideoCredits,
 } from "@/lib/byteplus-pricing";
+import {
+  formatPixVersePricingNote,
+  isPixVerseModel,
+  normalizePixVerseQuality,
+  quotePixVerseVideoBreakdown,
+} from "@/lib/pixverse-pricing";
 
 export {
   VERONIX_CREDIT_MULTIPLIER,
@@ -169,6 +175,52 @@ function quoteBytePlusResult(
   return null;
 }
 
+function quotePixVerseResult(
+  input: QuoteInput,
+  mcpModel: string,
+  mode: string,
+  params: Record<string, unknown>,
+  available: boolean,
+): QuoteResult | null {
+  if (input.media !== "video" || !isPixVerseModel(input.modelId, mcpModel)) {
+    return null;
+  }
+  const resolution = normalizePixVerseQuality(
+    typeof params.resolution === "string"
+      ? params.resolution
+      : input.resolution,
+  );
+  const hasVideoReferences = Boolean(input.hasVideoReferences);
+  const breakdown = quotePixVerseVideoBreakdown({
+    duration: input.duration,
+    resolution,
+    generateAudio: input.generateAudio,
+    hasVideoReferences,
+    videoCount: input.videoCount ?? 1,
+  });
+  const totalCredits = breakdown.walletCredits;
+  return {
+    modelId: input.modelId,
+    mcpModel,
+    mode,
+    totalCredits,
+    unitCredits: totalCredits,
+    openArtCredits: breakdown.apiCredits,
+    multiplier: VERONIX_PROFIT_MARKUP,
+    available: available || true,
+    config: {
+      ...params,
+      resolution,
+      hasVideoReferences,
+      clarityCredits: breakdown.clarityCredits,
+      audioCredits: breakdown.audioCredits,
+      videoRefCredits: breakdown.videoRefCredits,
+    },
+    pricingNote: formatPixVersePricingNote(breakdown),
+    source: "estimate",
+  };
+}
+
 function quoteResultFromCached(
   input: QuoteInput,
   mcpModel: string,
@@ -264,6 +316,10 @@ export async function quoteOpenArtCredits(
   // Veronix / BytePlus always use token formula — never OpenArt cache.
   const bytePlus = quoteBytePlusResult(input, mcpModel, mode, params, available);
   if (bytePlus) return bytePlus;
+
+  // PixVerse direct API — official credit table × USD × 55% markup.
+  const pixVerse = quotePixVerseResult(input, mcpModel, mode, params, available);
+  if (pixVerse) return pixVerse;
 
   if (allowCache) {
     const fromCache = await quoteFromCache(input, mcpModel, mode, params);

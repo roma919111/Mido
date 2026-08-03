@@ -8,7 +8,7 @@ import { useCustomerUser } from "@/hooks/useCustomerUser";
 
 export function CreatePage({ media }: { media: "image" | "video" }) {
   const { t, dir } = useLocale();
-  const { user, refreshUser, logout, ready } = useCustomerUser();
+  const { user, refreshUser, logout, ready, refreshing } = useCustomerUser();
 
   const title = media === "video" ? t.create.videoTitle : t.create.imageTitle;
   const subtitle = media === "video" ? t.create.videoSub : t.create.imageSub;
@@ -16,7 +16,13 @@ export function CreatePage({ media }: { media: "image" | "video" }) {
   return (
     <div className="relative min-h-[100dvh] overflow-x-hidden bg-[#0b0d12] text-white">
       <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 studio-backdrop" />
-      <AppHeader compact user={user} ready={ready} onLogout={() => void logout()} />
+      <AppHeader
+        compact
+        user={user}
+        ready={ready}
+        refreshing={refreshing}
+        onLogout={() => void logout()}
+      />
       <main className="pb-[calc(6.75rem+env(safe-area-inset-bottom))] sm:pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
         <section className="mx-auto max-w-3xl px-4 pt-3 sm:px-6 sm:pt-6" dir={dir}>
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#22f0ff]/80 sm:text-xs sm:tracking-[0.22em]">

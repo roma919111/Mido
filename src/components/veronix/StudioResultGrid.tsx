@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import {
   Loader2,
   Pencil,
@@ -104,7 +105,22 @@ const ResultCard = memo(function ResultCard({
     const el = videoRef.current;
     if (!el || !mediaUrl) return;
     if (!armed) {
-      setArmed(true);
+      flushSync(() => {
+        setArmed(true);
+      });
+      void el
+        .play()
+        .then(() => setPlaying(true))
+        .catch(() => {
+          const onReady = () => {
+            el.removeEventListener("canplay", onReady);
+            void el
+              .play()
+              .then(() => setPlaying(true))
+              .catch(() => setPlaying(false));
+          };
+          el.addEventListener("canplay", onReady, { once: true });
+        });
       return;
     }
     if (el.paused) {

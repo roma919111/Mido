@@ -2,12 +2,9 @@ import { createReadStream, statSync } from "node:fs";
 import { access, stat } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { NextResponse } from "next/server";
-import {
-  getBytePlusVideoTask,
-  parseBytePlusHistoryId,
-} from "@/lib/byteplus-ark";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { isAllowedMediaHost } from "@/lib/media-proxy";
+import { resolveHistoryVideoUrl } from "@/lib/resolve-history-url";
 import { resolveGenerationFile } from "@/lib/veronix-outro";
 
 export const runtime = "nodejs";
@@ -30,14 +27,9 @@ async function resolveRemoteUrl(request: Request): Promise<{
 
   const historyId = searchParams.get("historyId")?.trim();
   if (historyId) {
-    const bpId = parseBytePlusHistoryId(historyId);
-    if (bpId) {
-      const task = await getBytePlusVideoTask(bpId);
-      const url = task.content?.video_url;
-      if (!url) return null;
-      return { url, mediaType };
-    }
-    return null;
+    const url = await resolveHistoryVideoUrl(historyId);
+    if (!url) return null;
+    return { url, mediaType };
   }
 
   const encoded = searchParams.get("u")?.trim();
@@ -163,6 +155,7 @@ export async function GET(request: Request) {
     const upstream = await fetch(source.url, {
       headers: {
         Accept: "*/*",
+        "User-Agent": "VyronixMedia/1.0",
         ...(range ? { Range: range } : {}),
       },
       redirect: "follow",

@@ -34,6 +34,8 @@ export interface QuoteInput {
   imageCount?: number;
   videoCount?: number;
   generateAudio?: boolean;
+  /** PixVerse Fusion — video_references attached (higher per-second rate). */
+  hasVideoReferences?: boolean;
 }
 
 export interface QuoteResult {

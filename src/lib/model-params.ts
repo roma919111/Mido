@@ -32,9 +32,12 @@ export function mapResolutionForMcpModel(
   }
 
   if (mcpModel.toLowerCase().includes("pixverse")) {
-    if (r.includes("1080") || r === "1k") return "1080p";
+    if (r.includes("1080") || r === "1k" || r === "pro") return "1080p";
     if (r.includes("720")) return "720p";
-    if (r.includes("480") || r.includes("540") || r.includes("360")) return "540p";
+    if (r.includes("540")) return "540p";
+    if (r.includes("360")) return "360p";
+    if (r.includes("480") || r === "std") return "360p";
+    return "540p";
   }
 
   return raw;

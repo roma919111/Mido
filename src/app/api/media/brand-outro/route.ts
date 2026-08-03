@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
-import {
-  getBytePlusVideoTask,
-  parseBytePlusHistoryId,
-} from "@/lib/byteplus-ark";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { listAssetsForUser, updateAsset } from "@/lib/db";
 import { isAllowedMediaHost } from "@/lib/media-proxy";
+import { resolveHistoryVideoUrl } from "@/lib/resolve-history-url";
 import { appendVyronixOutro } from "@/lib/veronix-outro";
 
 export const runtime = "nodejs";
@@ -17,12 +14,8 @@ async function resolveSourceUrl(input: {
 }): Promise<string | null> {
   // Prefer historyId lookup so we always get a fresh CDN URL.
   if (input.historyId?.trim()) {
-    const historyId = input.historyId.trim();
-    const bpId = parseBytePlusHistoryId(historyId);
-    if (bpId) {
-      const task = await getBytePlusVideoTask(bpId);
-      if (task.content?.video_url) return task.content.video_url;
-    }
+    const url = await resolveHistoryVideoUrl(input.historyId.trim());
+    if (url) return url;
   }
 
   const raw = input.url?.trim();

@@ -16,6 +16,7 @@ export function useCustomerUser() {
     readCustomerSnapshot(),
   );
   const [ready, setReady] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const applyUser = useCallback((next: CustomerUser | null) => {
     setUserState(next);
@@ -23,6 +24,7 @@ export function useCustomerUser() {
   }, []);
 
   const refreshUser = useCallback(async () => {
+    setRefreshing(true);
     try {
       const { res, data } = await fetchJson<{ user: CustomerUser | null }>(
         "/api/auth/customer/me",
@@ -34,6 +36,7 @@ export function useCustomerUser() {
       // Keep cached session visible on transient network errors.
     } finally {
       setReady(true);
+      setRefreshing(false);
     }
   }, [applyUser]);
 
@@ -54,5 +57,5 @@ export function useCustomerUser() {
     applyUser(null);
   }, [applyUser]);
 
-  return { user, setUser: applyUser, refreshUser, logout, ready };
+  return { user, setUser: applyUser, refreshUser, logout, ready, refreshing };
 }

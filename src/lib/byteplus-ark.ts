@@ -5,6 +5,7 @@
 
 import {
   compressReferenceForBytePlus,
+  compressReferencePlain,
   isInputImagePrivacyError,
   stylizeReferenceImage,
   toSemiRealisticScenePrompt,
@@ -24,11 +25,18 @@ const DEFAULT_MODEL = "dreamina-seedance-2-0-mini-260615";
  * First send: AI / 3D-render digital character look (BytePlus privacy bypass).
  * Soften / bloom / isolate / grade happen here before create.
  */
-async function toCompressedDataUrl(bytes: Buffer, mimeHint?: string): Promise<string> {
+async function toCompressedDataUrl(
+  bytes: Buffer,
+  mimeHint?: string,
+  opts?: { aiDigitalFilter?: boolean },
+): Promise<string> {
+  const useAi = opts?.aiDigitalFilter !== false;
   try {
-    const out = await compressReferenceForBytePlus(bytes);
+    const out = useAi
+      ? await compressReferenceForBytePlus(bytes)
+      : await compressReferencePlain(bytes);
     console.info(
-      "[veronix] character still prepared before BytePlus",
+      `[veronix] character still prepared before ${useAi ? "BytePlus (AI filter)" : "provider (plain)"}`,
       `inBytes=${bytes.length}`,
       `outBytes=${out.length}`,
       `mime=${mimeHint || "image/jpeg"}`,
@@ -188,24 +196,23 @@ function mimeFromGenerationPath(filePath: string): string {
  */
 export async function ensureBytePlusMediaUrl(
   url: string | null | undefined,
+  opts?: { aiDigitalFilter?: boolean },
 ): Promise<string | null> {
   if (!url?.trim()) return null;
   const trimmed = url.trim();
+  const filterOpts = { aiDigitalFilter: opts?.aiDigitalFilter };
   if (trimmed.startsWith("data:image/")) {
     const m = /^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/i.exec(trimmed);
     if (!m?.[2]) return trimmed;
     try {
       const raw = Buffer.from(m[2], "base64");
-      // Always light-grade character/data stills before Seedance (fast sharp pass).
-      return await toCompressedDataUrl(raw, m[1]);
+      return await toCompressedDataUrl(raw, m[1], filterOpts);
     } catch {
       return trimmed;
     }
   }
   if (/^https?:\/\//i.test(trimmed)) {
     const base = process.env.APP_BASE_URL?.trim()?.replace(/\/+$/, "");
-    // Our own /generations URLs are not publicly fetchable by BytePlus —
-    // rewrite to a data URL from disk.
     if (base && trimmed.startsWith(`${base}/generations/`)) {
       const localPath = trimmed.slice(base.length);
       const filePath = resolveGenerationFile(localPath);
@@ -213,7 +220,11 @@ export async function ensureBytePlusMediaUrl(
       try {
         const bytes = await readFile(filePath);
         if (bytes.length < 32) return null;
-        return await toCompressedDataUrl(bytes, mimeFromGenerationPath(filePath));
+        return await toCompressedDataUrl(
+          bytes,
+          mimeFromGenerationPath(filePath),
+          filterOpts,
+        );
       } catch {
         return null;
       }
@@ -227,7 +238,11 @@ export async function ensureBytePlusMediaUrl(
     try {
       const bytes = await readFile(filePath);
       if (bytes.length < 32) return null;
-      return await toCompressedDataUrl(bytes, mimeFromGenerationPath(filePath));
+      return await toCompressedDataUrl(
+        bytes,
+        mimeFromGenerationPath(filePath),
+        filterOpts,
+      );
     } catch {
       return null;
     }
@@ -240,9 +255,17 @@ export async function ensureBytePlusMediaUrl(
 
 export async function ensureBytePlusRefUrl(
   ref: VisualReference | null | undefined,
+  opts?: { aiDigitalFilter?: boolean },
 ): Promise<string | null> {
   if (!ref?.url?.trim()) return null;
-  return ensureBytePlusMediaUrl(ref.url);
+  return ensureBytePlusMediaUrl(ref.url, opts);
+}
+
+/** PixVerse / Fusion — keep original colors; skip BytePlus privacy AI filter. */
+export async function ensurePlainRefUrl(
+  ref: VisualReference | null | undefined,
+): Promise<string | null> {
+  return ensureBytePlusRefUrl(ref, { aiDigitalFilter: false });
 }
 
 function errorTextFromCreate(data: Record<string, unknown>, status: number): string {

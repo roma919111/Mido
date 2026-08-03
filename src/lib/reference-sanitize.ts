@@ -160,6 +160,11 @@ async function plainCompressForBytePlus(bytes: Buffer): Promise<Buffer> {
   return ensureMinSide(jpg, 88);
 }
 
+/** Resize/compress only — no AI digital stylize (for PixVerse and previews). */
+export async function compressReferencePlain(bytes: Buffer): Promise<Buffer> {
+  return plainCompressForBytePlus(bytes);
+}
+
 /**
  * Convert a character still into an AI / 3D-render digital look.
  * Applied on Generate BEFORE BytePlus create (when AI_DIGITAL_FILTER_ENABLED).

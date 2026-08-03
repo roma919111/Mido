@@ -6,6 +6,12 @@ import {
   parseBytePlusHistoryId,
   toBytePlusHistoryId,
 } from "@/lib/byteplus-ark";
+import {
+  getPixVerseVideoTask,
+  mapPixVerseStatus,
+  parsePixVerseHistoryId,
+  pixVerseFailureMessage,
+} from "@/lib/pixverse";
 import { getCurrentUser } from "@/lib/customer-auth";
 import {
   listAssetsForUser,
@@ -166,12 +172,45 @@ async function stitchPendingJobs(userId: string) {
   }
 }
 
-/** Refresh running assets from BytePlus (primary) or legacy OpenArt ids. */
+/** Refresh running assets from BytePlus, PixVerse, or legacy OpenArt ids. */
 async function syncRunningAssets(userId: string) {
   const assets = await listAssetsForUser(userId, { includeHidden: true });
   const running = assets.filter((a) => a.status === "running" && a.historyId).slice(0, 8);
   for (const asset of running) {
     try {
+      const pvId = parsePixVerseHistoryId(asset.historyId || "");
+      if (pvId) {
+        const task = await getPixVerseVideoTask(pvId);
+        const status = mapPixVerseStatus(task.status);
+        const videoUrl = task.url || "";
+        if (videoUrl || status === "COMPLETED") {
+          await updateAsset(asset.id, userId, {
+            url: videoUrl || asset.url,
+            status: "completed",
+            error: undefined,
+            hidden: asset.mode === "sequence-part" ? true : asset.hidden === true,
+          });
+          if (asset.mode !== "sequence-part" && videoUrl) {
+            warmVideoPosterBackground({
+              url: videoUrl,
+              historyId: asset.historyId,
+            });
+          }
+        } else if (status === "FAILED") {
+          const failMsg = pixVerseFailureMessage(task.status);
+          await updateAsset(asset.id, userId, {
+            status: "failed",
+            error: failMsg,
+          });
+          await refundFailedAssetCredits({
+            userId,
+            assetId: asset.id,
+            errorMessage: failMsg,
+          });
+        }
+        continue;
+      }
+
       const bpId = parseBytePlusHistoryId(asset.historyId || "");
       if (bpId) {
         const task = await getBytePlusVideoTask(bpId);

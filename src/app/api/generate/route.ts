@@ -8,6 +8,7 @@ import {
   isBytePlusConfigured,
   mapBytePlusStatus,
   ensureBytePlusRefUrl,
+  ensurePlainRefUrl,
   toBytePlusHistoryId,
   waitForBytePlusVideoTask,
 } from "@/lib/byteplus-ark";
@@ -410,6 +411,10 @@ export async function POST(request: Request) {
               resolution: body.resolution,
               duration: body.duration,
               generateAudio: body.generateAudio,
+              hasVideoReferences:
+                modelId === PIXVERSE_MODEL_ID &&
+                Array.isArray(body.referenceVideos) &&
+                body.referenceVideos.some((r) => r?.url),
             },
             { allowCache: true },
           ),
@@ -495,9 +500,13 @@ export async function POST(request: Request) {
       const catalog = getCatalogModel(quote.modelId);
       const uiResolution = freeTrial
         ? FREE_VERONIX_RESOLUTION
-        : normalizeVideoResolution(
-            body.resolution || catalog?.resolutionDefault || "720p",
-          );
+        : quote.modelId === PIXVERSE_MODEL_ID
+          ? normalizePixVerseQuality(
+              body.resolution || catalog?.resolutionDefault || "720p",
+            )
+          : normalizeVideoResolution(
+              body.resolution || catalog?.resolutionDefault || "720p",
+            );
       const bounds = durationBoundsForModel(catalog);
       const requestedDuration = body.duration ?? bounds.max;
       const modelDuration = freeTrial
@@ -554,7 +563,7 @@ export async function POST(request: Request) {
             const fusionImages: PixVerseFusionImageRef[] = [];
             for (let i = 0; i < Math.min(refs.length, 10); i++) {
               const r = refs[i]!;
-              const resolved = await ensureBytePlusRefUrl(r);
+              const resolved = await ensurePlainRefUrl(r);
               const imgId = await uploadPixVerseImage(r, resolved);
               const rawName =
                 r.label?.trim().replace(/^@+/, "") || `ref${i + 1}`;
@@ -598,7 +607,7 @@ export async function POST(request: Request) {
             });
           } else {
             let imgId: number | undefined;
-            const startResolved = await ensureBytePlusRefUrl(body.startFrame);
+            const startResolved = await ensurePlainRefUrl(body.startFrame);
             if (body.startFrame?.url || startResolved) {
               imgId = await uploadPixVerseImage(body.startFrame, startResolved);
             }

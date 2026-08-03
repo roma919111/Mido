@@ -28,7 +28,7 @@ export function PricingPage() {
   const router = useRouter();
   const params = useSearchParams();
   const { t, dir, locale } = useLocale();
-  const { user, setUser, logout, ready } = useCustomerUser();
+  const { user, setUser, logout, ready, refreshing } = useCustomerUser();
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [stripeReady, setStripeReady] = useState<boolean | null>(null);
@@ -138,6 +138,7 @@ export function PricingPage() {
       <AppHeader
         user={user}
         ready={ready}
+        refreshing={refreshing}
         onLogout={() => {
           void logout();
         }}

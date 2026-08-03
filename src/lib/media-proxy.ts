@@ -11,6 +11,10 @@ const ALLOWED_HOST_SUFFIXES = [
   ".bytepluses.com",
   ".byteplus.com",
   ".volces.com",
+  ".pixverse.ai",
+  ".pixverseai.cn",
+  ".aliyuncs.com",
+  ".cloudfront.net",
 ];
 
 export function isAllowedMediaHost(hostname: string): boolean {
@@ -19,7 +23,9 @@ export function isAllowedMediaHost(hostname: string): boolean {
     host === "openart.ai" ||
     host === "openart.com" ||
     host === "byteplus.com" ||
-    host === "bytepluses.com"
+    host === "bytepluses.com" ||
+    host === "pixverse.ai" ||
+    host === "pixverseai.cn"
   ) {
     return true;
   }
@@ -138,16 +144,21 @@ export function veronixDownloadPath(input: {
 }
 
 /** Playback / preview source.
- * Remote BytePlus/CDN https URLs play directly (provider servers carry the bytes).
- * Local `/generations/*` still go through Veronix stream proxy.
+ * Videos always stream through Veronix (Range, auth, CDN refresh).
+ * Images may load allowed CDN URLs directly.
  */
 export function veronixMediaSrc(input: {
   historyId?: string | null;
   url?: string | null;
   mediaType?: "image" | "video";
 }): string | null {
+  const mediaType = input.mediaType || "video";
   const raw = input.url?.trim() || "";
-  // Images + videos: load allowed CDN URLs directly — avoids saturating our Node proxy.
+
+  if (mediaType === "video") {
+    return buildMediaApiPath(input, "stream") || raw || null;
+  }
+
   if (/^https?:\/\//i.test(raw)) {
     try {
       if (isAllowedMediaHost(new URL(raw).hostname)) return raw;

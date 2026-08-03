@@ -1,6 +1,7 @@
 /**
  * Client-safe credit pricing (no node:fs).
  * Veronix video/image use BytePlus token math (+55% markup).
+ * PixVerse V6: (وضوح + صوت + فيديو) × 1 × 1.55 each — no ×1.8.
  * Other catalog models keep the legacy seeded table ×1.8 for display only.
  */
 
@@ -23,6 +24,12 @@ import {
   quoteVeronixImageCredits,
   quoteVeronixVideoCredits,
 } from "@/lib/byteplus-pricing";
+import {
+  formatPixVersePricingNote,
+  isPixVerseModel,
+  normalizePixVerseQuality,
+  quotePixVerseVideoBreakdown,
+} from "@/lib/pixverse-pricing";
 
 function fallbackEstimate(input: QuoteInput): number {
   if (input.media === "image") return 15;
@@ -159,6 +166,52 @@ function quoteBytePlusResult(
   return null;
 }
 
+function quotePixVerseResult(
+  input: QuoteInput,
+  mcpModel: string,
+  mode: string,
+  params: Record<string, unknown>,
+  available: boolean,
+): QuoteResult | null {
+  if (input.media !== "video" || !isPixVerseModel(input.modelId, mcpModel)) {
+    return null;
+  }
+  const resolution = normalizePixVerseQuality(
+    typeof params.resolution === "string"
+      ? params.resolution
+      : input.resolution,
+  );
+  const hasVideoReferences = Boolean(input.hasVideoReferences);
+  const breakdown = quotePixVerseVideoBreakdown({
+    duration: input.duration,
+    resolution,
+    generateAudio: input.generateAudio,
+    hasVideoReferences,
+    videoCount: input.videoCount ?? 1,
+  });
+  const totalCredits = breakdown.walletCredits;
+  return {
+    modelId: input.modelId,
+    mcpModel,
+    mode,
+    totalCredits,
+    unitCredits: totalCredits,
+    openArtCredits: breakdown.apiCredits,
+    multiplier: VERONIX_PROFIT_MARKUP,
+    available: available || true,
+    config: {
+      ...params,
+      resolution,
+      hasVideoReferences,
+      clarityCredits: breakdown.clarityCredits,
+      audioCredits: breakdown.audioCredits,
+      videoRefCredits: breakdown.videoRefCredits,
+    },
+    pricingNote: formatPixVersePricingNote(breakdown),
+    source: "estimate",
+  };
+}
+
 /**
  * Instant UI pricing — duration/resolution changes update credits immediately.
  */
@@ -171,6 +224,9 @@ export function quoteCreditsLocal(input: QuoteInput): QuoteResult {
 
   const bytePlus = quoteBytePlusResult(input, mcpModel, mode, params, available);
   if (bytePlus) return bytePlus;
+
+  const pixVerse = quotePixVerseResult(input, mcpModel, mode, params, available);
+  if (pixVerse) return pixVerse;
 
   const mappedRes =
     typeof params.resolution === "string"
