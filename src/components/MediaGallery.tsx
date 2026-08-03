@@ -1,7 +1,8 @@
 "use client";
 
 import { Check, Copy, Download, Film, ImageIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { toPlaybackUrl } from "@/lib/media-proxy";
 import type { GalleryItem } from "@/lib/types";
 
 interface MediaGalleryProps {
@@ -11,6 +12,12 @@ interface MediaGalleryProps {
 export function MediaGallery({ items }: MediaGalleryProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [playbackErrors, setPlaybackErrors] = useState<Record<string, string>>({});
+  const [retryCounts, setRetryCounts] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    setPlaybackErrors({});
+    setRetryCounts({});
+  }, [items]);
 
   const copyPrompt = async (item: GalleryItem) => {
     try {
@@ -62,7 +69,7 @@ export function MediaGallery({ items }: MediaGalleryProps) {
                 ) : item.mediaType === "video" ? (
                   playbackErrors[item.id] ? (
                     <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-sm text-white/55">
-                      <p>Video preview failed to load.</p>
+                      <p>تعذّر تشغيل الفيديو.</p>
                       <p className="text-xs text-white/35">{playbackErrors[item.id]}</p>
                       <a
                         href={item.url}
@@ -70,24 +77,35 @@ export function MediaGallery({ items }: MediaGalleryProps) {
                         rel="noreferrer"
                         className="text-xs text-[var(--accent)] underline"
                       >
-                        Open video in new tab
+                        فتح الفيديو في تبويب جديد
                       </a>
                     </div>
                   ) : (
                     <video
-                      key={item.url}
-                      src={item.url}
+                      key={`${item.id}-${retryCounts[item.id] ?? 0}`}
+                      src={toPlaybackUrl(item.url, "video")}
                       controls
                       playsInline
                       preload="metadata"
                       className="h-full w-full object-cover"
-                      onError={() =>
+                      onError={() => {
+                        const retries = retryCounts[item.id] ?? 0;
+                        if (retries < 4) {
+                          window.setTimeout(() => {
+                            setRetryCounts((prev) => ({
+                              ...prev,
+                              [item.id]: retries + 1,
+                            }));
+                          }, (retries + 1) * 2500);
+                          return;
+                        }
+
                         setPlaybackErrors((prev) => ({
                           ...prev,
                           [item.id]:
-                            "The player could not load this file. Try opening it in a new tab or regenerating.",
-                        }))
-                      }
+                            "الملف غير جاهز بعد أو تعذّر تحميله. انتظر قليلاً ثم أعد التوليد إن لزم.",
+                        }));
+                      }}
                     />
                   )
                 ) : (

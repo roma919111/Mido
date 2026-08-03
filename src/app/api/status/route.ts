@@ -2,11 +2,14 @@ import { NextResponse } from "next/server";
 import {
   callOpenArtTool,
   collectMediaUrls,
+  getResourceIds,
   OpenArtConfigError,
   parseToolPayload,
   pickPrimaryMediaUrl,
   pickThumbnailUrl,
+  resolveGenerationMedia,
 } from "@/lib/openart-mcp";
+import { toPlaybackUrl } from "@/lib/media-proxy";
 
 export const runtime = "nodejs";
 
@@ -40,15 +43,28 @@ export async function GET(request: Request) {
     }
 
     const status = String(payload.status ?? payload.state ?? "UNKNOWN").toUpperCase();
+    const resolved = await resolveGenerationMedia([payload], mediaType, {
+      attempts: 1,
+      intervalMs: 0,
+    });
     const urls = collectMediaUrls(payload);
-    const url = pickPrimaryMediaUrl(urls, mediaType);
-    const thumbnailUrl = pickThumbnailUrl(urls);
+    const url = resolved?.url ?? pickPrimaryMediaUrl(urls, mediaType);
+    const thumbnailUrl = resolved?.thumbnailUrl ?? pickThumbnailUrl(urls);
+    const playbackUrl = url ? toPlaybackUrl(url, mediaType) : "";
+    const resolvedStatus =
+      resolved?.status === "failed" || resolved?.status === "cancelled"
+        ? resolved.status.toUpperCase()
+        : url
+          ? "COMPLETED"
+          : status;
 
     return NextResponse.json({
       historyId,
-      status,
+      status: resolvedStatus,
       url,
+      playbackUrl,
       thumbnailUrl,
+      resourceIds: getResourceIds(payload),
       urls,
       live: true,
       mcpEndpoint: MCP_ENDPOINT,

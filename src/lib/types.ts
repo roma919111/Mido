@@ -19,6 +19,7 @@ export interface GalleryItem {
   historyId: string;
   mediaType: MediaType;
   url: string;
+  playbackUrl?: string;
   thumbnailUrl?: string;
   prompt: string;
   mode: GenerationMode;
@@ -59,7 +60,9 @@ export interface GenerateResponse {
   creditsUsed: number;
   urls?: string[];
   url?: string;
+  playbackUrl?: string;
   thumbnailUrl?: string;
+  resourceIds?: string[];
   error?: string;
   pollAfterSeconds?: number;
   live?: boolean;

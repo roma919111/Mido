@@ -4,11 +4,14 @@ import {
   callOpenArtTool,
   collectMediaUrls,
   getHistoryId,
+  getResourceIds,
   OpenArtConfigError,
   parseToolPayload,
   pickPrimaryMediaUrl,
   pickThumbnailUrl,
+  resolveGenerationMedia,
 } from "@/lib/openart-mcp";
+import { toPlaybackUrl } from "@/lib/media-proxy";
 import type { GenerateRequest, VideoDuration, VideoQuality } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -45,6 +48,9 @@ async function waitForCreation(
     const primaryUrl = pickPrimaryMediaUrl(urls, media);
 
     if (["COMPLETED", "FAILED", "CANCELLED"].includes(status)) {
+      if (media === "video" && status === "COMPLETED" && !primaryUrl) {
+        continue;
+      }
       return { status, payload: lastPayload, raw: lastRaw };
     }
 
@@ -154,13 +160,24 @@ export async function POST(request: Request) {
     }
 
     const waited = await waitForCreation(historyId, media);
+    const resolved = await resolveGenerationMedia(
+      [generatePayload, waited.payload],
+      media,
+      { attempts: 36, intervalMs: 5000 },
+    );
+
     const urls = collectMediaUrls(waited.payload);
-    const url = pickPrimaryMediaUrl(urls, media);
-    const thumbnailUrl = pickThumbnailUrl(urls);
+    const url = resolved?.url ?? pickPrimaryMediaUrl(urls, media);
+    const thumbnailUrl = resolved?.thumbnailUrl ?? pickThumbnailUrl(urls);
+    const playbackUrl = url ? toPlaybackUrl(url, media) : "";
     const resolvedStatus =
-      waited.status === "COMPLETED" && media === "video" && !url
-        ? "STILL_RUNNING"
-        : waited.status;
+      resolved?.status === "failed" || resolved?.status === "cancelled"
+        ? resolved.status.toUpperCase()
+        : url
+          ? "COMPLETED"
+          : waited.status === "COMPLETED" && media === "video"
+            ? "STILL_RUNNING"
+            : waited.status;
 
     return NextResponse.json({
       historyId,
@@ -170,14 +187,23 @@ export async function POST(request: Request) {
       prompt,
       creditsUsed,
       url,
+      playbackUrl,
       thumbnailUrl,
+      resourceIds: getResourceIds(generatePayload).length
+        ? getResourceIds(generatePayload)
+        : getResourceIds(waited.payload),
       urls,
       live: true,
       mcpEndpoint: MCP_ENDPOINT,
       tool: toolName,
       error:
-        waited.status === "FAILED"
-          ? String(waited.payload.error ?? waited.payload.message ?? "Generation failed")
+        resolvedStatus === "FAILED" || resolved?.status === "failed"
+          ? String(
+              resolved?.error ??
+                waited.payload.error ??
+                waited.payload.message ??
+                "Generation failed",
+            )
           : undefined,
       details: {
         generate: generatePayload,

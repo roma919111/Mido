@@ -288,6 +288,243 @@ export function pickThumbnailUrl(urls: string[]): string | undefined {
   return urls.find((url) => isThumbnailUrl(url) || isImageUrl(url));
 }
 
+export type ResolvedMedia = {
+  url: string;
+  thumbnailUrl?: string;
+  status: string;
+  resourceId?: string;
+  error?: string;
+};
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTerminalResourceStatus(status: string): boolean {
+  const normalized = status.toLowerCase();
+  return ["completed", "failed", "error", "cancelled", "canceled"].includes(normalized);
+}
+
+export function getResourceIds(payload: Record<string, unknown>): string[] {
+  const ids = new Set<string>();
+
+  const push = (value: unknown) => {
+    if (typeof value === "string" && value.length > 0) ids.add(value);
+  };
+
+  const candidates = [
+    payload.resourceIds,
+    payload.resource_ids,
+    (payload.data as Record<string, unknown> | undefined)?.resourceIds,
+    (payload.data as Record<string, unknown> | undefined)?.resource_ids,
+    (payload.result as Record<string, unknown> | undefined)?.resourceIds,
+    (payload.result as Record<string, unknown> | undefined)?.resource_ids,
+  ];
+
+  for (const value of candidates) {
+    if (Array.isArray(value)) value.forEach(push);
+  }
+
+  for (const key of ["resources", "outputs", "items", "completions"] as const) {
+    const list = payload[key];
+    if (!Array.isArray(list)) continue;
+    for (const entry of list) {
+      const row = (entry ?? {}) as Record<string, unknown>;
+      push(row.id);
+      push(row.resourceId);
+      push(row.resource_id);
+    }
+  }
+
+  return [...ids];
+}
+
+function collectResourceCandidates(payload: Record<string, unknown>): Record<string, unknown>[] {
+  const rows: Record<string, unknown>[] = [];
+
+  const push = (node: unknown) => {
+    if (!node || typeof node !== "object" || Array.isArray(node)) return;
+    rows.push(node as Record<string, unknown>);
+  };
+
+  push(payload);
+  push(payload.data);
+  push(payload.resource);
+  push(payload.result);
+
+  for (const key of ["resources", "outputs", "items", "completions"] as const) {
+    const list = payload[key];
+    if (Array.isArray(list)) list.forEach(push);
+  }
+
+  return rows;
+}
+
+export function extractResourceMedia(
+  payload: Record<string, unknown>,
+  mediaType: "image" | "video",
+): ResolvedMedia | null {
+  for (const row of collectResourceCandidates(payload)) {
+    const status = String(row.status ?? "").toLowerCase();
+    const url = typeof row.url === "string" ? row.url : "";
+    const thumbnailUrl =
+      typeof row.thumbnailUrl === "string"
+        ? row.thumbnailUrl
+        : typeof row.thumbnail_url === "string"
+          ? row.thumbnail_url
+          : undefined;
+
+    if (status === "completed" && url) {
+      const primary = pickPrimaryMediaUrl(
+        [url, ...(thumbnailUrl ? [thumbnailUrl] : [])],
+        mediaType,
+      );
+      if (primary) {
+        return {
+          url: primary,
+          thumbnailUrl,
+          status: "completed",
+          resourceId:
+            typeof row.id === "string"
+              ? row.id
+              : typeof row.resourceId === "string"
+                ? row.resourceId
+                : undefined,
+        };
+      }
+    }
+
+    if (isTerminalResourceStatus(status) && status !== "completed") {
+      return {
+        url: "",
+        thumbnailUrl,
+        status,
+        resourceId: typeof row.id === "string" ? row.id : undefined,
+        error:
+          typeof row.error === "string"
+            ? row.error
+            : typeof row.message === "string"
+              ? row.message
+              : undefined,
+      };
+    }
+  }
+
+  return null;
+}
+
+export async function isRemoteMediaReady(url: string): Promise<boolean> {
+  try {
+    const head = await fetch(url, { method: "HEAD", redirect: "follow" });
+    if (head.ok) {
+      const contentType = head.headers.get("content-type") ?? "";
+      if (contentType.startsWith("video/") || contentType.startsWith("image/")) {
+        return true;
+      }
+    }
+
+    const probe = await fetch(url, {
+      method: "GET",
+      headers: { Range: "bytes=0-1023" },
+      redirect: "follow",
+    });
+    return probe.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function fetchResourcePayload(resourceId: string): Promise<Record<string, unknown> | null> {
+  const toolNames = ["openart_media_get", "openart_resource_get", "media_get"];
+
+  for (const toolName of toolNames) {
+    try {
+      const result = await callOpenArtTool(toolName, { resourceId });
+      if (!result.isError) {
+        return parseToolPayload(result);
+      }
+    } catch {
+      // try the next tool name
+    }
+  }
+
+  return null;
+}
+
+export async function pollOpenArtResource(
+  resourceId: string,
+  mediaType: "image" | "video",
+  options?: { attempts?: number; intervalMs?: number },
+): Promise<ResolvedMedia | null> {
+  const attempts = options?.attempts ?? 48;
+  const intervalMs = options?.intervalMs ?? 5000;
+
+  for (let i = 0; i < attempts; i += 1) {
+    const payload = await fetchResourcePayload(resourceId);
+    if (payload) {
+      const resolved = extractResourceMedia(payload, mediaType);
+      if (resolved) {
+        if (resolved.status !== "completed" || !resolved.url) {
+          return resolved;
+        }
+
+        if (mediaType === "video") {
+          const ready = await isRemoteMediaReady(resolved.url);
+          if (ready) return resolved;
+        } else {
+          return resolved;
+        }
+      }
+    }
+
+    await sleep(intervalMs);
+  }
+
+  return null;
+}
+
+export async function resolveGenerationMedia(
+  payloads: Record<string, unknown>[],
+  mediaType: "image" | "video",
+  options?: { attempts?: number; intervalMs?: number },
+): Promise<ResolvedMedia | null> {
+  for (const payload of payloads) {
+    const direct = extractResourceMedia(payload, mediaType);
+    if (direct?.url) {
+      if (mediaType === "image" || (await isRemoteMediaReady(direct.url))) {
+        return direct;
+      }
+    }
+  }
+
+  const resourceIds = new Set<string>();
+  for (const payload of payloads) {
+    getResourceIds(payload).forEach((id) => resourceIds.add(id));
+  }
+
+  for (const resourceId of resourceIds) {
+    const resolved = await pollOpenArtResource(resourceId, mediaType, options);
+    if (resolved?.url) return resolved;
+    if (resolved && isTerminalResourceStatus(resolved.status) && resolved.status !== "completed") {
+      return resolved;
+    }
+  }
+
+  const fallbackUrls = payloads.flatMap((payload) => collectMediaUrls(payload));
+  const fallbackUrl = pickPrimaryMediaUrl(fallbackUrls, mediaType);
+  if (fallbackUrl) {
+    if (mediaType === "image" || (await isRemoteMediaReady(fallbackUrl))) {
+      return {
+        url: fallbackUrl,
+        thumbnailUrl: pickThumbnailUrl(fallbackUrls),
+        status: "completed",
+      };
+    }
+  }
+
+  return null;
+}
+
 export function getHistoryId(payload: Record<string, unknown>): string | undefined {
   const candidates = [
     payload.historyId,

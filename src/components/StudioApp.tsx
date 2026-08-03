@@ -52,9 +52,10 @@ function resolveGenerationStatus(
 async function pollGenerationStatus(
   historyId: string,
   mediaType: "image" | "video",
-  maxAttempts = 24,
+  maxAttempts = 48,
 ): Promise<{
   url: string;
+  playbackUrl?: string;
   thumbnailUrl?: string;
   status: GalleryItem["status"];
   error?: string;
@@ -66,6 +67,7 @@ async function pollGenerationStatus(
     const data = (await res.json()) as {
       status?: string;
       url?: string;
+      playbackUrl?: string;
       thumbnailUrl?: string;
       error?: string;
       pollAfterSeconds?: number;
@@ -76,14 +78,15 @@ async function pollGenerationStatus(
     }
 
     const url = data.url ?? "";
+    const playbackUrl = data.playbackUrl;
     const status = resolveGenerationStatus(data.status, url, mediaType);
 
     if (status === "failed" || status === "cancelled") {
-      return { url: "", thumbnailUrl: data.thumbnailUrl, status, error: data.error };
+      return { url: "", playbackUrl, thumbnailUrl: data.thumbnailUrl, status, error: data.error };
     }
 
     if (status === "completed") {
-      return { url, thumbnailUrl: data.thumbnailUrl, status };
+      return { url, playbackUrl, thumbnailUrl: data.thumbnailUrl, status };
     }
 
     await new Promise((resolve) =>
@@ -391,6 +394,7 @@ export function StudioApp() {
 
       const mediaType = data.mediaType ?? (isVideoMode ? "video" : "image");
       let url = data.url ?? data.urls?.[0] ?? "";
+      let playbackUrl = data.playbackUrl ?? "";
       let thumbnailUrl = data.thumbnailUrl;
       let status = resolveGenerationStatus(data.status, url, mediaType);
       let error = data.error;
@@ -399,6 +403,7 @@ export function StudioApp() {
         setStatusMessage("Video is still rendering on OpenArt — waiting for the final file…");
         const polled = await pollGenerationStatus(data.historyId, mediaType);
         url = polled.url;
+        playbackUrl = polled.playbackUrl ?? playbackUrl;
         thumbnailUrl = polled.thumbnailUrl ?? thumbnailUrl;
         status = polled.status;
         error = polled.error;
@@ -412,6 +417,7 @@ export function StudioApp() {
                 id: data.historyId || item.id,
                 historyId: data.historyId || item.historyId,
                 url,
+                playbackUrl,
                 thumbnailUrl,
                 status,
                 error,
