@@ -58,6 +58,8 @@ export interface GenerateResponse {
   prompt: string;
   creditsUsed: number;
   urls?: string[];
+  url?: string;
+  thumbnailUrl?: string;
   error?: string;
   pollAfterSeconds?: number;
   live?: boolean;

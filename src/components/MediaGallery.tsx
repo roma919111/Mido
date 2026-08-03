@@ -10,6 +10,7 @@ interface MediaGalleryProps {
 
 export function MediaGallery({ items }: MediaGalleryProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [playbackErrors, setPlaybackErrors] = useState<Record<string, string>>({});
 
   const copyPrompt = async (item: GalleryItem) => {
     try {
@@ -59,12 +60,36 @@ export function MediaGallery({ items }: MediaGalleryProps) {
                     {item.status === "failed" ? item.error ?? "Failed" : "Processing…"}
                   </div>
                 ) : item.mediaType === "video" ? (
-                  <video
-                    src={item.url}
-                    controls
-                    playsInline
-                    className="h-full w-full object-cover"
-                  />
+                  playbackErrors[item.id] ? (
+                    <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-sm text-white/55">
+                      <p>Video preview failed to load.</p>
+                      <p className="text-xs text-white/35">{playbackErrors[item.id]}</p>
+                      <a
+                        href={item.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-[var(--accent)] underline"
+                      >
+                        Open video in new tab
+                      </a>
+                    </div>
+                  ) : (
+                    <video
+                      key={item.url}
+                      src={item.url}
+                      controls
+                      playsInline
+                      preload="metadata"
+                      className="h-full w-full object-cover"
+                      onError={() =>
+                        setPlaybackErrors((prev) => ({
+                          ...prev,
+                          [item.id]:
+                            "The player could not load this file. Try opening it in a new tab or regenerating.",
+                        }))
+                      }
+                    />
+                  )
                 ) : (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img

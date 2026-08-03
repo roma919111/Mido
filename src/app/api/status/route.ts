@@ -4,6 +4,8 @@ import {
   collectMediaUrls,
   OpenArtConfigError,
   parseToolPayload,
+  pickPrimaryMediaUrl,
+  pickThumbnailUrl,
 } from "@/lib/openart-mcp";
 
 export const runtime = "nodejs";
@@ -13,6 +15,7 @@ const MCP_ENDPOINT = process.env.OPENART_MCP_URL ?? "https://mcp.openart.ai/mcp"
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const historyId = searchParams.get("historyId");
+  const mediaType = (searchParams.get("mediaType") ?? "video") as "image" | "video";
 
   if (!historyId) {
     return NextResponse.json({ error: "historyId is required" }, { status: 400 });
@@ -38,10 +41,14 @@ export async function GET(request: Request) {
 
     const status = String(payload.status ?? payload.state ?? "UNKNOWN").toUpperCase();
     const urls = collectMediaUrls(payload);
+    const url = pickPrimaryMediaUrl(urls, mediaType);
+    const thumbnailUrl = pickThumbnailUrl(urls);
 
     return NextResponse.json({
       historyId,
       status,
+      url,
+      thumbnailUrl,
       urls,
       live: true,
       mcpEndpoint: MCP_ENDPOINT,

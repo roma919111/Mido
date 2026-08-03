@@ -24,6 +24,76 @@ import { VideoControls } from "./VideoControls";
 const GALLERY_KEY = "studio-ai-gallery-v1";
 const MCP_ENDPOINT = "https://mcp.openart.ai/mcp";
 
+function resolveGenerationStatus(
+  apiStatus: string | undefined,
+  url: string,
+  mediaType: "image" | "video",
+): GalleryItem["status"] {
+  const normalized = apiStatus?.toLowerCase();
+
+  if (normalized === "failed") return "failed";
+  if (normalized === "cancelled") return "cancelled";
+
+  if (url) {
+    return "completed";
+  }
+
+  if (normalized === "completed" && mediaType === "video") {
+    return "running";
+  }
+
+  if (normalized === "completed") {
+    return "completed";
+  }
+
+  return "running";
+}
+
+async function pollGenerationStatus(
+  historyId: string,
+  mediaType: "image" | "video",
+  maxAttempts = 24,
+): Promise<{
+  url: string;
+  thumbnailUrl?: string;
+  status: GalleryItem["status"];
+  error?: string;
+}> {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const res = await fetch(
+      `/api/status?historyId=${encodeURIComponent(historyId)}&mediaType=${mediaType}`,
+    );
+    const data = (await res.json()) as {
+      status?: string;
+      url?: string;
+      thumbnailUrl?: string;
+      error?: string;
+      pollAfterSeconds?: number;
+    };
+
+    if (!res.ok) {
+      throw new Error(data.error || "Status check failed");
+    }
+
+    const url = data.url ?? "";
+    const status = resolveGenerationStatus(data.status, url, mediaType);
+
+    if (status === "failed" || status === "cancelled") {
+      return { url: "", thumbnailUrl: data.thumbnailUrl, status, error: data.error };
+    }
+
+    if (status === "completed") {
+      return { url, thumbnailUrl: data.thumbnailUrl, status };
+    }
+
+    await new Promise((resolve) =>
+      window.setTimeout(resolve, (data.pollAfterSeconds ?? 5) * 1000),
+    );
+  }
+
+  return { url: "", status: "running" };
+}
+
 function loadGallery(): GalleryItem[] {
   if (typeof window === "undefined") return [];
   try {
@@ -319,15 +389,20 @@ export function StudioApp() {
         throw new Error(data.error || formatLivePayload(data));
       }
 
-      const url = data.urls?.[0] ?? "";
-      const status =
-        data.status?.toLowerCase() === "completed"
-          ? "completed"
-          : data.status?.toLowerCase() === "failed"
-            ? "failed"
-            : url
-              ? "completed"
-              : "running";
+      const mediaType = data.mediaType ?? (isVideoMode ? "video" : "image");
+      let url = data.url ?? data.urls?.[0] ?? "";
+      let thumbnailUrl = data.thumbnailUrl;
+      let status = resolveGenerationStatus(data.status, url, mediaType);
+      let error = data.error;
+
+      if (status === "running" && data.historyId) {
+        setStatusMessage("Video is still rendering on OpenArt — waiting for the final file…");
+        const polled = await pollGenerationStatus(data.historyId, mediaType);
+        url = polled.url;
+        thumbnailUrl = polled.thumbnailUrl ?? thumbnailUrl;
+        status = polled.status;
+        error = polled.error;
+      }
 
       setGallery((prev) =>
         prev.map((item) =>
@@ -337,8 +412,9 @@ export function StudioApp() {
                 id: data.historyId || item.id,
                 historyId: data.historyId || item.historyId,
                 url,
+                thumbnailUrl,
                 status,
-                error: data.error,
+                error,
               }
             : item,
         ),
@@ -347,9 +423,11 @@ export function StudioApp() {
       if (status === "completed") {
         setStatusMessage("Live OpenArt MCP generation complete.");
       } else if (status === "failed") {
-        setError(data.error || "Generation failed");
+        setError(error || "Generation failed");
       } else {
-        setStatusMessage("Still generating on OpenArt MCP — raw wait payload shown below.");
+        setStatusMessage(
+          "Generation is still running on OpenArt MCP. Check back in the gallery shortly.",
+        );
       }
 
       await refreshAccount();

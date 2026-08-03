@@ -6,6 +6,8 @@ import {
   getHistoryId,
   OpenArtConfigError,
   parseToolPayload,
+  pickPrimaryMediaUrl,
+  pickThumbnailUrl,
 } from "@/lib/openart-mcp";
 import type { GenerateRequest, VideoDuration, VideoQuality } from "@/lib/types";
 
@@ -14,7 +16,11 @@ export const maxDuration = 300;
 
 const MCP_ENDPOINT = process.env.OPENART_MCP_URL ?? "https://mcp.openart.ai/mcp";
 
-async function waitForCreation(historyId: string, attempts = 4) {
+async function waitForCreation(
+  historyId: string,
+  media: "image" | "video",
+  attempts = 6,
+) {
   let lastPayload: Record<string, unknown> = {};
   let lastRaw: unknown = null;
 
@@ -35,16 +41,21 @@ async function waitForCreation(historyId: string, attempts = 4) {
       lastPayload.status ?? lastPayload.state ?? lastPayload.resultStatus ?? "",
     ).toUpperCase();
 
+    const urls = collectMediaUrls(lastPayload);
+    const primaryUrl = pickPrimaryMediaUrl(urls, media);
+
     if (["COMPLETED", "FAILED", "CANCELLED"].includes(status)) {
       return { status, payload: lastPayload, raw: lastRaw };
     }
 
     if (status === "STILL_RUNNING" || status === "PENDING" || status === "RUNNING") {
+      if (primaryUrl) {
+        return { status: "COMPLETED", payload: lastPayload, raw: lastRaw };
+      }
       continue;
     }
 
-    const urls = collectMediaUrls(lastPayload);
-    if (urls.length > 0) {
+    if (primaryUrl) {
       return { status: "COMPLETED", payload: lastPayload, raw: lastRaw };
     }
   }
@@ -142,16 +153,24 @@ export async function POST(request: Request) {
       });
     }
 
-    const waited = await waitForCreation(historyId);
+    const waited = await waitForCreation(historyId, media);
     const urls = collectMediaUrls(waited.payload);
+    const url = pickPrimaryMediaUrl(urls, media);
+    const thumbnailUrl = pickThumbnailUrl(urls);
+    const resolvedStatus =
+      waited.status === "COMPLETED" && media === "video" && !url
+        ? "STILL_RUNNING"
+        : waited.status;
 
     return NextResponse.json({
       historyId,
-      status: waited.status,
+      status: resolvedStatus,
       mediaType: media,
       mode,
       prompt,
       creditsUsed,
+      url,
+      thumbnailUrl,
       urls,
       live: true,
       mcpEndpoint: MCP_ENDPOINT,

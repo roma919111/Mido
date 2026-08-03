@@ -4,6 +4,8 @@ import {
   collectMediaUrls,
   OpenArtConfigError,
   parseToolPayload,
+  pickPrimaryMediaUrl,
+  pickThumbnailUrl,
 } from "@/lib/openart-mcp";
 
 export const runtime = "nodejs";
@@ -54,8 +56,8 @@ export async function GET(request: Request) {
         id: historyId,
         historyId,
         mediaType: media,
-        url: urls[0] ?? "",
-        thumbnailUrl: urls.find((u) => /thumb|cover|image/i.test(u)) ?? urls[0],
+        url: pickPrimaryMediaUrl(urls, media),
+        thumbnailUrl: pickThumbnailUrl(urls),
         prompt: String(row.prompt ?? row.title ?? ""),
         createdAt: String(row.createdAt ?? row.created_at ?? new Date().toISOString()),
         status: String(row.status ?? "COMPLETED").toLowerCase(),

@@ -199,6 +199,39 @@ export async function callOpenArtTool(
   });
 }
 
+const THUMBNAIL_HINT = /thumb|cover|poster|preview|avatar/i;
+const IMAGE_EXTENSION = /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|#|$)/i;
+const VIDEO_EXTENSION = /\.(mp4|webm|mov|m4v|ogv)(\?|#|$)/i;
+
+function isThumbnailUrl(url: string): boolean {
+  return THUMBNAIL_HINT.test(url);
+}
+
+function isImageUrl(url: string): boolean {
+  return IMAGE_EXTENSION.test(url) || /\/image\//i.test(url);
+}
+
+function isVideoUrl(url: string): boolean {
+  return VIDEO_EXTENSION.test(url) || /\/video\//i.test(url);
+}
+
+function scoreMediaUrl(url: string, mediaType: "image" | "video"): number {
+  let score = 0;
+
+  if (mediaType === "video") {
+    if (isVideoUrl(url)) score += 100;
+    if (isImageUrl(url)) score -= 80;
+    if (isThumbnailUrl(url)) score -= 60;
+    if (!isVideoUrl(url) && !isImageUrl(url) && !isThumbnailUrl(url)) score += 20;
+    return score;
+  }
+
+  if (isImageUrl(url) && !isThumbnailUrl(url)) score += 100;
+  if (isVideoUrl(url)) score -= 80;
+  if (isThumbnailUrl(url)) score -= 40;
+  return score;
+}
+
 export function collectMediaUrls(payload: Record<string, unknown>): string[] {
   const urls = new Set<string>();
 
@@ -229,6 +262,30 @@ export function collectMediaUrls(payload: Record<string, unknown>): string[] {
 
   walk(payload);
   return [...urls];
+}
+
+export function pickPrimaryMediaUrl(
+  urls: string[],
+  mediaType: "image" | "video",
+): string {
+  if (!urls.length) return "";
+
+  const ranked = [...urls].sort(
+    (a, b) => scoreMediaUrl(b, mediaType) - scoreMediaUrl(a, mediaType),
+  );
+
+  const best = ranked[0];
+  if (!best) return "";
+
+  if (mediaType === "video" && scoreMediaUrl(best, mediaType) < 0) {
+    return "";
+  }
+
+  return best;
+}
+
+export function pickThumbnailUrl(urls: string[]): string | undefined {
+  return urls.find((url) => isThumbnailUrl(url) || isImageUrl(url));
 }
 
 export function getHistoryId(payload: Record<string, unknown>): string | undefined {
