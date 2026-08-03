@@ -9,6 +9,7 @@ import {
 import { getLiveCatalog } from "@/lib/openart-catalog-sync";
 import { VERONIX_CREDIT_MULTIPLIER } from "@/lib/credit-quote";
 import { isBytePlusConfigured } from "@/lib/byteplus-ark";
+import { isPixVerseConfigured, PIXVERSE_MODEL_ID } from "@/lib/pixverse";
 import { VERONIX_IMAGE_MODEL_ID } from "@/lib/byteplus-image";
 
 export const runtime = "nodejs";
@@ -24,7 +25,7 @@ function productCatalog(video: CatalogModel[], image: CatalogModel[]) {
         {
           ...veronixVideo,
           name: "VYRONIX",
-          available: true,
+          available: isBytePlusConfigured(),
           badge: "حصري",
           tagline: isBytePlusConfigured()
             ? "تم إنشاؤه بواسطة VYRONIX"
@@ -34,8 +35,23 @@ function productCatalog(video: CatalogModel[], image: CatalogModel[]) {
     : VIDEO_MODELS.filter((m) => m.id === VERONIX_MODEL_ID).map((m) => ({
         ...m,
         name: "VYRONIX",
-        available: true,
+        available: isBytePlusConfigured(),
       }));
+
+  if (isPixVerseConfigured()) {
+    const pixverse =
+      video.find((m) => m.id === PIXVERSE_MODEL_ID) ||
+      VIDEO_MODELS.find((m) => m.id === PIXVERSE_MODEL_ID);
+    if (pixverse) {
+      videoOut.push({
+        ...pixverse,
+        name: "PixVerse V6",
+        available: true,
+        badge: "تجربة",
+        tagline: "API مباشر من PixVerse — Text/Image to Video",
+      });
+    }
+  }
 
   const veronixImage =
     image.find((m) => m.id === VERONIX_IMAGE_MODEL_ID) ||
@@ -88,7 +104,12 @@ export async function GET(request: Request) {
       updatedAt: catalog.updatedAt,
       multiplier: VERONIX_CREDIT_MULTIPLIER,
       source: catalog.source,
-      provider: isBytePlusConfigured() ? "byteplus" : "unconfigured",
+      provider:
+        isBytePlusConfigured() || isPixVerseConfigured()
+          ? isPixVerseConfigured() && !isBytePlusConfigured()
+            ? "pixverse"
+            : "byteplus"
+          : "unconfigured",
       imageStudioEnabled: true,
     });
   } catch (error) {
@@ -101,7 +122,12 @@ export async function GET(request: Request) {
       synced: false,
       syncedNow: false,
       multiplier: VERONIX_CREDIT_MULTIPLIER,
-      provider: isBytePlusConfigured() ? "byteplus" : "unconfigured",
+      provider:
+        isBytePlusConfigured() || isPixVerseConfigured()
+          ? isPixVerseConfigured() && !isBytePlusConfigured()
+            ? "pixverse"
+            : "byteplus"
+          : "unconfigured",
       imageStudioEnabled: true,
       error: error instanceof Error ? error.message : "Catalog sync failed",
     });

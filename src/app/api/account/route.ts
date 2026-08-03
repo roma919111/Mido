@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { isBytePlusConfigured, getBytePlusBaseUrl } from "@/lib/byteplus-ark";
+import { isPixVerseConfigured } from "@/lib/pixverse";
 import { getCurrentUser } from "@/lib/customer-auth";
 
 export const runtime = "nodejs";
@@ -9,7 +10,9 @@ export const runtime = "nodejs";
  * Generation runs on BytePlus — no OpenArt account lookup.
  */
 export async function GET() {
-  const configured = isBytePlusConfigured();
+  const byteplus = isBytePlusConfigured();
+  const pixverse = isPixVerseConfigured();
+  const configured = byteplus || pixverse;
   const user = await getCurrentUser();
 
   return NextResponse.json({
@@ -19,17 +22,21 @@ export async function GET() {
     needsOwnerSetup: !configured,
     customerLoginRequired: false,
     billing: "customer_wallet",
-    provider: configured ? "byteplus" : "unconfigured",
+    provider: byteplus ? "byteplus" : pixverse ? "pixverse" : "unconfigured",
+    pixverseDirect: pixverse,
     mcpEndpoint: null,
     credits: user?.credits ?? 0,
     plan: user?.planId || "Free",
     email: user?.email || "VYRONIX.AI Studio",
-    arkBaseUrl: configured ? getBytePlusBaseUrl() : undefined,
+    arkBaseUrl: byteplus ? getBytePlusBaseUrl() : undefined,
     details: {
       plan: user?.planId || "Free",
       credits: user?.credits ?? 0,
-      provider: configured ? "byteplus" : "unconfigured",
+      provider: byteplus ? "byteplus" : pixverse ? "pixverse" : "unconfigured",
+      pixverseDirect: pixverse,
     },
-    raw: { status: configured ? "ok" : "byteplus_unconfigured" },
+    raw: {
+      status: configured ? "ok" : "unconfigured",
+    },
   });
 }

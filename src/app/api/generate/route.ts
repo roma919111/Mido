@@ -12,6 +12,16 @@ import {
   waitForBytePlusVideoTask,
 } from "@/lib/byteplus-ark";
 import {
+  createPixVerseVideoTask,
+  isPixVerseConfigured,
+  mapPixVerseStatus,
+  normalizePixVerseQuality,
+  PIXVERSE_MODEL_ID,
+  toPixVerseHistoryId,
+  uploadPixVerseImage,
+  waitForPixVerseVideoTask,
+} from "@/lib/pixverse";
+import {
   createBytePlusImage,
   resolveImageReference,
   VERONIX_IMAGE_MODEL_ID,
@@ -156,11 +166,29 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!isBytePlusConfigured()) {
+    if (
+      requestedMedia === "image" &&
+      !isBytePlusConfigured()
+    ) {
       return NextResponse.json(
         {
-          error: "توليد الوسائط عبر Veronix غير مُعدّ على السيرفر. راجع إعدادات المسؤول.",
+          error: "توليد الصور غير مُعدّ على السيرفر. راجع إعدادات المسؤول.",
           provider: "byteplus",
+          needsOwnerSetup: true,
+        },
+        { status: 503 },
+      );
+    }
+
+    if (
+      requestedMedia === "video" &&
+      !isBytePlusConfigured() &&
+      !isPixVerseConfigured()
+    ) {
+      return NextResponse.json(
+        {
+          error: "توليد الفيديو غير مُعدّ على السيرفر. راجع إعدادات المسؤول.",
+          provider: "unconfigured",
           needsOwnerSetup: true,
         },
         { status: 503 },
@@ -365,11 +393,37 @@ export async function POST(request: Request) {
 
     // ——— Video studio (VYRONIX / Seedance) ———
     const media = "video" as const;
-    // Product: Veronix video only (other models hidden).
-    if (!modelIds.every((id) => id === VERONIX_MODEL_ID)) {
+    const allowedVideoModels = [VERONIX_MODEL_ID];
+    if (isPixVerseConfigured()) allowedVideoModels.push(PIXVERSE_MODEL_ID);
+
+    if (!modelIds.every((id) => allowedVideoModels.includes(id))) {
       return NextResponse.json(
-        { error: "الموديل المتاح حالياً هو VYRONIX فقط." },
+        {
+          error: isPixVerseConfigured()
+            ? "الموديلات المتاحة: VYRONIX و PixVerse V6."
+            : "الموديل المتاح حالياً هو VYRONIX فقط.",
+        },
         { status: 422 },
+      );
+    }
+
+    if (
+      modelIds.includes(PIXVERSE_MODEL_ID) &&
+      !isPixVerseConfigured()
+    ) {
+      return NextResponse.json(
+        { error: "PixVerse غير مُعدّ على السيرفر (PIXVERSE_API_KEY)." },
+        { status: 503 },
+      );
+    }
+
+    if (
+      modelIds.includes(VERONIX_MODEL_ID) &&
+      !isBytePlusConfigured()
+    ) {
+      return NextResponse.json(
+        { error: "VYRONIX غير مُعدّ على السيرفر (BYTEPLUS_API_KEY)." },
+        { status: 503 },
       );
     }
 
@@ -508,6 +562,96 @@ export async function POST(request: Request) {
       });
 
       try {
+        if (quote.modelId === PIXVERSE_MODEL_ID) {
+          if (body.sequencePart) {
+            throw new Error("PixVerse لا يدعم لقطات Multi-shot حالياً.");
+          }
+
+          const pixQuality = normalizePixVerseQuality(
+            body.resolution || catalog?.resolutionDefault || "720p",
+          );
+          if (asset.resolution !== pixQuality) {
+            await updateAsset(asset.id, user.id, { resolution: pixQuality });
+          }
+
+          let imgId: number | undefined;
+          const startResolved = await ensureBytePlusRefUrl(body.startFrame);
+          if (mode === "image2video" || Boolean(body.startFrame?.url)) {
+            if (!body.startFrame?.url && !startResolved) {
+              throw new Error(
+                "ارفع Start Frame لتوليد فيديو PixVerse من صورة.",
+              );
+            }
+            imgId = await uploadPixVerseImage(body.startFrame, startResolved);
+          }
+
+          const created = await createPixVerseVideoTask({
+            prompt: cleanPrompt,
+            duration: modelDuration,
+            quality: pixQuality,
+            aspectRatio: body.aspectRatio,
+            generateAudio: Boolean(body.generateAudio),
+            imgId,
+          });
+
+          let historyId = toPixVerseHistoryId(created.videoId);
+          await updateAsset(asset.id, user.id, {
+            historyId,
+            url: "",
+            status: "running",
+            hidden: false,
+            referenceImages: savedRefs,
+          });
+
+          if (body.waitForResult !== true) {
+            results.push({
+              assetId: asset.id,
+              modelId: quote.modelId,
+              historyId,
+              status: "running",
+              urls: [] as string[],
+              creditsUsed: quote.totalCredits,
+              freeTrial: false,
+              live: true,
+              provider: "pixverse",
+              tool: "pixverse_video_generate",
+              quote,
+            });
+            continue;
+          }
+
+          const finished = await waitForPixVerseVideoTask(created.videoId, {
+            timeoutMs: 240_000,
+            intervalMs: 4_000,
+          });
+          const videoUrl = finished.url || "";
+          if (videoUrl) {
+            await updateAsset(asset.id, user.id, {
+              historyId,
+              url: videoUrl,
+              status: "completed",
+              error: undefined,
+            });
+            warmVideoPosterBackground({ url: videoUrl, historyId });
+            results.push({
+              assetId: asset.id,
+              modelId: quote.modelId,
+              historyId,
+              status: "completed",
+              urls: [videoUrl],
+              creditsUsed: quote.totalCredits,
+              freeTrial: false,
+              live: true,
+              provider: "pixverse",
+              tool: "pixverse_video_generate",
+              quote,
+            });
+            continue;
+          }
+
+          throw new Error("PixVerse completed without a video URL.");
+        }
+
         const refList = (
           Array.isArray(body.referenceImages) ? body.referenceImages : []
         ).filter((r): r is VisualReference => Boolean(r?.url));

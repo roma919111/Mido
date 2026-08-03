@@ -4,6 +4,12 @@ import {
   mapBytePlusStatus,
   parseBytePlusHistoryId,
 } from "@/lib/byteplus-ark";
+import {
+  getPixVerseVideoTask,
+  mapPixVerseStatus,
+  parsePixVerseHistoryId,
+  pixVerseFailureMessage,
+} from "@/lib/pixverse";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { findAssetByHistoryId, findAssetById, updateAsset } from "@/lib/db";
 import { ensureClarityUrl, shouldApplyClarityGrade } from "@/lib/ensure-clarity";
@@ -69,6 +75,65 @@ export async function GET(request: Request) {
 
   if (!historyId) {
     return NextResponse.json({ error: "historyId is required" }, { status: 400 });
+  }
+
+  const pixverseId = parsePixVerseHistoryId(historyId);
+  if (pixverseId) {
+    try {
+      const task = await getPixVerseVideoTask(pixverseId);
+      const status = mapPixVerseStatus(task.status);
+      const urls = task.url ? [task.url] : [];
+      const failureError = pixVerseFailureMessage(task.status);
+
+      const user = await getCurrentUser().catch(() => null);
+      let creditsRefunded = false;
+
+      if (user && (urls[0] || status === "FAILED")) {
+        const byHistory = await findAssetByHistoryId(user.id, historyId);
+        const targetId = assetId || byHistory?.id;
+        if (targetId) {
+          if (urls[0]) {
+            await updateAsset(targetId, user.id, {
+              historyId,
+              url: urls[0],
+              status: "completed",
+              error: undefined,
+            }).catch(() => null);
+            warmVideoPosterBackground({ url: urls[0], historyId });
+          } else if (status === "FAILED") {
+            const refund = await refundFailedAssetCredits({
+              userId: user.id,
+              assetId: targetId,
+              errorMessage: failureError,
+            });
+            creditsRefunded = true;
+          }
+        }
+      }
+
+      return NextResponse.json({
+        historyId,
+        status,
+        urls,
+        live: true,
+        provider: "pixverse",
+        pollAfterSeconds: status === "RUNNING" ? 4 : undefined,
+        error: status === "FAILED" ? failureError : undefined,
+        creditsRefunded: status === "FAILED" ? creditsRefunded : undefined,
+        note:
+          status === "FAILED" && creditsRefunded ? "تم استرجاع الكريديت" : undefined,
+      });
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error:
+            error instanceof Error ? error.message : "PixVerse status failed",
+          historyId,
+          provider: "pixverse",
+        },
+        { status: 502 },
+      );
+    }
   }
 
   const byteplusId = parseBytePlusHistoryId(historyId);
