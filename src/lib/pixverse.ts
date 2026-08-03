@@ -197,7 +197,7 @@ export async function uploadPixVerseImage(
           : "jpg";
     form.append(
       "image",
-      new Blob([data.bytes], { type: data.mime }),
+      new Blob([Uint8Array.from(data.bytes)], { type: data.mime }),
       `start.${ext}`,
     );
   }
