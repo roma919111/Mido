@@ -23,6 +23,7 @@ import {
 import { fetchJson } from "@/lib/fetch-json";
 import { useLocale } from "@/components/veronix/LocaleProvider";
 import { useCustomerUser } from "@/hooks/useCustomerUser";
+import { ModelPricingTable } from "@/components/veronix/ModelPricingTable";
 
 export function PricingPage() {
   const router = useRouter();
@@ -426,6 +427,8 @@ export function PricingPage() {
             </div>
           )}
         </section>
+
+        <ModelPricingTable />
       </main>
       <div className="pb-24">
         <SiteFooter />

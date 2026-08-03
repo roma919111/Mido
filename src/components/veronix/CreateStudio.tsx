@@ -2046,7 +2046,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         return;
       }
       if (res.status === 402 || data.needsPaywall) {
-        setError(data.error || "رصيدك غير كافٍ. أضف كريدت أو رقِّ الباقة.");
+        setError(
+          (data as { messageAr?: string }).messageAr ||
+            data.error ||
+            "رصيدك غير كافٍ. أضف كريدت أو رقِّ الباقة.",
+        );
         router.push("/pricing?paywall=1");
         return;
       }

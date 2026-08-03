@@ -22,8 +22,8 @@ import {
   isVeronixVideoModel,
   normalizeVideoResolution,
   quoteVeronixImageCredits,
-  quoteVeronixVideoCredits,
 } from "@/lib/byteplus-pricing";
+import { calculateVideoCredits } from "@/config/modelPricing";
 import {
   formatPixVersePricingNote,
   isPixVerseModel,
@@ -126,9 +126,11 @@ function quoteBytePlusResult(
         ? params.resolution
         : input.resolution,
     );
-    const totalCredits = quoteVeronixVideoCredits({
-      duration: input.duration,
-      resolution,
+    const totalCredits = calculateVideoCredits({
+      model: input.modelId,
+      quality: resolution,
+      hasAudio: input.generateAudio,
+      durationInSeconds: input.duration ?? 5,
       videoCount: input.videoCount ?? 1,
     });
     return {

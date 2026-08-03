@@ -42,6 +42,10 @@ import {
   setLiveCatalogCache,
 } from "@/lib/model-catalog";
 import { normalizeVideoResolution } from "@/lib/byteplus-pricing";
+import {
+  checkSufficientCredits,
+  INSUFFICIENT_CREDITS_ERROR,
+} from "@/lib/video-credits";
 
 const ALLOWED_VIDEO_RATIOS = new Set([
   "16:9",
@@ -239,25 +243,18 @@ export async function POST(request: Request) {
       const totalCredits = billedQuotes.reduce((s, q) => s + q.totalCredits, 0);
       const listPrice = quotes.reduce((s, q) => s + q.totalCredits, 0);
 
-      if (user.credits <= 0) {
+      const imageBalance = checkSufficientCredits(user.credits, totalCredits);
+      if (!imageBalance.ok) {
         return NextResponse.json(
           {
-            error: "رصيدك صفر. أضف كريدت أو رقِّ الباقة للمتابعة.",
+            error: INSUFFICIENT_CREDITS_ERROR,
+            messageAr:
+              user.credits <= 0
+                ? "رصيدك صفر. أضف كريدت أو رقِّ الباقة للمتابعة."
+                : "رصيدك غير كافٍ. أضف كريدت أو رقِّ الباقة للمتابعة.",
             needsPaywall: true,
-            credits: user.credits,
-            requiredCredits: listPrice,
-            quotes: billedQuotes,
-          },
-          { status: 402 },
-        );
-      }
-      if (user.credits < totalCredits) {
-        return NextResponse.json(
-          {
-            error: "رصيدك غير كافٍ. أضف كريدت أو رقِّ الباقة للمتابعة.",
-            needsPaywall: true,
-            credits: user.credits,
-            requiredCredits: totalCredits,
+            credits: imageBalance.balance,
+            requiredCredits: imageBalance.requiredCredits,
             quotes: billedQuotes,
           },
           { status: 402 },
@@ -446,30 +443,24 @@ export async function POST(request: Request) {
     const totalCredits = billedQuotes.reduce((s, q) => s + q.totalCredits, 0);
     const listPrice = quotes.reduce((s, q) => s + q.totalCredits, 0);
 
-    if (!freeTrial && user.credits <= 0) {
-      return NextResponse.json(
-        {
-          error: "رصيدك صفر. أضف كريدت أو رقِّ الباقة للمتابعة.",
-          needsPaywall: true,
-          credits: user.credits,
-          requiredCredits: listPrice,
-          quotes: billedQuotes,
-        },
-        { status: 402 },
-      );
-    }
-
-    if (!freeTrial && user.credits < totalCredits) {
-      return NextResponse.json(
-        {
-          error: "رصيدك غير كافٍ. أضف كريدت أو رقِّ الباقة للمتابعة.",
-          needsPaywall: true,
-          credits: user.credits,
-          requiredCredits: totalCredits,
-          quotes: billedQuotes,
-        },
-        { status: 402 },
-      );
+    if (!freeTrial) {
+      const videoBalance = checkSufficientCredits(user.credits, totalCredits);
+      if (!videoBalance.ok) {
+        return NextResponse.json(
+          {
+            error: INSUFFICIENT_CREDITS_ERROR,
+            messageAr:
+              user.credits <= 0
+                ? "رصيدك صفر. أضف كريدت أو رقِّ الباقة للمتابعة."
+                : "رصيدك غير كافٍ. أضف كريدت أو رقِّ الباقة للمتابعة.",
+            needsPaywall: true,
+            credits: videoBalance.balance,
+            requiredCredits: videoBalance.requiredCredits,
+            quotes: billedQuotes,
+          },
+          { status: 402 },
+        );
+      }
     }
 
     const unavailable = quotes.filter((q) => !q.available);
