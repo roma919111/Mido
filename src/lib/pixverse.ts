@@ -12,6 +12,9 @@ import {
   PIXVERSE_MODEL_ID as PIXVERSE_MODEL_ID_CONST,
   PIXVERSE_TASK_PREFIX as PIXVERSE_TASK_PREFIX_CONST,
 } from "@/lib/pixverse-constants";
+import { normalizePixVerseQuality } from "@/lib/pixverse-pricing";
+
+export { normalizePixVerseQuality };
 
 export const PIXVERSE_MODEL_ID = PIXVERSE_MODEL_ID_CONST;
 export const PIXVERSE_TASK_PREFIX = PIXVERSE_TASK_PREFIX_CONST;
@@ -106,8 +109,6 @@ async function pixverseRequest<T>(
 
   return assertOk(data, pathname);
 }
-
-export { normalizePixVerseQuality } from "@/lib/pixverse-pricing";
 
 const ALLOWED_RATIO = new Set([
   "16:9",
