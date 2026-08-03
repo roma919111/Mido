@@ -123,14 +123,18 @@ const ALLOWED_RATIO = new Set([
 
 export function normalizePixVerseRatio(raw?: string | null): string {
   const r = String(raw || "16:9").trim();
+  if (r === "auto") return "auto";
   return ALLOWED_RATIO.has(r) ? r : "16:9";
 }
 
-function mimeFromPath(filePath: string): string {
+function mimeFromMediaPath(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase();
   if (ext === ".png") return "image/png";
   if (ext === ".webp") return "image/webp";
-  return "image/jpeg";
+  if (ext === ".webm") return "video/webm";
+  if (ext === ".mov") return "video/quicktime";
+  if (ext === ".mp4") return "video/mp4";
+  return ext.startsWith(".") ? "application/octet-stream" : "image/jpeg";
 }
 
 async function readLocalGenerationBytes(
@@ -150,7 +154,68 @@ async function readLocalGenerationBytes(
   if (!filePath) return null;
   const bytes = await readFile(filePath);
   if (bytes.length < 32) return null;
-  return { bytes, mime: mimeFromPath(filePath) };
+  return { bytes, mime: mimeFromMediaPath(filePath) };
+}
+
+async function readRemoteMediaBytes(
+  url: string,
+): Promise<{ bytes: Buffer; mime: string } | null> {
+  try {
+    const res = await fetch(url, {
+      redirect: "follow",
+      headers: { Accept: "*/*", "User-Agent": "VyronixPixVerse/1.0" },
+    });
+    if (!res.ok) return null;
+    const bytes = Buffer.from(await res.arrayBuffer());
+    if (bytes.length < 32) return null;
+    const mime =
+      res.headers.get("content-type")?.split(";")[0]?.trim() ||
+      mimeFromMediaPath(url);
+    return { bytes, mime };
+  } catch {
+    return null;
+  }
+}
+
+async function resolveMediaBytes(
+  url: string,
+): Promise<{ bytes: Buffer; mime: string; filename: string }> {
+  const trimmed = url.trim();
+  if (!trimmed) throw new Error("Media URL is empty");
+
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    const remote = await readRemoteMediaBytes(trimmed);
+    if (!remote) throw new Error("تعذّر تحميل الملف المرجعي.");
+    const ext = remote.mime.includes("video")
+      ? remote.mime.includes("webm")
+        ? "webm"
+        : remote.mime.includes("quicktime")
+          ? "mov"
+          : "mp4"
+      : remote.mime.includes("png")
+        ? "png"
+        : remote.mime.includes("webp")
+          ? "webp"
+          : "jpg";
+    return { ...remote, filename: `ref.${ext}` };
+  }
+
+  const data = (await readDataUrlBytes(trimmed)) || (await readLocalGenerationBytes(trimmed));
+  if (!data) {
+    throw new Error("تعذّر تجهيز الملف المرجعي. جرّب الرفع من جديد.");
+  }
+  const ext = data.mime.includes("video")
+    ? data.mime.includes("webm")
+      ? "webm"
+      : data.mime.includes("quicktime")
+        ? "mov"
+        : "mp4"
+    : data.mime.includes("png")
+      ? "png"
+      : data.mime.includes("webp")
+        ? "webp"
+        : "jpg";
+  return { ...data, filename: `ref.${ext}` };
 }
 
 async function readDataUrlBytes(
@@ -216,6 +281,122 @@ export async function uploadPixVerseImage(
     throw new Error("PixVerse upload did not return img_id");
   }
   return imgId;
+}
+
+/** Upload reference video → media_id for Fusion (omni). */
+export async function uploadPixVerseVideo(
+  ref: VisualReference | null | undefined,
+  resolvedUrl?: string | null,
+): Promise<number> {
+  const url = resolvedUrl || ref?.url?.trim() || "";
+  if (!url) throw new Error("فيديو مرجعي مطلوب لـ PixVerse Fusion.");
+
+  const key = getPixVerseApiKey();
+  if (!key) throw new Error("PIXVERSE_API_KEY is not configured");
+
+  const media = await resolveMediaBytes(url);
+  if (!media.mime.startsWith("video/")) {
+    throw new Error("الملف المرجعي يجب أن يكون فيديو (MP4 / MOV / WebM).");
+  }
+
+  const headers = new Headers();
+  headers.set("API-KEY", key);
+  headers.set("Ai-trace-id", traceId());
+
+  const form = new FormData();
+  form.append(
+    "file",
+    new Blob([Uint8Array.from(media.bytes)], { type: media.mime }),
+    media.filename,
+  );
+
+  const res = await fetch(`${getPixVerseBaseUrl()}/openapi/v2/media/upload`, {
+    method: "POST",
+    headers,
+    body: form,
+  });
+
+  const text = await res.text();
+  const data = JSON.parse(text) as PixVerseEnvelope<{ media_id?: number }>;
+  const resp = assertOk(data, "media/upload");
+  const mediaId = Number(resp.media_id);
+  if (!Number.isFinite(mediaId) || mediaId <= 0) {
+    throw new Error("PixVerse video upload did not return media_id");
+  }
+  return mediaId;
+}
+
+export type PixVerseFusionImageRef = {
+  type: "subject" | "background";
+  img_id: number;
+  ref_name: string;
+};
+
+export type PixVerseFusionInput = {
+  prompt: string;
+  quality: string;
+  aspectRatio?: string;
+  generateAudio?: boolean;
+  /** Required for omni video-reference mode — duration must be 0. */
+  videoMediaIds?: number[];
+  imageReferences?: PixVerseFusionImageRef[];
+  duration?: number;
+};
+
+export async function createPixVerseFusionTask(
+  input: PixVerseFusionInput,
+): Promise<{ videoId: number }> {
+  const model = getPixVerseApiModel();
+  const quality = normalizePixVerseQuality(input.quality);
+  const prompt = input.prompt.trim().slice(0, 5000);
+  if (!prompt) throw new Error("prompt is required");
+
+  const videoIds = (input.videoMediaIds || []).filter(
+    (id) => Number.isFinite(id) && id > 0,
+  );
+  const imageRefs = (input.imageReferences || []).slice(0, 10);
+  const omniVideo = videoIds.length > 0;
+
+  if (omniVideo && videoIds.length > 2) {
+    throw new Error("PixVerse يدعم فيديوين مرجعيين كحد أقصى.");
+  }
+  if (!omniVideo && !imageRefs.length) {
+    throw new Error("Fusion requires at least one reference image or video.");
+  }
+
+  const duration = omniVideo
+    ? 0
+    : Math.min(15, Math.max(1, Math.round(input.duration ?? 5)));
+
+  const json: Record<string, unknown> = {
+    model,
+    prompt,
+    quality,
+    aspect_ratio: normalizePixVerseRatio(
+      omniVideo ? input.aspectRatio || "auto" : input.aspectRatio,
+    ),
+    duration,
+    generate_audio_switch: Boolean(input.generateAudio),
+    seed: 0,
+  };
+
+  if (omniVideo) {
+    json.reference_mode = "omni";
+    json.video_references = videoIds.map((media_id) => ({ media_id }));
+  }
+  if (imageRefs.length) {
+    json.image_references = imageRefs;
+  }
+
+  const resp = await pixverseRequest<{ video_id?: number }>(
+    "/openapi/v2/video/fusion/generate",
+    { method: "POST", json },
+  );
+  const videoId = Number(resp.video_id);
+  if (!Number.isFinite(videoId) || videoId <= 0) {
+    throw new Error("PixVerse fusion did not return video_id");
+  }
+  return { videoId };
 }
 
 export type PixVerseCreateInput = {

@@ -13,12 +13,15 @@ import {
 } from "@/lib/byteplus-ark";
 import {
   createPixVerseVideoTask,
+  createPixVerseFusionTask,
   isPixVerseConfigured,
   normalizePixVerseQuality,
   PIXVERSE_MODEL_ID,
   toPixVerseHistoryId,
   uploadPixVerseImage,
+  uploadPixVerseVideo,
   waitForPixVerseVideoTask,
+  type PixVerseFusionImageRef,
 } from "@/lib/pixverse";
 import {
   createBytePlusImage,
@@ -126,6 +129,7 @@ type GenBody = {
   startFrame?: import("@/lib/types").VisualReference | null;
   endFrame?: import("@/lib/types").VisualReference | null;
   referenceImages?: import("@/lib/types").VisualReference[];
+  referenceVideos?: import("@/lib/types").VisualReference[];
   waitForResult?: boolean;
   /** Intermediate multi-shot clip — hidden from Assets; final stitch is shown */
   sequencePart?: boolean;
@@ -535,25 +539,67 @@ export async function POST(request: Request) {
             await updateAsset(asset.id, user.id, { resolution: pixQuality });
           }
 
-          let imgId: number | undefined;
-          const startResolved = await ensureBytePlusRefUrl(body.startFrame);
-          if (mode === "image2video" || Boolean(body.startFrame?.url)) {
-            if (!body.startFrame?.url && !startResolved) {
-              throw new Error(
-                "ارفع Start Frame لتوليد فيديو PixVerse من صورة.",
-              );
-            }
-            imgId = await uploadPixVerseImage(body.startFrame, startResolved);
-          }
+          const videoRefList = (
+            Array.isArray(body.referenceVideos) ? body.referenceVideos : []
+          )
+            .filter((r): r is VisualReference => Boolean(r?.url))
+            .slice(0, 2);
+          const charRefList = (
+            Array.isArray(body.referenceImages) ? body.referenceImages : []
+          ).filter((r): r is VisualReference => Boolean(r?.url));
 
-          const created = await createPixVerseVideoTask({
-            prompt: cleanPrompt,
-            duration: modelDuration,
-            quality: pixQuality,
-            aspectRatio: body.aspectRatio,
-            generateAudio: Boolean(body.generateAudio),
-            imgId,
-          });
+          let created: { videoId: number };
+
+          if (videoRefList.length > 0) {
+            const mediaIds: number[] = [];
+            for (const vref of videoRefList) {
+              const resolved = await ensureBytePlusRefUrl(vref);
+              mediaIds.push(await uploadPixVerseVideo(vref, resolved));
+            }
+
+            const fusionImages: PixVerseFusionImageRef[] = [];
+            for (let i = 0; i < Math.min(charRefList.length, 10); i++) {
+              const r = charRefList[i]!;
+              const resolved = await ensureBytePlusRefUrl(r);
+              const imgId = await uploadPixVerseImage(r, resolved);
+              const rawName =
+                r.label?.trim().replace(/^@+/, "") || `ref${i + 1}`;
+              fusionImages.push({
+                type: "subject",
+                img_id: imgId,
+                ref_name: rawName.slice(0, 24),
+              });
+            }
+
+            created = await createPixVerseFusionTask({
+              prompt: cleanPrompt,
+              quality: pixQuality,
+              aspectRatio: body.aspectRatio || "auto",
+              generateAudio: Boolean(body.generateAudio),
+              videoMediaIds: mediaIds,
+              imageReferences: fusionImages.length ? fusionImages : undefined,
+            });
+          } else {
+            let imgId: number | undefined;
+            const startResolved = await ensureBytePlusRefUrl(body.startFrame);
+            if (mode === "image2video" || Boolean(body.startFrame?.url)) {
+              if (!body.startFrame?.url && !startResolved) {
+                throw new Error(
+                  "ارفع Start Frame لتوليد فيديو PixVerse من صورة.",
+                );
+              }
+              imgId = await uploadPixVerseImage(body.startFrame, startResolved);
+            }
+
+            created = await createPixVerseVideoTask({
+              prompt: cleanPrompt,
+              duration: modelDuration,
+              quality: pixQuality,
+              aspectRatio: body.aspectRatio,
+              generateAudio: Boolean(body.generateAudio),
+              imgId,
+            });
+          }
 
           let historyId = toPixVerseHistoryId(created.videoId);
           await updateAsset(asset.id, user.id, {

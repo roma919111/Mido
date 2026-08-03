@@ -7,7 +7,7 @@ export type VideoQuality = "standard" | "pro";
 export type MediaType = "image" | "video";
 
 export interface VisualReference {
-  type: "image";
+  type: "image" | "video";
   id: string;
   url: string;
   label: string;

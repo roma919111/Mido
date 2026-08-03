@@ -11,6 +11,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Clapperboard,
   Camera,
   ChevronDown,
   ImagePlus,
@@ -60,6 +61,7 @@ import {
   formatStudioCountdownLabel,
 } from "@/lib/generate-eta";
 import { veronixRefImageSrc } from "@/lib/media-proxy";
+import { PIXVERSE_MODEL_ID } from "@/lib/pixverse";
 import {
   clearEditDraft,
   clampEditDuration,
@@ -169,6 +171,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const [endFrame, setEndFrame] = useState<VisualReference | null>(null);
   const [startPreview, setStartPreview] = useState<string | null>(null);
   const [endPreview, setEndPreview] = useState<string | null>(null);
+  /** PixVerse Fusion — up to 2 reference videos (omni). */
+  const [refVideos, setRefVideos] = useState<VisualReference[]>([]);
+  const [refVideoPreviews, setRefVideoPreviews] = useState<string[]>([]);
   const [generating, setGenerating] = useState(false);
   /** Brief flash so a second Generate tap feels pressed. */
   const [genFlash, setGenFlash] = useState(false);
@@ -306,6 +311,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     [imageModels, videoModels],
   );
   const selectedModel = allModels.find((m) => m.id === selectedModelId) ?? null;
+  const pixverseFusionOn =
+    media === "video" &&
+    selectedModelId === PIXVERSE_MODEL_ID &&
+    refVideos.length > 0;
+  const videoAspectOptions =
+    selectedModelId === PIXVERSE_MODEL_ID
+      ? (["auto", ...VIDEO_ASPECTS] as const)
+      : VIDEO_ASPECTS;
   const durationBounds = durationBoundsForModel(selectedModel);
   const formOptions = formOptionsForModel(selectedModel);
   /** Paid Veronix: 480p / 720p only. */
@@ -904,6 +917,66 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       // keep local
     }
     return localRef;
+  }
+
+  async function uploadVideoFile(file: File): Promise<VisualReference> {
+    const localId = `local-vref-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const preview = URL.createObjectURL(file);
+    const localRef: VisualReference = {
+      type: "video",
+      id: localId,
+      url: preview,
+      label: file.name || "video-ref",
+    };
+
+    const form = new FormData();
+    form.append("file", file);
+    form.append("purpose", "create-video");
+    form.append("label", file.name || "video-ref");
+
+    try {
+      const { res, data } = await fetchJson<{
+        error?: string;
+        visualReference?: VisualReference;
+      }>("/api/upload", { method: "POST", body: form });
+      if (res.ok && data.visualReference?.url) {
+        URL.revokeObjectURL(preview);
+        return { ...data.visualReference, type: "video" };
+      }
+      if (data.error) throw new Error(data.error);
+    } catch (err) {
+      URL.revokeObjectURL(preview);
+      throw err instanceof Error ? err : new Error("فشل رفع الفيديو");
+    }
+    return localRef;
+  }
+
+  async function handleAddRefVideo(
+    file: File | undefined,
+    inputEl?: HTMLInputElement | null,
+  ) {
+    if (!file) return;
+    if (inputEl) inputEl.value = "";
+    if (refVideos.length >= 2) {
+      setStatus("يمكنك رفع فيديوين مرجعيين كحد أقصى");
+      return;
+    }
+    setError(null);
+    const preview = URL.createObjectURL(file);
+    setRefVideoPreviews((p) => [...p, preview]);
+    try {
+      setStatus("جاري رفع الفيديو المرجعي…");
+      const ref = await uploadVideoFile(file);
+      setRefVideos((v) => [...v, ref].slice(0, 2));
+      setStatus("تم رفع الفيديو المرجعي");
+    } catch (err) {
+      setRefVideoPreviews((p) => {
+        URL.revokeObjectURL(preview);
+        return p.filter((x) => x !== preview);
+      });
+      setError(err instanceof Error ? err.message : "فشل رفع الفيديو");
+      setStatus(null);
+    }
   }
 
   async function handleAddRefs(
@@ -1614,6 +1687,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     /** Hide intermediate multi-shot clips from Assets */
     sequencePart?: boolean;
     referenceImages?: VisualReference[];
+    referenceVideos?: VisualReference[];
     count?: number;
   }) {
     const { res, data } = await fetchJson<{
@@ -1651,6 +1725,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         startFrame: input.startFrame ?? null,
         endFrame: input.endFrame ?? null,
         referenceImages: input.referenceImages ?? refs,
+        referenceVideos:
+          selectedModelId === PIXVERSE_MODEL_ID ? refVideos : undefined,
         waitForResult: false,
         sequencePart: Boolean(input.sequencePart),
         count: Math.min(4, Math.max(1, Math.floor(input.count || 1))),
@@ -2397,6 +2473,68 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         </div>
       )}
 
+      {media === "video" && selectedModelId === PIXVERSE_MODEL_ID && (
+        <div className="rounded-2xl border border-dashed border-[#7c5cff]/25 bg-[#141821] p-3 sm:p-4">
+          <p className="mb-1 text-sm font-medium text-white/85">
+            فيديو مرجعي{" "}
+            <span className="font-normal text-white/45">(Fusion · اختياري)</span>
+          </p>
+          <p className="mb-2.5 text-[11px] leading-relaxed text-white/40">
+            حتى فيديوين · مجموع 15 ثانية كحد أقصى · المدة تُستمد تلقائياً من أطول
+            فيديو مرجعي (PixVerse Omni).
+          </p>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {refVideoPreviews.map((src, i) => (
+              <div
+                key={refVideos[i]?.id || `vref-${i}`}
+                className="w-[10rem] shrink-0 space-y-1.5 rounded-2xl border border-white/10 bg-black/25 p-1.5 sm:w-[11rem]"
+              >
+                <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-[#1a1f2a]">
+                  <video
+                    src={src}
+                    className="h-full w-full object-cover"
+                    muted
+                    playsInline
+                    preload="metadata"
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-1 top-1 rounded-full bg-black/70 p-0.5"
+                    onClick={() => {
+                      setRefVideos((v) => v.filter((_, idx) => idx !== i));
+                      setRefVideoPreviews((p) => {
+                        const doomed = p[i];
+                        if (doomed?.startsWith("blob:")) URL.revokeObjectURL(doomed);
+                        return p.filter((_, idx) => idx !== i);
+                      });
+                    }}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+                <p className="truncate text-center text-[10px] text-white/50">
+                  {refVideos[i]?.label || `فيديو ${i + 1}`}
+                </p>
+              </div>
+            ))}
+            {refVideos.length < 2 && (
+              <label className="flex aspect-video w-[10rem] shrink-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border border-dashed border-[#7c5cff]/35 text-white/60 sm:w-[11rem]">
+                <Clapperboard className="h-5 w-5 text-[#b9a6ff]" />
+                <span className="text-[10px]">رفع فيديو</span>
+                <input
+                  type="file"
+                  accept="video/mp4,video/webm,video/quicktime,.mp4,.mov,.webm"
+                  className="hidden"
+                  onChange={(e) =>
+                    void handleAddRefVideo(e.target.files?.[0], e.target)
+                  }
+                />
+              </label>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="rounded-2xl border border-white/10 bg-[#141821] p-3">
         {linkedCharacters.length > 0 ? (
           <div className="mb-2 flex flex-wrap items-center gap-1.5" dir="rtl">
@@ -2475,18 +2613,20 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             <select
               value={
                 media === "video"
-                  ? (VIDEO_ASPECTS as readonly string[]).includes(aspectRatio)
+                  ? (videoAspectOptions as readonly string[]).includes(aspectRatio)
                     ? aspectRatio
-                    : "16:9"
+                    : selectedModelId === PIXVERSE_MODEL_ID
+                      ? "auto"
+                      : "16:9"
                   : aspectRatio
               }
               onChange={(e) => setAspectRatio(e.target.value)}
               disabled={freeSettingsLocked}
               className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white disabled:opacity-60"
             >
-              {(media === "video" ? VIDEO_ASPECTS : IMAGE_ASPECTS).map((a) => (
+              {(media === "video" ? videoAspectOptions : IMAGE_ASPECTS).map((a) => (
                 <option key={a} value={a}>
-                  {a}
+                  {a === "auto" ? "auto · تلقائي" : a}
                 </option>
               ))}
             </select>
@@ -2526,11 +2666,22 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
         {media === "video" && (
           <div className="mt-4 space-y-2">
+            {pixverseFusionOn ? (
+              <p className="text-xs text-[#b9a6ff]">
+                Fusion: المدة تلقائية من الفيديو المرجعي (PixVerse Omni).
+              </p>
+            ) : null}
             <div className="flex items-center justify-between text-sm">
               <span className="text-white/70">{t.create.duration}</span>
               <span className="font-semibold tabular-nums text-[#22f0ff]">
-                {Math.min(sliderMax, Math.max(sliderMin, duration))}ث
-                {freeSettingsLocked ? " · مجاني أول مرة" : ` · −${creditCost.toLocaleString("en-US")} كريدت`}
+                {pixverseFusionOn
+                  ? "auto"
+                  : `${Math.min(sliderMax, Math.max(sliderMin, duration))}ث`}
+                {!pixverseFusionOn && freeSettingsLocked
+                  ? " · مجاني أول مرة"
+                  : !pixverseFusionOn
+                    ? ` · −${creditCost.toLocaleString("en-US")} كريدت`
+                    : ""}
               </span>
             </div>
             <input
@@ -2539,7 +2690,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               max={sliderMax}
               step={1}
               value={Math.min(sliderMax, Math.max(sliderMin, duration))}
-              disabled={freeSettingsLocked}
+              disabled={freeSettingsLocked || pixverseFusionOn}
               onChange={(e) => {
                 const raw = Math.round(Number(e.target.value));
                 setDuration(

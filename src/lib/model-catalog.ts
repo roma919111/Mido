@@ -278,7 +278,7 @@ const VIDEO_MODELS_BASE: CatalogModel[] = [
   { id: "seedance-2-fast", name: "Seedance 2.0 Fast", kind: "video", mcpId: "byte-plus-seedance-2-fast", modes: ["text2video", "image2video", "element2video"], available: true },
   { id: "gemini-omni-flash", name: "Gemini Omni Flash", kind: "video", mcpId: "gemini-omni-flash", modes: ["text2video", "image2video", "element2video"], available: true },
   { id: "kling-3-omni", name: "Kling 3.0 Omni", kind: "video", mcpId: "kling-3-omni", modes: ["text2video", "image2video", "element2video"], available: true },
-  { id: "pixverse-v6", name: "PixVerse V6", kind: "video", mcpId: "pixverseV6", modes: ["text2video", "image2video"], available: true },
+  { id: "pixverse-v6", name: "PixVerse V6", kind: "video", mcpId: "pixverseV6", modes: ["text2video", "image2video", "fusion"], available: true },
   { id: "wan-2-7", name: "Wan 2.7", kind: "video", mcpId: "wan2-7", modes: ["text2video", "image2video", "element2video"], available: true },
   { id: "grok-imagine", name: "Grok Imagine", kind: "video", mcpId: "grok-imagine-1-5", modes: ["image2video"], available: true },
   { id: "pixverse-c1", name: "PixVerse C1", kind: "video", available: false },
