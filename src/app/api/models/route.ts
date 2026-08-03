@@ -3,7 +3,6 @@ import { VERONIX_MODEL_ID } from "@/lib/free-trial";
 import {
   IMAGE_MODELS,
   VIDEO_MODELS,
-  mergeLiveIntoFullCatalog,
   setLiveCatalogCache,
   type CatalogModel,
 } from "@/lib/model-catalog";
@@ -16,33 +15,43 @@ import { VERONIX_IMAGE_MODEL_ID } from "@/lib/byteplus-image";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-/** Studio catalog: full model list in UI; only VYRONIX + PixVerse generate live. */
+/** Live providers only — UI keeps the full static catalog and merges these patches. */
 function productCatalog(video: CatalogModel[], image: CatalogModel[]) {
-  const merged = mergeLiveIntoFullCatalog({ image, video });
-
-  const videoOut = merged.video.map((m) => {
-    if (m.id === VERONIX_MODEL_ID) {
-      return {
+  const veronixVideo =
+    video.find((m) => m.id === VERONIX_MODEL_ID) ||
+    VIDEO_MODELS.find((m) => m.id === VERONIX_MODEL_ID);
+  const videoOut: CatalogModel[] = veronixVideo
+    ? [
+        {
+          ...veronixVideo,
+          name: "VYRONIX",
+          available: isBytePlusConfigured(),
+          badge: "حصري",
+          tagline: isBytePlusConfigured()
+            ? "تم إنشاؤه بواسطة VYRONIX"
+            : veronixVideo.tagline,
+        },
+      ]
+    : VIDEO_MODELS.filter((m) => m.id === VERONIX_MODEL_ID).map((m) => ({
         ...m,
         name: "VYRONIX",
         available: isBytePlusConfigured(),
-        badge: "حصري",
-        tagline: isBytePlusConfigured()
-          ? "تم إنشاؤه بواسطة VYRONIX"
-          : m.tagline,
-      };
-    }
-    if (m.id === PIXVERSE_MODEL_ID && isPixVerseConfigured()) {
-      return {
-        ...m,
+      }));
+
+  if (isPixVerseConfigured()) {
+    const pixverse =
+      video.find((m) => m.id === PIXVERSE_MODEL_ID) ||
+      VIDEO_MODELS.find((m) => m.id === PIXVERSE_MODEL_ID);
+    if (pixverse) {
+      videoOut.push({
+        ...pixverse,
         name: "PixVerse V6",
         available: true,
         badge: "تجربة",
         tagline: "API مباشر من PixVerse — Text/Image to Video",
-      };
+      });
     }
-    return { ...m, available: false };
-  });
+  }
 
   const veronixImage =
     image.find((m) => m.id === VERONIX_IMAGE_MODEL_ID) ||
@@ -97,10 +106,9 @@ export async function GET(request: Request) {
       source: catalog.source,
       provider:
         isBytePlusConfigured() || isPixVerseConfigured()
-          ? isPixVerseConfigured() && !isBytePlusConfigured()
-            ? "pixverse"
-            : "byteplus"
+          ? "byteplus"
           : "unconfigured",
+      pixverseDirect: isPixVerseConfigured(),
       imageStudioEnabled: true,
     });
   } catch (error) {
@@ -115,10 +123,9 @@ export async function GET(request: Request) {
       multiplier: VERONIX_CREDIT_MULTIPLIER,
       provider:
         isBytePlusConfigured() || isPixVerseConfigured()
-          ? isPixVerseConfigured() && !isBytePlusConfigured()
-            ? "pixverse"
-            : "byteplus"
+          ? "byteplus"
           : "unconfigured",
+      pixverseDirect: isPixVerseConfigured(),
       imageStudioEnabled: true,
       error: error instanceof Error ? error.message : "Catalog sync failed",
     });
