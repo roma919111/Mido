@@ -2311,7 +2311,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/70"
           >
             <Camera className="h-3.5 w-3.5" />
-            Camera
+            {t.create.camera}
           </button>
           <button
             type="button"
@@ -2440,8 +2440,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       {media === "video" && (
         <div className="grid grid-cols-2 gap-3">
           {[
-            { label: "Start Frame", preview: startPreview, which: "start" as const },
-            { label: "End Frame", preview: endPreview, which: "end" as const },
+            { label: t.create.startFrame, preview: startPreview, which: "start" as const },
+            { label: t.create.endFrame, preview: endPreview, which: "end" as const },
           ].map((slot) => (
             <label
               key={slot.label}
@@ -2468,7 +2468,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       )}
 
       <div className="rounded-2xl border border-white/10 bg-[#141821] p-3 sm:p-4">
-        <p className="mb-2.5 text-sm font-semibold text-white">Output</p>
+        <p className="mb-2.5 text-sm font-semibold text-white">{t.create.output}</p>
         <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
           <label className="space-y-1 text-xs text-white/50">
               {t.create.aspect}

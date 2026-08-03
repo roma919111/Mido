@@ -166,6 +166,10 @@ export type Dictionary = {
     outputCount: string;
     native720Note: string;
     clarityUpgrade: string;
+    camera: string;
+    output: string;
+    startFrame: string;
+    endFrame: string;
     resultPreview: string;
     resultVideos: string;
     resultImages: string;
@@ -395,6 +399,10 @@ export const ar: Dictionary = {
     outputCount: "عدد الفيديوهات",
     native720Note: "720p أصلي — لا حاجة لترقية وضوح إضافية",
     clarityUpgrade: "ترقية وضوح 480→720",
+    camera: "كاميرا",
+    output: "المخرجات",
+    startFrame: "إطار البداية",
+    endFrame: "إطار النهاية",
     resultPreview: "معاينة النتيجة",
     resultVideos: "فيديو",
     resultImages: "صور",
@@ -624,6 +632,10 @@ export const en: Dictionary = {
     outputCount: "Video count",
     native720Note: "Native 720p — no extra clarity upgrade needed",
     clarityUpgrade: "Clarity upgrade 480→720",
+    camera: "Camera",
+    output: "Output",
+    startFrame: "Start Frame",
+    endFrame: "End Frame",
     resultPreview: "Result preview",
     resultVideos: "Video",
     resultImages: "Images",
