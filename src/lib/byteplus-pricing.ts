@@ -66,7 +66,7 @@ export function usdToVeronixCredits(sellUsd: number): number {
   return Math.max(1, Math.round(sellUsd / VERONIX_CREDIT_USD));
 }
 
-/** Wallet debit for one Veronix video (4–15s, 480p/720p). */
+/** Wallet debit for one Veronix video (4–15s, 480p/720p). Uses $0.001/credit standard. */
 export function quoteVeronixVideoCredits(input: {
   duration?: number | null;
   resolution?: string | null;
@@ -77,14 +77,16 @@ export function quoteVeronixVideoCredits(input: {
     input.resolution,
     input.videoCount ?? 1,
   );
-  return usdToVeronixCredits(withProfitMarkup(bytePlusCostUsd(tokens)));
+  const sellUsd = withProfitMarkup(bytePlusCostUsd(tokens));
+  return Math.max(1, Math.ceil(sellUsd / 0.001));
 }
 
-/** Wallet debit for Veronix images ($0.04 cost × 1.55). */
+/** Wallet debit for Veronix images ($0.04 cost × 1.55). Uses $0.001/credit standard. */
 export function quoteVeronixImageCredits(imageCount = 1): number {
   const count = Math.max(1, Math.round(imageCount) || 1);
-  return usdToVeronixCredits(
-    withProfitMarkup(BYTEPLUS_IMAGE_COST_USD * count),
+  return Math.max(
+    1,
+    Math.ceil(withProfitMarkup(BYTEPLUS_IMAGE_COST_USD * count) / 0.001),
   );
 }
 

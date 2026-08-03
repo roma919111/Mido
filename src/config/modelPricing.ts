@@ -9,8 +9,10 @@
 import { PIXVERSE_MODEL_ID } from "@/lib/pixverse-constants";
 import { VERONIX_MODEL_ID } from "@/lib/free-trial";
 import {
-  quoteVeronixVideoCredits,
+  bytePlusCostUsd,
+  estimateBytePlusTokens,
   normalizeVideoResolution,
+  withProfitMarkup,
 } from "@/lib/byteplus-pricing";
 
 /** $1 USD → 1,000 wallet credits. */
@@ -43,14 +45,14 @@ export type VideoModelPricingConfig = {
    * Added on top of the clarity + audio tier when reference videos are attached.
    */
   videoReferenceExtraPerSecond?: Partial<Record<VideoQuality, number>>;
-  /** When true, debit uses BytePlus token math instead of the static table. */
-  dynamicBytePlus?: boolean;
 };
 
-/** Veronix (Seedance) — derive per-second debit from BytePlus token economics. */
+/** Veronix (Seedance) — BytePlus cost × 1.55 → wallet credits at {@link CREDIT_USD}. */
 function veronixCreditsPerSecond(resolution: "480p" | "720p"): number {
   const durationSec = 5;
-  const total = quoteVeronixVideoCredits({ duration: durationSec, resolution });
+  const tokens = estimateBytePlusTokens(durationSec, resolution);
+  const sellUsd = withProfitMarkup(bytePlusCostUsd(tokens));
+  const total = Math.max(1, Math.ceil(sellUsd / CREDIT_USD));
   return Math.max(1, Math.ceil(total / durationSec));
 }
 
@@ -85,7 +87,6 @@ export const VIDEO_MODEL_PRICING: Record<string, VideoModelPricingConfig> = {
       "480p": { noAudio: VERONIX_480_PER_SEC, withAudio: VERONIX_480_PER_SEC },
       "720p": { noAudio: VERONIX_720_PER_SEC, withAudio: VERONIX_720_PER_SEC },
     },
-    dynamicBytePlus: true,
   },
 };
 
@@ -143,11 +144,6 @@ export function getVideoCreditsPerSecond(input: {
   const modelKey = normalizeModelPricingId(input.model);
   const pricing = getModelPricing(modelKey);
   const quality = normalizePricingQuality(input.quality, modelKey);
-
-  if (pricing?.dynamicBytePlus && (modelKey === VERONIX_MODEL_ID || modelKey === "seedance-2-mini")) {
-    const res = quality === "480p" ? "480p" : "720p";
-    return veronixCreditsPerSecond(res);
-  }
 
   if (!pricing) return 0;
 

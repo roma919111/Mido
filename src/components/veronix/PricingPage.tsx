@@ -407,7 +407,7 @@ export function PricingPage() {
               <div className="rounded-3xl border border-dashed border-white/15 bg-white/[0.03] px-5 py-8 text-center">
                 <p className="font-display text-lg font-semibold">الشحن مقفل على الباقة الأساسية</p>
                 <p className="mx-auto mt-2 max-w-md text-sm text-white/50">
-                  اختر باقة برو (150,000 كريدت / $10) أو الترا (260,000 كريدت / $15)
+                  اختر باقة برو ({SUBSCRIPTION_PLANS.find((p) => p.id === "mini")?.monthlyCredits.toLocaleString("en-US")} كريدت / $10) أو الترا ({SUBSCRIPTION_PLANS.find((p) => p.id === "pro")?.monthlyCredits.toLocaleString("en-US")} كريدت / $15)
                   لتفعيل الشحن $4 / $8 / $14.
                 </p>
                 <div className="mt-5 flex flex-wrap justify-center gap-3">

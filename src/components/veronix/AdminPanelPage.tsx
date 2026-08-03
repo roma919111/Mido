@@ -323,7 +323,7 @@ export function AdminPanelPage() {
                 <div>
                   <p className="mb-2 text-xs text-white/50">كريدت سريع</p>
                   <div className="flex flex-wrap gap-2">
-                    {[10_000, 50_000, 150_000, 260_000].map((n) => (
+                    {[1_000, 4_000, 10_000, 15_000].map((n) => (
                       <button
                         key={n}
                         type="button"

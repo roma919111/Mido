@@ -12,7 +12,7 @@ import { PIXVERSE_MODEL_ID } from "@/lib/pixverse-constants";
 const PIXVERSE_QUALITIES: VideoQuality[] = ["360p", "540p", "720p", "1080p"];
 
 export function ModelPricingTable() {
-  const models = listVideoModelPricing().filter((m) => !m.dynamicBytePlus);
+  const models = listVideoModelPricing();
 
   return (
     <section className="mt-12">

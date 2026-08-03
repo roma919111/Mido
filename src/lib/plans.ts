@@ -2,6 +2,12 @@ import {
   quoteVeronixImageCredits,
   quoteVeronixVideoCredits,
 } from "@/lib/byteplus-pricing";
+import { CREDITS_PER_USD } from "@/config/modelPricing";
+
+/** Wallet credits granted for a USD price ($1 = 1,000 credits). */
+function creditsForUsd(priceUsd: number): number {
+  return Math.round(priceUsd * CREDITS_PER_USD);
+}
 
 export type PlanId = "free" | "mini" | "pro";
 
@@ -44,7 +50,7 @@ function yieldFeatures(credits: number): string[] {
 }
 
 /**
- * Credits sized so balances feel large (1 credit ≈ $0.0001 sell).
+ * Plan credits follow wallet standard: $1 = 1,000 credits (1 credit = $0.001).
  * Feature counts assume 4s · 480p video and images at +55% markup.
  */
 export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
@@ -60,17 +66,17 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     id: "mini",
     name: "برو",
     priceUsd: 10,
-    monthlyCredits: 150_000,
+    monthlyCredits: creditsForUsd(10),
     description: "باقة شهرية مناسبة للإنتاج المنتظم — وضوح 480p و720p.",
-    features: yieldFeatures(150_000),
+    features: yieldFeatures(creditsForUsd(10)),
   },
   {
     id: "pro",
     name: "الترا",
     priceUsd: 15,
-    monthlyCredits: 260_000,
+    monthlyCredits: creditsForUsd(15),
     description: "أعلى باقة لصنّاع المحتوى بكثافة عالية — وضوح 480p و720p.",
-    features: yieldFeatures(260_000),
+    features: yieldFeatures(creditsForUsd(15)),
     highlight: true,
   },
 ];
@@ -81,25 +87,25 @@ export const TOPUP_PACKS: TopUpPack[] = [
     id: "topup-4",
     name: "شحن $4",
     priceUsd: 4,
-    credits: 35_000,
+    credits: creditsForUsd(4),
     description: "دفعة سريعة لجلسة توليد قصيرة.",
-    features: yieldFeatures(35_000),
+    features: yieldFeatures(creditsForUsd(4)),
   },
   {
     id: "topup-8",
     name: "شحن $8",
     priceUsd: 8,
-    credits: 75_000,
+    credits: creditsForUsd(8),
     description: "الأكثر توازناً لصنّاع المحتوى الأسبوعي.",
-    features: yieldFeatures(75_000),
+    features: yieldFeatures(creditsForUsd(8)),
   },
   {
     id: "topup-14",
     name: "شحن $14",
     priceUsd: 14,
-    credits: 140_000,
+    credits: creditsForUsd(14),
     description: "رصيد كبير للإنتاج المتواصل دون انقطاع.",
-    features: yieldFeatures(140_000),
+    features: yieldFeatures(creditsForUsd(14)),
   },
 ];
 
