@@ -61,7 +61,7 @@ import {
   formatStudioCountdownLabel,
 } from "@/lib/generate-eta";
 import { veronixRefImageSrc } from "@/lib/media-proxy";
-import { PIXVERSE_MODEL_ID } from "@/lib/pixverse";
+import { PIXVERSE_MODEL_ID } from "@/lib/pixverse-constants";
 import {
   clearEditDraft,
   clampEditDuration,

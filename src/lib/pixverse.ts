@@ -8,9 +8,13 @@ import type { VisualReference } from "@/lib/types";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import {
+  PIXVERSE_MODEL_ID as PIXVERSE_MODEL_ID_CONST,
+  PIXVERSE_TASK_PREFIX as PIXVERSE_TASK_PREFIX_CONST,
+} from "@/lib/pixverse-constants";
 
-export const PIXVERSE_MODEL_ID = "pixverse-v6";
-export const PIXVERSE_TASK_PREFIX = "pv:";
+export const PIXVERSE_MODEL_ID = PIXVERSE_MODEL_ID_CONST;
+export const PIXVERSE_TASK_PREFIX = PIXVERSE_TASK_PREFIX_CONST;
 
 const DEFAULT_BASE = "https://app-api.pixverse.ai";
 const DEFAULT_MODEL = "v6";
