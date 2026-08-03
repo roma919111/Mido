@@ -166,10 +166,11 @@ export async function POST(request: Request) {
       );
     }
 
-    if (
-      requestedMedia === "image" &&
-      !isBytePlusConfigured()
-    ) {
+    const body = (await request.json()) as GenBody;
+    const prompt = body.prompt?.trim();
+    const requestedMedia = body.media ?? "video";
+
+    if (requestedMedia === "image" && !isBytePlusConfigured()) {
       return NextResponse.json(
         {
           error: "توليد الصور غير مُعدّ على السيرفر. راجع إعدادات المسؤول.",
@@ -195,9 +196,6 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = (await request.json()) as GenBody;
-    const prompt = body.prompt?.trim();
-    const requestedMedia = body.media ?? "video";
     const modelIds = [...new Set(body.modelIds?.filter(Boolean) ?? [])].slice(0, 4);
     const variantCount = Math.min(
       4,
