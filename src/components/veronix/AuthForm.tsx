@@ -10,9 +10,11 @@ import { fetchJson } from "@/lib/fetch-json";
 
 interface AuthFormProps {
   mode: "login" | "signup";
+  /** Hide top logo row when AppHeader is already shown. */
+  embedded?: boolean;
 }
 
-export function AuthForm({ mode }: AuthFormProps) {
+export function AuthForm({ mode, embedded = false }: AuthFormProps) {
   const router = useRouter();
   const params = useSearchParams();
   const { t, dir } = useLocale();
@@ -74,13 +76,17 @@ export function AuthForm({ mode }: AuthFormProps) {
 
   return (
     <div
-      className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4 py-10"
+      className="mx-auto flex max-w-md flex-col justify-center px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-6"
       dir={dir}
     >
       <div className="flex items-center justify-between gap-3">
-        <Link href="/" className="w-fit">
-          <BrandLogo size="lg" />
-        </Link>
+        {!embedded ? (
+          <Link href="/" className="w-fit">
+            <BrandLogo size="lg" />
+          </Link>
+        ) : (
+          <span />
+        )}
         <LanguageSwitcher compact />
       </div>
 

@@ -22,12 +22,13 @@ import {
 } from "@/lib/plans";
 import { fetchJson } from "@/lib/fetch-json";
 import { useLocale } from "@/components/veronix/LocaleProvider";
+import { useCustomerUser } from "@/hooks/useCustomerUser";
 
 export function PricingPage() {
   const router = useRouter();
   const params = useSearchParams();
   const { t, dir, locale } = useLocale();
-  const [user, setUser] = useState<CustomerUser | null>(null);
+  const { user, setUser, logout } = useCustomerUser();
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [stripeReady, setStripeReady] = useState<boolean | null>(null);
@@ -51,9 +52,6 @@ export function PricingPage() {
       } catch {
         setStripeReady(false);
       }
-
-      const { data } = await fetchJson<{ user: CustomerUser | null }>("/api/auth/customer/me");
-      setUser(data.user);
 
       const sessionId = params.get("session_id");
       if (params.get("success") && sessionId) {
@@ -140,7 +138,7 @@ export function PricingPage() {
       <AppHeader
         user={user}
         onLogout={() => {
-          void fetch("/api/auth/customer/logout", { method: "POST" }).then(() => setUser(null));
+          void logout();
         }}
       />
       <main className="mx-auto max-w-5xl px-4 pb-28 pt-8 sm:px-6" dir={dir}>

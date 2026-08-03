@@ -1,35 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { AppHeader, type CustomerUser } from "./AppHeader";
+import { AppHeader } from "./AppHeader";
 import { BottomNav } from "./BottomNav";
 import { CreateStudio } from "./CreateStudio";
 import { useLocale } from "@/components/veronix/LocaleProvider";
-import { fetchJson } from "@/lib/fetch-json";
+import { useCustomerUser } from "@/hooks/useCustomerUser";
 
 export function CreatePage({ media }: { media: "image" | "video" }) {
   const { t, dir } = useLocale();
-  const [user, setUser] = useState<CustomerUser | null>(null);
-
-  const refreshUser = useCallback(async () => {
-    try {
-      const { data } = await fetchJson<{ user: CustomerUser | null }>(
-        "/api/auth/customer/me",
-      );
-      setUser(data.user);
-    } catch {
-      setUser(null);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refreshUser();
-  }, [refreshUser]);
-
-  async function logout() {
-    await fetch("/api/auth/customer/logout", { method: "POST" });
-    setUser(null);
-  }
+  const { user, refreshUser, logout } = useCustomerUser();
 
   const title = media === "video" ? t.create.videoTitle : t.create.imageTitle;
   const subtitle = media === "video" ? t.create.videoSub : t.create.imageSub;

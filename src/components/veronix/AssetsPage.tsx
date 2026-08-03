@@ -25,7 +25,8 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { AppHeader, type CustomerUser } from "./AppHeader";
+import { AppHeader } from "./AppHeader";
+import { useCustomerUser } from "@/hooks/useCustomerUser";
 import { BottomNav } from "./BottomNav";
 import { useLocale } from "@/components/veronix/LocaleProvider";
 import { fetchJson } from "@/lib/fetch-json";
@@ -960,7 +961,7 @@ function useActiveSlide(
 
 export function AssetsPage() {
   const { t, dir, locale } = useLocale();
-  const [user, setUser] = useState<CustomerUser | null>(null);
+  const { user, ready, logout } = useCustomerUser();
   const [assets, setAssets] = useState<AssetItem[]>(() => readAssetsCache() || []);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<"video" | "image">("video");
@@ -1031,6 +1032,7 @@ export function AssetsPage() {
   }, []);
 
   useEffect(() => {
+    if (!ready) return;
     let cancelled = false;
     void (async () => {
       const cached = readAssetsCache();
@@ -1039,24 +1041,17 @@ export function AssetsPage() {
         setLoading(false);
       }
 
-      // Auth + fast library in parallel so Assets paints immediately.
-      const mePromise = fetchJson<{ user: CustomerUser | null }>("/api/auth/customer/me");
-      const listPromise = loadAssets();
-      const me = await mePromise;
-      if (cancelled) return;
-      setUser(me.data.user);
-      if (!me.data.user) {
+      if (!user) {
         clearAssetsCache();
         setAssets([]);
         setError("سجّل الدخول لعرض ملفاتك.");
         setLoading(false);
         return;
       }
-      await listPromise;
+
+      await loadAssets();
       if (cancelled) return;
       setLoading(false);
-      // Background sync only when something may still be generating —
-      // avoid heavy stitch/clarity work on every Assets open.
       const cachedNow = readAssetsCache() || [];
       const needsSync = cachedNow.some(
         (a) => a.status === "running" || a.status === "pending",
@@ -1068,7 +1063,7 @@ export function AssetsPage() {
     return () => {
       cancelled = true;
     };
-  }, [loadAssets]);
+  }, [ready, user?.id, loadAssets]);
 
   useEffect(() => {
     const hasRunning = assets.some((a) => a.status === "running");
@@ -1118,8 +1113,7 @@ export function AssetsPage() {
               compact
               user={user}
               onLogout={() => {
-                void fetch("/api/auth/customer/logout", { method: "POST" }).then(() => {
-                  setUser(null);
+                void logout().then(() => {
                   setAssets([]);
                   clearAssetsCache();
                 });
@@ -1292,8 +1286,7 @@ export function AssetsPage() {
       <AppHeader
         user={user}
         onLogout={() => {
-          void fetch("/api/auth/customer/logout", { method: "POST" }).then(() => {
-            setUser(null);
+          void logout().then(() => {
             setAssets([]);
             clearAssetsCache();
           });
