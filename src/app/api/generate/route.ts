@@ -548,18 +548,12 @@ export async function POST(request: Request) {
             Array.isArray(body.referenceImages) ? body.referenceImages : []
           ).filter((r): r is VisualReference => Boolean(r?.url));
 
-          let created: { videoId: number };
-
-          if (videoRefList.length > 0) {
-            const mediaIds: number[] = [];
-            for (const vref of videoRefList) {
-              const resolved = await ensureBytePlusRefUrl(vref);
-              mediaIds.push(await uploadPixVerseVideo(vref, resolved));
-            }
-
+          const buildFusionImages = async (
+            refs: VisualReference[],
+          ): Promise<PixVerseFusionImageRef[]> => {
             const fusionImages: PixVerseFusionImageRef[] = [];
-            for (let i = 0; i < Math.min(charRefList.length, 10); i++) {
-              const r = charRefList[i]!;
+            for (let i = 0; i < Math.min(refs.length, 10); i++) {
+              const r = refs[i]!;
               const resolved = await ensureBytePlusRefUrl(r);
               const imgId = await uploadPixVerseImage(r, resolved);
               const rawName =
@@ -570,6 +564,19 @@ export async function POST(request: Request) {
                 ref_name: rawName.slice(0, 24),
               });
             }
+            return fusionImages;
+          };
+
+          let created: { videoId: number };
+
+          if (videoRefList.length > 0) {
+            const mediaIds: number[] = [];
+            for (const vref of videoRefList) {
+              const resolved = await ensureBytePlusRefUrl(vref);
+              mediaIds.push(await uploadPixVerseVideo(vref, resolved));
+            }
+
+            const fusionImages = await buildFusionImages(charRefList);
 
             created = await createPixVerseFusionTask({
               prompt: cleanPrompt,
@@ -579,15 +586,20 @@ export async function POST(request: Request) {
               videoMediaIds: mediaIds,
               imageReferences: fusionImages.length ? fusionImages : undefined,
             });
+          } else if (charRefList.length > 0) {
+            const fusionImages = await buildFusionImages(charRefList);
+            created = await createPixVerseFusionTask({
+              prompt: cleanPrompt,
+              quality: pixQuality,
+              aspectRatio: body.aspectRatio,
+              generateAudio: Boolean(body.generateAudio),
+              imageReferences: fusionImages,
+              duration: modelDuration,
+            });
           } else {
             let imgId: number | undefined;
             const startResolved = await ensureBytePlusRefUrl(body.startFrame);
-            if (mode === "image2video" || Boolean(body.startFrame?.url)) {
-              if (!body.startFrame?.url && !startResolved) {
-                throw new Error(
-                  "ارفع Start Frame لتوليد فيديو PixVerse من صورة.",
-                );
-              }
+            if (body.startFrame?.url || startResolved) {
               imgId = await uploadPixVerseImage(body.startFrame, startResolved);
             }
 
