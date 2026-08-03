@@ -48,6 +48,8 @@ const ResultCard = memo(function ResultCard({
   const [deleting, setDeleting] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [armed, setArmed] = useState(false);
+  const [mediaReady, setMediaReady] = useState(false);
+  const [finishedAt, setFinishedAt] = useState<number | null>(null);
   const waiting = job.status === "running";
   const failed = job.status === "failed";
   const clockStart =
@@ -78,6 +80,77 @@ const ResultCard = memo(function ResultCard({
           mediaType: "image",
         }) || job.url
       : null;
+
+  useEffect(() => {
+    setPlaying(false);
+    setArmed(false);
+    setMediaReady(false);
+    setFinishedAt(null);
+    const el = videoRef.current;
+    if (el) {
+      try {
+        el.pause();
+        el.removeAttribute("src");
+        el.load();
+      } catch {
+        // ignore
+      }
+    }
+  }, [job.clientId, job.url, job.historyId, job.status]);
+
+  useEffect(() => {
+    if (waiting) return;
+    if (job.status === "completed") {
+      setFinishedAt((prev) => prev ?? Date.now());
+    }
+  }, [waiting, job.status]);
+
+  useEffect(() => {
+    if (failed) return;
+    if (job.mediaType === "image") {
+      if (!imgSrc) return;
+      let cancelled = false;
+      const img = new Image();
+      img.onload = () => {
+        if (!cancelled) setMediaReady(true);
+      };
+      img.onerror = () => {
+        if (!cancelled) setMediaReady(true);
+      };
+      img.src = imgSrc;
+      return () => {
+        cancelled = true;
+      };
+    }
+    if (!mediaUrl) return;
+    let cancelled = false;
+    const markReady = () => {
+      if (!cancelled) setMediaReady(true);
+    };
+    if (posterSrc) {
+      const img = new Image();
+      img.onload = markReady;
+      img.onerror = () => {
+        const probe = document.createElement("video");
+        probe.preload = "metadata";
+        probe.onloadeddata = markReady;
+        probe.onerror = markReady;
+        probe.src = mediaUrl;
+      };
+      img.src = posterSrc;
+      return () => {
+        cancelled = true;
+      };
+    }
+    const probe = document.createElement("video");
+    probe.preload = "metadata";
+    probe.onloadeddata = markReady;
+    probe.onerror = markReady;
+    probe.src = mediaUrl;
+    return () => {
+      cancelled = true;
+    };
+  }, [failed, job.mediaType, imgSrc, mediaUrl, posterSrc]);
 
   useEffect(() => {
     setPlaying(false);
@@ -247,21 +320,49 @@ const ResultCard = memo(function ResultCard({
     }
   };
 
+  const showClock =
+    !failed &&
+    (waiting || Boolean((mediaUrl || imgSrc) && !mediaReady));
+  const showMedia =
+    !failed && mediaReady && Boolean(mediaUrl || imgSrc);
+  const headerLabel = waiting
+    ? t.assets.generating
+    : showClock
+      ? t.assets.generating
+      : failed
+        ? t.assets.failed
+        : t.create.resultReady;
+
   return (
     <div className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-[#141821]">
       <div className="flex items-center justify-between gap-1 border-b border-white/8 px-2 py-1.5">
         <p className="truncate text-[11px] font-semibold text-white/80">
-          {waiting
-            ? t.assets.generating
-            : failed
-              ? t.assets.failed
-              : t.create.resultReady}
+          {headerLabel}
         </p>
-        {waiting ? <GenerateClock startedAt={clockStart} size="compact" /> : null}
+        {showClock ? (
+          <GenerateClock
+            startedAt={clockStart}
+            running={waiting}
+            frozenAt={finishedAt ?? undefined}
+            size="compact"
+          />
+        ) : null}
       </div>
 
-      <div className="relative aspect-video bg-black/50">
-        {mediaUrl ? (
+      <div className="relative aspect-video bg-[#141821]">
+        {showClock ? (
+          <div className="flex h-full flex-col items-center justify-center gap-1.5 px-2">
+            <GenerateClock
+              startedAt={clockStart}
+              running={waiting}
+              frozenAt={finishedAt ?? undefined}
+              size="large"
+            />
+            <p className="text-xs font-semibold text-white/80">
+              {waiting ? t.assets.generating : "جاري تجهيز المعاينة…"}
+            </p>
+          </div>
+        ) : showMedia && mediaUrl ? (
           <>
             {!armed && posterSrc ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -302,7 +403,7 @@ const ResultCard = memo(function ResultCard({
               </button>
             ) : null}
           </>
-        ) : imgSrc ? (
+        ) : showMedia && imgSrc ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={imgSrc}
@@ -311,14 +412,7 @@ const ResultCard = memo(function ResultCard({
           />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-1 px-2 text-center">
-            {waiting ? (
-              <div className="flex flex-col items-center gap-1.5">
-                <GenerateClock startedAt={clockStart} size="large" />
-                <p className="text-xs font-semibold text-white/80">
-                  {t.assets.generating}
-                </p>
-              </div>
-            ) : failed ? (
+            {failed ? (
               <p className="text-[11px] font-semibold leading-snug text-rose-200">
                 {job.error || t.assets.failed}
               </p>
