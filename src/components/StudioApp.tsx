@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { estimateCredits } from "@/lib/models";
+import { estimateGenerationCredits, VIDEO_MODEL } from "@/lib/models";
 import type {
   AccountInfo,
   GalleryItem,
   GenerationMode,
   GenerateResponse,
   VideoDuration,
-  VideoQuality,
+  VideoResolution,
   VisualReference,
 } from "@/lib/types";
 import { BrandLogo } from "./BrandLogo";
@@ -48,7 +48,8 @@ export function StudioApp() {
   const [mode, setMode] = useState<GenerationMode>("text-to-image");
   const [prompt, setPrompt] = useState("");
   const [duration, setDuration] = useState<VideoDuration>(5);
-  const [quality, setQuality] = useState<VideoQuality>("standard");
+  const [resolution, setResolution] = useState<VideoResolution>("720p");
+  const [generateAudio, setGenerateAudio] = useState(false);
   const [startFrame, setStartFrame] = useState<VisualReference | null>(null);
   const [startPreview, setStartPreview] = useState<string | null>(null);
   const [referenceImage, setReferenceImage] = useState<VisualReference | null>(null);
@@ -105,8 +106,15 @@ export function StudioApp() {
   }, []);
 
   const creditCost = useMemo(
-    () => estimateCredits(mode, duration, quality),
-    [mode, duration, quality],
+    () =>
+      estimateGenerationCredits({
+        mode,
+        model: VIDEO_MODEL,
+        resolution,
+        hasAudio: generateAudio,
+        durationInSeconds: duration,
+      }),
+    [mode, duration, resolution, generateAudio],
   );
 
   const isVideoMode = mode !== "text-to-image";
@@ -293,7 +301,8 @@ export function StudioApp() {
           mode,
           prompt: currentPrompt,
           duration,
-          quality,
+          resolution,
+          generateAudio,
           startFrame,
           referenceImage,
           waitForResult: true,
@@ -316,7 +325,14 @@ export function StudioApp() {
       );
 
       if (!res.ok) {
-        throw new Error(data.error || formatLivePayload(data));
+        const insufficient =
+          res.status === 402 ||
+          data.error === "Insufficient credit balance";
+        throw new Error(
+          insufficient
+            ? `Insufficient credit balance (need ${data.requiredCredits ?? creditCost} credits).`
+            : data.error || formatLivePayload(data),
+        );
       }
 
       const url = data.urls?.[0] ?? "";
@@ -469,9 +485,12 @@ export function StudioApp() {
             {isVideoMode && (
               <VideoControls
                 duration={duration}
-                quality={quality}
+                resolution={resolution}
+                generateAudio={generateAudio}
+                estimatedCredits={creditCost}
                 onDurationChange={setDuration}
-                onQualityChange={setQuality}
+                onResolutionChange={setResolution}
+                onGenerateAudioChange={setGenerateAudio}
               />
             )}
 

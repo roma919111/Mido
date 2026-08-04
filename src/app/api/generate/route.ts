@@ -1,5 +1,14 @@
 import { NextResponse } from "next/server";
-import { buildGenerationParams, estimateCredits } from "@/lib/models";
+import {
+  buildGenerationParams,
+  resolveVideoResolution,
+  VIDEO_MODEL,
+} from "@/lib/models";
+import {
+  calculateImageCredits,
+  calculateVideoCredits,
+} from "@/lib/credit-pricing";
+import { checkSufficientCredits, INSUFFICIENT_CREDITS_MESSAGE } from "@/lib/credits";
 import {
   callOpenArtTool,
   collectMediaUrls,
@@ -7,7 +16,7 @@ import {
   OpenArtConfigError,
   parseToolPayload,
 } from "@/lib/openart-mcp";
-import type { GenerateRequest, VideoDuration, VideoQuality } from "@/lib/types";
+import type { GenerateRequest, VideoDuration } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -58,7 +67,8 @@ export async function POST(request: Request) {
     const mode = body.mode;
     const prompt = body.prompt?.trim();
     const duration = (body.duration ?? 5) as VideoDuration;
-    const quality = (body.quality ?? "standard") as VideoQuality;
+    const resolution = resolveVideoResolution(body);
+    const generateAudio = Boolean(body.generateAudio);
     const waitForResult = body.waitForResult !== false;
 
     if (!mode || !prompt) {
@@ -72,13 +82,36 @@ export async function POST(request: Request) {
       );
     }
 
-    const creditsUsed = estimateCredits(mode, duration, quality);
+    const creditsUsed =
+      mode === "text-to-image"
+        ? calculateImageCredits()
+        : calculateVideoCredits({
+            model: VIDEO_MODEL,
+            resolution,
+            hasAudio: generateAudio,
+            durationInSeconds: duration,
+          });
+
+    const balanceCheck = await checkSufficientCredits(creditsUsed);
+    if (!balanceCheck.ok) {
+      return NextResponse.json(
+        {
+          error: INSUFFICIENT_CREDITS_MESSAGE,
+          balance: balanceCheck.balance,
+          requiredCredits: balanceCheck.required,
+          live: true,
+          mcpEndpoint: MCP_ENDPOINT,
+        },
+        { status: 402 },
+      );
+    }
 
     const { model, toolMode, media, params } = buildGenerationParams({
       mode,
       prompt,
       duration,
-      quality,
+      resolution,
+      generateAudio,
       startFrame: body.startFrame,
       referenceImage: body.referenceImage,
     });
@@ -122,6 +155,9 @@ export async function POST(request: Request) {
       );
     }
 
+    // Credits are deducted on the OpenArt platform account when dispatch succeeds.
+    const balanceAfterDispatch = balanceCheck.balance - creditsUsed;
+
     if (!waitForResult) {
       return NextResponse.json({
         historyId,
@@ -130,6 +166,8 @@ export async function POST(request: Request) {
         mode,
         prompt,
         creditsUsed,
+        balance: balanceAfterDispatch,
+        requiredCredits: creditsUsed,
         live: true,
         mcpEndpoint: MCP_ENDPOINT,
         tool: toolName,
@@ -152,6 +190,8 @@ export async function POST(request: Request) {
       mode,
       prompt,
       creditsUsed,
+      balance: balanceAfterDispatch,
+      requiredCredits: creditsUsed,
       urls,
       live: true,
       mcpEndpoint: MCP_ENDPOINT,

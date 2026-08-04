@@ -1,7 +1,12 @@
+import type { VideoResolution } from "@/config/modelPricing";
+
+export type { VideoResolution };
+
 export type GenerationMode = "text-to-image" | "text-to-video" | "image-to-video";
 
 export type VideoDuration = 5 | 10;
 
+/** @deprecated Use VideoResolution instead — kept for backward-compatible API bodies. */
 export type VideoQuality = "standard" | "pro";
 
 export type MediaType = "image" | "video";
@@ -44,7 +49,11 @@ export interface GenerateRequest {
   mode: GenerationMode;
   prompt: string;
   duration?: VideoDuration;
+  /** Preferred: explicit resolution tier for per-second billing. */
+  resolution?: VideoResolution;
+  /** @deprecated Prefer `resolution`. Maps standard → 720p, pro → 1080p. */
   quality?: VideoQuality;
+  generateAudio?: boolean;
   startFrame?: VisualReference | null;
   referenceImage?: VisualReference | null;
   waitForResult?: boolean;
@@ -65,4 +74,6 @@ export interface GenerateResponse {
   tool?: string;
   details?: unknown;
   raw?: unknown;
+  balance?: number;
+  requiredCredits?: number;
 }
