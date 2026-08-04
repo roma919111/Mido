@@ -72,6 +72,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<CatalogItem | null>(null);
   const [launching, setLaunching] = useState<LaunchState | null>(null);
+  const [launchBlocked, setLaunchBlocked] = useState(false);
   const [tab, setTab] = useState<"home" | "list" | "account">("home");
   const [continueItems, setContinueItems] = useState<CatalogItem[]>([]);
 
@@ -101,10 +102,20 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
     setSelected(item);
   }
 
+  function startPlayback(item: CatalogItem, platform: CatalogItem["platforms"][0]["platform"], url: string) {
+    setLaunchBlocked(false);
+    launchOnPlatform(item, platform, url, setLaunching, ({ opened }) => {
+      setLaunchBlocked(!opened);
+      if (opened) {
+        window.setTimeout(() => setLaunching(null), 1500);
+      }
+    });
+  }
+
   function playFeatured(item: CatalogItem) {
     const link = item.platforms[0];
     if (!link) return;
-    launchOnPlatform(item, link.platform, link.url, setLaunching);
+    startPlayback(item, link.platform, link.url);
   }
 
   return (
@@ -217,13 +228,19 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
       <DetailSheet
         item={selected}
         onClose={() => setSelected(null)}
-        onLaunching={setLaunching}
+        onPlay={(item, platform, url) => startPlayback(item, platform, url)}
       />
       <LaunchOverlay
         state={launching}
+        blocked={launchBlocked}
         onCancel={() => {
           cancelLaunch();
           setLaunching(null);
+          setLaunchBlocked(false);
+        }}
+        onDismiss={() => {
+          setLaunching(null);
+          setLaunchBlocked(false);
         }}
       />
     </div>

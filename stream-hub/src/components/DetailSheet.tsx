@@ -1,16 +1,15 @@
 import { useEffect, useState } from "react";
-import type { CatalogItem, LaunchState } from "../types";
+import type { CatalogItem, PlatformId } from "../types";
 import { isInMyList, toggleMyList } from "../lib/library";
-import { launchOnPlatform } from "../lib/playback";
 import { PLATFORMS } from "../lib/platforms";
 
 type DetailSheetProps = {
   item: CatalogItem | null;
   onClose: () => void;
-  onLaunching: (state: LaunchState) => void;
+  onPlay: (item: CatalogItem, platform: PlatformId, url: string) => void;
 };
 
-export function DetailSheet({ item, onClose, onLaunching }: DetailSheetProps) {
+export function DetailSheet({ item, onClose, onPlay }: DetailSheetProps) {
   const [inList, setInList] = useState(false);
 
   useEffect(() => {
@@ -56,7 +55,7 @@ export function DetailSheet({ item, onClose, onLaunching }: DetailSheetProps) {
           ) : null}
 
           <div className="detail-sheet__platforms">
-            <p className="detail-sheet__platforms-label">متاح على</p>
+            <p className="detail-sheet__platforms-label">متاح على — اضغط للتشغيل</p>
             {item.platforms.map((link) => {
               const meta = PLATFORMS[link.platform];
               return (
@@ -65,12 +64,12 @@ export function DetailSheet({ item, onClose, onLaunching }: DetailSheetProps) {
                   type="button"
                   className="platform-play-btn"
                   style={{ "--platform-color": meta.color } as React.CSSProperties}
-                  onClick={() => launchOnPlatform(item, link.platform, link.url, onLaunching)}
+                  onClick={() => onPlay(item, link.platform, link.url)}
                 >
                   <span className="platform-play-btn__icon">▶</span>
                   <span>
                     <strong>تشغيل على {meta.name}</strong>
-                    <small>يفتح التطبيق أو الموقع الرسمي</small>
+                    <small>يفتح netflix.com / shahid / tod.tv</small>
                   </span>
                 </button>
               );
