@@ -1,3 +1,5 @@
+import { Capacitor } from "@capacitor/core";
+import { Browser } from "@capacitor/browser";
 import type { PlatformId } from "../types";
 import { normalizeDeepLink } from "./deeplink";
 
@@ -81,15 +83,32 @@ export function buildLaunchTarget(
   };
 }
 
-export function openPlatformPlayback(
+export async function openPlatformPlayback(
   platform: PlatformId,
   url: string,
-): { success: boolean; mode: LaunchMode; href: string; directUrl: string } {
+): Promise<{ success: boolean; mode: LaunchMode; href: string; directUrl: string }> {
   const target = buildLaunchTarget(platform, url);
+  const isNative = Capacitor.isNativePlatform();
+
   try {
+    if (isNative && isAndroidDevice()) {
+      window.location.href = target.href;
+      return { success: true, mode: target.mode, href: target.href, directUrl: target.directUrl };
+    }
+
+    if (isNative) {
+      await Browser.open({ url: target.directUrl, toolbarColor: "#0e0e10" });
+      return { success: true, mode: "app-link", href: target.directUrl, directUrl: target.directUrl };
+    }
+
     window.location.assign(target.href);
     return { success: true, mode: target.mode, href: target.href, directUrl: target.directUrl };
   } catch {
-    return { success: false, mode: target.mode, href: target.href, directUrl: target.directUrl };
+    try {
+      await Browser.open({ url: target.directUrl });
+      return { success: true, mode: "app-link", href: target.directUrl, directUrl: target.directUrl };
+    } catch {
+      return { success: false, mode: target.mode, href: target.href, directUrl: target.directUrl };
+    }
   }
 }

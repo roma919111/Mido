@@ -8,8 +8,7 @@ import {
   toOfficialWebUrl,
 } from "./platforms";
 
-/** Overlay visible briefly before opening the official app (ms). */
-export const LAUNCH_COUNTDOWN_MS = 1800;
+export const LAUNCH_COUNTDOWN_MS = 1200;
 
 let launchTimer: number | undefined;
 
@@ -38,9 +37,10 @@ export function launchOnPlatform(
 
   if (launchTimer) window.clearTimeout(launchTimer);
   launchTimer = window.setTimeout(() => {
-    const result = openPlatformPlayback(platform, webUrl);
-    onComplete?.({ success: result.success, url: result.directUrl });
-    launchTimer = undefined;
+    void openPlatformPlayback(platform, webUrl).then((result) => {
+      onComplete?.({ success: result.success, url: result.directUrl });
+      launchTimer = undefined;
+    });
   }, LAUNCH_COUNTDOWN_MS);
 }
 
@@ -51,7 +51,6 @@ export function cancelLaunch() {
   }
 }
 
-export function openLaunchTarget(state: LaunchState): boolean {
-  const result = openPlatformPlayback(state.platform, state.url);
-  return result.success;
+export function openLaunchTarget(state: LaunchState): void {
+  void openPlatformPlayback(state.platform, state.url);
 }
