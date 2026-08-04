@@ -58,7 +58,7 @@ export function PopcornSplash({ title, platformName, onDone }: PopcornSplashProp
         <div className="popcorn-splash__bucket">🍿</div>
         <h2>جاري التشغيل</h2>
         <p className="popcorn-splash__title">{title}</p>
-        <p className="popcorn-splash__subtitle">يتصل بـ {platformName}…</p>
+        <p className="popcorn-splash__subtitle">يفتح {platformName} — 🍿 {totalSeconds} ثوانٍ</p>
         <p className="popcorn-splash__timer">{secondsLeft || "▶"}</p>
       </div>
     </div>

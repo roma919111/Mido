@@ -3,10 +3,16 @@ import { flushSync } from "react-dom";
 import { CATALOG, ROWS } from "./data/catalog";
 import { getSession, logout } from "./lib/auth";
 import { getContinueWatching, getContinueEntry, getMyList } from "./lib/library";
-import { beginOfficialLaunch, cancelLaunch, finishPlatformLaunch, launchOnPlatform } from "./lib/playback";
+import {
+  beginOfficialLaunch,
+  cancelLaunch,
+  finishPopcornOverlay,
+  launchOnPlatform,
+  openPlatformManually,
+  openPlatformNow,
+} from "./lib/playback";
 import { enterPlaybackMode } from "./lib/fullscreen";
 import { clearAllReturnFlags } from "./lib/app-navigation";
-import { openPlatformManually } from "./lib/playback";
 import { pushOverlayHistory, useReturnToHome } from "./hooks/useReturnToHome";
 import { ReturnHomeButton } from "./components/ReturnHomeButton";
 import { AccountPlatforms } from "./components/AccountPlatforms";
@@ -142,6 +148,9 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
           setLaunching(state);
           setShowPopcorn(true);
         });
+        void openPlatformNow(state).then((result) => {
+          if (result.needsManualOpen) setManualOpenUrl(result.destination);
+        });
       },
       () => {
         setContinueItems(mapContinueToItems(getContinueWatching()));
@@ -152,12 +161,9 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
 
   function handlePopcornDone() {
     if (!launching) return;
-    void finishPlatformLaunch(launching).then((result) => {
+    void finishPopcornOverlay(launching).then(() => {
       setShowPopcorn(false);
       setLaunching(null);
-      if (result.needsManualOpen) {
-        setManualOpenUrl(result.destination);
-      }
     });
   }
 

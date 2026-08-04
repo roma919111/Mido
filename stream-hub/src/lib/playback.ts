@@ -7,7 +7,8 @@ import { addContinueWatching, ensureInMyList } from "./library";
 import { buildLaunchTarget, openPlatformPlayback, PLATFORMS, toOfficialWebUrl } from "./platforms";
 
 export const LAUNCH_COUNTDOWN_MS = 0;
-export const POPCORN_DURATION_MS = 8000;
+/** Popcorn runs while the browser opens — 5 seconds in parallel. */
+export const POPCORN_DURATION_MS = 5000;
 
 const PLATFORM_WINDOW_NAME = "max_platform";
 
@@ -93,40 +94,46 @@ export type PlatformLaunchResult = {
   needsManualOpen: boolean;
 };
 
-function navigatePlatformTab(destination: string): boolean {
+function navigatePlatformTab(destination: string, focusTab: boolean): boolean {
   if (!platformTab || platformTab.closed) return false;
   try {
     platformTab.location.href = destination;
-    platformTab.focus();
+    if (focusTab) platformTab.focus();
+    else {
+      try {
+        platformTab.blur();
+      } catch {
+        /* ignore */
+      }
+      window.focus();
+    }
     return true;
   } catch {
     return false;
   }
 }
 
-export async function finishPlatformLaunch(state: LaunchState): Promise<PlatformLaunchResult> {
+/**
+ * Step 1 — open browser immediately while popcorn starts (5s on MAX).
+ */
+export async function openPlatformNow(state: LaunchState): Promise<PlatformLaunchResult> {
   const destination =
     pendingDestination ?? buildLaunchTarget(state.platform, state.url).directUrl;
   const platform = pendingPlatform ?? state.platform;
   const url = pendingUrl ?? state.url;
-  pendingDestination = null;
-  pendingPlatform = null;
-  pendingUrl = null;
 
   if (Capacitor.isNativePlatform()) {
     markPlatformOpened();
     void openPlatformPlayback(platform, url).then((result) => {
       notifyLaunchComplete(result.success, result.directUrl);
     });
-    await exitPlaybackMode();
     platformTab = null;
     return { opened: true, destination, needsManualOpen: false };
   }
 
   notifyLaunchComplete(true, destination);
-  await exitPlaybackMode();
 
-  if (navigatePlatformTab(destination)) {
+  if (navigatePlatformTab(destination, false)) {
     platformTab = null;
     markPlatformOpened();
     return { opened: true, destination, needsManualOpen: false };
@@ -136,12 +143,40 @@ export async function finishPlatformLaunch(state: LaunchState): Promise<Platform
   const tab = window.open(destination, PLATFORM_WINDOW_NAME);
   if (tab) {
     markPlatformOpened();
-    tab.focus();
+    try {
+      tab.blur();
+    } catch {
+      /* ignore */
+    }
+    window.focus();
     return { opened: true, destination, needsManualOpen: false };
   }
 
   markPlatformOpened();
   return { opened: false, destination, needsManualOpen: true };
+}
+
+/** Step 2 — after 5s popcorn: hide overlay and focus platform tab. */
+export async function finishPopcornOverlay(state: LaunchState): Promise<void> {
+  const destination =
+    pendingDestination ?? buildLaunchTarget(state.platform, state.url).directUrl;
+  pendingDestination = null;
+  pendingPlatform = null;
+  pendingUrl = null;
+
+  await exitPlaybackMode();
+
+  if (!Capacitor.isNativePlatform()) {
+    try {
+      const tab = window.open("", PLATFORM_WINDOW_NAME);
+      tab?.focus();
+    } catch {
+      /* ignore */
+    }
+  }
+
+  void destination;
+  void state;
 }
 
 export function openPlatformManually(destination: string): boolean {
