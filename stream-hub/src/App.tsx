@@ -17,9 +17,10 @@ import { PopcornSplash } from "./components/PopcornSplash";
 import { PosterCard } from "./components/PosterCard";
 import { SearchBar } from "./components/SearchBar";
 import { SmartSetup, shouldShowSmartSetup } from "./components/SmartSetup";
-import type { CatalogItem, ContinueEntry, LaunchState, PlatformId } from "./types";
-
 import { MaxLoginPage } from "./components/MaxLoginPage";
+import { InstallAppBanner } from "./components/InstallAppBanner";
+import { enterAppShellMode, exitAppShellMode } from "./lib/app-shell";
+import type { CatalogItem, ContinueEntry, LaunchState, PlatformId } from "./types";
 function mapContinueToItems(entries: ContinueEntry[]): CatalogItem[] {
   return entries
     .map((entry) => CATALOG.find((item) => item.id === entry.itemId))
@@ -36,6 +37,11 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
   const [listHint, setListHint] = useState<string | null>(null);
 
   const featured = CATALOG.find((i) => i.featured) ?? CATALOG[0]!;
+
+  useEffect(() => {
+    enterAppShellMode();
+    return () => exitAppShellMode();
+  }, []);
 
   useEffect(() => {
     setContinueItems(mapContinueToItems(getContinueWatching()));
@@ -195,6 +201,8 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
         </button>
       </header>
 
+      <InstallAppBanner />
+
       {listHint ? (
         <div className="list-hint">
           <p>{listHint}</p>
@@ -349,5 +357,5 @@ export function App() {
     );
   }
 
-  return <HomePage username={username} onLogout={() => { logout(); setAuthed(false); }} />;
+  return <HomePage username={username} onLogout={() => { exitAppShellMode(); logout(); setAuthed(false); }} />;
 }

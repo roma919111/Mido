@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
-export const APP_VERSION = "0.3.0";
+export const APP_VERSION = "0.3.1";
 
 export default defineConfig({
   define: {
@@ -17,13 +17,14 @@ export default defineConfig({
       },
       includeAssets: ["favicon.svg"],
       manifest: {
-        name: "Stream Hub",
-        short_name: "StreamHub",
-        description: "واجهة موحّدة للوصول الرسمي لمنصات البث",
-        theme_color: "#0a0b10",
-        background_color: "#0a0b10",
-        display: "standalone",
-        orientation: "portrait",
+        name: "MAX MEDIA PLAYER",
+        short_name: "MAX",
+        description: "MAX MEDIA PLAYER — واجهة موحّدة للبث",
+        theme_color: "#070b18",
+        background_color: "#070b18",
+        display: "fullscreen",
+        display_override: ["fullscreen", "standalone"],
+        orientation: "landscape",
         lang: "ar",
         dir: "rtl",
         start_url: "/",
