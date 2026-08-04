@@ -37,7 +37,10 @@ export type ContinueEntry = {
 };
 
 export type LaunchState = {
+  platform: PlatformId;
   platformName: string;
   title: string;
   url: string;
+  launchMode: "android-app" | "app-link" | "browser";
+  launchLabel: string;
 };

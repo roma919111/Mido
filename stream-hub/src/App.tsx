@@ -72,7 +72,6 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<CatalogItem | null>(null);
   const [launching, setLaunching] = useState<LaunchState | null>(null);
-  const [launchBlocked, setLaunchBlocked] = useState(false);
   const [tab, setTab] = useState<"home" | "list" | "account">("home");
   const [continueItems, setContinueItems] = useState<CatalogItem[]>([]);
 
@@ -103,12 +102,8 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
   }
 
   function startPlayback(item: CatalogItem, platform: CatalogItem["platforms"][0]["platform"], url: string) {
-    setLaunchBlocked(false);
-    launchOnPlatform(item, platform, url, setLaunching, ({ opened }) => {
-      setLaunchBlocked(!opened);
-      if (opened) {
-        window.setTimeout(() => setLaunching(null), 1500);
-      }
+    launchOnPlatform(item, platform, url, setLaunching, () => {
+      window.setTimeout(() => setLaunching(null), 2000);
     });
   }
 
@@ -185,9 +180,11 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
             <strong>مرحباً {username}</strong>
             <br />
             <br />
-            سجّل الدخول مرة واحدة في Netflix / شاهد / TOD على هذا الجهاز.
+            <strong>نفس Google TV</strong>
             <br />
-            المعاينات (Trailers) تعمل داخل التطبيق. التشغيل الكامل عبر المنصة الرسمية.
+            تصفّح من هنا — عند «تشغيل» يُفتح تطبيق Netflix / شاهد / TOD على Android.
+            <br />
+            سجّل الدخول مرة واحدة في كل تطبيق. ارجع بزر «رجوع».
           </div>
         </main>
       ) : null}
@@ -232,16 +229,11 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
       />
       <LaunchOverlay
         state={launching}
-        blocked={launchBlocked}
         onCancel={() => {
           cancelLaunch();
           setLaunching(null);
-          setLaunchBlocked(false);
         }}
-        onDismiss={() => {
-          setLaunching(null);
-          setLaunchBlocked(false);
-        }}
+        onDismiss={() => setLaunching(null)}
       />
     </div>
   );
