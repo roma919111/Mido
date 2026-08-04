@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-const POPCORN_MS = 3000;
+export const POPCORN_DURATION_MS = 3000;
 
 type PopcornSplashProps = {
   title: string;
@@ -11,19 +11,23 @@ const KERNELS = ["🍿", "🍿", "✨", "🍿", "🎬", "🍿", "✨", "🍿"];
 
 export function PopcornSplash({ title, onDone }: PopcornSplashProps) {
   const [secondsLeft, setSecondsLeft] = useState(3);
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
 
   useEffect(() => {
     const tick = window.setInterval(() => {
       setSecondsLeft((s) => Math.max(0, s - 1));
     }, 1000);
 
-    const done = window.setTimeout(onDone, POPCORN_MS);
+    const done = window.setTimeout(() => {
+      onDoneRef.current();
+    }, POPCORN_DURATION_MS);
 
     return () => {
       window.clearInterval(tick);
       window.clearTimeout(done);
     };
-  }, [onDone]);
+  }, []);
 
   return (
     <div className="popcorn-splash" role="status" aria-live="polite">
@@ -44,5 +48,3 @@ export function PopcornSplash({ title, onDone }: PopcornSplashProps) {
     </div>
   );
 }
-
-export const POPCORN_DURATION_MS = POPCORN_MS;

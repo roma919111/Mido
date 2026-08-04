@@ -292,6 +292,14 @@ input {
   color: var(--accent-strong);
 }
 
+.gtv-header__version {
+  margin-right: 6px;
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: var(--muted);
+  vertical-align: middle;
+}
+
 .gtv-header__logout {
   border: 1px solid var(--border);
   background: transparent;
@@ -703,7 +711,7 @@ input {
 .popcorn-splash {
   position: fixed;
   inset: 0;
-  z-index: 70;
+  z-index: 9999;
   display: grid;
   place-items: center;
   background: radial-gradient(circle at center, rgba(251, 191, 36, 0.18) 0%, rgba(0, 0, 0, 0.92) 55%);
@@ -805,7 +813,7 @@ input {
 .launch-overlay {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: 9998;
   background: rgba(0, 0, 0, 0.88);
   display: grid;
   place-items: center;

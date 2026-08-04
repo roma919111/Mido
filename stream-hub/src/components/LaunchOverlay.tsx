@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import type { LaunchState } from "../types";
 import { getPlaybackEnvironment } from "../lib/browser-capabilities";
 import { openLaunchTarget } from "../lib/playback";
+import { OverlayPortal } from "./OverlayPortal";
 import { PopcornSplash } from "./PopcornSplash";
 
 type LaunchOverlayProps = {
@@ -32,65 +33,72 @@ export function LaunchOverlay({ state, onCancel, onDismiss }: LaunchOverlayProps
     };
   }, [state]);
 
+  const finishOpen = useCallback(() => {
+    if (!state) return;
+    openLaunchTarget(state);
+    onDismiss();
+  }, [state, onDismiss]);
+
   if (!state) return null;
+
+  if (showPopcorn) {
+    return (
+      <OverlayPortal>
+        <PopcornSplash title={state.title} onDone={finishOpen} />
+      </OverlayPortal>
+    );
+  }
 
   const env = getPlaybackEnvironment(Capacitor.isNativePlatform());
   const isApp = state.launchMode === "android-app";
 
-  function finishOpen() {
-    openLaunchTarget(state!);
-    onDismiss();
-  }
-
-  function handleOpenNow() {
-    setShowPopcorn(true);
-  }
-
-  if (showPopcorn) {
-    return <PopcornSplash title={state.title} onDone={finishOpen} />;
-  }
-
   const steps = [
     "تحضير الرابط المباشر للفيلم",
     isApp ? `جاهز — تطبيق ${state.platformName}` : `جاهز — ${state.platformName}`,
-    "اضغط «فتح الآن» للانتقال",
+    "اضغط «فتح الآن» — يظهر 🍿 ثم يفتح",
   ];
 
   return (
-    <div className="launch-overlay">
-      <div className="launch-overlay__card">
-        <div className="launch-overlay__count">▶</div>
+    <OverlayPortal>
+      <div className="launch-overlay">
+        <div className="launch-overlay__card">
+          <div className="launch-overlay__count">▶</div>
 
-        <h2>جاهز للتشغيل</h2>
-        <p className="launch-overlay__title">{state.title}</p>
-        <p className="launch-overlay__via">عبر {state.launchLabel}</p>
-        <p className="launch-overlay__hint">{state.deepLinkHint}</p>
-        <p className="launch-overlay__list-tip">
-          بعد فتح Netflix: ارجع هنا → 📋 قائمتي → ▶ للمتابعة
-        </p>
+          <h2>جاهز للتشغيل</h2>
+          <p className="launch-overlay__title">{state.title}</p>
+          <p className="launch-overlay__via">عبر {state.launchLabel}</p>
+          <p className="launch-overlay__hint">{state.deepLinkHint}</p>
+          <p className="launch-overlay__list-tip">
+            لن يُفتح Netflix إلا بعد «فتح الآن» + 🍿 (3 ثوانٍ)
+          </p>
 
-        {env.warning ? (
-          <div className="launch-overlay__warn">
-            <p>{env.warning}</p>
-            <p>{env.recommendation}</p>
-          </div>
-        ) : null}
+          {env.warning ? (
+            <div className="launch-overlay__warn">
+              <p>{env.warning}</p>
+              <p>{env.recommendation}</p>
+            </div>
+          ) : null}
 
-        <ul className="launch-overlay__steps">
-          {steps.map((label, i) => (
-            <li key={label} className={i <= step ? "done" : ""}>
-              {i < step ? "✓" : i === step ? "→" : "○"} {label}
-            </li>
-          ))}
-        </ul>
+          <ul className="launch-overlay__steps">
+            {steps.map((label, i) => (
+              <li key={label} className={i <= step ? "done" : ""}>
+                {i < step ? "✓" : i === step ? "→" : "○"} {label}
+              </li>
+            ))}
+          </ul>
 
-        <button type="button" className="btn btn--primary launch-overlay__open" onClick={handleOpenNow}>
-          فتح الآن
-        </button>
-        <button type="button" className="btn btn--ghost" onClick={onCancel}>
-          إلغاء
-        </button>
+          <button
+            type="button"
+            className="btn btn--primary launch-overlay__open"
+            onClick={() => setShowPopcorn(true)}
+          >
+            فتح الآن 🍿
+          </button>
+          <button type="button" className="btn btn--ghost" onClick={onCancel}>
+            إلغاء
+          </button>
+        </div>
       </div>
-    </div>
+    </OverlayPortal>
   );
 }

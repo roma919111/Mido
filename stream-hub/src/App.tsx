@@ -136,7 +136,10 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
   return (
     <div className="gtv-shell">
       <header className="gtv-header">
-        <div className="gtv-header__brand">Stream Hub</div>
+        <div className="gtv-header__brand">
+          Stream Hub
+          <span className="gtv-header__version">v{__APP_VERSION__}</span>
+        </div>
         <SearchBar value={search} onChange={setSearch} />
         <button type="button" className="gtv-header__logout" onClick={onLogout}>
           خروج
@@ -251,7 +254,10 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
       <DetailSheet
         item={selected}
         onClose={() => setSelected(null)}
-        onPlay={(item, platform, url) => startPlayback(item, platform, url)}
+        onPlay={(item, platform, url) => {
+          setSelected(null);
+          startPlayback(item, platform, url);
+        }}
       />
       <LaunchOverlay
         state={launching}
