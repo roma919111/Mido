@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { enterAppShellMode } from "../lib/app-shell";
+import { enterPlaybackMode } from "../lib/fullscreen";
 import { login } from "../lib/auth";
 import { getDeviceId, getDeviceMac } from "../lib/device-id";
 
@@ -24,6 +26,8 @@ export function MaxLoginPage({ onSuccess }: MaxLoginPageProps) {
       return;
     }
     setError(null);
+    enterAppShellMode();
+    enterPlaybackMode();
     onSuccess();
   }
 

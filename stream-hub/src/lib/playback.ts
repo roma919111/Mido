@@ -1,6 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import type { CatalogItem, LaunchState, PlatformId } from "../types";
-import { clearPendingReturnHome, markPendingReturnHome } from "./app-navigation";
+import { clearAllReturnFlags, clearPendingReturnHome, markPlatformOpened } from "./app-navigation";
 import { exitPlaybackMode } from "./fullscreen";
 import { deepLinkHint } from "./deeplink";
 import { addContinueWatching, ensureInMyList } from "./library";
@@ -78,7 +78,6 @@ export function startStreamHubFocusLoop(): () => void {
   return () => window.clearInterval(id);
 }
 
-/** Prepare launch on user click — reserve tab for post-popcorn navigation. */
 export function beginOfficialLaunch(state: LaunchState): void {
   const target = buildLaunchTarget(state.platform, state.url);
   pendingDestination = target.directUrl;
@@ -91,6 +90,7 @@ export function beginOfficialLaunch(state: LaunchState): void {
 export type PlatformLaunchResult = {
   opened: boolean;
   destination: string;
+  needsManualOpen: boolean;
 };
 
 function navigatePlatformTab(destination: string): boolean {
@@ -104,9 +104,6 @@ function navigatePlatformTab(destination: string): boolean {
   }
 }
 
-/**
- * After popcorn: open platform in a separate tab — MAX tab stays open (no reload on return).
- */
 export async function finishPlatformLaunch(state: LaunchState): Promise<PlatformLaunchResult> {
   const destination =
     pendingDestination ?? buildLaunchTarget(state.platform, state.url).directUrl;
@@ -117,35 +114,43 @@ export async function finishPlatformLaunch(state: LaunchState): Promise<Platform
   pendingUrl = null;
 
   if (Capacitor.isNativePlatform()) {
-    markPendingReturnHome();
+    markPlatformOpened();
     void openPlatformPlayback(platform, url).then((result) => {
       notifyLaunchComplete(result.success, result.directUrl);
     });
     await exitPlaybackMode();
     platformTab = null;
-    return { opened: true, destination };
+    return { opened: true, destination, needsManualOpen: false };
   }
 
   notifyLaunchComplete(true, destination);
   await exitPlaybackMode();
 
-  markPendingReturnHome();
-
   if (navigatePlatformTab(destination)) {
     platformTab = null;
-    window.focus();
-    return { opened: true, destination };
+    markPlatformOpened();
+    return { opened: true, destination, needsManualOpen: false };
   }
   platformTab = null;
 
   const tab = window.open(destination, PLATFORM_WINDOW_NAME);
   if (tab) {
+    markPlatformOpened();
     tab.focus();
-    return { opened: true, destination };
+    return { opened: true, destination, needsManualOpen: false };
   }
 
-  window.location.assign(destination);
-  return { opened: true, destination };
+  markPlatformOpened();
+  return { opened: false, destination, needsManualOpen: true };
+}
+
+export function openPlatformManually(destination: string): boolean {
+  const tab = window.open(destination, PLATFORM_WINDOW_NAME);
+  if (tab) {
+    tab.focus();
+    return true;
+  }
+  return false;
 }
 
 export function cancelLaunch() {
@@ -161,6 +166,6 @@ export function cancelLaunch() {
     }
   }
   platformTab = null;
-  clearPendingReturnHome();
+  clearAllReturnFlags();
   void exitPlaybackMode();
 }

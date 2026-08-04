@@ -9,11 +9,6 @@ type FullscreenDocument = Document & {
 
 export const THEATER_CLASS = "stream-hub-theater";
 
-function isSafariBrowser(): boolean {
-  const ua = navigator.userAgent;
-  return /Safari/i.test(ua) && !/Chrome|CriOS|Chromium|Edg|OPR|Firefox/i.test(ua);
-}
-
 export function isFullscreen(): boolean {
   const doc = document as FullscreenDocument;
   return Boolean(document.fullscreenElement ?? doc.webkitFullscreenElement);
@@ -33,19 +28,20 @@ export function exitTheaterMode(): void {
   document.body.classList.remove(THEATER_CLASS);
 }
 
-/** Theater CSS fills the viewport. Native fullscreen on Safari targets the clicked button → white screen. */
+/** Theater CSS + document fullscreen — safe on user click (login ACTIVATE / play). */
 export function enterPlaybackMode(): void {
   enterTheaterMode();
-
-  if (isSafariBrowser()) return;
-
   const el = document.documentElement as FullscreenElement;
   try {
     if (typeof el.requestFullscreen === "function") {
       void el.requestFullscreen();
+      return;
+    }
+    if (typeof el.webkitRequestFullscreen === "function") {
+      el.webkitRequestFullscreen();
     }
   } catch {
-    /* theater CSS is enough */
+    /* theater CSS covers viewport */
   }
 }
 

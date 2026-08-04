@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { App } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
-import { consumePendingReturnHome, hasPendingReturnHome } from "../lib/app-navigation";
+import { clearAllReturnFlags, wasPlatformOpened } from "../lib/app-navigation";
 
 type UseReturnToHomeOptions = {
   onReturnHome: () => void;
@@ -18,23 +18,23 @@ export function useReturnToHome({ onReturnHome, onBackStep, isPlaybackActive }: 
   isPlaybackActiveRef.current = isPlaybackActive;
 
   useEffect(() => {
-    let leftForPlatform = false;
+    let wasHidden = false;
 
-    function softReturnHome() {
+    function tryReturnHome() {
       if (isPlaybackActiveRef.current?.()) return;
-      if (!hasPendingReturnHome()) return;
-      consumePendingReturnHome();
+      if (!wasPlatformOpened()) return;
+      clearAllReturnFlags();
       onReturnHomeRef.current();
     }
 
     function onVisibilityChange() {
       if (document.visibilityState === "hidden") {
-        if (hasPendingReturnHome()) leftForPlatform = true;
+        if (wasPlatformOpened()) wasHidden = true;
         return;
       }
-      if (document.visibilityState === "visible" && leftForPlatform) {
-        leftForPlatform = false;
-        window.setTimeout(softReturnHome, 300);
+      if (document.visibilityState === "visible" && wasHidden) {
+        wasHidden = false;
+        window.setTimeout(tryReturnHome, 250);
       }
     }
 
@@ -50,14 +50,14 @@ export function useReturnToHome({ onReturnHome, onBackStep, isPlaybackActive }: 
 
     if (Capacitor.isNativePlatform()) {
       void App.addListener("appStateChange", ({ isActive }) => {
-        if (isActive) window.setTimeout(softReturnHome, 300);
+        if (isActive) window.setTimeout(tryReturnHome, 250);
       }).then((handle) => {
         appStateListener = handle;
       });
 
       void App.addListener("backButton", () => {
         if (onBackStepRef.current()) return;
-        softReturnHome();
+        tryReturnHome();
       }).then((handle) => {
         backListener = handle;
       });

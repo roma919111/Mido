@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { hasPendingReturnHome } from "../lib/app-navigation";
+import { wasPlatformOpened } from "../lib/app-navigation";
 import { OverlayPortal } from "./OverlayPortal";
 
 type ReturnHomeButtonProps = {
@@ -7,12 +7,12 @@ type ReturnHomeButtonProps = {
 };
 
 export function ReturnHomeButton({ onClick }: ReturnHomeButtonProps) {
-  const [visible, setVisible] = useState(false);
+  const [visible, setVisible] = useState(wasPlatformOpened());
 
   useEffect(() => {
-    const sync = () => setVisible(hasPendingReturnHome());
+    const sync = () => setVisible(wasPlatformOpened());
     sync();
-    const id = window.setInterval(sync, 500);
+    const id = window.setInterval(sync, 400);
     window.addEventListener("focus", sync);
     window.addEventListener("pageshow", sync);
     document.addEventListener("visibilitychange", sync);

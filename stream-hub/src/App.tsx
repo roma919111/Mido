@@ -5,7 +5,8 @@ import { getSession, logout } from "./lib/auth";
 import { getContinueWatching, getContinueEntry, getMyList } from "./lib/library";
 import { beginOfficialLaunch, cancelLaunch, finishPlatformLaunch, launchOnPlatform } from "./lib/playback";
 import { enterPlaybackMode } from "./lib/fullscreen";
-import { consumePendingReturnHome } from "./lib/app-navigation";
+import { clearAllReturnFlags } from "./lib/app-navigation";
+import { openPlatformManually } from "./lib/playback";
 import { pushOverlayHistory, useReturnToHome } from "./hooks/useReturnToHome";
 import { ReturnHomeButton } from "./components/ReturnHomeButton";
 import { AccountPlatforms } from "./components/AccountPlatforms";
@@ -35,6 +36,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
   const [tab, setTab] = useState<"home" | "list" | "account">("home");
   const [continueItems, setContinueItems] = useState<CatalogItem[]>([]);
   const [listHint, setListHint] = useState<string | null>(null);
+  const [manualOpenUrl, setManualOpenUrl] = useState<string | null>(null);
 
   const featured = CATALOG.find((i) => i.featured) ?? CATALOG[0]!;
 
@@ -119,7 +121,8 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
   }
 
   function handleReturnHomeClick() {
-    consumePendingReturnHome();
+    clearAllReturnFlags();
+    setManualOpenUrl(null);
     resetToHomeInterface();
   }
 
@@ -149,9 +152,12 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
 
   function handlePopcornDone() {
     if (!launching) return;
-    void finishPlatformLaunch(launching).then(() => {
+    void finishPlatformLaunch(launching).then((result) => {
       setShowPopcorn(false);
       setLaunching(null);
+      if (result.needsManualOpen) {
+        setManualOpenUrl(result.destination);
+      }
     });
   }
 
@@ -189,6 +195,21 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
       </header>
 
       <InstallAppBanner />
+
+      {manualOpenUrl ? (
+        <div className="manual-open-banner">
+          <p>Safari حظر فتح Netflix تلقائياً</p>
+          <button
+            type="button"
+            className="manual-open-banner__btn"
+            onClick={() => {
+              if (openPlatformManually(manualOpenUrl)) setManualOpenUrl(null);
+            }}
+          >
+            ▶ افتح Netflix
+          </button>
+        </div>
+      ) : null}
 
       {listHint ? (
         <div className="list-hint">
