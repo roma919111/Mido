@@ -36,6 +36,132 @@ body,
 body {
   min-height: 100dvh;
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* ── Laptop: phone frame preview ── */
+.mobile-lab {
+  min-height: 100dvh;
+}
+
+.phone-frame,
+.phone-frame__bezel,
+.phone-frame__screen {
+  min-height: 100dvh;
+}
+
+.mobile-lab__aside {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  body {
+    background: #0b0b12;
+  }
+
+  .mobile-lab {
+    min-height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 40px;
+    padding: 24px;
+  }
+
+  .mobile-lab__aside {
+    display: block;
+    max-width: 220px;
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 0.85rem;
+    line-height: 1.6;
+  }
+
+  .mobile-lab__title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--accent-strong);
+    margin: 0 0 8px;
+  }
+
+  .mobile-lab__subtitle {
+    margin: 0 0 16px;
+    color: rgba(255, 255, 255, 0.75);
+  }
+
+  .mobile-lab__tips {
+    margin: 0;
+    padding: 0 18px 0 0;
+  }
+
+  .phone-frame {
+    flex-shrink: 0;
+    width: 390px;
+    height: min(844px, calc(100dvh - 48px));
+    filter: drop-shadow(0 24px 80px rgba(0, 0, 0, 0.65));
+  }
+
+  .phone-frame__bezel {
+    height: 100%;
+    border-radius: 44px;
+    border: 10px solid #1f1f24;
+    background: #1f1f24;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .phone-frame__speaker {
+    height: 28px;
+    flex-shrink: 0;
+    background: #1f1f24;
+    position: relative;
+  }
+
+  .phone-frame__speaker::after {
+    content: "";
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 80px;
+    height: 6px;
+    border-radius: 999px;
+    background: #0a0a0c;
+  }
+
+  .phone-frame__screen {
+    flex: 1;
+    overflow: auto;
+    overflow-x: hidden;
+    background: var(--bg);
+    min-height: 0;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .phone-frame__home-indicator {
+    height: 20px;
+    flex-shrink: 0;
+    background: #1f1f24;
+    position: relative;
+  }
+
+  .phone-frame__home-indicator::after {
+    content: "";
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 120px;
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.25);
+  }
+
+  .gtv-shell,
+  .login-page {
+    min-height: 100%;
+  }
 }
 
 button,
