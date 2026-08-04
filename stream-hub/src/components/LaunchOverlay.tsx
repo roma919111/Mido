@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import type { LaunchState } from "../types";
 import { getPlaybackEnvironment } from "../lib/browser-capabilities";
-import { openLaunchTarget } from "../lib/playback";
+import { openLaunchTarget, prepareLaunchWindow } from "../lib/playback";
 import { OverlayPortal } from "./OverlayPortal";
 import { PopcornSplash } from "./PopcornSplash";
 
@@ -44,7 +44,7 @@ export function LaunchOverlay({ state, onCancel, onDismiss }: LaunchOverlayProps
   if (showPopcorn) {
     return (
       <OverlayPortal>
-        <PopcornSplash title={state.title} onDone={finishOpen} />
+        <PopcornSplash title={state.title} fallbackUrl={state.url} onDone={finishOpen} />
       </OverlayPortal>
     );
   }
@@ -90,7 +90,10 @@ export function LaunchOverlay({ state, onCancel, onDismiss }: LaunchOverlayProps
           <button
             type="button"
             className="btn btn--primary launch-overlay__open"
-            onClick={() => setShowPopcorn(true)}
+            onClick={() => {
+              prepareLaunchWindow();
+              setShowPopcorn(true);
+            }}
           >
             فتح الآن 🍿
           </button>

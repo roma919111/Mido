@@ -799,6 +799,17 @@ input {
   font-size: 1.1rem;
 }
 
+.popcorn-splash__link {
+  display: inline-block;
+  margin-top: 16px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: #fbbf24;
+  color: #422006;
+  font-weight: 700;
+  text-decoration: none;
+}
+
 @keyframes popcorn-pop {
   from { transform: scale(0.85); opacity: 0; }
   to { transform: scale(1); opacity: 1; }

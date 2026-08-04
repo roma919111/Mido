@@ -11,6 +11,24 @@ import {
 export const LAUNCH_COUNTDOWN_MS = 0;
 
 let pendingComplete: ((result: { success: boolean; url: string }) => void) | undefined;
+let preparedLaunchWindow: Window | null = null;
+
+/** Call synchronously on user click — Safari blocks delayed window.open. */
+export function prepareLaunchWindow(): void {
+  preparedLaunchWindow = null;
+  try {
+    preparedLaunchWindow = window.open("about:blank", "_blank");
+  } catch {
+    preparedLaunchWindow = null;
+  }
+}
+
+export function clearPreparedLaunchWindow(): void {
+  if (preparedLaunchWindow && !preparedLaunchWindow.closed) {
+    preparedLaunchWindow.close();
+  }
+  preparedLaunchWindow = null;
+}
 
 export function launchOnPlatform(
   item: CatalogItem,
@@ -40,9 +58,26 @@ export function launchOnPlatform(
 
 export function cancelLaunch() {
   pendingComplete = undefined;
+  clearPreparedLaunchWindow();
 }
 
 export function openLaunchTarget(state: LaunchState): void {
+  const target = buildLaunchTarget(state.platform, state.url);
+  const destination = target.directUrl;
+
+  if (preparedLaunchWindow && !preparedLaunchWindow.closed) {
+    try {
+      preparedLaunchWindow.location.href = destination;
+      preparedLaunchWindow.focus();
+      pendingComplete?.({ success: true, url: destination });
+      pendingComplete = undefined;
+      preparedLaunchWindow = null;
+      return;
+    } catch {
+      clearPreparedLaunchWindow();
+    }
+  }
+
   void openPlatformPlayback(state.platform, state.url).then((result) => {
     pendingComplete?.({ success: result.success, url: result.directUrl });
     pendingComplete = undefined;
