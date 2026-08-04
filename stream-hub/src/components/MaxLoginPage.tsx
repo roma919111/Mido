@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { enterAppShellMode } from "../lib/app-shell";
+import { enterKioskMode, isKioskEnabled } from "../lib/kiosk-mode";
 import { enterPlaybackMode } from "../lib/fullscreen";
 import { login } from "../lib/auth";
 import { getDeviceId, getDeviceMac } from "../lib/device-id";
@@ -28,6 +29,7 @@ export function MaxLoginPage({ onSuccess }: MaxLoginPageProps) {
     setError(null);
     enterAppShellMode();
     enterPlaybackMode();
+    if (isKioskEnabled()) void enterKioskMode();
     onSuccess();
   }
 

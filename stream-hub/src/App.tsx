@@ -3,6 +3,7 @@ import { flushSync } from "react-dom";
 import { CATALOG, ROWS } from "./data/catalog";
 import { getSession, logout } from "./lib/auth";
 import { enterAppShellMode, exitAppShellMode } from "./lib/app-shell";
+import { enterKioskMode, isKioskEnabled } from "./lib/kiosk-mode";
 import { getContinueWatching, getContinueEntry, getMyList } from "./lib/library";
 import {
   cancelLaunch,
@@ -17,6 +18,7 @@ import { clearAllReturnFlags, wasPlatformOpened } from "./lib/app-navigation";
 import { pushOverlayHistory, useReturnToHome } from "./hooks/useReturnToHome";
 import { ReturnHomeButton } from "./components/ReturnHomeButton";
 import { AccountPlatforms } from "./components/AccountPlatforms";
+import { KioskModePanel } from "./components/KioskModePanel";
 import { ContentRow } from "./components/ContentRow";
 import { DetailSheet } from "./components/DetailSheet";
 import { HeroBanner } from "./components/HeroBanner";
@@ -52,6 +54,10 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
       clearAllReturnFlags();
     }
     return () => exitAppShellMode();
+  }, []);
+
+  useEffect(() => {
+    if (isKioskEnabled()) void enterKioskMode();
   }, []);
 
   useEffect(() => {
@@ -285,6 +291,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
         </main>
       ) : tab === "account" ? (
         <main className="gtv-main gtv-main--padded">
+          <KioskModePanel />
           <AccountPlatforms streamHubUsername={username} />
         </main>
       ) : null}

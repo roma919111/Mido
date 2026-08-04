@@ -1,5 +1,6 @@
 import { THEATER_CLASS } from "./fullscreen";
 import { enterImmersiveChrome } from "./browser-chrome";
+import { isKioskEnabled, KIOSK_CLASS } from "./kiosk-mode";
 
 const APP_SHELL_CLASS = "max-app-shell";
 
@@ -7,6 +8,10 @@ export function enterAppShellMode(): void {
   document.documentElement.classList.add(APP_SHELL_CLASS);
   document.body.classList.add(APP_SHELL_CLASS);
   enterImmersiveChrome();
+  if (isKioskEnabled()) {
+    document.documentElement.classList.add(KIOSK_CLASS);
+    document.body.classList.add(KIOSK_CLASS);
+  }
 }
 
 export function exitAppShellMode(): void {

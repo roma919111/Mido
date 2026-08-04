@@ -147,6 +147,110 @@ html.max-immersive #root {
   }
 }
 
+/* ── Kiosk mode ── */
+html.max-kiosk,
+html.max-kiosk body {
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+html.max-kiosk input,
+html.max-kiosk textarea {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.kiosk-panel {
+  margin-bottom: 18px;
+  padding: 16px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(255, 111, 0, 0.12), rgba(79, 195, 247, 0.08));
+  border: 1px solid rgba(255, 111, 0, 0.3);
+}
+
+.kiosk-panel__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.kiosk-panel__title {
+  margin: 0 0 4px;
+  font-size: 1.05rem;
+}
+
+.kiosk-panel__lead {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.kiosk-panel__list {
+  margin: 0 0 10px;
+  padding: 0 18px 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.kiosk-panel__hint {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.35);
+  font-size: 0.82rem;
+  color: #fde68a;
+  line-height: 1.5;
+}
+
+.kiosk-panel__switch {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.kiosk-panel__switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.kiosk-panel__track {
+  width: 52px;
+  height: 30px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+  transition: background 0.2s;
+  position: relative;
+}
+
+.kiosk-panel__track::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s;
+}
+
+.kiosk-panel__switch input:checked + .kiosk-panel__track {
+  background: var(--max-orange);
+}
+
+.kiosk-panel__switch input:checked + .kiosk-panel__track::after {
+  transform: translateX(-22px);
+}
+
 .manual-open-banner {
   margin: 0 14px 10px;
   padding: 12px 14px;
