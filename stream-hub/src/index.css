@@ -805,15 +805,24 @@ input {
   font-size: 1.1rem;
 }
 
-.popcorn-splash__link {
+.popcorn-splash__link,
+.popcorn-splash__open {
   display: inline-block;
   margin-top: 16px;
-  padding: 10px 16px;
+  padding: 12px 24px;
   border-radius: 999px;
   background: #fbbf24;
   color: #422006;
   font-weight: 700;
+  font-size: 1.05rem;
   text-decoration: none;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(251, 191, 36, 0.35);
+}
+
+.popcorn-splash__open:hover {
+  filter: brightness(1.05);
 }
 
 @keyframes popcorn-pop {

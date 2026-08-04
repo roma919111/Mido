@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import type { LaunchState } from "../types";
-import { beginOfficialLaunch, finishPlatformLaunch, keepStreamHubFocused } from "../lib/playback";
+import { enterFullscreen } from "../lib/fullscreen";
+import {
+  beginOfficialLaunch,
+  confirmPlatformLaunch,
+  finishPlatformLaunch,
+} from "../lib/playback";
 import { OverlayPortal } from "./OverlayPortal";
 import { PopcornSplash } from "./PopcornSplash";
 
@@ -14,17 +19,23 @@ type LaunchOverlayProps = {
 export function LaunchOverlay({ state, onCancel, onDismiss }: LaunchOverlayProps) {
   const [step, setStep] = useState(0);
   const [showPopcorn, setShowPopcorn] = useState(false);
+  const [needsTap, setNeedsTap] = useState(false);
+  const [tapDestination, setTapDestination] = useState<string | null>(null);
   const [platformLabel, setPlatformLabel] = useState("Netflix");
 
   useEffect(() => {
     if (!state) {
       setShowPopcorn(false);
+      setNeedsTap(false);
+      setTapDestination(null);
       return;
     }
 
     setPlatformLabel(state.platformName);
     setStep(0);
     setShowPopcorn(false);
+    setNeedsTap(false);
+    setTapDestination(null);
     const s1 = window.setTimeout(() => setStep(1), 300);
     const s2 = window.setTimeout(() => setStep(2), 700);
 
@@ -34,17 +45,35 @@ export function LaunchOverlay({ state, onCancel, onDismiss }: LaunchOverlayProps
     };
   }, [state]);
 
-  const finishPopcorn = useCallback(() => {
-    if (state) finishPlatformLaunch(state);
-    onDismiss();
+  const finishPopcorn = useCallback(async () => {
+    if (!state) return;
+    const result = await finishPlatformLaunch(state);
+    if (result.opened) {
+      onDismiss();
+      return;
+    }
+    setNeedsTap(true);
+    setTapDestination(result.destination);
   }, [state, onDismiss]);
+
+  const handleTapOpen = useCallback(async () => {
+    if (!tapDestination) return;
+    const opened = await confirmPlatformLaunch(tapDestination);
+    if (opened) onDismiss();
+  }, [tapDestination, onDismiss]);
 
   if (!state) return null;
 
   if (showPopcorn) {
     return (
       <OverlayPortal>
-        <PopcornSplash title={state.title} platformName={platformLabel} onDone={finishPopcorn} />
+        <PopcornSplash
+          title={state.title}
+          platformName={platformLabel}
+          onDone={() => void finishPopcorn()}
+          needsTap={needsTap}
+          onTapOpen={() => void handleTapOpen()}
+        />
       </OverlayPortal>
     );
   }
@@ -53,13 +82,9 @@ export function LaunchOverlay({ state, onCancel, onDismiss }: LaunchOverlayProps
 
   function handleOpenNow() {
     if (!state) return;
+    void enterFullscreen();
     flushSync(() => setShowPopcorn(true));
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        beginOfficialLaunch(state);
-        keepStreamHubFocused();
-      });
-    });
+    beginOfficialLaunch(state);
   }
 
   const steps = [
@@ -78,7 +103,7 @@ export function LaunchOverlay({ state, onCancel, onDismiss }: LaunchOverlayProps
           <p className="launch-overlay__title">{state.title}</p>
           <p className="launch-overlay__via">عبر {state.launchLabel}</p>
           <p className="launch-overlay__hint">{state.deepLinkHint}</p>
-          <p className="launch-overlay__list-tip">🍿 يظهر أولاً — ثم يُفتح {state.platformName}</p>
+          <p className="launch-overlay__list-tip">🍿 ملء الشاشة — ثم {state.platformName}</p>
 
           <ul className="launch-overlay__steps">
             {steps.map((label, i) => (

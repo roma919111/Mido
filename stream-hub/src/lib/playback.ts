@@ -1,5 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import type { CatalogItem, LaunchState, PlatformId } from "../types";
+import { exitFullscreen } from "./fullscreen";
 import { markPendingReturnHome } from "./app-navigation";
 import { deepLinkHint } from "./deeplink";
 import { addContinueWatching, ensureInMyList } from "./library";
@@ -8,8 +9,9 @@ import { buildLaunchTarget, openPlatformPlayback, PLATFORMS, toOfficialWebUrl } 
 export const LAUNCH_COUNTDOWN_MS = 0;
 export const POPCORN_DURATION_MS = 3000;
 
+const PLATFORM_WINDOW_NAME = "streamhub_platform";
+
 let pendingComplete: ((result: { success: boolean; url: string }) => void) | undefined;
-let platformTab: Window | null = null;
 let pendingDestination: string | null = null;
 let pendingPlatform: PlatformId | null = null;
 let pendingUrl: string | null = null;
@@ -45,59 +47,72 @@ function notifyLaunchComplete(success: boolean, url: string) {
   pendingComplete = undefined;
 }
 
-/** Keep Stream Hub tab focused while popcorn plays. */
-export function keepStreamHubFocused(): void {
-  window.focus();
+function openMaximizedPlatformWindow(url: string): Window | null {
+  const width = window.screen.availWidth || window.innerWidth;
+  const height = window.screen.availHeight || window.innerHeight;
+  const features = [
+    "popup=yes",
+    `width=${width}`,
+    `height=${height}`,
+    "left=0",
+    "top=0",
+    "noopener",
+    "noreferrer",
+  ].join(",");
+
+  try {
+    const opened = window.open(url, PLATFORM_WINDOW_NAME, features);
+    return opened && !opened.closed ? opened : null;
+  } catch {
+    return null;
+  }
 }
 
-/** Repeated focus during popcorn — returns cleanup. */
-export function startStreamHubFocusLoop(): () => void {
-  keepStreamHubFocused();
-  const intervalId = window.setInterval(keepStreamHubFocused, 120);
-  const timeoutIds = [50, 150, 350, 700, 1200, 1800, 2500].map((ms) =>
-    window.setTimeout(keepStreamHubFocused, ms),
-  );
-  return () => {
-    window.clearInterval(intervalId);
-    timeoutIds.forEach((id) => window.clearTimeout(id));
-  };
+/** Open platform — must run inside a user click/tap handler when possible. */
+export function openPlatformWithGesture(url: string): boolean {
+  const popup = openMaximizedPlatformWindow(url);
+  if (popup) {
+    try {
+      popup.focus();
+    } catch {
+      /* ignore */
+    }
+    return true;
+  }
+
+  try {
+    const tab = window.open(url, "_blank", "noopener,noreferrer");
+    if (tab) {
+      tab.focus();
+      return true;
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return false;
 }
 
 /**
- * Step 1 (user click): reserve a hidden tab for Safari, show popcorn — no platform yet.
+ * Step 1 (user click): prepare launch — popcorn + fullscreen only, no browser tab.
  */
 export function beginOfficialLaunch(state: LaunchState): void {
   const target = buildLaunchTarget(state.platform, state.url);
   pendingDestination = target.directUrl;
   pendingPlatform = state.platform;
   pendingUrl = state.url;
-  platformTab = null;
   markPendingReturnHome();
-
-  if (Capacitor.isNativePlatform()) {
-    return;
-  }
-
-  try {
-    platformTab = window.open("about:blank", "_blank");
-    if (platformTab) {
-      try {
-        platformTab.blur();
-      } catch {
-        /* ignore */
-      }
-    }
-  } catch {
-    platformTab = null;
-  }
-
-  keepStreamHubFocused();
 }
 
+export type PlatformLaunchResult = {
+  opened: boolean;
+  destination: string;
+};
+
 /**
- * Step 2 (after popcorn): navigate to the official platform.
+ * Step 2 (after popcorn): open official platform in a separate window/tab.
  */
-export function finishPlatformLaunch(state: LaunchState): void {
+export async function finishPlatformLaunch(state: LaunchState): Promise<PlatformLaunchResult> {
   const destination =
     pendingDestination ?? buildLaunchTarget(state.platform, state.url).directUrl;
   const platform = pendingPlatform ?? state.platform;
@@ -110,23 +125,29 @@ export function finishPlatformLaunch(state: LaunchState): void {
     void openPlatformPlayback(platform, url).then((result) => {
       notifyLaunchComplete(result.success, result.directUrl);
     });
-    return;
+    await exitFullscreen();
+    return { opened: true, destination };
   }
 
-  if (platformTab && !platformTab.closed) {
-    try {
-      platformTab.location.href = destination;
-      platformTab.focus();
-      notifyLaunchComplete(true, destination);
-      platformTab = null;
-      return;
-    } catch {
-      platformTab = null;
-    }
+  markPendingReturnHome();
+  const opened = openPlatformWithGesture(destination);
+  if (opened) {
+    notifyLaunchComplete(true, destination);
+    await exitFullscreen();
+    return { opened: true, destination };
   }
 
-  const opened = window.open(destination, "_blank", "noopener,noreferrer");
-  notifyLaunchComplete(Boolean(opened), destination);
+  notifyLaunchComplete(false, destination);
+  return { opened: false, destination };
+}
+
+/** Manual tap fallback when Safari blocks delayed popups. */
+export async function confirmPlatformLaunch(destination: string): Promise<boolean> {
+  markPendingReturnHome();
+  const opened = openPlatformWithGesture(destination);
+  notifyLaunchComplete(opened, destination);
+  if (opened) await exitFullscreen();
+  return opened;
 }
 
 export function cancelLaunch() {
@@ -134,12 +155,5 @@ export function cancelLaunch() {
   pendingDestination = null;
   pendingPlatform = null;
   pendingUrl = null;
-  if (platformTab && !platformTab.closed) {
-    try {
-      platformTab.close();
-    } catch {
-      /* ignore */
-    }
-  }
-  platformTab = null;
+  void exitFullscreen();
 }
