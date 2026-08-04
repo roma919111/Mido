@@ -11,7 +11,6 @@ import { ContentRow } from "./components/ContentRow";
 import { DetailSheet } from "./components/DetailSheet";
 import { HeroBanner } from "./components/HeroBanner";
 import { LaunchOverlay } from "./components/LaunchOverlay";
-import { PlaybackWarningBanner } from "./components/PlaybackWarningBanner";
 import { PosterCard } from "./components/PosterCard";
 import { SearchBar } from "./components/SearchBar";
 import { SmartSetup, shouldShowSmartSetup } from "./components/SmartSetup";
@@ -190,8 +189,6 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
           خروج
         </button>
       </header>
-
-      <PlaybackWarningBanner />
 
       {listHint ? (
         <div className="list-hint">

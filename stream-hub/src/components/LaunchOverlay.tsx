@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { Capacitor } from "@capacitor/core";
+import { flushSync } from "react-dom";
 import type { LaunchState } from "../types";
-import { getPlaybackEnvironment } from "../lib/browser-capabilities";
-import { finishPlatformLaunch, openOfficialPlatformNow } from "../lib/playback";
+import { beginOfficialLaunch, finishPlatformLaunch, keepStreamHubFocused } from "../lib/playback";
 import { OverlayPortal } from "./OverlayPortal";
 import { PopcornSplash } from "./PopcornSplash";
 
@@ -45,29 +44,28 @@ export function LaunchOverlay({ state, onCancel, onDismiss }: LaunchOverlayProps
   if (showPopcorn) {
     return (
       <OverlayPortal>
-        <PopcornSplash
-          title={state.title}
-          platformName={platformLabel}
-          fallbackUrl={state.url}
-          onDone={finishPopcorn}
-        />
+        <PopcornSplash title={state.title} platformName={platformLabel} onDone={finishPopcorn} />
       </OverlayPortal>
     );
   }
 
-  const env = getPlaybackEnvironment(Capacitor.isNativePlatform());
   const isApp = state.launchMode === "android-app";
 
   function handleOpenNow() {
     if (!state) return;
-    openOfficialPlatformNow(state);
-    setShowPopcorn(true);
+    flushSync(() => setShowPopcorn(true));
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        beginOfficialLaunch(state);
+        keepStreamHubFocused();
+      });
+    });
   }
 
   const steps = [
-    "تحضير الرابط الرسمي للفيلم",
-    isApp ? `فتح تطبيق ${state.platformName}` : `فتح ${state.platformName} الرسمي`,
-    "🍿 يظهر أثناء تحميل الموقع",
+    "تحضير رابط التشغيل",
+    isApp ? `تطبيق ${state.platformName}` : state.platformName,
+    "🍿 ثم التشغيل على المنصة",
   ];
 
   return (
@@ -80,16 +78,7 @@ export function LaunchOverlay({ state, onCancel, onDismiss }: LaunchOverlayProps
           <p className="launch-overlay__title">{state.title}</p>
           <p className="launch-overlay__via">عبر {state.launchLabel}</p>
           <p className="launch-overlay__hint">{state.deepLinkHint}</p>
-          <p className="launch-overlay__list-tip">
-            «فتح الآن» → يفتح {state.platformName} + 🍿 3 ثوانٍ → التشغيل
-          </p>
-
-          {env.warning ? (
-            <div className="launch-overlay__warn">
-              <p>{env.warning}</p>
-              <p>{env.recommendation}</p>
-            </div>
-          ) : null}
+          <p className="launch-overlay__list-tip">🍿 يظهر أولاً — ثم يُفتح {state.platformName}</p>
 
           <ul className="launch-overlay__steps">
             {steps.map((label, i) => (

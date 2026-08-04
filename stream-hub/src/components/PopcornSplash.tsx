@@ -1,33 +1,32 @@
 import { useEffect, useRef, useState } from "react";
-
-export const POPCORN_DURATION_MS = 3000;
+import { POPCORN_DURATION_MS, startStreamHubFocusLoop } from "../lib/playback";
 
 type PopcornSplashProps = {
   title: string;
   platformName: string;
-  fallbackUrl: string;
   onDone: () => void;
 };
 
 const KERNELS = ["🍿", "🍿", "✨", "🍿", "🎬", "🍿", "✨", "🍿"];
 
-export function PopcornSplash({ title, platformName, fallbackUrl, onDone }: PopcornSplashProps) {
+export function PopcornSplash({ title, platformName, onDone }: PopcornSplashProps) {
   const [secondsLeft, setSecondsLeft] = useState(3);
-  const [showFallback, setShowFallback] = useState(false);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
 
   useEffect(() => {
+    const stopFocusLoop = startStreamHubFocusLoop();
+
     const tick = window.setInterval(() => {
       setSecondsLeft((s) => Math.max(0, s - 1));
     }, 1000);
 
     const done = window.setTimeout(() => {
       onDoneRef.current();
-      window.setTimeout(() => setShowFallback(true), 500);
     }, POPCORN_DURATION_MS);
 
     return () => {
+      stopFocusLoop();
       window.clearInterval(tick);
       window.clearTimeout(done);
     };
@@ -45,15 +44,10 @@ export function PopcornSplash({ title, platformName, fallbackUrl, onDone }: Popc
 
       <div className="popcorn-splash__core">
         <div className="popcorn-splash__bucket">🍿</div>
-        <h2>جاري فتح {platformName}</h2>
+        <h2>جاري التشغيل</h2>
         <p className="popcorn-splash__title">{title}</p>
-        <p className="popcorn-splash__subtitle">الموقع الرسمي يحمّل الآن…</p>
+        <p className="popcorn-splash__subtitle">يتصل بـ {platformName}…</p>
         <p className="popcorn-splash__timer">{secondsLeft || "▶"}</p>
-        {showFallback ? (
-          <a className="popcorn-splash__link" href={fallbackUrl} target="_blank" rel="noopener noreferrer">
-            {platformName} لم يفتح؟ اضغط هنا
-          </a>
-        ) : null}
       </div>
     </div>
   );

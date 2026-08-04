@@ -16,8 +16,7 @@ export function MobileShell({ children }: MobileShellProps) {
         <p className="mobile-lab__subtitle">معاينة موبايل على اللابتوب</p>
         <ul className="mobile-lab__tips">
           <li>390×844 — مقاس iPhone</li>
-          <li>Netflix: جرّب على موبايل حقيقي للـ DRM</li>
-          <li>Chrome DevTools → Toggle device toolbar</li>
+          <li>▶ تشغيل → 🍿 ثم المنصة الرسمية</li>
         </ul>
       </div>
 
