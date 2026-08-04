@@ -9,15 +9,13 @@ import { buildLaunchTarget, openPlatformPlayback, PLATFORMS, toOfficialWebUrl } 
 export const LAUNCH_COUNTDOWN_MS = 0;
 export const POPCORN_DURATION_MS = 8000;
 
+const PLATFORM_WINDOW_NAME = "max_platform";
+
 let pendingComplete: ((result: { success: boolean; url: string }) => void) | undefined;
+let platformTab: Window | null = null;
 let pendingDestination: string | null = null;
 let pendingPlatform: PlatformId | null = null;
 let pendingUrl: string | null = null;
-
-export function isSafariBrowser(): boolean {
-  const ua = navigator.userAgent;
-  return /Safari/i.test(ua) && !/Chrome|CriOS|Chromium|Edg|OPR|Firefox/i.test(ua);
-}
 
 export function launchOnPlatform(
   item: CatalogItem,
@@ -50,13 +48,44 @@ function notifyLaunchComplete(success: boolean, url: string) {
   pendingComplete = undefined;
 }
 
-/** Prepare launch — do NOT mark return-home yet (was resetting UI during popcorn). */
+function reservePlatformTab(): void {
+  platformTab = null;
+  if (Capacitor.isNativePlatform()) return;
+
+  try {
+    const tab = window.open("about:blank", PLATFORM_WINDOW_NAME);
+    if (tab) {
+      platformTab = tab;
+      try {
+        tab.blur();
+      } catch {
+        /* ignore */
+      }
+    }
+  } catch {
+    platformTab = null;
+  }
+  window.focus();
+}
+
+export function keepStreamHubFocused(): void {
+  window.focus();
+}
+
+export function startStreamHubFocusLoop(): () => void {
+  keepStreamHubFocused();
+  const id = window.setInterval(keepStreamHubFocused, 120);
+  return () => window.clearInterval(id);
+}
+
+/** Prepare launch on user click — reserve tab for post-popcorn navigation. */
 export function beginOfficialLaunch(state: LaunchState): void {
   const target = buildLaunchTarget(state.platform, state.url);
   pendingDestination = target.directUrl;
   pendingPlatform = state.platform;
   pendingUrl = state.url;
   clearPendingReturnHome();
+  reservePlatformTab();
 }
 
 export type PlatformLaunchResult = {
@@ -64,8 +93,19 @@ export type PlatformLaunchResult = {
   destination: string;
 };
 
+function navigatePlatformTab(destination: string): boolean {
+  if (!platformTab || platformTab.closed) return false;
+  try {
+    platformTab.location.href = destination;
+    platformTab.focus();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * After popcorn: navigate to the official platform.
+ * After popcorn: open platform in a separate tab — MAX tab stays open (no reload on return).
  */
 export async function finishPlatformLaunch(state: LaunchState): Promise<PlatformLaunchResult> {
   const destination =
@@ -82,20 +122,23 @@ export async function finishPlatformLaunch(state: LaunchState): Promise<Platform
       notifyLaunchComplete(result.success, result.directUrl);
     });
     await exitPlaybackMode();
+    platformTab = null;
     return { opened: true, destination };
   }
 
   notifyLaunchComplete(true, destination);
   await exitPlaybackMode();
 
-  if (isSafariBrowser()) {
-    markPendingReturnHome();
-    window.location.assign(destination);
+  markPendingReturnHome();
+
+  if (navigatePlatformTab(destination)) {
+    platformTab = null;
+    window.focus();
     return { opened: true, destination };
   }
+  platformTab = null;
 
-  markPendingReturnHome();
-  const tab = window.open(destination, "_blank");
+  const tab = window.open(destination, PLATFORM_WINDOW_NAME);
   if (tab) {
     tab.focus();
     return { opened: true, destination };
@@ -110,6 +153,14 @@ export function cancelLaunch() {
   pendingDestination = null;
   pendingPlatform = null;
   pendingUrl = null;
+  if (platformTab && !platformTab.closed) {
+    try {
+      platformTab.close();
+    } catch {
+      /* ignore */
+    }
+  }
+  platformTab = null;
   clearPendingReturnHome();
   void exitPlaybackMode();
 }

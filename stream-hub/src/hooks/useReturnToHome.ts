@@ -18,9 +18,9 @@ export function useReturnToHome({ onReturnHome, onBackStep, isPlaybackActive }: 
   isPlaybackActiveRef.current = isPlaybackActive;
 
   useEffect(() => {
-    let wasAway = false;
+    let leftForPlatform = false;
 
-    function returnHomeNow() {
+    function softReturnHome() {
       if (isPlaybackActiveRef.current?.()) return;
       if (!hasPendingReturnHome()) return;
       consumePendingReturnHome();
@@ -29,67 +29,35 @@ export function useReturnToHome({ onReturnHome, onBackStep, isPlaybackActive }: 
 
     function onVisibilityChange() {
       if (document.visibilityState === "hidden") {
-        wasAway = true;
+        if (hasPendingReturnHome()) leftForPlatform = true;
         return;
       }
-      if (document.visibilityState === "visible" && wasAway) {
-        wasAway = false;
-        window.setTimeout(returnHomeNow, 250);
+      if (document.visibilityState === "visible" && leftForPlatform) {
+        leftForPlatform = false;
+        window.setTimeout(softReturnHome, 300);
       }
     }
 
-    function onWindowBlur() {
-      wasAway = true;
-    }
-
-    function onWindowFocus() {
-      if (!wasAway) return;
-      wasAway = false;
-      window.setTimeout(returnHomeNow, 250);
-    }
-
-    function onPageShow() {
-      if (!hasPendingReturnHome()) return;
-      consumePendingReturnHome();
-      onReturnHomeRef.current();
+    function onPopState() {
+      onBackStepRef.current();
     }
 
     document.addEventListener("visibilitychange", onVisibilityChange);
-    window.addEventListener("blur", onWindowBlur);
-    window.addEventListener("focus", onWindowFocus);
-    window.addEventListener("pageshow", onPageShow);
-
-    const popHandler = () => {
-      if (!onBackStepRef.current()) {
-        onReturnHomeRef.current();
-      }
-    };
-    window.addEventListener("popstate", popHandler);
+    window.addEventListener("popstate", onPopState);
 
     let appStateListener: { remove: () => void } | undefined;
     let backListener: { remove: () => void } | undefined;
-    let resumeListener: { remove: () => void } | undefined;
 
     if (Capacitor.isNativePlatform()) {
       void App.addListener("appStateChange", ({ isActive }) => {
-        if (isActive) {
-          wasAway = true;
-          window.setTimeout(returnHomeNow, 250);
-        }
+        if (isActive) window.setTimeout(softReturnHome, 300);
       }).then((handle) => {
         appStateListener = handle;
       });
 
-      void App.addListener("resume", () => {
-        wasAway = true;
-        window.setTimeout(returnHomeNow, 250);
-      }).then((handle) => {
-        resumeListener = handle;
-      });
-
       void App.addListener("backButton", () => {
         if (onBackStepRef.current()) return;
-        returnHomeNow();
+        softReturnHome();
       }).then((handle) => {
         backListener = handle;
       });
@@ -97,13 +65,9 @@ export function useReturnToHome({ onReturnHome, onBackStep, isPlaybackActive }: 
 
     return () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
-      window.removeEventListener("blur", onWindowBlur);
-      window.removeEventListener("focus", onWindowFocus);
-      window.removeEventListener("pageshow", onPageShow);
-      window.removeEventListener("popstate", popHandler);
+      window.removeEventListener("popstate", onPopState);
       appStateListener?.remove();
       backListener?.remove();
-      resumeListener?.remove();
     };
   }, []);
 }

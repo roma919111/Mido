@@ -64,7 +64,8 @@ export function InstallAppBanner({ onInstall }: InstallAppBannerProps) {
       <div className="install-banner__content">
         <p className="install-banner__title">📺 بدون شريط المتصفح</p>
         <p className="install-banner__text">
-          ثبّت <strong>MAX MEDIA PLAYER</strong> كتطبيق — يختفي Safari والتبويبات من الأعلى.
+          ثبّت <strong>MAX MEDIA PLAYER</strong> من Dock — يختفي شريط Safari. Netflix يُفتح في تبويب
+          منفصل وMAX يبقى هنا بدون إعادة تحميل.
         </p>
         {showSafariHelp ? (
           <p className="install-banner__help">{safariSteps}</p>

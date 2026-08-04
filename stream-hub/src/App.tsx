@@ -5,7 +5,7 @@ import { getSession, logout } from "./lib/auth";
 import { getContinueWatching, getContinueEntry, getMyList } from "./lib/library";
 import { beginOfficialLaunch, cancelLaunch, finishPlatformLaunch, launchOnPlatform } from "./lib/playback";
 import { enterPlaybackMode } from "./lib/fullscreen";
-import { consumePendingReturnHome, hasPendingReturnHome } from "./lib/app-navigation";
+import { consumePendingReturnHome } from "./lib/app-navigation";
 import { pushOverlayHistory, useReturnToHome } from "./hooks/useReturnToHome";
 import { ReturnHomeButton } from "./components/ReturnHomeButton";
 import { AccountPlatforms } from "./components/AccountPlatforms";
@@ -48,17 +48,6 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
   }, [launching, selected]);
 
   useEffect(() => {
-    if (!hasPendingReturnHome()) return;
-    consumePendingReturnHome();
-    cancelLaunch();
-    setLaunching(null);
-    setShowPopcorn(false);
-    setSelected(null);
-    setTab("home");
-    setSearch("");
-  }, []);
-
-  useEffect(() => {
     if (!showPopcorn) return;
     function onKeyDown(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
@@ -94,7 +83,6 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
     setSearch("");
     setTab("home");
     setListHint(null);
-    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function handleBackStep(): boolean {
@@ -140,7 +128,6 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
     platform: CatalogItem["platforms"][0]["platform"],
     url: string,
   ) {
-    pushOverlayHistory();
     launchOnPlatform(
       item,
       platform,
@@ -155,7 +142,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
       },
       () => {
         setContinueItems(mapContinueToItems(getContinueWatching()));
-        setListHint(`«${item.title}» في قائمتي — ارجع لتبويب Stream Hub`);
+        setListHint(`«${item.title}» في قائمتي — ارجع لتبويب MAX`);
       },
     );
   }
