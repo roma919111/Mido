@@ -4,13 +4,14 @@ export const POPCORN_DURATION_MS = 3000;
 
 type PopcornSplashProps = {
   title: string;
+  platformName: string;
   fallbackUrl: string;
   onDone: () => void;
 };
 
 const KERNELS = ["🍿", "🍿", "✨", "🍿", "🎬", "🍿", "✨", "🍿"];
 
-export function PopcornSplash({ title, fallbackUrl, onDone }: PopcornSplashProps) {
+export function PopcornSplash({ title, platformName, fallbackUrl, onDone }: PopcornSplashProps) {
   const [secondsLeft, setSecondsLeft] = useState(3);
   const [showFallback, setShowFallback] = useState(false);
   const onDoneRef = useRef(onDone);
@@ -23,7 +24,7 @@ export function PopcornSplash({ title, fallbackUrl, onDone }: PopcornSplashProps
 
     const done = window.setTimeout(() => {
       onDoneRef.current();
-      window.setTimeout(() => setShowFallback(true), 400);
+      window.setTimeout(() => setShowFallback(true), 500);
     }, POPCORN_DURATION_MS);
 
     return () => {
@@ -44,12 +45,13 @@ export function PopcornSplash({ title, fallbackUrl, onDone }: PopcornSplashProps
 
       <div className="popcorn-splash__core">
         <div className="popcorn-splash__bucket">🍿</div>
-        <h2>بالعافية!</h2>
+        <h2>جاري فتح {platformName}</h2>
         <p className="popcorn-splash__title">{title}</p>
+        <p className="popcorn-splash__subtitle">الموقع الرسمي يحمّل الآن…</p>
         <p className="popcorn-splash__timer">{secondsLeft || "▶"}</p>
         {showFallback ? (
           <a className="popcorn-splash__link" href={fallbackUrl} target="_blank" rel="noopener noreferrer">
-            Netflix لم يفتح؟ اضغط هنا
+            {platformName} لم يفتح؟ اضغط هنا
           </a>
         ) : null}
       </div>

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { App } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
-import { consumePendingReturnHome } from "../lib/app-navigation";
+import { consumePendingReturnHome, hasPendingReturnHome } from "../lib/app-navigation";
 
 type UseReturnToHomeOptions = {
   onReturnHome: () => void;
@@ -15,21 +15,30 @@ export function useReturnToHome({ onReturnHome, onBackStep }: UseReturnToHomeOpt
   onBackStepRef.current = onBackStep;
 
   useEffect(() => {
-    function tryReturnHome() {
-      if (consumePendingReturnHome()) {
-        onReturnHomeRef.current();
-      }
+    function returnHomeNow() {
+      if (!hasPendingReturnHome()) return;
+      consumePendingReturnHome();
+      onReturnHomeRef.current();
     }
 
     function onVisibilityChange() {
-      if (document.visibilityState === "visible") {
-        tryReturnHome();
-      }
+      if (document.visibilityState !== "visible") return;
+      window.setTimeout(returnHomeNow, 200);
+    }
+
+    function onWindowFocus() {
+      window.setTimeout(returnHomeNow, 200);
     }
 
     document.addEventListener("visibilitychange", onVisibilityChange);
-    window.addEventListener("focus", tryReturnHome);
-    window.addEventListener("pageshow", tryReturnHome);
+    window.addEventListener("focus", onWindowFocus);
+    window.addEventListener("pageshow", onWindowFocus);
+
+    const poll = window.setInterval(() => {
+      if (document.visibilityState === "visible" && document.hasFocus() && hasPendingReturnHome()) {
+        returnHomeNow();
+      }
+    }, 800);
 
     const popHandler = () => {
       if (!onBackStepRef.current()) {
@@ -44,19 +53,20 @@ export function useReturnToHome({ onReturnHome, onBackStep }: UseReturnToHomeOpt
 
     if (Capacitor.isNativePlatform()) {
       void App.addListener("appStateChange", ({ isActive }) => {
-        if (isActive) tryReturnHome();
+        if (isActive) window.setTimeout(returnHomeNow, 200);
       }).then((handle) => {
         appStateListener = handle;
       });
 
       void App.addListener("resume", () => {
-        tryReturnHome();
+        window.setTimeout(returnHomeNow, 200);
       }).then((handle) => {
         resumeListener = handle;
       });
 
       void App.addListener("backButton", () => {
         if (onBackStepRef.current()) return;
+        returnHomeNow();
         onReturnHomeRef.current();
       }).then((handle) => {
         backListener = handle;
@@ -65,9 +75,10 @@ export function useReturnToHome({ onReturnHome, onBackStep }: UseReturnToHomeOpt
 
     return () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
-      window.removeEventListener("focus", tryReturnHome);
-      window.removeEventListener("pageshow", tryReturnHome);
+      window.removeEventListener("focus", onWindowFocus);
+      window.removeEventListener("pageshow", onWindowFocus);
       window.removeEventListener("popstate", popHandler);
+      window.clearInterval(poll);
       appStateListener?.remove();
       backListener?.remove();
       resumeListener?.remove();

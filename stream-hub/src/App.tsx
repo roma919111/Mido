@@ -3,7 +3,9 @@ import { CATALOG, ROWS } from "./data/catalog";
 import { getSession, login, logout } from "./lib/auth";
 import { getContinueWatching, getContinueEntry, getMyList } from "./lib/library";
 import { cancelLaunch, launchOnPlatform } from "./lib/playback";
+import { consumePendingReturnHome } from "./lib/app-navigation";
 import { pushOverlayHistory, useReturnToHome } from "./hooks/useReturnToHome";
+import { ReturnHomeButton } from "./components/ReturnHomeButton";
 import { AccountPlatforms } from "./components/AccountPlatforms";
 import { ContentRow } from "./components/ContentRow";
 import { DetailSheet } from "./components/DetailSheet";
@@ -143,12 +145,16 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
     pushOverlayHistory();
   }
 
+  function handleReturnHomeClick() {
+    consumePendingReturnHome();
+    resetToHomeInterface();
+  }
+
   function startPlayback(item: CatalogItem, platform: CatalogItem["platforms"][0]["platform"], url: string) {
     pushOverlayHistory();
     launchOnPlatform(item, platform, url, setLaunching, () => {
       setContinueItems(mapContinueToItems(getContinueWatching()));
-      setListHint(`«${item.title}» في قائمتي — افتح 📋 قائمتي واضغط ▶ للمتابعة`);
-      window.setTimeout(() => setLaunching(null), 2000);
+      setListHint(`«${item.title}» في قائمتي — اضغط 🏠 للرجوع`);
     });
   }
 
@@ -306,6 +312,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
         }}
         onDismiss={() => setLaunching(null)}
       />
+      <ReturnHomeButton onClick={handleReturnHomeClick} />
     </div>
   );
 }

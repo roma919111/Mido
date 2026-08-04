@@ -784,6 +784,12 @@ input {
   font-size: 0.95rem;
 }
 
+.popcorn-splash__subtitle {
+  margin: 8px 0 0;
+  color: #fde68a;
+  font-size: 0.88rem;
+}
+
 .popcorn-splash__timer {
   margin: 16px 0 0;
   width: 48px;
@@ -821,6 +827,22 @@ input {
 }
 
 /* ── Launch overlay ── */
+.return-home-fab {
+  position: fixed;
+  left: 16px;
+  bottom: calc(72px + var(--safe-bottom));
+  z-index: 9997;
+  border: none;
+  border-radius: 999px;
+  padding: 12px 18px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.9rem;
+  box-shadow: 0 8px 28px rgba(99, 102, 241, 0.45);
+  cursor: pointer;
+}
+
 .launch-overlay {
   position: fixed;
   inset: 0;

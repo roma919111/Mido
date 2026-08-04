@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import type { LaunchState } from "../types";
 import { getPlaybackEnvironment } from "../lib/browser-capabilities";
-import { openLaunchTarget, prepareLaunchWindow } from "../lib/playback";
+import { finishPlatformLaunch, openOfficialPlatformNow } from "../lib/playback";
 import { OverlayPortal } from "./OverlayPortal";
 import { PopcornSplash } from "./PopcornSplash";
 
@@ -15,6 +15,7 @@ type LaunchOverlayProps = {
 export function LaunchOverlay({ state, onCancel, onDismiss }: LaunchOverlayProps) {
   const [step, setStep] = useState(0);
   const [showPopcorn, setShowPopcorn] = useState(false);
+  const [platformLabel, setPlatformLabel] = useState("Netflix");
 
   useEffect(() => {
     if (!state) {
@@ -22,6 +23,7 @@ export function LaunchOverlay({ state, onCancel, onDismiss }: LaunchOverlayProps
       return;
     }
 
+    setPlatformLabel(state.platformName);
     setStep(0);
     setShowPopcorn(false);
     const s1 = window.setTimeout(() => setStep(1), 300);
@@ -33,9 +35,8 @@ export function LaunchOverlay({ state, onCancel, onDismiss }: LaunchOverlayProps
     };
   }, [state]);
 
-  const finishOpen = useCallback(() => {
-    if (!state) return;
-    openLaunchTarget(state);
+  const finishPopcorn = useCallback(() => {
+    if (state) finishPlatformLaunch(state);
     onDismiss();
   }, [state, onDismiss]);
 
@@ -44,7 +45,12 @@ export function LaunchOverlay({ state, onCancel, onDismiss }: LaunchOverlayProps
   if (showPopcorn) {
     return (
       <OverlayPortal>
-        <PopcornSplash title={state.title} fallbackUrl={state.url} onDone={finishOpen} />
+        <PopcornSplash
+          title={state.title}
+          platformName={platformLabel}
+          fallbackUrl={state.url}
+          onDone={finishPopcorn}
+        />
       </OverlayPortal>
     );
   }
@@ -52,10 +58,16 @@ export function LaunchOverlay({ state, onCancel, onDismiss }: LaunchOverlayProps
   const env = getPlaybackEnvironment(Capacitor.isNativePlatform());
   const isApp = state.launchMode === "android-app";
 
+  function handleOpenNow() {
+    if (!state) return;
+    openOfficialPlatformNow(state);
+    setShowPopcorn(true);
+  }
+
   const steps = [
-    "تحضير الرابط المباشر للفيلم",
-    isApp ? `جاهز — تطبيق ${state.platformName}` : `جاهز — ${state.platformName}`,
-    "اضغط «فتح الآن» — يظهر 🍿 ثم يفتح",
+    "تحضير الرابط الرسمي للفيلم",
+    isApp ? `فتح تطبيق ${state.platformName}` : `فتح ${state.platformName} الرسمي`,
+    "🍿 يظهر أثناء تحميل الموقع",
   ];
 
   return (
@@ -69,7 +81,7 @@ export function LaunchOverlay({ state, onCancel, onDismiss }: LaunchOverlayProps
           <p className="launch-overlay__via">عبر {state.launchLabel}</p>
           <p className="launch-overlay__hint">{state.deepLinkHint}</p>
           <p className="launch-overlay__list-tip">
-            لن يُفتح Netflix إلا بعد «فتح الآن» + 🍿 (3 ثوانٍ)
+            «فتح الآن» → يفتح {state.platformName} + 🍿 3 ثوانٍ → التشغيل
           </p>
 
           {env.warning ? (
@@ -87,14 +99,7 @@ export function LaunchOverlay({ state, onCancel, onDismiss }: LaunchOverlayProps
             ))}
           </ul>
 
-          <button
-            type="button"
-            className="btn btn--primary launch-overlay__open"
-            onClick={() => {
-              prepareLaunchWindow();
-              setShowPopcorn(true);
-            }}
-          >
+          <button type="button" className="btn btn--primary launch-overlay__open" onClick={handleOpenNow}>
             فتح الآن 🍿
           </button>
           <button type="button" className="btn btn--ghost" onClick={onCancel}>

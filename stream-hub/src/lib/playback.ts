@@ -1,35 +1,14 @@
+import { Capacitor } from "@capacitor/core";
 import type { CatalogItem, LaunchState, PlatformId } from "../types";
+import { markPendingReturnHome } from "./app-navigation";
 import { deepLinkHint } from "./deeplink";
 import { addContinueWatching, ensureInMyList } from "./library";
-import {
-  buildLaunchTarget,
-  openPlatformPlayback,
-  PLATFORMS,
-  toOfficialWebUrl,
-} from "./platforms";
-import { markPendingReturnHome } from "./app-navigation";
+import { buildLaunchTarget, openPlatformPlayback, PLATFORMS, toOfficialWebUrl } from "./platforms";
 
 export const LAUNCH_COUNTDOWN_MS = 0;
 
 let pendingComplete: ((result: { success: boolean; url: string }) => void) | undefined;
-let preparedLaunchWindow: Window | null = null;
-
-/** Call synchronously on user click — Safari blocks delayed window.open. */
-export function prepareLaunchWindow(): void {
-  preparedLaunchWindow = null;
-  try {
-    preparedLaunchWindow = window.open("about:blank", "_blank");
-  } catch {
-    preparedLaunchWindow = null;
-  }
-}
-
-export function clearPreparedLaunchWindow(): void {
-  if (preparedLaunchWindow && !preparedLaunchWindow.closed) {
-    preparedLaunchWindow.close();
-  }
-  preparedLaunchWindow = null;
-}
+let platformTab: Window | null = null;
 
 export function launchOnPlatform(
   item: CatalogItem,
@@ -57,32 +36,65 @@ export function launchOnPlatform(
   });
 }
 
-export function cancelLaunch() {
+function notifyLaunchComplete(success: boolean, url: string) {
+  pendingComplete?.({ success, url });
   pendingComplete = undefined;
-  clearPreparedLaunchWindow();
 }
 
-export function openLaunchTarget(state: LaunchState): void {
+/** Opens official site/app on user click; Netflix loads while popcorn plays on Stream Hub. */
+export function openOfficialPlatformNow(state: LaunchState): boolean {
   const target = buildLaunchTarget(state.platform, state.url);
   const destination = target.directUrl;
+  platformTab = null;
 
-  if (preparedLaunchWindow && !preparedLaunchWindow.closed) {
-    try {
-      preparedLaunchWindow.location.href = destination;
-      preparedLaunchWindow.focus();
+  if (Capacitor.isNativePlatform()) {
+    void openPlatformPlayback(state.platform, state.url);
+    markPendingReturnHome();
+    return true;
+  }
+
+  try {
+    platformTab = window.open(destination, "_blank");
+    if (platformTab) {
+      try {
+        platformTab.blur();
+        window.focus();
+      } catch {
+        /* keep Stream Hub visible for popcorn */
+      }
       markPendingReturnHome();
-      pendingComplete?.({ success: true, url: destination });
-      pendingComplete = undefined;
-      preparedLaunchWindow = null;
-      return;
-    } catch {
-      clearPreparedLaunchWindow();
+      return true;
     }
+  } catch {
+    platformTab = null;
   }
 
   void openPlatformPlayback(state.platform, state.url).then((result) => {
     if (result.success) markPendingReturnHome();
-    pendingComplete?.({ success: result.success, url: result.directUrl });
-    pendingComplete = undefined;
   });
+
+  return false;
+}
+
+/** After popcorn — switch to platform and notify launch complete. */
+export function finishPlatformLaunch(state: LaunchState): void {
+  focusPlatformTab();
+  const destination = buildLaunchTarget(state.platform, state.url).directUrl;
+  notifyLaunchComplete(true, destination);
+}
+
+export function focusPlatformTab(): void {
+  if (platformTab && !platformTab.closed) {
+    try {
+      platformTab.focus();
+    } catch {
+      /* ignore */
+    }
+  }
+  platformTab = null;
+}
+
+export function cancelLaunch() {
+  pendingComplete = undefined;
+  platformTab = null;
 }
