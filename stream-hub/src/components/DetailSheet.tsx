@@ -6,7 +6,7 @@ import { PLATFORMS } from "../lib/platforms";
 type DetailSheetProps = {
   item: CatalogItem | null;
   onClose: () => void;
-  onPlay: (item: CatalogItem, platform: PlatformId, url: string, fromElement: HTMLElement) => void;
+  onPlay: (item: CatalogItem, platform: PlatformId, url: string) => void;
 };
 
 export function DetailSheet({ item, onClose, onPlay }: DetailSheetProps) {
@@ -64,7 +64,7 @@ export function DetailSheet({ item, onClose, onPlay }: DetailSheetProps) {
                   type="button"
                   className="platform-play-btn"
                   style={{ "--platform-color": meta.color } as React.CSSProperties}
-                  onClick={(e) => onPlay(item, link.platform, link.url, e.currentTarget)}
+                  onClick={() => onPlay(item, link.platform, link.url)}
                 >
                   <span className="platform-play-btn__icon">▶</span>
                   <span>

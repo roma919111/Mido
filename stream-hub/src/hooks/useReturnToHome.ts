@@ -6,7 +6,6 @@ import { consumePendingReturnHome, hasPendingReturnHome } from "../lib/app-navig
 type UseReturnToHomeOptions = {
   onReturnHome: () => void;
   onBackStep: () => boolean;
-  /** Block auto-return while popcorn / launch is in progress */
   isPlaybackActive?: () => boolean;
 };
 
@@ -49,9 +48,16 @@ export function useReturnToHome({ onReturnHome, onBackStep, isPlaybackActive }: 
       window.setTimeout(returnHomeNow, 250);
     }
 
+    function onPageShow() {
+      if (!hasPendingReturnHome()) return;
+      consumePendingReturnHome();
+      onReturnHomeRef.current();
+    }
+
     document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("blur", onWindowBlur);
     window.addEventListener("focus", onWindowFocus);
+    window.addEventListener("pageshow", onPageShow);
 
     const popHandler = () => {
       if (!onBackStepRef.current()) {
@@ -93,6 +99,7 @@ export function useReturnToHome({ onReturnHome, onBackStep, isPlaybackActive }: 
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("blur", onWindowBlur);
       window.removeEventListener("focus", onWindowFocus);
+      window.removeEventListener("pageshow", onPageShow);
       window.removeEventListener("popstate", popHandler);
       appStateListener?.remove();
       backListener?.remove();

@@ -5,7 +5,7 @@ import { getSession, login, logout } from "./lib/auth";
 import { getContinueWatching, getContinueEntry, getMyList } from "./lib/library";
 import { beginOfficialLaunch, cancelLaunch, finishPlatformLaunch, launchOnPlatform } from "./lib/playback";
 import { enterPlaybackMode } from "./lib/fullscreen";
-import { consumePendingReturnHome } from "./lib/app-navigation";
+import { consumePendingReturnHome, hasPendingReturnHome } from "./lib/app-navigation";
 import { pushOverlayHistory, useReturnToHome } from "./hooks/useReturnToHome";
 import { ReturnHomeButton } from "./components/ReturnHomeButton";
 import { AccountPlatforms } from "./components/AccountPlatforms";
@@ -91,6 +91,29 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
     setContinueItems(mapContinueToItems(getContinueWatching()));
   }, [launching, selected]);
 
+  useEffect(() => {
+    if (!hasPendingReturnHome()) return;
+    consumePendingReturnHome();
+    cancelLaunch();
+    setLaunching(null);
+    setShowPopcorn(false);
+    setSelected(null);
+    setTab("home");
+    setSearch("");
+  }, []);
+
+  useEffect(() => {
+    if (!showPopcorn) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      cancelLaunch();
+      setLaunching(null);
+      setShowPopcorn(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [showPopcorn]);
+
   const myListItems = useMemo(
     () => CATALOG.filter((item) => getMyList().includes(item.id)),
     [selected, tab],
@@ -160,7 +183,6 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
     item: CatalogItem,
     platform: CatalogItem["platforms"][0]["platform"],
     url: string,
-    fromElement?: HTMLElement,
   ) {
     pushOverlayHistory();
     launchOnPlatform(
@@ -169,7 +191,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
       url,
       (state) => {
         beginOfficialLaunch(state);
-        enterPlaybackMode(fromElement);
+        enterPlaybackMode();
         flushSync(() => {
           setLaunching(state);
           setShowPopcorn(true);
@@ -198,16 +220,16 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
     return { platform: link.platform, url: link.url };
   }
 
-  function quickPlay(item: CatalogItem, fromElement?: HTMLElement) {
+  function quickPlay(item: CatalogItem) {
     const target = resolvePlayback(item);
     if (!target) return;
-    startPlayback(item, target.platform, target.url, fromElement);
+    startPlayback(item, target.platform, target.url);
   }
 
-  function playFeatured(item: CatalogItem, fromElement?: HTMLElement) {
+  function playFeatured(item: CatalogItem) {
     const link = item.platforms[0];
     if (!link) return;
-    startPlayback(item, link.platform, link.url, fromElement);
+    startPlayback(item, link.platform, link.url);
   }
 
   return (
@@ -329,9 +351,9 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
       <DetailSheet
         item={selected}
         onClose={() => setSelected(null)}
-        onPlay={(item, platform, url, fromElement) => {
+        onPlay={(item, platform, url) => {
           setSelected(null);
-          startPlayback(item, platform, url, fromElement);
+          startPlayback(item, platform, url);
         }}
       />
       {showPopcorn && launching ? (

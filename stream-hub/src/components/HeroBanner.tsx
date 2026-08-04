@@ -2,7 +2,7 @@ import type { CatalogItem } from "../types";
 
 type HeroBannerProps = {
   item: CatalogItem;
-  onPlay: (item: CatalogItem, fromElement: HTMLElement) => void;
+  onPlay: (item: CatalogItem) => void;
   onDetails: (item: CatalogItem) => void;
 };
 
@@ -16,11 +16,7 @@ export function HeroBanner({ item, onPlay, onDetails }: HeroBannerProps) {
         {item.titleEn ? <p className="hero__subtitle">{item.titleEn}</p> : null}
         <p className="hero__synopsis">{item.synopsis}</p>
         <div className="hero__actions">
-          <button
-            type="button"
-            className="btn btn--primary"
-            onClick={(e) => onPlay(item, e.currentTarget)}
-          >
+          <button type="button" className="btn btn--primary" onClick={() => onPlay(item)}>
             ▶ تشغيل
           </button>
           <button type="button" className="btn btn--ghost" onClick={() => onDetails(item)}>

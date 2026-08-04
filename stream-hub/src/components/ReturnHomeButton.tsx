@@ -12,12 +12,14 @@ export function ReturnHomeButton({ onClick }: ReturnHomeButtonProps) {
   useEffect(() => {
     const sync = () => setVisible(hasPendingReturnHome());
     sync();
-    const id = window.setInterval(sync, 600);
+    const id = window.setInterval(sync, 500);
     window.addEventListener("focus", sync);
+    window.addEventListener("pageshow", sync);
     document.addEventListener("visibilitychange", sync);
     return () => {
       window.clearInterval(id);
       window.removeEventListener("focus", sync);
+      window.removeEventListener("pageshow", sync);
       document.removeEventListener("visibilitychange", sync);
     };
   }, []);

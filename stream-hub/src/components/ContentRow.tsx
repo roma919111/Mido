@@ -5,7 +5,7 @@ type ContentRowProps = {
   title: string;
   items: CatalogItem[];
   onSelect: (item: CatalogItem) => void;
-  onPlay?: (item: CatalogItem, fromElement: HTMLElement) => void;
+  onPlay?: (item: CatalogItem) => void;
   wideFirst?: boolean;
 };
 
