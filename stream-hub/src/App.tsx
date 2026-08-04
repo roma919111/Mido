@@ -4,12 +4,12 @@ import { CATALOG, ROWS } from "./data/catalog";
 import { getSession, logout } from "./lib/auth";
 import { getContinueWatching, getContinueEntry, getMyList } from "./lib/library";
 import {
-  beginOfficialLaunch,
   cancelLaunch,
   finishPopcornOverlay,
   launchOnPlatform,
+  openPlatformBrowserSync,
   openPlatformManually,
-  openPlatformNow,
+  prepareLaunch,
 } from "./lib/playback";
 import { enterPlaybackMode } from "./lib/fullscreen";
 import { clearAllReturnFlags } from "./lib/app-navigation";
@@ -142,15 +142,14 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
       platform,
       url,
       (state) => {
-        beginOfficialLaunch(state);
+        prepareLaunch(state);
+        const result = openPlatformBrowserSync(state);
         enterPlaybackMode();
         flushSync(() => {
           setLaunching(state);
           setShowPopcorn(true);
         });
-        void openPlatformNow(state).then((result) => {
-          if (result.needsManualOpen) setManualOpenUrl(result.destination);
-        });
+        if (result.needsManualOpen) setManualOpenUrl(result.destination);
       },
       () => {
         setContinueItems(mapContinueToItems(getContinueWatching()));

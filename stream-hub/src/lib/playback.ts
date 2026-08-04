@@ -49,26 +49,6 @@ function notifyLaunchComplete(success: boolean, url: string) {
   pendingComplete = undefined;
 }
 
-function reservePlatformTab(): void {
-  platformTab = null;
-  if (Capacitor.isNativePlatform()) return;
-
-  try {
-    const tab = window.open("about:blank", PLATFORM_WINDOW_NAME);
-    if (tab) {
-      platformTab = tab;
-      try {
-        tab.blur();
-      } catch {
-        /* ignore */
-      }
-    }
-  } catch {
-    platformTab = null;
-  }
-  window.focus();
-}
-
 export function keepStreamHubFocused(): void {
   window.focus();
 }
@@ -79,13 +59,13 @@ export function startStreamHubFocusLoop(): () => void {
   return () => window.clearInterval(id);
 }
 
-export function beginOfficialLaunch(state: LaunchState): void {
+/** Store launch target — call synchronously at the start of the user click. */
+export function prepareLaunch(state: LaunchState): void {
   const target = buildLaunchTarget(state.platform, state.url);
   pendingDestination = target.directUrl;
   pendingPlatform = state.platform;
   pendingUrl = state.url;
   clearPendingReturnHome();
-  reservePlatformTab();
 }
 
 export type PlatformLaunchResult = {
@@ -94,29 +74,34 @@ export type PlatformLaunchResult = {
   needsManualOpen: boolean;
 };
 
-function navigatePlatformTab(destination: string, focusTab: boolean): boolean {
-  if (!platformTab || platformTab.closed) return false;
+function openNamedTab(destination: string): Window | null {
   try {
-    platformTab.location.href = destination;
-    if (focusTab) platformTab.focus();
-    else {
-      try {
-        platformTab.blur();
-      } catch {
-        /* ignore */
-      }
-      window.focus();
-    }
-    return true;
+    const tab = window.open(destination, PLATFORM_WINDOW_NAME);
+    if (tab) return tab;
   } catch {
-    return false;
+    /* fall through to anchor click */
+  }
+
+  try {
+    const anchor = document.createElement("a");
+    anchor.href = destination;
+    anchor.target = PLATFORM_WINDOW_NAME;
+    anchor.rel = "noopener noreferrer";
+    anchor.style.display = "none";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    return window.open("", PLATFORM_WINDOW_NAME);
+  } catch {
+    return null;
   }
 }
 
 /**
- * Step 1 — open browser immediately while popcorn starts (5s on MAX).
+ * Open platform browser synchronously inside the user click — before React
+ * re-render or fullscreen, so Safari does not defer the popup until later.
  */
-export async function openPlatformNow(state: LaunchState): Promise<PlatformLaunchResult> {
+export function openPlatformBrowserSync(state: LaunchState): PlatformLaunchResult {
   const destination =
     pendingDestination ?? buildLaunchTarget(state.platform, state.url).directUrl;
   const platform = pendingPlatform ?? state.platform;
@@ -131,18 +116,11 @@ export async function openPlatformNow(state: LaunchState): Promise<PlatformLaunc
     return { opened: true, destination, needsManualOpen: false };
   }
 
-  notifyLaunchComplete(true, destination);
-
-  if (navigatePlatformTab(destination, false)) {
-    platformTab = null;
-    markPlatformOpened();
-    return { opened: true, destination, needsManualOpen: false };
-  }
-  platformTab = null;
-
-  const tab = window.open(destination, PLATFORM_WINDOW_NAME);
+  const tab = openNamedTab(destination);
   if (tab) {
+    platformTab = tab;
     markPlatformOpened();
+    notifyLaunchComplete(true, destination);
     try {
       tab.blur();
     } catch {
@@ -152,11 +130,13 @@ export async function openPlatformNow(state: LaunchState): Promise<PlatformLaunc
     return { opened: true, destination, needsManualOpen: false };
   }
 
+  platformTab = null;
   markPlatformOpened();
+  notifyLaunchComplete(true, destination);
   return { opened: false, destination, needsManualOpen: true };
 }
 
-/** Step 2 — after 5s popcorn: hide overlay and focus platform tab. */
+/** After 5s popcorn: hide overlay and focus the tab opened at click time. */
 export async function finishPopcornOverlay(state: LaunchState): Promise<void> {
   const destination =
     pendingDestination ?? buildLaunchTarget(state.platform, state.url).directUrl;
@@ -168,14 +148,21 @@ export async function finishPopcornOverlay(state: LaunchState): Promise<void> {
 
   if (!Capacitor.isNativePlatform()) {
     try {
-      const tab = window.open("", PLATFORM_WINDOW_NAME);
-      tab?.focus();
+      let tab = platformTab;
+      if (!tab || tab.closed) {
+        tab = window.open("", PLATFORM_WINDOW_NAME);
+      }
+      if (tab && !tab.closed) {
+        tab.focus();
+      } else {
+        openNamedTab(destination)?.focus();
+      }
     } catch {
       /* ignore */
     }
+    platformTab = null;
   }
 
-  void destination;
   void state;
 }
 
