@@ -15,9 +15,48 @@ cp .env.example .env
 npm run dev
 ```
 
-افتح `http://localhost:5173`
+افتح **Chrome على اللابتوب**: `http://localhost:5173`
 
-**افتراضي:** `admin` / `changeme` (غيّرها في `.env`)
+---
+
+## الموبايل — لماذا localhost لا يعمل؟
+
+`localhost` على الموبايل = **الموبايل نفسه**، مو اللابتوب.
+
+### الطريقة 1 — نفس Wi‑Fi (الأسهل)
+
+1. على **Mac** شغّل: `npm run dev`
+2. اعرف IP اللابتوب:
+   ```bash
+   ipconfig getifaddr en0
+   ```
+3. على **الموبايل** (نفس Wi‑Fi) افتح:
+   ```
+   http://192.168.x.x:5173
+   ```
+   (استبدل بالـ IP الحقيقي)
+
+4. إذا ما فتح: **System Settings → Network → Firewall** — اسمح لـ Node/Vite
+
+### الطريقة 2 — رابط عام (أي شبكة)
+
+على **Mac** (بعد `npm run dev`):
+
+```bash
+npm run tunnel
+```
+
+يعطيك رابط `https://....trycloudflare.com` — افتحه من الموبايل.
+
+### الطريقة 3 — Cursor Cloud
+
+إذا الكود على **Cloud Agent** مو على Mac:
+- الموبايل **ما يقدر** يوصل `localhost:5173`
+- **Clone** المشروع على Mac وشغّل محلياً، أو استخدم `npm run tunnel`
+
+---
+
+## تسجيل الدخول
 
 ## البناء للإنتاج
 
