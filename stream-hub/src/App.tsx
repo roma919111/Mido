@@ -3,6 +3,7 @@ import { CATALOG, ROWS } from "./data/catalog";
 import { getSession, login, logout } from "./lib/auth";
 import { getContinueWatching, getMyList } from "./lib/library";
 import { cancelLaunch, launchOnPlatform } from "./lib/playback";
+import { AccountPlatforms } from "./components/AccountPlatforms";
 import { ContentRow } from "./components/ContentRow";
 import { DetailSheet } from "./components/DetailSheet";
 import { HeroBanner } from "./components/HeroBanner";
@@ -176,16 +177,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
         </main>
       ) : tab === "account" ? (
         <main className="gtv-main gtv-main--padded">
-          <div className="notice">
-            <strong>مرحباً {username}</strong>
-            <br />
-            <br />
-            <strong>نفس Google TV</strong>
-            <br />
-            تصفّح من هنا — عند «تشغيل» يُفتح تطبيق Netflix / شاهد / TOD على Android.
-            <br />
-            سجّل الدخول مرة واحدة في كل تطبيق. ارجع بزر «رجوع».
-          </div>
+          <AccountPlatforms streamHubUsername={username} />
         </main>
       ) : null}
 

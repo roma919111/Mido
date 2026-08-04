@@ -652,6 +652,95 @@ input {
   color: var(--accent-strong);
 }
 
+/* ── Account platforms ── */
+.account-page__intro p {
+  margin: 8px 0 0;
+  line-height: 1.55;
+}
+
+.account-page__warn {
+  font-size: 0.82rem;
+  color: #fbbf24 !important;
+}
+
+.account-page__saved {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(34, 197, 94, 0.15);
+  color: #86efac;
+  font-size: 0.9rem;
+}
+
+.account-platforms {
+  display: grid;
+  gap: 14px;
+}
+
+.account-platform-card {
+  border: 1px solid var(--border);
+  border-right: 3px solid var(--platform-color, var(--accent));
+  background: var(--surface);
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.account-platform-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.account-platform-card__head h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.account-platform-card__badge {
+  font-size: 0.72rem;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.15);
+  color: #86efac;
+}
+
+.account-platform-card__badge--empty {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+}
+
+.password-row {
+  display: flex;
+  gap: 8px;
+}
+
+.password-row input {
+  flex: 1;
+}
+
+.password-toggle {
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--muted);
+  border-radius: 10px;
+  padding: 0 12px;
+  cursor: pointer;
+  font-size: 0.78rem;
+}
+
+.account-platform-card__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.btn--sm {
+  padding: 10px 18px;
+  font-size: 0.85rem;
+}
+
 @media (min-width: 768px) {
   .hero {
     min-height: 420px;
