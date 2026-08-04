@@ -8,9 +8,9 @@ import {
   toOfficialWebUrl,
 } from "./platforms";
 
-export const LAUNCH_COUNTDOWN_MS = 1200;
+export const LAUNCH_COUNTDOWN_MS = 0;
 
-let launchTimer: number | undefined;
+let pendingComplete: ((result: { success: boolean; url: string }) => void) | undefined;
 
 export function launchOnPlatform(
   item: CatalogItem,
@@ -25,6 +25,7 @@ export function launchOnPlatform(
 
   addContinueWatching(item, platform, target.directUrl);
   ensureInMyList(item.id);
+  pendingComplete = onComplete;
   onLaunching({
     platform,
     platformName: meta.name,
@@ -35,23 +36,15 @@ export function launchOnPlatform(
     deepLinkHint: deepLinkHint(platform, target.directUrl),
     countdownMs: LAUNCH_COUNTDOWN_MS,
   });
-
-  if (launchTimer) window.clearTimeout(launchTimer);
-  launchTimer = window.setTimeout(() => {
-    void openPlatformPlayback(platform, webUrl).then((result) => {
-      onComplete?.({ success: result.success, url: result.directUrl });
-      launchTimer = undefined;
-    });
-  }, LAUNCH_COUNTDOWN_MS);
 }
 
 export function cancelLaunch() {
-  if (launchTimer) {
-    window.clearTimeout(launchTimer);
-    launchTimer = undefined;
-  }
+  pendingComplete = undefined;
 }
 
 export function openLaunchTarget(state: LaunchState): void {
-  void openPlatformPlayback(state.platform, state.url);
+  void openPlatformPlayback(state.platform, state.url).then((result) => {
+    pendingComplete?.({ success: result.success, url: result.directUrl });
+    pendingComplete = undefined;
+  });
 }
