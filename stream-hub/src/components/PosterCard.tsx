@@ -5,7 +5,7 @@ type PosterCardProps = {
   item: CatalogItem;
   wide?: boolean;
   onSelect: (item: CatalogItem) => void;
-  onPlay?: (item: CatalogItem) => void;
+  onPlay?: (item: CatalogItem, fromElement: HTMLElement) => void;
 };
 
 export function PosterCard({ item, wide, onSelect, onPlay }: PosterCardProps) {
@@ -33,7 +33,7 @@ export function PosterCard({ item, wide, onSelect, onPlay }: PosterCardProps) {
           aria-label={`تشغيل ${item.title}`}
           onClick={(e) => {
             e.stopPropagation();
-            onPlay(item);
+            onPlay(item, e.currentTarget);
           }}
         >
           ▶

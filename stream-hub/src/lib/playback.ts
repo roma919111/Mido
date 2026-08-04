@@ -7,7 +7,7 @@ import { addContinueWatching, ensureInMyList } from "./library";
 import { buildLaunchTarget, openPlatformPlayback, PLATFORMS, toOfficialWebUrl } from "./platforms";
 
 export const LAUNCH_COUNTDOWN_MS = 0;
-export const POPCORN_DURATION_MS = 3000;
+export const POPCORN_DURATION_MS = 8000;
 
 let pendingComplete: ((result: { success: boolean; url: string }) => void) | undefined;
 let pendingDestination: string | null = null;

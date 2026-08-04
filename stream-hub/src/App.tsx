@@ -156,7 +156,12 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
     resetToHomeInterface();
   }
 
-  function startPlayback(item: CatalogItem, platform: CatalogItem["platforms"][0]["platform"], url: string) {
+  function startPlayback(
+    item: CatalogItem,
+    platform: CatalogItem["platforms"][0]["platform"],
+    url: string,
+    fromElement?: HTMLElement,
+  ) {
     pushOverlayHistory();
     launchOnPlatform(
       item,
@@ -164,11 +169,11 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
       url,
       (state) => {
         beginOfficialLaunch(state);
+        enterPlaybackMode(fromElement);
         flushSync(() => {
           setLaunching(state);
           setShowPopcorn(true);
         });
-        enterPlaybackMode();
       },
       () => {
         setContinueItems(mapContinueToItems(getContinueWatching()));
@@ -193,16 +198,16 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
     return { platform: link.platform, url: link.url };
   }
 
-  function quickPlay(item: CatalogItem) {
+  function quickPlay(item: CatalogItem, fromElement?: HTMLElement) {
     const target = resolvePlayback(item);
     if (!target) return;
-    startPlayback(item, target.platform, target.url);
+    startPlayback(item, target.platform, target.url, fromElement);
   }
 
-  function playFeatured(item: CatalogItem) {
+  function playFeatured(item: CatalogItem, fromElement?: HTMLElement) {
     const link = item.platforms[0];
     if (!link) return;
-    startPlayback(item, link.platform, link.url);
+    startPlayback(item, link.platform, link.url, fromElement);
   }
 
   return (
@@ -324,9 +329,9 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
       <DetailSheet
         item={selected}
         onClose={() => setSelected(null)}
-        onPlay={(item, platform, url) => {
+        onPlay={(item, platform, url, fromElement) => {
           setSelected(null);
-          startPlayback(item, platform, url);
+          startPlayback(item, platform, url, fromElement);
         }}
       />
       {showPopcorn && launching ? (

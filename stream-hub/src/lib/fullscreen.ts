@@ -7,7 +7,7 @@ type FullscreenDocument = Document & {
   webkitFullscreenElement?: Element | null;
 };
 
-const THEATER_CLASS = "stream-hub-theater";
+export const THEATER_CLASS = "stream-hub-theater";
 
 export function isFullscreen(): boolean {
   const doc = document as FullscreenDocument;
@@ -20,33 +20,42 @@ export function isTheaterMode(): boolean {
 
 export function enterTheaterMode(): void {
   document.documentElement.classList.add(THEATER_CLASS);
+  document.body.classList.add(THEATER_CLASS);
 }
 
 export function exitTheaterMode(): void {
   document.documentElement.classList.remove(THEATER_CLASS);
+  document.body.classList.remove(THEATER_CLASS);
 }
 
-export async function enterFullscreen(): Promise<boolean> {
-  const el = document.documentElement as FullscreenElement;
+function tryFullscreenOn(target: Element): boolean {
+  const el = target as FullscreenElement;
   try {
-    if (el.requestFullscreen) {
-      await el.requestFullscreen();
-      return isFullscreen();
+    if (typeof el.requestFullscreen === "function") {
+      void el.requestFullscreen();
+      return true;
     }
-    if (el.webkitRequestFullscreen) {
-      await el.webkitRequestFullscreen();
-      return isFullscreen();
+    if (typeof el.webkitRequestFullscreen === "function") {
+      el.webkitRequestFullscreen();
+      return true;
     }
   } catch {
-    /* fallback to theater CSS */
+    /* try next target */
   }
   return false;
 }
 
 /** Theater CSS + native fullscreen — call synchronously inside a click handler. */
-export function enterPlaybackMode(): void {
+export function enterPlaybackMode(fromElement?: Element | null): void {
   enterTheaterMode();
-  void enterFullscreen();
+
+  const targets: Element[] = [];
+  if (fromElement) targets.push(fromElement);
+  targets.push(document.documentElement, document.body);
+
+  for (const target of targets) {
+    if (tryFullscreenOn(target)) return;
+  }
 }
 
 export async function exitPlaybackMode(): Promise<void> {
