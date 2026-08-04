@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { flushSync } from "react-dom";
 import { CATALOG, ROWS } from "./data/catalog";
-import { getSession, login, logout } from "./lib/auth";
+import { getSession, logout } from "./lib/auth";
 import { getContinueWatching, getContinueEntry, getMyList } from "./lib/library";
 import { beginOfficialLaunch, cancelLaunch, finishPlatformLaunch, launchOnPlatform } from "./lib/playback";
 import { enterPlaybackMode } from "./lib/fullscreen";
@@ -19,57 +19,7 @@ import { SearchBar } from "./components/SearchBar";
 import { SmartSetup, shouldShowSmartSetup } from "./components/SmartSetup";
 import type { CatalogItem, ContinueEntry, LaunchState, PlatformId } from "./types";
 
-function LoginPage({ onSuccess }: { onSuccess: () => void }) {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!login(username, password)) {
-      setError("اسم المستخدم أو كلمة المرور غير صحيحة");
-      return;
-    }
-    setError(null);
-    onSuccess();
-  }
-
-  return (
-    <div className="login-page">
-      <form className="login-card" onSubmit={handleSubmit}>
-        <div className="login-card__brand">Stream Hub</div>
-        <h1>تجربة مشاهدة سهلة</h1>
-        <p className="subtitle">واجهة موحّدة بأسلوب Google TV — اكتشف، ابحث، وشغّل.</p>
-        {error ? <p className="error-text">{error}</p> : null}
-        <div className="field">
-          <label htmlFor="username">اسم المستخدم</label>
-          <input
-            id="username"
-            autoComplete="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            required
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="password">كلمة المرور</label>
-          <input
-            id="password"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-        </div>
-        <button type="submit" className="primary-btn">
-          دخول
-        </button>
-      </form>
-    </div>
-  );
-}
-
+import { MaxLoginPage } from "./components/MaxLoginPage";
 function mapContinueToItems(entries: ContinueEntry[]): CatalogItem[] {
   return entries
     .map((entry) => CATALOG.find((item) => item.id === entry.itemId))
@@ -236,7 +186,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
     <div className="gtv-shell">
       <header className="gtv-header">
         <div className="gtv-header__brand">
-          Stream Hub
+          <span className="gtv-header__max">MAX</span> MEDIA PLAYER
           <span className="gtv-header__version">v{__APP_VERSION__}</span>
         </div>
         <SearchBar value={search} onChange={setSearch} />
@@ -389,7 +339,7 @@ export function App() {
 
   if (!authed) {
     return (
-      <LoginPage
+      <MaxLoginPage
         onSuccess={() => {
           const session = getSession();
           setUsername(session?.username ?? "");

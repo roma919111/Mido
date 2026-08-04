@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
-export const APP_VERSION = "0.2.3";
+export const APP_VERSION = "0.3.0";
 
 export default defineConfig({
   define: {
