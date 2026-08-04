@@ -4,7 +4,10 @@ import { VitePWA } from "vite-plugin-pwa";
 
 export const APP_VERSION = "0.3.8";
 
+const pagesBase = process.env.GITHUB_PAGES === "true" ? "/Mido/" : "/";
+
 export default defineConfig({
+  base: pagesBase,
   define: {
     __APP_VERSION__: JSON.stringify(APP_VERSION),
   },
@@ -27,15 +30,15 @@ export default defineConfig({
         orientation: "landscape",
         lang: "ar",
         dir: "rtl",
-        start_url: "/",
+        start_url: pagesBase,
         icons: [
           {
-            src: "/icon-192.png",
+            src: `${pagesBase}icon-192.png`,
             sizes: "192x192",
             type: "image/png",
           },
           {
-            src: "/icon-512.png",
+            src: `${pagesBase}icon-512.png`,
             sizes: "512x512",
             type: "image/png",
           },

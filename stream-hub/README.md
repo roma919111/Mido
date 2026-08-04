@@ -6,6 +6,15 @@
 
 **لا WebView للتشغيل · لا تجاوز DRM · لا تضمين محتوى محمي.**
 
+## الرابط العام (GitHub Pages)
+
+بعد تفعيل Pages من [إعدادات الم repo](https://github.com/roma919111/Mido/settings/pages) → **Source: GitHub Actions**:
+
+**https://roma919111.github.io/Mido/**
+
+- **Android:** افتح الرابط في **Chrome** → ⋮ → «تثبيت التطبيق»
+- **iPhone:** Safari → Share → Add to Home Screen
+
 ## التشغيل
 
 ```bash
