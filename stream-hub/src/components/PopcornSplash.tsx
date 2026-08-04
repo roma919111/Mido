@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { enterTheaterMode } from "../lib/fullscreen";
-import { POPCORN_DURATION_MS } from "../lib/playback";
+import { POPCORN_DURATION_MS, startStreamHubFocusLoop } from "../lib/playback";
 
 type PopcornSplashProps = {
   title: string;
@@ -21,6 +21,7 @@ export function PopcornSplash({ title, platformName, onDone }: PopcornSplashProp
 
   useEffect(() => {
     enterTheaterMode();
+    const stopFocus = startStreamHubFocusLoop();
 
     const tick = window.setInterval(() => {
       setSecondsLeft((s) => Math.max(0, s - 1));
@@ -31,6 +32,7 @@ export function PopcornSplash({ title, platformName, onDone }: PopcornSplashProp
     }, POPCORN_DURATION_MS);
 
     return () => {
+      stopFocus();
       window.clearInterval(tick);
       window.clearTimeout(done);
     };
@@ -56,7 +58,7 @@ export function PopcornSplash({ title, platformName, onDone }: PopcornSplashProp
         <div className="popcorn-splash__bucket">🍿</div>
         <h2>جاري التشغيل</h2>
         <p className="popcorn-splash__title">{title}</p>
-        <p className="popcorn-splash__subtitle">🍿 {totalSeconds} ثوانٍ — ثم {platformName}</p>
+        <p className="popcorn-splash__subtitle">🍿 {totalSeconds} ثوانٍ — {platformName} في تبويب منفصل</p>
         <p className="popcorn-splash__timer">{secondsLeft || "▶"}</p>
       </div>
     </div>

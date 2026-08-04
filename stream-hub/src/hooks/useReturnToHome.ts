@@ -34,8 +34,13 @@ export function useReturnToHome({ onReturnHome, onBackStep, isPlaybackActive }: 
       }
       if (document.visibilityState === "visible" && wasHidden) {
         wasHidden = false;
-        window.setTimeout(tryReturnHome, 250);
+        window.setTimeout(tryReturnHome, 200);
       }
+    }
+
+    function onWindowFocus() {
+      if (!wasPlatformOpened()) return;
+      window.setTimeout(tryReturnHome, 200);
     }
 
     function onPopState() {
@@ -46,11 +51,11 @@ export function useReturnToHome({ onReturnHome, onBackStep, isPlaybackActive }: 
       if (!event.persisted) return;
       if (isPlaybackActiveRef.current?.()) return;
       if (!wasPlatformOpened()) return;
-      clearAllReturnFlags();
-      onReturnHomeRef.current();
+      window.setTimeout(tryReturnHome, 200);
     }
 
     document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("focus", onWindowFocus);
     window.addEventListener("popstate", onPopState);
     window.addEventListener("pageshow", onPageShow);
 
@@ -59,7 +64,7 @@ export function useReturnToHome({ onReturnHome, onBackStep, isPlaybackActive }: 
 
     if (Capacitor.isNativePlatform()) {
       void App.addListener("appStateChange", ({ isActive }) => {
-        if (isActive) window.setTimeout(tryReturnHome, 250);
+        if (isActive) window.setTimeout(tryReturnHome, 200);
       }).then((handle) => {
         appStateListener = handle;
       });
@@ -74,6 +79,7 @@ export function useReturnToHome({ onReturnHome, onBackStep, isPlaybackActive }: 
 
     return () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("focus", onWindowFocus);
       window.removeEventListener("popstate", onPopState);
       window.removeEventListener("pageshow", onPageShow);
       appStateListener?.remove();

@@ -153,7 +153,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
       },
       () => {
         setContinueItems(mapContinueToItems(getContinueWatching()));
-        setListHint(`«${item.title}» في قائمتي — ارجع لتبويب MAX`);
+        setListHint(`«${item.title}» — للرجوع: انتقل لتبويب MAX 🏠`);
       },
     );
   }

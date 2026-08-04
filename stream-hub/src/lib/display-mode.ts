@@ -31,3 +31,12 @@ export function isSafariBrowser(): boolean {
 export function isIosDevice(): boolean {
   return /iPhone|iPad|iPod/i.test(navigator.userAgent);
 }
+
+export function isAndroidDevice(): boolean {
+  return /Android/i.test(navigator.userAgent);
+}
+
+export function isChromeBrowser(): boolean {
+  const ua = navigator.userAgent;
+  return /Chrome|CriOS/i.test(ua) && !/Edg|OPR|Firefox/i.test(ua);
+}

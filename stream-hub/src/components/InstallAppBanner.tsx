@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import {
   dismissInstallBanner,
+  isAndroidDevice,
   isBrowserTab,
+  isChromeBrowser,
   isInstallBannerDismissed,
   isIosDevice,
   isSafariBrowser,
@@ -14,7 +16,7 @@ type InstallAppBannerProps = {
 export function InstallAppBanner({ onInstall }: InstallAppBannerProps) {
   const [visible, setVisible] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [showSafariHelp, setShowSafariHelp] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   useEffect(() => {
     if (!isBrowserTab() || isInstallBannerDismissed()) return;
@@ -47,32 +49,34 @@ export function InstallAppBanner({ onInstall }: InstallAppBannerProps) {
       return;
     }
 
-    if (isSafariBrowser() || isIosDevice()) {
-      setShowSafariHelp((v) => !v);
-      return;
-    }
-
-    setShowSafariHelp(true);
+    setShowHelp((v) => !v);
   }
 
-  const safariSteps = isIosDevice()
-    ? "شارك ⬆ → «Add to Home Screen»"
-    : "Safari: File → Add to Dock  ·  أو Share → Add to Dock";
+  const androidChrome = isAndroidDevice() && isChromeBrowser();
+  const installHelp = androidChrome
+    ? "Chrome: ⋮ → «تثبيت التطبيق» أو «Add to Home screen» — بدون APK وبدون Play Protect"
+    : isIosDevice()
+      ? "شارك ⬆ → «Add to Home Screen»"
+      : isSafariBrowser()
+        ? "Safari: Share → Add to Dock"
+        : "من قائمة المتصفح: Install app / Add to Home screen";
+
+  const installNote = isAndroidDevice()
+    ? "لا تحتاج APK — التثبيت من Chrome آمن ولا يتطلب «مصادر غير معروفة»."
+    : "بعد التثبيت: Netflix في تبويب منفصل وMAX يبقى — ارجع لتبويب MAX للواجهة الرئيسية.";
 
   return (
     <div className="install-banner" role="region" aria-label="تثبيت التطبيق">
       <div className="install-banner__content">
-        <p className="install-banner__title">📺 بدون شريط المتصفح</p>
+        <p className="install-banner__title">📺 ثبّت MAX بدون APK</p>
         <p className="install-banner__text">
-          ثبّت <strong>MAX MEDIA PLAYER</strong> على الشاشة الرئيسية — يختفي شريط Safari والتبويبات
-          العلوية. Netflix يُفتح في نفس التطبيق بدون تبويب إضافي.
+          ثبّت <strong>MAX MEDIA PLAYER</strong> على الشاشة الرئيسية — يختفي شريط المتصفح.{" "}
+          {installNote}
         </p>
-        {showSafariHelp ? (
-          <p className="install-banner__help">{safariSteps}</p>
-        ) : null}
+        {showHelp ? <p className="install-banner__help">{installHelp}</p> : null}
         <div className="install-banner__actions">
           <button type="button" className="install-banner__primary" onClick={() => void handleInstallClick()}>
-            ⬇ تثبيت التطبيق
+            {deferredPrompt ? "⬇ تثبيت الآن" : "📲 كيف أثبّت؟"}
           </button>
           <button type="button" className="install-banner__ghost" onClick={handleDismiss}>
             لاحقاً

@@ -29,7 +29,7 @@ export function ReturnHomeButton({ onClick }: ReturnHomeButtonProps) {
   return (
     <OverlayPortal>
       <button type="button" className="return-home-fab" onClick={onClick}>
-        🏠 رجوع للواجهة
+        🏠 واجهة MAX
       </button>
     </OverlayPortal>
   );
