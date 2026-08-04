@@ -3,6 +3,7 @@ import { CATALOG, ROWS } from "./data/catalog";
 import { getSession, login, logout } from "./lib/auth";
 import { getContinueWatching, getContinueEntry, getMyList } from "./lib/library";
 import { cancelLaunch, launchOnPlatform } from "./lib/playback";
+import { pushOverlayHistory, useReturnToHome } from "./hooks/useReturnToHome";
 import { AccountPlatforms } from "./components/AccountPlatforms";
 import { ContentRow } from "./components/ContentRow";
 import { DetailSheet } from "./components/DetailSheet";
@@ -101,8 +102,54 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
     );
   }, [search]);
 
+  function resetToHomeInterface() {
+    cancelLaunch();
+    setLaunching(null);
+    setSelected(null);
+    setSearch("");
+    setTab("home");
+    setListHint(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function handleBackStep(): boolean {
+    if (launching) {
+      cancelLaunch();
+      setLaunching(null);
+      return true;
+    }
+    if (selected) {
+      setSelected(null);
+      return true;
+    }
+    if (search.trim()) {
+      setSearch("");
+      return true;
+    }
+    if (tab !== "home") {
+      setTab("home");
+      return true;
+    }
+    return false;
+  }
+
+  useReturnToHome({
+    onReturnHome: resetToHomeInterface,
+    onBackStep: handleBackStep,
+  });
+
   function openDetails(item: CatalogItem) {
     setSelected(item);
+    pushOverlayHistory();
+  }
+
+  function startPlayback(item: CatalogItem, platform: CatalogItem["platforms"][0]["platform"], url: string) {
+    pushOverlayHistory();
+    launchOnPlatform(item, platform, url, setLaunching, () => {
+      setContinueItems(mapContinueToItems(getContinueWatching()));
+      setListHint(`«${item.title}» في قائمتي — افتح 📋 قائمتي واضغط ▶ للمتابعة`);
+      window.setTimeout(() => setLaunching(null), 2000);
+    });
   }
 
   function resolvePlayback(item: CatalogItem): { platform: PlatformId; url: string } | null {
@@ -111,14 +158,6 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
     const link = item.platforms[0];
     if (!link) return null;
     return { platform: link.platform, url: link.url };
-  }
-
-  function startPlayback(item: CatalogItem, platform: CatalogItem["platforms"][0]["platform"], url: string) {
-    launchOnPlatform(item, platform, url, setLaunching, () => {
-      setContinueItems(mapContinueToItems(getContinueWatching()));
-      setListHint(`«${item.title}» في قائمتي — افتح 📋 قائمتي واضغط ▶ للمتابعة`);
-      window.setTimeout(() => setLaunching(null), 2000);
-    });
   }
 
   function quickPlay(item: CatalogItem) {

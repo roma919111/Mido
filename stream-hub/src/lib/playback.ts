@@ -7,6 +7,7 @@ import {
   PLATFORMS,
   toOfficialWebUrl,
 } from "./platforms";
+import { markPendingReturnHome } from "./app-navigation";
 
 export const LAUNCH_COUNTDOWN_MS = 0;
 
@@ -69,6 +70,7 @@ export function openLaunchTarget(state: LaunchState): void {
     try {
       preparedLaunchWindow.location.href = destination;
       preparedLaunchWindow.focus();
+      markPendingReturnHome();
       pendingComplete?.({ success: true, url: destination });
       pendingComplete = undefined;
       preparedLaunchWindow = null;
@@ -79,6 +81,7 @@ export function openLaunchTarget(state: LaunchState): void {
   }
 
   void openPlatformPlayback(state.platform, state.url).then((result) => {
+    if (result.success) markPendingReturnHome();
     pendingComplete?.({ success: result.success, url: result.directUrl });
     pendingComplete = undefined;
   });

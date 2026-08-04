@@ -75,12 +75,13 @@ export function buildLaunchTarget(
     const fallback = Capacitor.isNativePlatform()
       ? meta.playStoreUrl
       : directUrl;
+    const launchFlags = Capacitor.isNativePlatform() ? "0" : "0x10000000";
     const intent = [
       `intent://${parsed.host}${parsed.pathname}${parsed.search}`,
       `#Intent`,
       `scheme=https`,
       `package=${meta.androidPackage}`,
-      `launchFlags=0x10000000`,
+      `launchFlags=${launchFlags}`,
       `S.browser_fallback_url=${encodeURIComponent(fallback)}`,
       `end`,
     ].join(";");
