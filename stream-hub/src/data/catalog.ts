@@ -1,106 +1,112 @@
 import type { CatalogItem } from "../types";
 
-/**
- * Curated catalog — each link points to the official platform page.
- * Playback always happens on Netflix / Shahid / TOD (browser or native app).
- * Add items by editing this file or loading from your CMS later.
- */
 export const CATALOG: CatalogItem[] = [
   {
     id: "breaking-bad",
     title: "بريكنغ باد",
     titleEn: "Breaking Bad",
-    description: "دراما · 5 مواسم",
+    synopsis:
+      "معلّم كيمياء يتحول إلى مصنع مخدرات بعد تشخيصه بمرض خطير. دراما مشوّقة حازت على جوائز عالمية.",
+    description: "دراما · 5 مواسم · 2008",
+    year: 2008,
+    rating: "TV-MA",
+    featured: true,
     category: "series",
-    posterGradient: "linear-gradient(135deg, #14532d 0%, #052e16 100%)",
-    platforms: [
-      {
-        platform: "netflix",
-        url: "https://www.netflix.com/title/70143836",
-      },
-    ],
+    posterGradient: "linear-gradient(160deg, #166534 0%, #052e16 55%, #000 100%)",
+    trailerYoutubeId: "HhesaQXLuRY",
+    platforms: [{ platform: "netflix", url: "https://www.netflix.com/title/70143836" }],
   },
   {
     id: "money-heist",
     title: "لا كاسا دي بapel",
     titleEn: "Money Heist",
-    description: "إثارة · مسلسل",
+    synopsis: "سرقة من دار الطباعة الملكية الإسبانية — خطة جنونية وشخصيات لا تُنسى.",
+    description: "إثارة · 5 مواسم",
+    year: 2017,
+    rating: "TV-MA",
+    featured: true,
     category: "series",
-    posterGradient: "linear-gradient(135deg, #7f1d1d 0%, #450a0a 100%)",
-    platforms: [
-      {
-        platform: "netflix",
-        url: "https://www.netflix.com/title/80192098",
-      },
-    ],
+    posterGradient: "linear-gradient(160deg, #991b1b 0%, #450a0a 55%, #000 100%)",
+    trailerYoutubeId: "htqXL94-RZ4",
+    platforms: [{ platform: "netflix", url: "https://www.netflix.com/title/80192098" }],
   },
   {
     id: "al-hashashin",
     title: "الحشاشين",
-    description: "دراما تاريخية · شاهد أصلي",
+    synopsis: "دراما تاريخية عربية من إنتاج شاهد الأصلي.",
+    description: "دراما · شاهد أصلي",
+    year: 2024,
     category: "series",
-    posterGradient: "linear-gradient(135deg, #78350f 0%, #422006 100%)",
-    platforms: [
-      {
-        platform: "shahid",
-        url: "https://shahid.mbc.net/ar",
-      },
-    ],
+    posterGradient: "linear-gradient(160deg, #b45309 0%, #422006 55%, #000 100%)",
+    platforms: [{ platform: "shahid", url: "https://shahid.mbc.net/ar" }],
+  },
+  {
+    id: "stranger-things",
+    title: "ستrangر Things",
+    titleEn: "Stranger Things",
+    synopsis: "أحداث غامضة في بلدة صغيرة وصداقة تجمع مجموعة من الأطفال.",
+    description: "خيال علمي · مسلسل",
+    year: 2016,
+    rating: "TV-14",
+    category: "series",
+    posterGradient: "linear-gradient(160deg, #dc2626 0%, #1e1b4b 55%, #000 100%)",
+    trailerYoutubeId: "b9EkMc79ZSU",
+    platforms: [{ platform: "netflix", url: "https://www.netflix.com/title/80057281" }],
   },
   {
     id: "world-cup",
     title: "مباريات كرة القدم",
+    synopsis: "بث مباشر للمباريات والبطولات على منصات رياضية رسمية.",
     description: "رياضة · بث مباشر",
     category: "sport",
-    posterGradient: "linear-gradient(135deg, #1e3a8a 0%, #172554 100%)",
+    posterGradient: "linear-gradient(160deg, #2563eb 0%, #172554 55%, #000 100%)",
     platforms: [
-      {
-        platform: "tod",
-        url: "https://www.tod.tv/ar",
-      },
-      {
-        platform: "shahid",
-        url: "https://shahid.mbc.net/ar/sports",
-      },
+      { platform: "tod", url: "https://www.tod.tv/ar" },
+      { platform: "shahid", url: "https://shahid.mbc.net/ar/sports" },
     ],
   },
   {
     id: "spider-verse",
-    title: "Spider-Man: Across the Spider-Verse",
-    titleEn: "Spider-Verse",
+    title: "Spider-Verse",
+    titleEn: "Across the Spider-Verse",
+    synopsis: "مغامرة رسوم متحركة لسباider-Man عبر عوالم متعددة.",
     description: "رسوم متحركة · عائلي",
+    year: 2023,
+    rating: "PG",
     category: "kids",
-    posterGradient: "linear-gradient(135deg, #312e81 0%, #1e1b4b 100%)",
-    platforms: [
-      {
-        platform: "netflix",
-        url: "https://www.netflix.com/browse/genre/783",
-      },
-    ],
+    posterGradient: "linear-gradient(160deg, #7c3aed 0%, #1e1b4b 55%, #000 100%)",
+    trailerYoutubeId: "cqGfhVIAFYo",
+    platforms: [{ platform: "netflix", url: "https://www.netflix.com/browse/genre/783" }],
   },
   {
     id: "documentary",
     title: "وثائقيات مميزة",
-    description: "اكتشف وثائقيات على منصات متعددة",
+    synopsis: "مجموعة وثائقيات من أشهر المنصات — طبيعة، تاريخ، علوم.",
+    description: "وثائقي",
     category: "movie",
-    posterGradient: "linear-gradient(135deg, #0f766e 0%, #134e4a 100%)",
+    posterGradient: "linear-gradient(160deg, #0d9488 0%, #134e4a 55%, #000 100%)",
     platforms: [
-      {
-        platform: "netflix",
-        url: "https://www.netflix.com/browse/genre/683",
-      },
-      {
-        platform: "shahid",
-        url: "https://shahid.mbc.net/ar",
-      },
+      { platform: "netflix", url: "https://www.netflix.com/browse/genre/683" },
+      { platform: "shahid", url: "https://shahid.mbc.net/ar" },
     ],
+  },
+  {
+    id: "wednesday",
+    title: "Wednesday",
+    titleEn: "Wednesday",
+    synopsis: "Wednesday Addams في مدرسة داخلية مليئة بالأسرار والغموض.",
+    description: "كوميديا · غموض",
+    year: 2022,
+    category: "series",
+    posterGradient: "linear-gradient(160deg, #374151 0%, #111827 55%, #000 100%)",
+    platforms: [{ platform: "netflix", url: "https://www.netflix.com/title/81257204" }],
   },
 ];
 
-export const CATEGORIES = [
-  { id: "all", label: "الكل" },
-  { id: "series", label: "مسلسلات" },
-  { id: "movie", label: "أفلام" },
-  { id: "sport", label: "رياضة" },
-  { id: "kids", label: "أطفال" },
+export const ROWS = [
+  { id: "featured", title: "مميز لك", filter: (items: CatalogItem[]) => items.filter((i) => i.featured) },
+  { id: "series", title: "مسلسلات", filter: (items: CatalogItem[]) => items.filter((i) => i.category === "series") },
+  { id: "movies", title: "أفلام ووثائقي", filter: (items: CatalogItem[]) => items.filter((i) => i.category === "movie") },
+  { id: "sport", title: "رياضة", filter: (items: CatalogItem[]) => items.filter((i) => i.category === "sport") },
+  { id: "kids", title: "عائلي", filter: (items: CatalogItem[]) => items.filter((i) => i.category === "kids") },
 ] as const;
