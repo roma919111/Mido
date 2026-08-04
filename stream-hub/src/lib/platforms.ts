@@ -19,6 +19,7 @@ export type PlatformMeta = {
   color: string;
   homeUrl: string;
   androidPackage: string;
+  playStoreUrl: string;
 };
 
 export const PLATFORMS: Record<PlatformId, PlatformMeta> = {
@@ -28,6 +29,7 @@ export const PLATFORMS: Record<PlatformId, PlatformMeta> = {
     color: "#e50914",
     homeUrl: "https://www.netflix.com/browse",
     androidPackage: "com.netflix.mediaclient",
+    playStoreUrl: "https://play.google.com/store/apps/details?id=com.netflix.mediaclient",
   },
   shahid: {
     id: "shahid",
@@ -35,6 +37,7 @@ export const PLATFORMS: Record<PlatformId, PlatformMeta> = {
     color: "#00c853",
     homeUrl: "https://shahid.mbc.net/ar",
     androidPackage: "net.mbc.shahid",
+    playStoreUrl: "https://play.google.com/store/apps/details?id=net.mbc.shahid",
   },
   tod: {
     id: "tod",
@@ -42,6 +45,7 @@ export const PLATFORMS: Record<PlatformId, PlatformMeta> = {
     color: "#7c3aed",
     homeUrl: "https://www.tod.tv/ar",
     androidPackage: "com.beincom.tod",
+    playStoreUrl: "https://play.google.com/store/apps/details?id=com.beincom.tod",
   },
 };
 
@@ -68,13 +72,16 @@ export function buildLaunchTarget(
   const meta = PLATFORMS[platform];
 
   if (isAndroidDevice()) {
+    const fallback = Capacitor.isNativePlatform()
+      ? meta.playStoreUrl
+      : directUrl;
     const intent = [
       `intent://${parsed.host}${parsed.pathname}${parsed.search}`,
       `#Intent`,
       `scheme=https`,
       `package=${meta.androidPackage}`,
       `launchFlags=0x10000000`,
-      `S.browser_fallback_url=${encodeURIComponent(directUrl)}`,
+      `S.browser_fallback_url=${encodeURIComponent(fallback)}`,
       `end`,
     ].join(";");
     return {
@@ -108,9 +115,6 @@ export async function openPlatformPlayback(
 
     if (isAndroidDevice() && target.mode === "android-app") {
       openHref(target.href);
-      window.setTimeout(() => {
-        openHref(target.directUrl);
-      }, 1500);
       return { success: true, mode: target.mode, href: target.href, directUrl: target.directUrl };
     }
 

@@ -11,6 +11,7 @@ import { LaunchOverlay } from "./components/LaunchOverlay";
 import { PlaybackWarningBanner } from "./components/PlaybackWarningBanner";
 import { PosterCard } from "./components/PosterCard";
 import { SearchBar } from "./components/SearchBar";
+import { SmartSetup, shouldShowSmartSetup } from "./components/SmartSetup";
 import type { CatalogItem, ContinueEntry, LaunchState } from "./types";
 
 function LoginPage({ onSuccess }: { onSuccess: () => void }) {
@@ -237,6 +238,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
 export function App() {
   const [authed, setAuthed] = useState(false);
   const [username, setUsername] = useState("");
+  const [setupDone, setSetupDone] = useState(() => !shouldShowSmartSetup());
 
   useEffect(() => {
     const session = getSession();
@@ -245,6 +247,10 @@ export function App() {
       setAuthed(true);
     }
   }, []);
+
+  if (!setupDone) {
+    return <SmartSetup onDone={() => setSetupDone(true)} />;
+  }
 
   if (!authed) {
     return (
