@@ -69,7 +69,7 @@ export function DetailSheet({ item, onClose, onPlay }: DetailSheetProps) {
                   <span className="platform-play-btn__icon">▶</span>
                   <span>
                     <strong>تشغيل على {meta.name}</strong>
-                    <small>يفتح netflix.com / shahid / tod.tv</small>
+                    <small>رابط مباشر — يفتح صفحة التشغيل بسرعة</small>
                   </span>
                 </button>
               );

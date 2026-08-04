@@ -38,7 +38,7 @@ export const CATALOG: CatalogItem[] = [
     year: 2024,
     category: "series",
     posterGradient: "linear-gradient(160deg, #b45309 0%, #422006 55%, #000 100%)",
-    platforms: [{ platform: "shahid", url: "https://shahid.mbc.net/ar" }],
+    platforms: [{ platform: "shahid", url: "https://shahid.mbc.net/ar/series/Al-Hashashin/988896" }],
   },
   {
     id: "stranger-things",
@@ -76,7 +76,9 @@ export const CATALOG: CatalogItem[] = [
     category: "kids",
     posterGradient: "linear-gradient(160deg, #7c3aed 0%, #1e1b4b 55%, #000 100%)",
     trailerYoutubeId: "cqGfhVIAFYo",
-    platforms: [{ platform: "netflix", url: "https://www.netflix.com/browse/genre/783" }],
+    platforms: [
+      { platform: "netflix", url: "https://www.netflix.com/title/81657227" },
+    ],
   },
   {
     id: "documentary",

@@ -1,11 +1,11 @@
 import type { PlatformId } from "../types";
+import { normalizeDeepLink } from "./deeplink";
 
 export type PlatformMeta = {
   id: PlatformId;
   name: string;
   color: string;
   homeUrl: string;
-  /** Official Android app package — used for Google TV-style app launch. */
   androidPackage: string;
 };
 
@@ -33,46 +33,10 @@ export const PLATFORMS: Record<PlatformId, PlatformMeta> = {
   },
 };
 
-export type LaunchMode = "android-app" | "app-link" | "browser";
+export type LaunchMode = "android-app" | "app-link";
 
 export function isAndroidDevice(): boolean {
   return /Android/i.test(navigator.userAgent);
-}
-
-/**
- * Google TV model: browse in Stream Hub → launch the official streaming APP.
- * On Android: Android Intent opens Netflix/Shahid/TOD app (not Chrome).
- * Fallback: HTTPS app link, then browser.
- */
-export function buildLaunchTarget(
-  platform: PlatformId,
-  webUrl: string,
-): { href: string; mode: LaunchMode; label: string } {
-  const secure = toOfficialWebUrl(webUrl);
-  const parsed = new URL(secure);
-  const meta = PLATFORMS[platform];
-
-  if (isAndroidDevice()) {
-    const intent = [
-      `intent://${parsed.host}${parsed.pathname}${parsed.search}`,
-      `#Intent`,
-      `scheme=https`,
-      `package=${meta.androidPackage}`,
-      `S.browser_fallback_url=${encodeURIComponent(secure)}`,
-      `end`,
-    ].join(";");
-    return {
-      href: intent,
-      mode: "android-app",
-      label: `تطبيق ${meta.name}`,
-    };
-  }
-
-  return {
-    href: secure,
-    mode: "app-link",
-    label: meta.name,
-  };
 }
 
 export function toOfficialWebUrl(url: string): string {
@@ -83,15 +47,49 @@ export function toOfficialWebUrl(url: string): string {
   return `https://${trimmed.replace(/^\/+/, "")}`;
 }
 
+export function buildLaunchTarget(
+  platform: PlatformId,
+  webUrl: string,
+): { href: string; mode: LaunchMode; label: string; directUrl: string } {
+  const directUrl = normalizeDeepLink(platform, webUrl);
+  const parsed = new URL(directUrl);
+  const meta = PLATFORMS[platform];
+
+  if (isAndroidDevice()) {
+    const intent = [
+      `intent://${parsed.host}${parsed.pathname}${parsed.search}`,
+      `#Intent`,
+      `scheme=https`,
+      `package=${meta.androidPackage}`,
+      `launchFlags=0x10000000`,
+      `S.browser_fallback_url=${encodeURIComponent(directUrl)}`,
+      `end`,
+    ].join(";");
+    return {
+      href: intent,
+      mode: "android-app",
+      label: `تطبيق ${meta.name}`,
+      directUrl,
+    };
+  }
+
+  return {
+    href: directUrl,
+    mode: "app-link",
+    label: meta.name,
+    directUrl,
+  };
+}
+
 export function openPlatformPlayback(
   platform: PlatformId,
   url: string,
-): { success: boolean; mode: LaunchMode; href: string } {
+): { success: boolean; mode: LaunchMode; href: string; directUrl: string } {
   const target = buildLaunchTarget(platform, url);
   try {
     window.location.assign(target.href);
-    return { success: true, mode: target.mode, href: target.href };
+    return { success: true, mode: target.mode, href: target.href, directUrl: target.directUrl };
   } catch {
-    return { success: false, mode: target.mode, href: target.href };
+    return { success: false, mode: target.mode, href: target.href, directUrl: target.directUrl };
   }
 }

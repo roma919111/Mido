@@ -1,4 +1,5 @@
 import type { CatalogItem, LaunchState, PlatformId } from "../types";
+import { deepLinkHint } from "./deeplink";
 import { addContinueWatching } from "./library";
 import {
   buildLaunchTarget,
@@ -6,6 +7,9 @@ import {
   PLATFORMS,
   toOfficialWebUrl,
 } from "./platforms";
+
+/** Overlay visible briefly before opening the official app (ms). */
+export const LAUNCH_COUNTDOWN_MS = 1800;
 
 let launchTimer: number | undefined;
 
@@ -20,22 +24,24 @@ export function launchOnPlatform(
   const webUrl = toOfficialWebUrl(url);
   const target = buildLaunchTarget(platform, webUrl);
 
-  addContinueWatching(item, platform, webUrl);
+  addContinueWatching(item, platform, target.directUrl);
   onLaunching({
     platform,
     platformName: meta.name,
     title: item.title,
-    url: webUrl,
+    url: target.directUrl,
     launchMode: target.mode,
     launchLabel: target.label,
+    deepLinkHint: deepLinkHint(platform, target.directUrl),
+    countdownMs: LAUNCH_COUNTDOWN_MS,
   });
 
   if (launchTimer) window.clearTimeout(launchTimer);
   launchTimer = window.setTimeout(() => {
     const result = openPlatformPlayback(platform, webUrl);
-    onComplete?.({ success: result.success, url: webUrl });
+    onComplete?.({ success: result.success, url: result.directUrl });
     launchTimer = undefined;
-  }, 600);
+  }, LAUNCH_COUNTDOWN_MS);
 }
 
 export function cancelLaunch() {

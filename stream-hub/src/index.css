@@ -523,6 +523,70 @@ input {
   max-width: 340px;
 }
 
+.launch-overlay__card {
+  text-align: center;
+  max-width: 360px;
+}
+
+.launch-overlay__count {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 12px;
+  border-radius: 999px;
+  border: 3px solid rgba(138, 180, 248, 0.35);
+  display: grid;
+  place-items: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--accent-strong);
+}
+
+.launch-overlay__progress {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.launch-overlay__progress-bar {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s linear;
+}
+
+.launch-overlay__title {
+  margin: 8px 0 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.launch-overlay__via {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.launch-overlay__steps {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0;
+  text-align: right;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.launch-overlay__steps li {
+  padding: 6px 0;
+  opacity: 0.45;
+  transition: opacity 0.2s;
+}
+
+.launch-overlay__steps li.done {
+  opacity: 1;
+  color: var(--accent-strong);
+}
+
 .launch-overlay__spinner {
   width: 48px;
   height: 48px;
