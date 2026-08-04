@@ -1,6 +1,15 @@
 # Stream Hub — تطبيق Android
 
-## بناء APK (على Mac)
+## تحميل APK جاهز (الأسهل)
+
+1. افتح **GitHub → Actions → Build Stream Hub APK**
+2. اختر آخر تشغيل ناجح (✓)
+3. حمّل **stream-hub-debug-apk** → `app-debug.apk`
+4. انقله للموبايل وثبّته (اسمح بالتثبيت من مصادر غير معروفة)
+
+---
+
+## بناء APK يدوياً (على Mac)
 
 ### المتطلبات
 - [Android Studio](https://developer.android.com/studio)
