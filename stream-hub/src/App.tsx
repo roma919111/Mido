@@ -143,6 +143,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
   useReturnToHome({
     onReturnHome: resetToHomeInterface,
     onBackStep: handleBackStep,
+    isPlaybackActive: () => showPopcorn || launching !== null,
   });
 
   function openDetails(item: CatalogItem) {

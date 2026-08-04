@@ -4,6 +4,10 @@ export function markPendingReturnHome(): void {
   sessionStorage.setItem(PENDING_RETURN_KEY, "1");
 }
 
+export function clearPendingReturnHome(): void {
+  sessionStorage.removeItem(PENDING_RETURN_KEY);
+}
+
 export function hasPendingReturnHome(): boolean {
   return sessionStorage.getItem(PENDING_RETURN_KEY) === "1";
 }

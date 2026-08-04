@@ -1,7 +1,7 @@
 import { Capacitor } from "@capacitor/core";
 import type { CatalogItem, LaunchState, PlatformId } from "../types";
+import { clearPendingReturnHome, markPendingReturnHome } from "./app-navigation";
 import { exitPlaybackMode } from "./fullscreen";
-import { markPendingReturnHome } from "./app-navigation";
 import { deepLinkHint } from "./deeplink";
 import { addContinueWatching, ensureInMyList } from "./library";
 import { buildLaunchTarget, openPlatformPlayback, PLATFORMS, toOfficialWebUrl } from "./platforms";
@@ -50,15 +50,13 @@ function notifyLaunchComplete(success: boolean, url: string) {
   pendingComplete = undefined;
 }
 
-/**
- * Prepare launch state — no tabs/windows (Safari was stealing focus before popcorn).
- */
+/** Prepare launch — do NOT mark return-home yet (was resetting UI during popcorn). */
 export function beginOfficialLaunch(state: LaunchState): void {
   const target = buildLaunchTarget(state.platform, state.url);
   pendingDestination = target.directUrl;
   pendingPlatform = state.platform;
   pendingUrl = state.url;
-  markPendingReturnHome();
+  clearPendingReturnHome();
 }
 
 export type PlatformLaunchResult = {
@@ -67,9 +65,7 @@ export type PlatformLaunchResult = {
 };
 
 /**
- * After popcorn: open the official platform.
- * Safari → same-tab navigation (always works).
- * Others → new tab so Stream Hub stays open.
+ * After popcorn: navigate to the official platform.
  */
 export async function finishPlatformLaunch(state: LaunchState): Promise<PlatformLaunchResult> {
   const destination =
@@ -81,6 +77,7 @@ export async function finishPlatformLaunch(state: LaunchState): Promise<Platform
   pendingUrl = null;
 
   if (Capacitor.isNativePlatform()) {
+    markPendingReturnHome();
     void openPlatformPlayback(platform, url).then((result) => {
       notifyLaunchComplete(result.success, result.directUrl);
     });
@@ -88,15 +85,16 @@ export async function finishPlatformLaunch(state: LaunchState): Promise<Platform
     return { opened: true, destination };
   }
 
-  markPendingReturnHome();
   notifyLaunchComplete(true, destination);
   await exitPlaybackMode();
 
   if (isSafariBrowser()) {
+    markPendingReturnHome();
     window.location.assign(destination);
     return { opened: true, destination };
   }
 
+  markPendingReturnHome();
   const tab = window.open(destination, "_blank");
   if (tab) {
     tab.focus();
@@ -112,5 +110,6 @@ export function cancelLaunch() {
   pendingDestination = null;
   pendingPlatform = null;
   pendingUrl = null;
+  clearPendingReturnHome();
   void exitPlaybackMode();
 }
