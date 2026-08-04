@@ -62,13 +62,25 @@ Customers never see this flow.
 | `POST /api/enhance` | Prompt enhancement |
 | `POST /api/upload` | Sign + PUT reference images via `openart_upload_sign` |
 | `POST /api/generate` | `openart_generate_image` / `openart_generate_video` + wait |
+| `POST /api/credits/quote` | Live credit estimate for model/duration/resolution/audio |
 | `GET /api/status` | Poll `openart_creation_get` |
 | `GET /api/creations` | List history via `openart_creation_list` |
 
 ## Models used
 
-- **Image:** `nano-banana-2-lite` (`text2image` / `image2image`)
-- **Video:** `pixverseV6` (`text2video` / `image2video`) with Standard `720p` or Pro `1080p`
+- **Image:** `nano-banana-2-lite` (`text2image` / `image2image`) — flat **15 credits**
+- **Video:** `pixverseV6` (`text2video` / `image2video`) — **per-second** billing from `src/config/modelPricing.ts`
+
+### Video credit rates (PixVerse V6, credits/sec)
+
+| Resolution | No audio | With audio |
+|------------|----------|------------|
+| 360p | 35 | 48 |
+| 540p | 48 | 62 |
+| 720p | 62 | 83 |
+| 1080p | 124 | 158 |
+
+Total cost = `ceil(creditsPerSecond × durationSeconds)`. Currency: **$1 = 1,000 credits**.
 
 ## Scripts
 

@@ -1,30 +1,56 @@
-import type { GenerationMode, VideoDuration, VideoQuality, VisualReference } from "./types";
+import { DEFAULT_VIDEO_MODEL } from "@/config/modelPricing";
+import {
+  calculateImageCredits,
+  calculateVideoCredits,
+  estimateGenerationCredits,
+} from "@/lib/credit-pricing";
+import type {
+  GenerationMode,
+  VideoDuration,
+  VideoQuality,
+  VideoResolution,
+  VisualReference,
+} from "./types";
 
 export const IMAGE_MODEL = "nano-banana-2-lite";
-export const VIDEO_MODEL = "pixverseV6";
+export const VIDEO_MODEL = DEFAULT_VIDEO_MODEL;
 
-export const CREDIT_COSTS = {
-  image: 15,
-  video: {
-    standard: { 5: 70, 10: 140 } as Record<VideoDuration, number>,
-    pro: { 5: 150, 10: 300 } as Record<VideoDuration, number>,
-  },
-} as const;
+export { calculateVideoCredits, estimateGenerationCredits };
 
+/** @deprecated Use estimateGenerationCredits — kept for existing imports. */
 export function estimateCredits(
   mode: GenerationMode,
   duration: VideoDuration = 5,
   quality: VideoQuality = "standard",
+  options?: { resolution?: VideoResolution; hasAudio?: boolean; model?: string },
 ): number {
-  if (mode === "text-to-image") return CREDIT_COSTS.image;
-  return CREDIT_COSTS.video[quality][duration];
+  return estimateGenerationCredits({
+    mode,
+    model: options?.model ?? VIDEO_MODEL,
+    resolution: options?.resolution ?? qualityToResolution(quality),
+    hasAudio: options?.hasAudio ?? false,
+    durationInSeconds: duration,
+  });
 }
 
-export function qualityToResolution(quality: VideoQuality): "720p" | "1080p" {
+export function qualityToResolution(quality: VideoQuality): VideoResolution {
   return quality === "pro" ? "1080p" : "720p";
 }
 
-export function getModelConfig(mode: GenerationMode): { model: string; toolMode: string; media: "image" | "video" } {
+export function resolveVideoResolution(input: {
+  resolution?: VideoResolution;
+  quality?: VideoQuality;
+}): VideoResolution {
+  if (input.resolution) return input.resolution;
+  if (input.quality) return qualityToResolution(input.quality);
+  return "720p";
+}
+
+export function getModelConfig(mode: GenerationMode): {
+  model: string;
+  toolMode: string;
+  media: "image" | "video";
+} {
   switch (mode) {
     case "text-to-image":
       return { model: IMAGE_MODEL, toolMode: "text2image", media: "image" };
@@ -39,12 +65,13 @@ export function buildGenerationParams(input: {
   mode: GenerationMode;
   prompt: string;
   duration: VideoDuration;
-  quality: VideoQuality;
+  resolution: VideoResolution;
+  generateAudio?: boolean;
   startFrame?: VisualReference | null;
   referenceImage?: VisualReference | null;
 }): { model: string; toolMode: string; media: "image" | "video"; params: Record<string, unknown> } {
   const { model, toolMode, media } = getModelConfig(input.mode);
-  const resolution = qualityToResolution(input.quality);
+  const generateAudio = Boolean(input.generateAudio);
 
   if (input.mode === "text-to-image") {
     const params: Record<string, unknown> = {
@@ -78,9 +105,9 @@ export function buildGenerationParams(input: {
       prompt: `${input.prompt}${styleHint}`.trim(),
       videoCount: 1,
       duration: input.duration,
-      resolution,
+      resolution: input.resolution,
       aspectRatio: "16:9",
-      generateAudio: false,
+      generateAudio,
       autoEnhancePrompt: false,
     };
 
@@ -100,8 +127,12 @@ export function buildGenerationParams(input: {
       videoCount: 1,
       startFrame: input.startFrame,
       duration: input.duration,
-      resolution,
-      generateAudio: false,
+      resolution: input.resolution,
+      generateAudio,
     },
   };
+}
+
+export function estimateImageCredits(): number {
+  return calculateImageCredits();
 }
