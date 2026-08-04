@@ -1,6 +1,6 @@
 import type { CatalogItem, LaunchState, PlatformId } from "../types";
 import { deepLinkHint } from "./deeplink";
-import { addContinueWatching } from "./library";
+import { addContinueWatching, ensureInMyList } from "./library";
 import {
   buildLaunchTarget,
   openPlatformPlayback,
@@ -24,6 +24,7 @@ export function launchOnPlatform(
   const target = buildLaunchTarget(platform, webUrl);
 
   addContinueWatching(item, platform, target.directUrl);
+  ensureInMyList(item.id);
   onLaunching({
     platform,
     platformName: meta.name,

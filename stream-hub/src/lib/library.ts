@@ -54,6 +54,16 @@ export function toggleMyList(itemId: string): boolean {
   return !has;
 }
 
+export function ensureInMyList(itemId: string): void {
+  if (isInMyList(itemId)) return;
+  const next = [...getMyList(), itemId];
+  localStorage.setItem(MYLIST_KEY, JSON.stringify(next));
+}
+
+export function getContinueEntry(itemId: string): ContinueEntry | undefined {
+  return getContinueWatching().find((e) => e.itemId === itemId);
+}
+
 export function isInMyList(itemId: string): boolean {
   return getMyList().includes(itemId);
 }

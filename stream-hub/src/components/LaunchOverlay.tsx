@@ -67,6 +67,9 @@ export function LaunchOverlay({ state, onCancel, onDismiss }: LaunchOverlayProps
         <p className="launch-overlay__title">{state.title}</p>
         <p className="launch-overlay__via">عبر {state.launchLabel}</p>
         <p className="launch-overlay__hint">{state.deepLinkHint}</p>
+        <p className="launch-overlay__list-tip">
+          بعد فتح Netflix: ارجع هنا → 📋 قائمتي → ▶ للمتابعة
+        </p>
 
         {env.warning ? (
           <div className="launch-overlay__warn">

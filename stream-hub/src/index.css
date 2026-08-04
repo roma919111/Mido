@@ -446,6 +446,72 @@ input {
   flex-wrap: wrap;
 }
 
+.poster-card-wrap {
+  position: relative;
+  flex: 0 0 auto;
+  width: 132px;
+}
+
+.poster-card-wrap--wide {
+  width: 220px;
+}
+
+.poster-card-wrap .poster-card {
+  width: 100%;
+}
+
+.poster-card__play {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  z-index: 2;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.95);
+  color: #111;
+  font-size: 0.75rem;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.list-hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 16px 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  color: #bbf7d0;
+  font-size: 0.85rem;
+}
+
+.list-hint p {
+  flex: 1;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.list-hint button {
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: #22c55e;
+  color: #052e16;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.list-hint__dismiss {
+  background: transparent !important;
+  color: #86efac !important;
+  padding: 4px 8px !important;
+}
+
 .poster-card {
   flex: 0 0 auto;
   width: 132px;
@@ -733,6 +799,13 @@ input {
   color: var(--muted);
   font-size: 0.85rem;
   line-height: 1.5;
+}
+
+.launch-overlay__list-tip {
+  margin: 8px 0 0;
+  color: #86efac;
+  font-size: 0.82rem;
+  line-height: 1.45;
 }
 
 .launch-overlay__warn {

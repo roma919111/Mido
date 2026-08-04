@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CATALOG, ROWS } from "./data/catalog";
 import { getSession, login, logout } from "./lib/auth";
-import { getContinueWatching, getMyList } from "./lib/library";
+import { getContinueWatching, getContinueEntry, getMyList } from "./lib/library";
 import { cancelLaunch, launchOnPlatform } from "./lib/playback";
 import { AccountPlatforms } from "./components/AccountPlatforms";
 import { ContentRow } from "./components/ContentRow";
@@ -12,7 +12,7 @@ import { PlaybackWarningBanner } from "./components/PlaybackWarningBanner";
 import { PosterCard } from "./components/PosterCard";
 import { SearchBar } from "./components/SearchBar";
 import { SmartSetup, shouldShowSmartSetup } from "./components/SmartSetup";
-import type { CatalogItem, ContinueEntry, LaunchState } from "./types";
+import type { CatalogItem, ContinueEntry, LaunchState, PlatformId } from "./types";
 
 function LoginPage({ onSuccess }: { onSuccess: () => void }) {
   const [username, setUsername] = useState("");
@@ -77,6 +77,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
   const [launching, setLaunching] = useState<LaunchState | null>(null);
   const [tab, setTab] = useState<"home" | "list" | "account">("home");
   const [continueItems, setContinueItems] = useState<CatalogItem[]>([]);
+  const [listHint, setListHint] = useState<string | null>(null);
 
   const featured = CATALOG.find((i) => i.featured) ?? CATALOG[0]!;
 
@@ -104,10 +105,26 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
     setSelected(item);
   }
 
+  function resolvePlayback(item: CatalogItem): { platform: PlatformId; url: string } | null {
+    const saved = getContinueEntry(item.id);
+    if (saved) return { platform: saved.platform, url: saved.url };
+    const link = item.platforms[0];
+    if (!link) return null;
+    return { platform: link.platform, url: link.url };
+  }
+
   function startPlayback(item: CatalogItem, platform: CatalogItem["platforms"][0]["platform"], url: string) {
     launchOnPlatform(item, platform, url, setLaunching, () => {
+      setContinueItems(mapContinueToItems(getContinueWatching()));
+      setListHint(`«${item.title}» في قائمتي — افتح 📋 قائمتي واضغط ▶ للمتابعة`);
       window.setTimeout(() => setLaunching(null), 2000);
     });
+  }
+
+  function quickPlay(item: CatalogItem) {
+    const target = resolvePlayback(item);
+    if (!target) return;
+    startPlayback(item, target.platform, target.url);
   }
 
   function playFeatured(item: CatalogItem) {
@@ -127,6 +144,18 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
       </header>
 
       <PlaybackWarningBanner />
+
+      {listHint ? (
+        <div className="list-hint">
+          <p>{listHint}</p>
+          <button type="button" onClick={() => { setTab("list"); setListHint(null); }}>
+            فتح قائمتي
+          </button>
+          <button type="button" className="list-hint__dismiss" onClick={() => setListHint(null)} aria-label="إغلاق">
+            ✕
+          </button>
+        </div>
+      ) : null}
 
       {search.trim() ? (
         <main className="gtv-main">
@@ -153,6 +182,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
               title="متابعة المشاهدة"
               items={continueItems}
               onSelect={openDetails}
+              onPlay={quickPlay}
             />
           ) : null}
 
@@ -172,11 +202,11 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
           {myListItems.length ? (
             <div className="content-row__track content-row__track--wrap">
               {myListItems.map((item) => (
-                <PosterCard key={item.id} item={item} onSelect={openDetails} />
+                <PosterCard key={item.id} item={item} onSelect={openDetails} onPlay={quickPlay} />
               ))}
             </div>
           ) : (
-            <p className="gtv-empty">اضغط «+ أضف إلى قائمتي» من صفحة أي عنوان.</p>
+            <p className="gtv-empty">بعد «تشغيل» أي عنوان يُضاف تلقائياً هنا — ثم ▶ للمتابعة.</p>
           )}
         </main>
       ) : tab === "account" ? (

@@ -5,10 +5,11 @@ type ContentRowProps = {
   title: string;
   items: CatalogItem[];
   onSelect: (item: CatalogItem) => void;
+  onPlay?: (item: CatalogItem) => void;
   wideFirst?: boolean;
 };
 
-export function ContentRow({ title, items, onSelect, wideFirst }: ContentRowProps) {
+export function ContentRow({ title, items, onSelect, onPlay, wideFirst }: ContentRowProps) {
   if (!items.length) return null;
 
   return (
@@ -21,6 +22,7 @@ export function ContentRow({ title, items, onSelect, wideFirst }: ContentRowProp
             item={item}
             wide={wideFirst && index === 0}
             onSelect={onSelect}
+            onPlay={onPlay}
           />
         ))}
       </div>
