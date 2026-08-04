@@ -42,8 +42,17 @@ export function useReturnToHome({ onReturnHome, onBackStep, isPlaybackActive }: 
       onBackStepRef.current();
     }
 
+    function onPageShow(event: PageTransitionEvent) {
+      if (!event.persisted) return;
+      if (isPlaybackActiveRef.current?.()) return;
+      if (!wasPlatformOpened()) return;
+      clearAllReturnFlags();
+      onReturnHomeRef.current();
+    }
+
     document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("popstate", onPopState);
+    window.addEventListener("pageshow", onPageShow);
 
     let appStateListener: { remove: () => void } | undefined;
     let backListener: { remove: () => void } | undefined;
@@ -66,6 +75,7 @@ export function useReturnToHome({ onReturnHome, onBackStep, isPlaybackActive }: 
     return () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("popstate", onPopState);
+      window.removeEventListener("pageshow", onPageShow);
       appStateListener?.remove();
       backListener?.remove();
     };

@@ -55,6 +55,34 @@ html.max-app-shell body {
     env(safe-area-inset-left);
 }
 
+/* ── Immersive shell: hide mobile browser address bar ── */
+html.max-immersive,
+html.max-immersive body {
+  width: 100%;
+  height: var(--app-vh, 100dvh);
+  min-height: var(--app-vh, 100dvh);
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+html.max-immersive body {
+  position: fixed;
+  inset: 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+html.max-immersive #root {
+  height: var(--app-vh, 100dvh);
+  min-height: var(--app-vh, 100dvh);
+  overflow: hidden;
+}
+
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  html.max-immersive body {
+    position: fixed;
+  }
+}
+
 /* ── Install app banner (hide browser chrome) ── */
 .install-banner {
   margin: 0 14px 10px;

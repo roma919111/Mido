@@ -1,10 +1,12 @@
 import { THEATER_CLASS } from "./fullscreen";
+import { enterImmersiveChrome } from "./browser-chrome";
 
 const APP_SHELL_CLASS = "max-app-shell";
 
 export function enterAppShellMode(): void {
   document.documentElement.classList.add(APP_SHELL_CLASS);
   document.body.classList.add(APP_SHELL_CLASS);
+  enterImmersiveChrome();
 }
 
 export function exitAppShellMode(): void {

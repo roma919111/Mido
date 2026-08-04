@@ -1,19 +1,19 @@
 import { Capacitor } from "@capacitor/core";
 import type { CatalogItem, LaunchState, PlatformId } from "../types";
 import { clearAllReturnFlags, clearPendingReturnHome, markPlatformOpened } from "./app-navigation";
+import { isBrowserTab, isStandaloneApp } from "./display-mode";
 import { exitPlaybackMode } from "./fullscreen";
 import { deepLinkHint } from "./deeplink";
 import { addContinueWatching, ensureInMyList } from "./library";
 import { buildLaunchTarget, openPlatformPlayback, PLATFORMS, toOfficialWebUrl } from "./platforms";
 
 export const LAUNCH_COUNTDOWN_MS = 0;
-/** Popcorn runs while the browser opens — 5 seconds in parallel. */
+/** Popcorn runs for 5 seconds before navigating to the platform (single browser tab). */
 export const POPCORN_DURATION_MS = 5000;
 
 const PLATFORM_WINDOW_NAME = "max_platform";
 
 let pendingComplete: ((result: { success: boolean; url: string }) => void) | undefined;
-let platformTab: Window | null = null;
 let pendingDestination: string | null = null;
 let pendingPlatform: PlatformId | null = null;
 let pendingUrl: string | null = null;
@@ -72,34 +72,22 @@ export type PlatformLaunchResult = {
   opened: boolean;
   destination: string;
   needsManualOpen: boolean;
+  sameTab: boolean;
 };
 
-function openNamedTab(destination: string): Window | null {
-  try {
-    const tab = window.open(destination, PLATFORM_WINDOW_NAME);
-    if (tab) return tab;
-  } catch {
-    /* fall through to anchor click */
-  }
+function shouldUseSameTabLaunch(): boolean {
+  if (Capacitor.isNativePlatform()) return false;
+  return isBrowserTab() || isStandaloneApp();
+}
 
-  try {
-    const anchor = document.createElement("a");
-    anchor.href = destination;
-    anchor.target = PLATFORM_WINDOW_NAME;
-    anchor.rel = "noopener noreferrer";
-    anchor.style.display = "none";
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    return window.open("", PLATFORM_WINDOW_NAME);
-  } catch {
-    return null;
-  }
+function navigateSameTab(destination: string): void {
+  markPlatformOpened();
+  window.location.assign(destination);
 }
 
 /**
- * Open platform browser synchronously inside the user click — before React
- * re-render or fullscreen, so Safari does not defer the popup until later.
+ * Prepare launch during the user click — web uses a single tab (no extra tab strip).
+ * Platform navigation happens after the 5s popcorn overlay.
  */
 export function openPlatformBrowserSync(state: LaunchState): PlatformLaunchResult {
   const destination =
@@ -112,13 +100,16 @@ export function openPlatformBrowserSync(state: LaunchState): PlatformLaunchResul
     void openPlatformPlayback(platform, url).then((result) => {
       notifyLaunchComplete(result.success, result.directUrl);
     });
-    platformTab = null;
-    return { opened: true, destination, needsManualOpen: false };
+    return { opened: true, destination, needsManualOpen: false, sameTab: false };
   }
 
-  const tab = openNamedTab(destination);
+  if (shouldUseSameTabLaunch()) {
+    notifyLaunchComplete(true, destination);
+    return { opened: false, destination, needsManualOpen: false, sameTab: true };
+  }
+
+  const tab = window.open(destination, PLATFORM_WINDOW_NAME);
   if (tab) {
-    platformTab = tab;
     markPlatformOpened();
     notifyLaunchComplete(true, destination);
     try {
@@ -127,16 +118,15 @@ export function openPlatformBrowserSync(state: LaunchState): PlatformLaunchResul
       /* ignore */
     }
     window.focus();
-    return { opened: true, destination, needsManualOpen: false };
+    return { opened: true, destination, needsManualOpen: false, sameTab: false };
   }
 
-  platformTab = null;
   markPlatformOpened();
   notifyLaunchComplete(true, destination);
-  return { opened: false, destination, needsManualOpen: true };
+  return { opened: false, destination, needsManualOpen: true, sameTab: false };
 }
 
-/** After 5s popcorn: hide overlay and focus the tab opened at click time. */
+/** After 5s popcorn: navigate in the same tab or focus the platform window. */
 export async function finishPopcornOverlay(state: LaunchState): Promise<void> {
   const destination =
     pendingDestination ?? buildLaunchTarget(state.platform, state.url).directUrl;
@@ -146,33 +136,30 @@ export async function finishPopcornOverlay(state: LaunchState): Promise<void> {
 
   await exitPlaybackMode();
 
-  if (!Capacitor.isNativePlatform()) {
-    try {
-      let tab = platformTab;
-      if (!tab || tab.closed) {
-        tab = window.open("", PLATFORM_WINDOW_NAME);
-      }
-      if (tab && !tab.closed) {
-        tab.focus();
-      } else {
-        openNamedTab(destination)?.focus();
-      }
-    } catch {
-      /* ignore */
+  if (Capacitor.isNativePlatform()) return;
+
+  if (shouldUseSameTabLaunch()) {
+    navigateSameTab(destination);
+    return;
+  }
+
+  try {
+    const tab = window.open("", PLATFORM_WINDOW_NAME);
+    if (tab && !tab.closed) {
+      tab.focus();
+    } else {
+      window.open(destination, PLATFORM_WINDOW_NAME)?.focus();
     }
-    platformTab = null;
+  } catch {
+    window.location.assign(destination);
   }
 
   void state;
 }
 
 export function openPlatformManually(destination: string): boolean {
-  const tab = window.open(destination, PLATFORM_WINDOW_NAME);
-  if (tab) {
-    tab.focus();
-    return true;
-  }
-  return false;
+  navigateSameTab(destination);
+  return true;
 }
 
 export function cancelLaunch() {
@@ -180,14 +167,6 @@ export function cancelLaunch() {
   pendingDestination = null;
   pendingPlatform = null;
   pendingUrl = null;
-  if (platformTab && !platformTab.closed) {
-    try {
-      platformTab.close();
-    } catch {
-      /* ignore */
-    }
-  }
-  platformTab = null;
   clearAllReturnFlags();
   void exitPlaybackMode();
 }

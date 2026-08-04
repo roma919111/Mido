@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { flushSync } from "react-dom";
 import { CATALOG, ROWS } from "./data/catalog";
 import { getSession, logout } from "./lib/auth";
+import { enterAppShellMode, exitAppShellMode } from "./lib/app-shell";
 import { getContinueWatching, getContinueEntry, getMyList } from "./lib/library";
 import {
   cancelLaunch,
@@ -26,7 +27,6 @@ import { SearchBar } from "./components/SearchBar";
 import { SmartSetup, shouldShowSmartSetup } from "./components/SmartSetup";
 import { MaxLoginPage } from "./components/MaxLoginPage";
 import { InstallAppBanner } from "./components/InstallAppBanner";
-import { enterAppShellMode, exitAppShellMode } from "./lib/app-shell";
 import type { CatalogItem, ContinueEntry, LaunchState, PlatformId } from "./types";
 function mapContinueToItems(entries: ContinueEntry[]): CatalogItem[] {
   return entries
@@ -349,6 +349,7 @@ export function App() {
   useEffect(() => {
     const session = getSession();
     if (session) {
+      enterAppShellMode();
       setUsername(session.username);
       setAuthed(true);
     }
