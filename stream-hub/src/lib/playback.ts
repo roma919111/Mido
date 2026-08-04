@@ -12,6 +12,7 @@ export const POPCORN_DURATION_MS = 3000;
 const PLATFORM_WINDOW_NAME = "streamhub_platform";
 
 let pendingComplete: ((result: { success: boolean; url: string }) => void) | undefined;
+let platformTab: Window | null = null;
 let pendingDestination: string | null = null;
 let pendingPlatform: PlatformId | null = null;
 let pendingUrl: string | null = null;
@@ -47,41 +48,49 @@ function notifyLaunchComplete(success: boolean, url: string) {
   pendingComplete = undefined;
 }
 
-function openMaximizedPlatformWindow(url: string): Window | null {
-  const width = window.screen.availWidth || window.innerWidth;
-  const height = window.screen.availHeight || window.innerHeight;
-  const features = [
-    "popup=yes",
-    `width=${width}`,
-    `height=${height}`,
-    "left=0",
-    "top=0",
-    "noopener",
-    "noreferrer",
-  ].join(",");
-
+function reservePlatformTab(): Window | null {
   try {
-    const opened = window.open(url, PLATFORM_WINDOW_NAME, features);
-    return opened && !opened.closed ? opened : null;
+    const tab = window.open("about:blank", PLATFORM_WINDOW_NAME);
+    if (tab) {
+      try {
+        tab.blur();
+      } catch {
+        /* ignore */
+      }
+    }
+    return tab;
   } catch {
     return null;
   }
 }
 
+function navigatePlatformTab(tab: Window, url: string): boolean {
+  try {
+    tab.location.href = url;
+    tab.focus();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Open platform — must run inside a user click/tap handler when possible. */
 export function openPlatformWithGesture(url: string): boolean {
-  const popup = openMaximizedPlatformWindow(url);
-  if (popup) {
-    try {
-      popup.focus();
-    } catch {
-      /* ignore */
+  if (platformTab && !platformTab.closed) {
+    if (navigatePlatformTab(platformTab, url)) {
+      platformTab = null;
+      return true;
     }
+    platformTab = null;
+  }
+
+  const reserved = reservePlatformTab();
+  if (reserved && navigatePlatformTab(reserved, url)) {
     return true;
   }
 
   try {
-    const tab = window.open(url, "_blank", "noopener,noreferrer");
+    const tab = window.open(url, "_blank");
     if (tab) {
       tab.focus();
       return true;
@@ -93,8 +102,19 @@ export function openPlatformWithGesture(url: string): boolean {
   return false;
 }
 
+/** Keep Stream Hub tab visible while popcorn plays. */
+export function keepStreamHubFocused(): void {
+  window.focus();
+}
+
+export function startStreamHubFocusLoop(): () => void {
+  keepStreamHubFocused();
+  const intervalId = window.setInterval(keepStreamHubFocused, 100);
+  return () => window.clearInterval(intervalId);
+}
+
 /**
- * Step 1 (user click): prepare launch — popcorn + fullscreen only, no browser tab.
+ * Step 1 (user click): reserve Safari tab + show popcorn. Must run synchronously on click.
  */
 export function beginOfficialLaunch(state: LaunchState): void {
   const target = buildLaunchTarget(state.platform, state.url);
@@ -102,6 +122,14 @@ export function beginOfficialLaunch(state: LaunchState): void {
   pendingPlatform = state.platform;
   pendingUrl = state.url;
   markPendingReturnHome();
+
+  if (Capacitor.isNativePlatform()) {
+    platformTab = null;
+    return;
+  }
+
+  platformTab = reservePlatformTab();
+  keepStreamHubFocused();
 }
 
 export type PlatformLaunchResult = {
@@ -110,7 +138,7 @@ export type PlatformLaunchResult = {
 };
 
 /**
- * Step 2 (after popcorn): open official platform in a separate window/tab.
+ * Step 2 (after popcorn): navigate reserved tab to the official platform.
  */
 export async function finishPlatformLaunch(state: LaunchState): Promise<PlatformLaunchResult> {
   const destination =
@@ -130,6 +158,15 @@ export async function finishPlatformLaunch(state: LaunchState): Promise<Platform
   }
 
   markPendingReturnHome();
+
+  if (platformTab && !platformTab.closed && navigatePlatformTab(platformTab, destination)) {
+    platformTab = null;
+    notifyLaunchComplete(true, destination);
+    await exitFullscreen();
+    return { opened: true, destination };
+  }
+  platformTab = null;
+
   const opened = openPlatformWithGesture(destination);
   if (opened) {
     notifyLaunchComplete(true, destination);
@@ -150,10 +187,26 @@ export async function confirmPlatformLaunch(destination: string): Promise<boolea
   return opened;
 }
 
+/** Last resort — navigate current tab to platform (always works). */
+export async function forcePlatformNavigation(destination: string): Promise<void> {
+  markPendingReturnHome();
+  notifyLaunchComplete(true, destination);
+  await exitFullscreen();
+  window.location.assign(destination);
+}
+
 export function cancelLaunch() {
   pendingComplete = undefined;
   pendingDestination = null;
   pendingPlatform = null;
   pendingUrl = null;
+  if (platformTab && !platformTab.closed) {
+    try {
+      platformTab.close();
+    } catch {
+      /* ignore */
+    }
+  }
+  platformTab = null;
   void exitFullscreen();
 }

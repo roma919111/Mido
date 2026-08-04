@@ -825,6 +825,24 @@ input {
   filter: brightness(1.05);
 }
 
+.popcorn-splash__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.popcorn-splash__ghost {
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: transparent;
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  color: #fde68a;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
 @keyframes popcorn-pop {
   from { transform: scale(0.85); opacity: 0; }
   to { transform: scale(1); opacity: 1; }

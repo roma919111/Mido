@@ -6,6 +6,8 @@ import {
   beginOfficialLaunch,
   confirmPlatformLaunch,
   finishPlatformLaunch,
+  forcePlatformNavigation,
+  keepStreamHubFocused,
 } from "../lib/playback";
 import { OverlayPortal } from "./OverlayPortal";
 import { PopcornSplash } from "./PopcornSplash";
@@ -62,6 +64,11 @@ export function LaunchOverlay({ state, onCancel, onDismiss }: LaunchOverlayProps
     if (opened) onDismiss();
   }, [tapDestination, onDismiss]);
 
+  const handleForceOpen = useCallback(async () => {
+    if (!tapDestination) return;
+    await forcePlatformNavigation(tapDestination);
+  }, [tapDestination]);
+
   if (!state) return null;
 
   if (showPopcorn) {
@@ -73,6 +80,7 @@ export function LaunchOverlay({ state, onCancel, onDismiss }: LaunchOverlayProps
           onDone={() => void finishPopcorn()}
           needsTap={needsTap}
           onTapOpen={() => void handleTapOpen()}
+          onForceOpen={tapDestination ? () => void handleForceOpen() : undefined}
         />
       </OverlayPortal>
     );
@@ -82,9 +90,10 @@ export function LaunchOverlay({ state, onCancel, onDismiss }: LaunchOverlayProps
 
   function handleOpenNow() {
     if (!state) return;
-    void enterFullscreen();
     flushSync(() => setShowPopcorn(true));
     beginOfficialLaunch(state);
+    void enterFullscreen();
+    keepStreamHubFocused();
   }
 
   const steps = [
