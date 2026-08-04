@@ -736,9 +736,37 @@ input {
 }
 
 .launch-overlay__warn {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.35);
   color: #fbbf24;
   font-size: 0.88rem;
   line-height: 1.5;
+  text-align: start;
+}
+
+.playback-warning {
+  margin: 0 16px 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  color: #fde68a;
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+
+.playback-warning strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #fbbf24;
+}
+
+.playback-warning__tip {
+  margin-top: 8px;
+  color: #fcd34d;
 }
 
 .launch-overlay__open {

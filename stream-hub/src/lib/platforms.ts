@@ -3,6 +3,16 @@ import { Browser } from "@capacitor/browser";
 import type { PlatformId } from "../types";
 import { normalizeDeepLink } from "./deeplink";
 
+function openHref(href: string): void {
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  anchor.rel = "noopener noreferrer";
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
 export type PlatformMeta = {
   id: PlatformId;
   name: string;
@@ -92,7 +102,15 @@ export async function openPlatformPlayback(
 
   try {
     if (isNative && isAndroidDevice()) {
-      window.location.href = target.href;
+      openHref(target.href);
+      return { success: true, mode: target.mode, href: target.href, directUrl: target.directUrl };
+    }
+
+    if (isAndroidDevice() && target.mode === "android-app") {
+      openHref(target.href);
+      window.setTimeout(() => {
+        openHref(target.directUrl);
+      }, 1500);
       return { success: true, mode: target.mode, href: target.href, directUrl: target.directUrl };
     }
 
@@ -101,7 +119,12 @@ export async function openPlatformPlayback(
       return { success: true, mode: "app-link", href: target.directUrl, directUrl: target.directUrl };
     }
 
-    window.location.assign(target.href);
+    if (target.mode === "android-app") {
+      openHref(target.href);
+      return { success: true, mode: target.mode, href: target.href, directUrl: target.directUrl };
+    }
+
+    window.open(target.directUrl, "_blank", "noopener,noreferrer");
     return { success: true, mode: target.mode, href: target.href, directUrl: target.directUrl };
   } catch {
     try {

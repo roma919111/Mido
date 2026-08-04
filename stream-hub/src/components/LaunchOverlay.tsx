@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { Capacitor } from "@capacitor/core";
 import type { LaunchState } from "../types";
+import { getPlaybackEnvironment } from "../lib/browser-capabilities";
 import { cancelLaunch, openLaunchTarget } from "../lib/playback";
 
 type LaunchOverlayProps = {
@@ -35,6 +37,7 @@ export function LaunchOverlay({ state, onCancel, onDismiss }: LaunchOverlayProps
 
   if (!state) return null;
 
+  const env = getPlaybackEnvironment(Capacitor.isNativePlatform());
   const isApp = state.launchMode === "android-app";
   const progress = state.countdownMs
     ? ((state.countdownMs / 1000 - secondsLeft) / (state.countdownMs / 1000)) * 100
@@ -49,7 +52,7 @@ export function LaunchOverlay({ state, onCancel, onDismiss }: LaunchOverlayProps
   const steps = [
     "تحضير الرابط المباشر للفيلم",
     isApp ? `فتح تطبيق ${state.platformName}` : `فتح ${state.platformName}`,
-    "اضغط ▶ Play إن لم يبدأ تلقائياً",
+    env.canPlayInBrowser ? "اضغط ▶ Play إن لم يبدأ تلقائياً" : "شغّل من التطبيق — المتصفح لا يدعم DRM",
   ];
 
   return (
@@ -64,6 +67,13 @@ export function LaunchOverlay({ state, onCancel, onDismiss }: LaunchOverlayProps
         <p className="launch-overlay__title">{state.title}</p>
         <p className="launch-overlay__via">عبر {state.launchLabel}</p>
         <p className="launch-overlay__hint">{state.deepLinkHint}</p>
+
+        {env.warning ? (
+          <div className="launch-overlay__warn">
+            <p>{env.warning}</p>
+            <p>{env.recommendation}</p>
+          </div>
+        ) : null}
 
         <ul className="launch-overlay__steps">
           {steps.map((label, i) => (

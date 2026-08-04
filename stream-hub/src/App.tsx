@@ -8,6 +8,7 @@ import { ContentRow } from "./components/ContentRow";
 import { DetailSheet } from "./components/DetailSheet";
 import { HeroBanner } from "./components/HeroBanner";
 import { LaunchOverlay } from "./components/LaunchOverlay";
+import { PlaybackWarningBanner } from "./components/PlaybackWarningBanner";
 import { PosterCard } from "./components/PosterCard";
 import { SearchBar } from "./components/SearchBar";
 import type { CatalogItem, ContinueEntry, LaunchState } from "./types";
@@ -123,6 +124,8 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
           خروج
         </button>
       </header>
+
+      <PlaybackWarningBanner />
 
       {search.trim() ? (
         <main className="gtv-main">
