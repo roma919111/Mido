@@ -39,6 +39,50 @@ body {
   touch-action: manipulation;
 }
 
+/* ── Theater / fullscreen playback mode ── */
+html.stream-hub-theater {
+  background: #000 !important;
+  overflow: hidden !important;
+}
+
+html.stream-hub-theater body {
+  overflow: hidden !important;
+  background: #000 !important;
+}
+
+html.stream-hub-theater .mobile-lab {
+  padding: 0 !important;
+  gap: 0 !important;
+  min-height: 100dvh !important;
+  display: block !important;
+}
+
+html.stream-hub-theater .mobile-lab__aside {
+  display: none !important;
+}
+
+html.stream-hub-theater .phone-frame {
+  width: 100vw !important;
+  height: 100dvh !important;
+  max-width: none !important;
+  filter: none !important;
+}
+
+html.stream-hub-theater .phone-frame__bezel {
+  border-radius: 0 !important;
+  border: none !important;
+  height: 100dvh !important;
+}
+
+html.stream-hub-theater .phone-frame__speaker,
+html.stream-hub-theater .phone-frame__home-indicator {
+  display: none !important;
+}
+
+html.stream-hub-theater .phone-frame__screen {
+  border-radius: 0 !important;
+}
+
 /* ── Laptop: phone frame preview ── */
 .mobile-lab {
   min-height: 100dvh;
@@ -711,7 +755,7 @@ input {
 .popcorn-splash {
   position: fixed;
   inset: 0;
-  z-index: 9999;
+  z-index: 2147483646;
   display: grid;
   place-items: center;
   background: radial-gradient(circle at center, rgba(251, 191, 36, 0.18) 0%, rgba(0, 0, 0, 0.92) 55%);

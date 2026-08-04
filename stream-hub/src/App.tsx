@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import { flushSync } from "react-dom";
 import { CATALOG, ROWS } from "./data/catalog";
 import { getSession, login, logout } from "./lib/auth";
 import { getContinueWatching, getContinueEntry, getMyList } from "./lib/library";
-import { cancelLaunch, launchOnPlatform } from "./lib/playback";
+import { beginOfficialLaunch, cancelLaunch, finishPlatformLaunch, launchOnPlatform } from "./lib/playback";
+import { enterPlaybackMode } from "./lib/fullscreen";
 import { consumePendingReturnHome } from "./lib/app-navigation";
 import { pushOverlayHistory, useReturnToHome } from "./hooks/useReturnToHome";
 import { ReturnHomeButton } from "./components/ReturnHomeButton";
@@ -10,7 +12,8 @@ import { AccountPlatforms } from "./components/AccountPlatforms";
 import { ContentRow } from "./components/ContentRow";
 import { DetailSheet } from "./components/DetailSheet";
 import { HeroBanner } from "./components/HeroBanner";
-import { LaunchOverlay } from "./components/LaunchOverlay";
+import { OverlayPortal } from "./components/OverlayPortal";
+import { PopcornSplash } from "./components/PopcornSplash";
 import { PosterCard } from "./components/PosterCard";
 import { SearchBar } from "./components/SearchBar";
 import { SmartSetup, shouldShowSmartSetup } from "./components/SmartSetup";
@@ -77,6 +80,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<CatalogItem | null>(null);
   const [launching, setLaunching] = useState<LaunchState | null>(null);
+  const [showPopcorn, setShowPopcorn] = useState(false);
   const [tab, setTab] = useState<"home" | "list" | "account">("home");
   const [continueItems, setContinueItems] = useState<CatalogItem[]>([]);
   const [listHint, setListHint] = useState<string | null>(null);
@@ -106,6 +110,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
   function resetToHomeInterface() {
     cancelLaunch();
     setLaunching(null);
+    setShowPopcorn(false);
     setSelected(null);
     setSearch("");
     setTab("home");
@@ -114,9 +119,10 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
   }
 
   function handleBackStep(): boolean {
-    if (launching) {
+    if (showPopcorn || launching) {
       cancelLaunch();
       setLaunching(null);
+      setShowPopcorn(false);
       return true;
     }
     if (selected) {
@@ -151,9 +157,30 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
 
   function startPlayback(item: CatalogItem, platform: CatalogItem["platforms"][0]["platform"], url: string) {
     pushOverlayHistory();
-    launchOnPlatform(item, platform, url, setLaunching, () => {
-      setContinueItems(mapContinueToItems(getContinueWatching()));
-      setListHint(`«${item.title}» في قائمتي — اضغط 🏠 للرجوع`);
+    launchOnPlatform(
+      item,
+      platform,
+      url,
+      (state) => {
+        beginOfficialLaunch(state);
+        flushSync(() => {
+          setLaunching(state);
+          setShowPopcorn(true);
+        });
+        enterPlaybackMode();
+      },
+      () => {
+        setContinueItems(mapContinueToItems(getContinueWatching()));
+        setListHint(`«${item.title}» في قائمتي — ارجع لتبويب Stream Hub`);
+      },
+    );
+  }
+
+  function handlePopcornDone() {
+    if (!launching) return;
+    void finishPlatformLaunch(launching).then(() => {
+      setShowPopcorn(false);
+      setLaunching(null);
     });
   }
 
@@ -301,14 +328,15 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
           startPlayback(item, platform, url);
         }}
       />
-      <LaunchOverlay
-        state={launching}
-        onCancel={() => {
-          cancelLaunch();
-          setLaunching(null);
-        }}
-        onDismiss={() => setLaunching(null)}
-      />
+      {showPopcorn && launching ? (
+        <OverlayPortal>
+          <PopcornSplash
+            title={launching.title}
+            platformName={launching.platformName}
+            onDone={handlePopcornDone}
+          />
+        </OverlayPortal>
+      ) : null}
       <ReturnHomeButton onClick={handleReturnHomeClick} />
     </div>
   );
