@@ -3,6 +3,7 @@ import { Capacitor } from "@capacitor/core";
 import type { LaunchState } from "../types";
 import { getPlaybackEnvironment } from "../lib/browser-capabilities";
 import { openLaunchTarget } from "../lib/playback";
+import { PopcornSplash } from "./PopcornSplash";
 
 type LaunchOverlayProps = {
   state: LaunchState | null;
@@ -12,11 +13,16 @@ type LaunchOverlayProps = {
 
 export function LaunchOverlay({ state, onCancel, onDismiss }: LaunchOverlayProps) {
   const [step, setStep] = useState(0);
+  const [showPopcorn, setShowPopcorn] = useState(false);
 
   useEffect(() => {
-    if (!state) return;
+    if (!state) {
+      setShowPopcorn(false);
+      return;
+    }
 
     setStep(0);
+    setShowPopcorn(false);
     const s1 = window.setTimeout(() => setStep(1), 300);
     const s2 = window.setTimeout(() => setStep(2), 700);
 
@@ -31,9 +37,17 @@ export function LaunchOverlay({ state, onCancel, onDismiss }: LaunchOverlayProps
   const env = getPlaybackEnvironment(Capacitor.isNativePlatform());
   const isApp = state.launchMode === "android-app";
 
-  function handleOpenNow() {
+  function finishOpen() {
     openLaunchTarget(state!);
     onDismiss();
+  }
+
+  function handleOpenNow() {
+    setShowPopcorn(true);
+  }
+
+  if (showPopcorn) {
+    return <PopcornSplash title={state.title} onDone={finishOpen} />;
   }
 
   const steps = [

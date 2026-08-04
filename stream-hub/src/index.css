@@ -699,6 +699,108 @@ input {
   font-size: 0.75rem;
 }
 
+/* ── Popcorn splash ── */
+.popcorn-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at center, rgba(251, 191, 36, 0.18) 0%, rgba(0, 0, 0, 0.92) 55%);
+  overflow: hidden;
+}
+
+.popcorn-splash__burst {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.popcorn-splash__bit {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  font-size: calc(1.2rem + (var(--i) * 0.15rem));
+  animation: popcorn-fly 3s ease-out forwards;
+  animation-delay: calc(var(--i) * 0.08s);
+  opacity: 0;
+}
+
+.popcorn-splash__bit:nth-child(1) { --tx: -90px; --ty: -120px; }
+.popcorn-splash__bit:nth-child(2) { --tx: 80px; --ty: -130px; }
+.popcorn-splash__bit:nth-child(3) { --tx: -30px; --ty: -160px; }
+.popcorn-splash__bit:nth-child(4) { --tx: 120px; --ty: -70px; }
+.popcorn-splash__bit:nth-child(5) { --tx: 0px; --ty: -180px; }
+.popcorn-splash__bit:nth-child(6) { --tx: -120px; --ty: -60px; }
+.popcorn-splash__bit:nth-child(7) { --tx: 40px; --ty: -140px; }
+.popcorn-splash__bit:nth-child(8) { --tx: -70px; --ty: -150px; }
+
+@keyframes popcorn-fly {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.3) rotate(0deg);
+  }
+  15% {
+    opacity: 1;
+    transform: translate(calc(-50% + var(--tx) * 0.3), calc(-50% + var(--ty) * 0.3)) scale(1) rotate(20deg);
+  }
+  100% {
+    opacity: 0.85;
+    transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) scale(1.1) rotate(360deg);
+  }
+}
+
+.popcorn-splash__core {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  padding: 24px;
+  animation: popcorn-pop 0.45s ease-out;
+}
+
+.popcorn-splash__bucket {
+  font-size: 4.5rem;
+  line-height: 1;
+  animation: popcorn-bounce 0.6s ease-in-out infinite alternate;
+  filter: drop-shadow(0 8px 24px rgba(251, 191, 36, 0.45));
+}
+
+.popcorn-splash__core h2 {
+  margin: 12px 0 6px;
+  font-size: 1.6rem;
+}
+
+.popcorn-splash__title {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.popcorn-splash__timer {
+  margin: 16px 0 0;
+  width: 48px;
+  height: 48px;
+  margin-inline: auto;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(251, 191, 36, 0.2);
+  border: 2px solid rgba(251, 191, 36, 0.55);
+  color: #fbbf24;
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+@keyframes popcorn-pop {
+  from { transform: scale(0.85); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes popcorn-bounce {
+  from { transform: translateY(0) scale(1); }
+  to { transform: translateY(-8px) scale(1.05); }
+}
+
 /* ── Launch overlay ── */
 .launch-overlay {
   position: fixed;
