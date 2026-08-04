@@ -13,7 +13,7 @@ import {
   prepareLaunch,
 } from "./lib/playback";
 import { enterPlaybackMode } from "./lib/fullscreen";
-import { clearAllReturnFlags } from "./lib/app-navigation";
+import { clearAllReturnFlags, wasPlatformOpened } from "./lib/app-navigation";
 import { pushOverlayHistory, useReturnToHome } from "./hooks/useReturnToHome";
 import { ReturnHomeButton } from "./components/ReturnHomeButton";
 import { AccountPlatforms } from "./components/AccountPlatforms";
@@ -48,6 +48,9 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
 
   useEffect(() => {
     enterAppShellMode();
+    if (wasPlatformOpened()) {
+      clearAllReturnFlags();
+    }
     return () => exitAppShellMode();
   }, []);
 
@@ -153,7 +156,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
       },
       () => {
         setContinueItems(mapContinueToItems(getContinueWatching()));
-        setListHint(`«${item.title}» — للرجوع: انتقل لتبويب MAX 🏠`);
+        setListHint(`«${item.title}» — للرجوع: اضغط ← في المتصفح`);
       },
     );
   }

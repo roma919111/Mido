@@ -13,6 +13,10 @@ function openHref(href: string): void {
   anchor.remove();
 }
 
+export function openPlatformHref(href: string): void {
+  openHref(href);
+}
+
 export type PlatformMeta = {
   id: PlatformId;
   name: string;

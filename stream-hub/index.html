@@ -18,6 +18,16 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>
   <body>
+    <script>
+      (function () {
+        var params = new URLSearchParams(window.location.search);
+        if (params.get("maxGo") !== "1") return;
+        var dest = params.get("dest");
+        if (!dest) return;
+        window.history.replaceState(null, "", window.location.pathname);
+        window.location.replace(dest);
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

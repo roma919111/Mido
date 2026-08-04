@@ -4,16 +4,20 @@ import { clearAllReturnFlags, clearPendingReturnHome, markPlatformOpened } from 
 import { exitPlaybackMode } from "./fullscreen";
 import { deepLinkHint } from "./deeplink";
 import { addContinueWatching, ensureInMyList } from "./library";
-import { buildLaunchTarget, openPlatformPlayback, PLATFORMS, toOfficialWebUrl } from "./platforms";
+import {
+  buildLaunchTarget,
+  isAndroidDevice,
+  openPlatformHref,
+  openPlatformPlayback,
+  PLATFORMS,
+  toOfficialWebUrl,
+} from "./platforms";
 
 export const LAUNCH_COUNTDOWN_MS = 0;
-/** Popcorn runs while Netflix loads in a background tab — MAX stays on this tab. */
+/** Popcorn on MAX, then same-tab navigation so browser ← returns home. */
 export const POPCORN_DURATION_MS = 5000;
 
-const PLATFORM_WINDOW_NAME = "max_platform";
-
 let pendingComplete: ((result: { success: boolean; url: string }) => void) | undefined;
-let platformTab: Window | null = null;
 let pendingDestination: string | null = null;
 let pendingPlatform: PlatformId | null = null;
 let pendingUrl: string | null = null;
@@ -49,16 +53,6 @@ function notifyLaunchComplete(success: boolean, url: string) {
   pendingComplete = undefined;
 }
 
-export function keepStreamHubFocused(): void {
-  window.focus();
-}
-
-export function startStreamHubFocusLoop(): () => void {
-  keepStreamHubFocused();
-  const id = window.setInterval(keepStreamHubFocused, 120);
-  return () => window.clearInterval(id);
-}
-
 /** Store launch target — call synchronously at the start of the user click. */
 export function prepareLaunch(state: LaunchState): void {
   const target = buildLaunchTarget(state.platform, state.url);
@@ -74,50 +68,21 @@ export type PlatformLaunchResult = {
   needsManualOpen: boolean;
 };
 
-function openNamedTab(destination: string, focusTab: boolean): Window | null {
-  try {
-    const tab = window.open(destination, PLATFORM_WINDOW_NAME);
-    if (tab) {
-      if (focusTab) tab.focus();
-      else {
-        try {
-          tab.blur();
-        } catch {
-          /* ignore */
-        }
-        window.focus();
-      }
-      return tab;
-    }
-  } catch {
-    /* fall through */
-  }
+/** Same-tab navigation — MAX stays in history so ← back returns home. */
+function navigateToPlatformSameTab(destination: string): void {
+  markPlatformOpened();
 
-  try {
-    const anchor = document.createElement("a");
-    anchor.href = destination;
-    anchor.target = PLATFORM_WINDOW_NAME;
-    anchor.rel = "noopener noreferrer";
-    anchor.style.display = "none";
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    const tab = window.open("", PLATFORM_WINDOW_NAME);
-    if (tab) {
-      if (focusTab) tab.focus();
-      else window.focus();
-      return tab;
-    }
-  } catch {
-    /* ignore */
-  }
-
-  return null;
+  const go = new URL(window.location.href);
+  go.search = "";
+  go.hash = "";
+  go.searchParams.set("maxGo", "1");
+  go.searchParams.set("dest", destination);
+  window.location.assign(go.toString());
 }
 
 /**
- * Open platform in a background tab during the user click — MAX tab stays alive
- * so returning to it restores the home interface.
+ * Android: open native app during click. iOS/web: defer until after popcorn
+ * so MAX remains the previous history entry when Netflix loads.
  */
 export function openPlatformBrowserSync(state: LaunchState): PlatformLaunchResult {
   const destination =
@@ -130,25 +95,22 @@ export function openPlatformBrowserSync(state: LaunchState): PlatformLaunchResul
     void openPlatformPlayback(platform, url).then((result) => {
       notifyLaunchComplete(result.success, result.directUrl);
     });
-    platformTab = null;
     return { opened: true, destination, needsManualOpen: false };
   }
 
-  const tab = openNamedTab(destination, false);
-  if (tab) {
-    platformTab = tab;
+  if (isAndroidDevice()) {
+    const target = buildLaunchTarget(platform, url);
     markPlatformOpened();
+    openPlatformHref(target.href);
     notifyLaunchComplete(true, destination);
     return { opened: true, destination, needsManualOpen: false };
   }
 
-  platformTab = null;
-  markPlatformOpened();
   notifyLaunchComplete(true, destination);
-  return { opened: false, destination, needsManualOpen: true };
+  return { opened: false, destination, needsManualOpen: false };
 }
 
-/** After 5s popcorn: focus the platform tab. MAX tab remains in the background. */
+/** After 5s popcorn: navigate in the same tab (iOS/web) so ← returns to MAX. */
 export async function finishPopcornOverlay(state: LaunchState): Promise<void> {
   const destination =
     pendingDestination ?? buildLaunchTarget(state.platform, state.url).directUrl;
@@ -158,30 +120,16 @@ export async function finishPopcornOverlay(state: LaunchState): Promise<void> {
 
   await exitPlaybackMode();
 
-  if (!Capacitor.isNativePlatform()) {
-    try {
-      let tab = platformTab;
-      if (!tab || tab.closed) {
-        tab = openNamedTab(destination, true);
-      } else {
-        tab.focus();
-      }
-    } catch {
-      openNamedTab(destination, true);
-    }
-  }
+  if (Capacitor.isNativePlatform()) return;
+  if (isAndroidDevice()) return;
 
+  navigateToPlatformSameTab(destination);
   void state;
 }
 
 export function openPlatformManually(destination: string): boolean {
-  const tab = openNamedTab(destination, true);
-  if (tab) {
-    platformTab = tab;
-    markPlatformOpened();
-    return true;
-  }
-  return false;
+  navigateToPlatformSameTab(destination);
+  return true;
 }
 
 export function cancelLaunch() {
@@ -189,14 +137,6 @@ export function cancelLaunch() {
   pendingDestination = null;
   pendingPlatform = null;
   pendingUrl = null;
-  if (platformTab && !platformTab.closed) {
-    try {
-      platformTab.close();
-    } catch {
-      /* ignore */
-    }
-  }
-  platformTab = null;
   clearAllReturnFlags();
   void exitPlaybackMode();
 }
