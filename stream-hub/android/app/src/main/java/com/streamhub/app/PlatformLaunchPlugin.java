@@ -1,6 +1,7 @@
 package com.streamhub.app;
 
 import android.content.ActivityNotFoundException;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
@@ -80,11 +81,18 @@ public class PlatformLaunchPlugin extends Plugin {
         call.reject("Could not open Play Store");
     }
 
+    private Context getLaunchContext() {
+        if (getActivity() != null) {
+            return getActivity();
+        }
+        return getContext();
+    }
+
     private boolean tryOpenPlayStore(String uri) {
         try {
             Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(uri));
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            getActivity().startActivity(intent);
+            getLaunchContext().startActivity(intent);
             return true;
         } catch (ActivityNotFoundException ignored) {
             return false;
@@ -112,7 +120,7 @@ public class PlatformLaunchPlugin extends Plugin {
                 intent.setPackage(packageName);
             }
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            getActivity().startActivity(intent);
+            getLaunchContext().startActivity(intent);
             return true;
         } catch (ActivityNotFoundException ignored) {
             return false;

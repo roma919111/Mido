@@ -1,4 +1,5 @@
-import { registerPlugin } from "@capacitor/core";
+import { Browser } from "@capacitor/browser";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import type { PlatformId } from "../types";
 import { PLATFORMS } from "./platforms";
 
@@ -63,16 +64,33 @@ export async function isPlatformAppInstalled(platform: PlatformId): Promise<bool
 
 export async function openPlatformPlayStore(platform: PlatformId): Promise<boolean> {
   const pkgs = getAndroidPackages(platform);
+  const webUrl = PLATFORMS[platform].playStoreUrl;
+
   try {
     await PlatformLaunch.openPlayStore({ packageName: pkgs.playStorePackage });
     return true;
   } catch {
+    /* try alternate package on TV */
+  }
+
+  if (pkgs.fallback && pkgs.fallback !== pkgs.playStorePackage) {
     try {
-      window.open(PLATFORMS[platform].playStoreUrl, "_blank", "noopener,noreferrer");
+      await PlatformLaunch.openPlayStore({ packageName: pkgs.fallback });
       return true;
     } catch {
-      return false;
+      /* fall through */
     }
+  }
+
+  try {
+    if (Capacitor.isNativePlatform()) {
+      await Browser.open({ url: webUrl, toolbarColor: "#070b18" });
+    } else {
+      window.open(webUrl, "_blank", "noopener,noreferrer");
+    }
+    return true;
+  } catch {
+    return false;
   }
 }
 

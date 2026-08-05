@@ -17,6 +17,7 @@ export function PlatformSubscriptionPanel() {
     shahid: false,
     tod: false,
   });
+  const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!Capacitor.isNativePlatform()) return;
@@ -36,13 +37,23 @@ export function PlatformSubscriptionPanel() {
     return () => window.clearInterval(id);
   }, [refresh]);
 
+  async function handleInstall(platform: PlatformId) {
+    setStatusMsg(`جاري فتح Play Store لـ ${PLATFORMS[platform].name}…`);
+    const ok = await openPlatformPlayStore(platform);
+    setStatusMsg(
+      ok
+        ? `✓ تم فتح متجر التطبيقات — اضغط «تثبيت» ثم ارجع لـ MAX`
+        : `⚠️ لم يُفتح المتجر — جرّب 🌐 المتصفح`,
+    );
+    window.setTimeout(() => setStatusMsg(null), 6000);
+  }
+
   if (!Capacitor.isNativePlatform()) {
     return (
       <section className="platform-subscription-panel">
         <h3 className="platform-subscription-panel__title">اشتراك المنصات</h3>
         <p className="platform-subscription-panel__hint">
-          على المتصفح: سجّل دخولك في netflix.com / shahid.mbc.net عند أول تشغيل — لا حاجة
-          لـ Play Store.
+          على المتصفح: سجّل دخولك في netflix.com / shahid.mbc.net عند أول تشغيل.
         </p>
       </section>
     );
@@ -52,8 +63,10 @@ export function PlatformSubscriptionPanel() {
     <section className="platform-subscription-panel">
       <h3 className="platform-subscription-panel__title">اشتراك المنصات — Google Play</h3>
       <p className="platform-subscription-panel__hint">
-        ثبّت التطبيق الرسمي عند الحاجة. بعد التثبيت سجّل دخولك مرة واحدة في التطبيق.
+        اضغط «ثبّت من Play Store» — ثم «تثبيت» في المتجر. بعد التثبيت سجّل دخولك مرة واحدة.
       </p>
+
+      {statusMsg ? <p className="platform-subscription-panel__status">{statusMsg}</p> : null}
 
       <div className="platform-subscription-panel__list">
         {PLATFORM_ORDER.map((platform) => {
@@ -75,8 +88,12 @@ export function PlatformSubscriptionPanel() {
 
               <div className="platform-subscription-card__actions">
                 {!isInstalled ? (
-                  <button type="button" className="btn btn--primary btn--sm" onClick={() => void openPlatformPlayStore(platform)}>
-                    📥 ثبّت من Play Store
+                  <button
+                    type="button"
+                    className="btn btn--primary btn--sm"
+                    onClick={() => void handleInstall(platform)}
+                  >
+                    📥 ثبّت {meta.name} من Play Store
                   </button>
                 ) : (
                   <button
@@ -84,7 +101,7 @@ export function PlatformSubscriptionPanel() {
                     className="btn btn--primary btn--sm"
                     onClick={() => void launchNativePlatformApp(platform, meta.homeUrl)}
                   >
-                    ▶ افتح {meta.name}
+                    ▶ افتح {meta.name} — إدخال الاشتراك
                   </button>
                 )}
                 <button

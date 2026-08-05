@@ -1,3 +1,4 @@
+import { Capacitor } from "@capacitor/core";
 import { useEffect, useState } from "react";
 import type { PlatformId } from "../types";
 import {
@@ -6,6 +7,7 @@ import {
   savePlatformAccount,
   type PlatformAccountsStore,
 } from "../lib/platform-accounts";
+import { openPlatformPlayStore, isPlatformAppInstalled } from "../lib/platform-launch-native";
 import { PLATFORMS } from "../lib/platforms";
 
 const PLATFORM_ORDER: PlatformId[] = ["netflix", "shahid", "tod"];
@@ -27,6 +29,22 @@ export function AccountPlatforms({ streamHubUsername }: AccountPlatformsProps) {
     tod: false,
   });
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  const [installed, setInstalled] = useState<Record<PlatformId, boolean>>({
+    netflix: false,
+    shahid: false,
+    tod: false,
+  });
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    void (async () => {
+      const next: Record<PlatformId, boolean> = { netflix: false, shahid: false, tod: false };
+      for (const id of PLATFORM_ORDER) {
+        next[id] = await isPlatformAppInstalled(id);
+      }
+      setInstalled(next);
+    })();
+  }, []);
 
   useEffect(() => {
     const loaded = loadPlatformAccounts();
@@ -149,6 +167,15 @@ export function AccountPlatforms({ streamHubUsername }: AccountPlatformsProps) {
               </div>
 
               <div className="account-platform-card__actions">
+                {Capacitor.isNativePlatform() && !installed[platform] ? (
+                  <button
+                    type="button"
+                    className="btn btn--primary btn--sm"
+                    onClick={() => void openPlatformPlayStore(platform)}
+                  >
+                    📥 ثبّت {meta.name}
+                  </button>
+                ) : null}
                 <button type="button" className="btn btn--primary btn--sm" onClick={() => handleSave(platform)}>
                   حفظ
                 </button>

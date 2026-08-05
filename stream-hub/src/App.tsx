@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { CATALOG, ROWS } from "./data/catalog";
 import { getSession, logout } from "./lib/auth";
@@ -20,6 +20,7 @@ import { enterPlaybackMode } from "./lib/fullscreen";
 import { clearAllReturnFlags, wasPlatformOpened } from "./lib/app-navigation";
 import { pushOverlayHistory, useReturnToHome } from "./hooks/useReturnToHome";
 import { usePendingPlatformRetry } from "./hooks/usePendingPlatformRetry";
+import { useTvRemote } from "./hooks/useTvRemote";
 import { ReturnHomeButton } from "./components/ReturnHomeButton";
 import { WelcomeBackBanner } from "./components/WelcomeBackBanner";
 import { LaunchModePanel } from "./components/LaunchModePanel";
@@ -38,7 +39,9 @@ import { SmartSetup, shouldShowSmartSetup } from "./components/SmartSetup";
 import { MaxLoginPage } from "./components/MaxLoginPage";
 import { GoogleTvLauncher } from "./components/GoogleTvLauncher";
 import { InstallAppBanner } from "./components/InstallAppBanner";
+import { Capacitor } from "@capacitor/core";
 import type { CatalogItem, ContinueEntry, LaunchState, PlatformId } from "./types";
+
 function mapContinueToItems(entries: ContinueEntry[]): CatalogItem[] {
   return entries
     .map((entry) => CATALOG.find((item) => item.id === entry.itemId))
@@ -57,8 +60,11 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
   const [manualOpenPlatform, setManualOpenPlatform] = useState<PlatformId | null>(null);
   const [welcomeBack, setWelcomeBack] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<InstallPromptPayload | null>(null);
+  const mainRef = useRef<HTMLElement>(null);
 
   const featured = CATALOG.find((i) => i.featured) ?? CATALOG[0]!;
+
+  useTvRemote(mainRef);
 
   useEffect(() => {
     enterAppShellMode();
@@ -253,6 +259,10 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
 
       <InstallAppBanner />
 
+      {Capacitor.isNativePlatform() ? (
+        <p className="gtv-scroll-hint">⬆⬇ للتمرير · ⬅➡ بين الأفلام · OK للاختيار</p>
+      ) : null}
+
       {installPrompt ? (
         <PlatformInstallPrompt
           platform={installPrompt.platform}
@@ -313,7 +323,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
       ) : null}
 
       {search.trim() ? (
-        <main className="gtv-main">
+        <main ref={mainRef} tabIndex={-1} className="gtv-main">
           <h2 className="gtv-section-title">نتائج البحث</h2>
           <div className="content-row__track content-row__track--wrap">
             {searchResults.map((item) => (
@@ -325,7 +335,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
           </div>
         </main>
       ) : tab === "home" ? (
-        <main className="gtv-main">
+        <main ref={mainRef} tabIndex={-1} className="gtv-main">
           <HeroBanner
             item={featured}
             onPlay={playFeatured}
@@ -352,7 +362,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
           ))}
         </main>
       ) : tab === "list" ? (
-        <main className="gtv-main gtv-main--padded">
+        <main ref={mainRef} tabIndex={-1} className="gtv-main gtv-main--padded">
           <h2 className="gtv-section-title">قائمتي</h2>
           {myListItems.length ? (
             <div className="content-row__track content-row__track--wrap">
@@ -365,7 +375,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
           )}
         </main>
       ) : tab === "account" ? (
-        <main className="gtv-main gtv-main--padded">
+        <main ref={mainRef} tabIndex={-1} className="gtv-main gtv-main--padded">
           <PlatformSubscriptionPanel />
           <LaunchModePanel />
           <KioskModePanel />

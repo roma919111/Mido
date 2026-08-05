@@ -253,6 +253,16 @@ html.max-kiosk textarea {
   transform: translateX(-22px);
 }
 
+.platform-subscription-panel__status {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  color: #86efac;
+  font-size: 0.85rem;
+}
+
 button:focus-visible,
 input:focus-visible,
 a:focus-visible {
@@ -1078,9 +1088,61 @@ html.gtv-launcher-active .install-banner {
 }
 
 /* ── Google TV shell ── */
+html.max-native-app,
+html.max-native-app body {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+html.max-native-app #root {
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+html.max-native-app.max-kiosk,
+html.max-native-app.max-kiosk body {
+  touch-action: auto;
+}
+
 .gtv-shell {
   min-height: 100dvh;
   padding-bottom: calc(72px + var(--safe-bottom));
+  display: flex;
+  flex-direction: column;
+}
+
+html.max-native-app .gtv-shell {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+html.max-native-app .gtv-main {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+html.max-native-app .gtv-main:focus {
+  outline: none;
+}
+
+.gtv-scroll-hint {
+  margin: 0 16px 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  color: #c4b5fd;
+  font-size: 0.82rem;
+  text-align: center;
 }
 
 .gtv-header {

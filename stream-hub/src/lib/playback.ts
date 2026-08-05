@@ -9,6 +9,7 @@ import { addContinueWatching, ensureInMyList } from "./library";
 import { openPlatformWebView } from "./platform-browser";
 import {
   forceAppLaunch,
+  installPlatformAndRemember,
   openPlatformViaBrowser,
   smartLaunchPlatform,
   type SmartLaunchResult,
@@ -192,7 +193,6 @@ export async function confirmInstallFromPlayStore(
   url: string,
   title: string,
 ): Promise<boolean> {
-  const { installPlatformAndRemember } = await import("./platform-smart-launch");
   return installPlatformAndRemember(platform, url, title);
 }
 

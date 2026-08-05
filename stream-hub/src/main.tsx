@@ -2,9 +2,11 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { registerSW } from "virtual:pwa-register";
 import { setupKioskOnBoot } from "./lib/kiosk-mode";
+import { setupNativeShellClass } from "./lib/native-shell";
 import { App } from "./App";
 import "./index.css";
 
+setupNativeShellClass();
 setupKioskOnBoot();
 
 if (import.meta.env.PROD) {

@@ -1,6 +1,8 @@
+import { Capacitor } from "@capacitor/core";
 import { THEATER_CLASS } from "./fullscreen";
 import { enterImmersiveChrome } from "./browser-chrome";
 import { isKioskEnabled, KIOSK_CLASS } from "./kiosk-mode";
+import { setupNativeShellClass } from "./native-shell";
 
 const APP_SHELL_CLASS = "max-app-shell";
 
@@ -9,7 +11,11 @@ export function enterAppShellMode(): void {
   document.body.classList.add(APP_SHELL_CLASS);
   document.documentElement.classList.add("gtv-launcher-active");
   document.body.classList.add("gtv-launcher-active");
-  enterImmersiveChrome();
+  if (Capacitor.isNativePlatform()) {
+    setupNativeShellClass();
+  } else {
+    enterImmersiveChrome();
+  }
   if (isKioskEnabled()) {
     document.documentElement.classList.add(KIOSK_CLASS);
     document.body.classList.add(KIOSK_CLASS);
