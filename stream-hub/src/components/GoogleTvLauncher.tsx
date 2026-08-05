@@ -9,8 +9,9 @@ import {
   isStandaloneApp,
 } from "../lib/display-mode";
 
-/** Google TV never runs inside Safari/Chrome — only as installed launcher app. */
+/** Allow catalog in browser — install gate is optional. */
 export function mustUseGoogleTvLauncher(): boolean {
+  if (import.meta.env.DEV) return false;
   return isBrowserTab() && !Capacitor.isNativePlatform();
 }
 
@@ -102,6 +103,16 @@ export function GoogleTvLauncher({ children }: GoogleTvLauncherProps) {
         <div className="gtv-launcher-screen__actions">
           <button type="button" className="gtv-launcher-screen__primary" onClick={() => void handleInstall()}>
             {deferredPrompt ? "⬇ تثبيت — مثل Google TV" : "📲 كيف أثبّت التطبيق؟"}
+          </button>
+          <button
+            type="button"
+            className="gtv-launcher-screen__ghost"
+            onClick={() => {
+              document.documentElement.classList.add("gtv-launcher-active");
+              setInstalled(true);
+            }}
+          >
+            ▶ متابعة في المتصفح — تصفّح الأفلام
           </button>
         </div>
 
