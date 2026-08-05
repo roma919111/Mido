@@ -98,10 +98,10 @@ export function AdminPage({ onDelivered, onClose }: AdminPageProps) {
     <div className="admin-page">
       <header className="admin-page__head">
         <div>
-          <p className="admin-page__badge">🔧 Admin — تجهيز الزبون</p>
-          <h1>إعداد الجهاز قبل التسليم</h1>
+          <p className="admin-page__badge">🔧 Admin — دعم العملاء</p>
+          <h1>إعداد ميديا بلاير للعميل</h1>
           <p className="admin-page__lead">
-            تجهّز الجهاز في المحل قبل ما تعطيه للزبون — الزبون يفتح MAX ويشوف 3 أزرار فقط.
+            العميل ثبّت MAX على جهازه — أنت تثبّت Netflix/شاهد وتسجّل الاشتراك من هنا (TeamViewer أو AnyDesk).
           </p>
         </div>
         {onClose ? (
@@ -192,10 +192,10 @@ export function AdminPage({ onDelivered, onClose }: AdminPageProps) {
       </section>
 
       <section className="admin-card admin-card--deliver">
-        <h2>③ جاهز للزبون</h2>
-        <p>بعد تثبيت Netflix/شاهد وتسجيل الاشتراك — أغلق Admin وسلّم الجهاز. الزبون ما يحتاج يسوي شي.</p>
+        <h2>③ تم الإعداد</h2>
+        <p>بعد تسجيل Netflix/شاهد للعميل — أغلق Admin. العميل يرجع يفتح MAX ويضغط زر واحد.</p>
         <button type="button" className="admin-deliver-btn" onClick={handleDeliver}>
-          ✅ تم — الجهاز جاهز
+          ✅ تم — العميل جاهز
         </button>
         <button type="button" className="admin-undeliver-btn" onClick={handleUndeliver}>
           ↩ إعادة وضع التجهيز
