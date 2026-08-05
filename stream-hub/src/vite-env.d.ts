@@ -8,6 +8,7 @@ interface ImportMetaEnv {
   readonly VITE_APP_PASSWORD: string;
   readonly VITE_PROVISION_WEBHOOK?: string;
   readonly VITE_ACTIVATION_API?: string;
+  readonly VITE_IPTV_API?: string;
 }
 
 interface ImportMeta {

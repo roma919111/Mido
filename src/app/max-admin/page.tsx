@@ -2,22 +2,21 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-type Device = {
-  deviceId: string;
-  mac?: string;
+type IptvCode = {
+  code: string;
   label?: string;
-  activated: boolean;
-  registeredAt: string;
-  activatedAt?: string;
-  version?: string;
+  m3uUrl: string;
+  active: boolean;
+  createdAt: string;
 };
 
 export default function MaxAdminPage() {
   const [key, setKey] = useState("");
   const [savedKey, setSavedKey] = useState("");
-  const [devices, setDevices] = useState<Device[]>([]);
-  const [manualId, setManualId] = useState("");
-  const [manualLabel, setManualLabel] = useState("");
+  const [codes, setCodes] = useState<IptvCode[]>([]);
+  const [m3uUrl, setM3uUrl] = useState("");
+  const [label, setLabel] = useState("");
+  const [customCode, setCustomCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -34,10 +33,10 @@ export default function MaxAdminPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/max/activations", { headers: headers() });
-      if (!res.ok) throw new Error("Unauthorized or failed to load");
-      const data = (await res.json()) as { devices: Device[] };
-      setDevices(data.devices);
+      const res = await fetch("/api/max/iptv/codes", { headers: headers() });
+      if (!res.ok) throw new Error("Unauthorized");
+      const data = (await res.json()) as { codes: IptvCode[] };
+      setCodes(data.codes);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed");
     } finally {
@@ -47,42 +46,51 @@ export default function MaxAdminPage() {
 
   useEffect(() => {
     void load();
-    const id = window.setInterval(() => void load(), 15000);
-    return () => window.clearInterval(id);
   }, [load]);
 
-  async function activate(deviceId: string, label?: string) {
+  async function createCode() {
+    if (!m3uUrl.trim()) {
+      setError("أدخل رابط M3U");
+      return;
+    }
     setError(null);
-    const res = await fetch("/api/max/activate", {
+    const res = await fetch("/api/max/iptv/codes", {
       method: "POST",
       headers: headers(),
-      body: JSON.stringify({ deviceId, label }),
+      body: JSON.stringify({
+        code: customCode || undefined,
+        label: label || undefined,
+        m3uUrl: m3uUrl.trim(),
+      }),
     });
+    const data = (await res.json()) as { record?: IptvCode; error?: string };
     if (!res.ok) {
-      setError("Activation failed");
+      setError(data.error ?? "Failed");
       return;
     }
+    setM3uUrl("");
+    setLabel("");
+    setCustomCode("");
     void load();
+    if (data.record) {
+      alert(`تم إنشاء الكود: ${data.record.code}\nأرسله للعميل على WhatsApp`);
+    }
   }
 
-  async function deactivate(deviceId: string) {
-    setError(null);
-    const res = await fetch(`/api/max/activate?deviceId=${encodeURIComponent(deviceId)}`, {
-      method: "DELETE",
+  async function toggleCode(code: string, active: boolean) {
+    await fetch("/api/max/iptv/codes", {
+      method: "PATCH",
       headers: headers(),
+      body: JSON.stringify({ code, active }),
     });
-    if (!res.ok) {
-      setError("Deactivation failed");
-      return;
-    }
     void load();
   }
 
   if (!savedKey) {
     return (
       <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 p-6">
-        <h1 className="text-2xl font-bold">MAX — تفعيل العملاء</h1>
-        <p className="text-sm text-white/60">أدخل مفتاح Admin (MAX_ADMIN_KEY)</p>
+        <h1 className="text-2xl font-bold">MAX IPTV — Admin</h1>
+        <p className="text-sm text-white/60">أدخل MAX_ADMIN_KEY</p>
         <input
           type="password"
           className="rounded-xl border border-white/10 bg-white/5 px-4 py-3"
@@ -101,113 +109,103 @@ export default function MaxAdminPage() {
     );
   }
 
-  const pending = devices.filter((d) => !d.activated);
-  const active = devices.filter((d) => d.activated);
+  const active = codes.filter((c) => c.active);
+  const inactive = codes.filter((c) => !c.active);
 
   return (
     <main className="mx-auto min-h-dvh max-w-3xl p-6">
-      <header className="mb-8 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">MAX Media Player — تفعيل عن بُعد</h1>
-          <p className="mt-1 text-sm text-white/60">فعّل العميل برقم الجهاز (Device ID)</p>
-        </div>
-        <button
-          type="button"
-          className="rounded-lg border border-white/15 px-3 py-2 text-sm"
-          onClick={() => void load()}
-        >
-          تحديث
-        </button>
+      <header className="mb-8">
+        <h1 className="text-2xl font-bold">MAX IPTV — إدارة الاشتراكات</h1>
+        <p className="mt-1 text-sm text-white/60">أنشئ كود → الصق M3U → أرسل الكود للعميل</p>
       </header>
 
       {error ? <p className="mb-4 rounded-lg bg-red-500/20 px-4 py-2 text-red-200">{error}</p> : null}
 
-      <section className="mb-8 rounded-2xl border border-white/10 bg-white/5 p-4">
-        <h2 className="mb-3 font-semibold">تفعيل يدوي</h2>
-        <div className="flex flex-wrap gap-2">
+      <section className="mb-8 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4">
+        <h2 className="mb-3 font-semibold">➕ عميل جديد</h2>
+        <div className="flex flex-col gap-2">
           <input
-            className="min-w-[200px] flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-2"
-            placeholder="Device ID (14 رقم)"
-            value={manualId}
-            onChange={(e) => setManualId(e.target.value.replace(/\D/g, ""))}
+            className="rounded-xl border border-white/10 bg-black/30 px-3 py-2"
+            placeholder="رابط M3U (من مزودك المرخّص)"
+            value={m3uUrl}
+            onChange={(e) => setM3uUrl(e.target.value)}
           />
           <input
-            className="min-w-[160px] flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-2"
+            className="rounded-xl border border-white/10 bg-black/30 px-3 py-2"
             placeholder="اسم العميل (اختياري)"
-            value={manualLabel}
-            onChange={(e) => setManualLabel(e.target.value)}
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+          />
+          <input
+            className="rounded-xl border border-white/10 bg-black/30 px-3 py-2"
+            placeholder="كود مخصص (اختياري — يُولّد تلقائياً)"
+            inputMode="numeric"
+            value={customCode}
+            onChange={(e) => setCustomCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
           />
           <button
             type="button"
-            className="rounded-xl bg-emerald-600 px-5 py-2 font-semibold"
-            onClick={() => void activate(manualId, manualLabel)}
+            className="rounded-xl bg-emerald-600 px-5 py-3 font-semibold"
+            onClick={() => void createCode()}
           >
-            ✅ تفعيل
+            إنشاء كود تفعيل
           </button>
         </div>
       </section>
 
       <section className="mb-8">
-        <h2 className="mb-3 font-semibold text-amber-300">⏳ بانتظار التفعيل ({pending.length})</h2>
-        {loading && !devices.length ? <p className="text-white/50">جاري التحميل…</p> : null}
-        {!pending.length ? (
-          <p className="text-sm text-white/50">لا يوجد أجهزة جديدة — العميل يثبت MAX ويظهر هنا</p>
+        <h2 className="mb-3 font-semibold text-emerald-300">✓ نشط ({active.length})</h2>
+        {loading && !codes.length ? <p className="text-white/50">جاري التحميل…</p> : null}
+        {!active.length ? (
+          <p className="text-sm text-white/50">لا يوجد اشتراكات بعد</p>
         ) : (
           <ul className="space-y-3">
-            {pending.map((d) => (
+            {active.map((c) => (
               <li
-                key={d.deviceId}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4"
+                key={c.code}
+                className="rounded-xl border border-white/10 bg-white/5 p-4"
               >
-                <div>
-                  <p className="font-mono text-lg">{d.deviceId}</p>
-                  <p className="text-xs text-white/50">
-                    MAC: {d.mac ?? "—"} · {new Date(d.registeredAt).toLocaleString()}
-                  </p>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-mono text-2xl font-bold tracking-widest">{c.code}</p>
+                    <p className="text-sm text-white/70">{c.label ?? "—"}</p>
+                    <p className="mt-1 truncate text-xs text-white/40">{c.m3uUrl}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded-xl border border-red-400/40 px-4 py-2 text-red-300"
+                    onClick={() => void toggleCode(c.code, false)}
+                  >
+                    إيقاف
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  className="rounded-xl bg-emerald-600 px-4 py-2 font-semibold"
-                  onClick={() => void activate(d.deviceId)}
-                >
-                  ✅ تفعيل
-                </button>
               </li>
             ))}
           </ul>
         )}
       </section>
 
-      <section>
-        <h2 className="mb-3 font-semibold text-emerald-300">✓ مفعّل ({active.length})</h2>
-        {!active.length ? (
-          <p className="text-sm text-white/50">لا يوجد عملاء مفعّلين بعد</p>
-        ) : (
+      {inactive.length ? (
+        <section>
+          <h2 className="mb-3 font-semibold text-white/50">موقوف ({inactive.length})</h2>
           <ul className="space-y-3">
-            {active.map((d) => (
-              <li
-                key={d.deviceId}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 p-4"
-              >
-                <div>
-                  <p className="font-mono">{d.deviceId}</p>
-                  <p className="text-sm text-white/70">{d.label ?? "—"}</p>
-                  <p className="text-xs text-white/40">
-                    فُعّل: {d.activatedAt ? new Date(d.activatedAt).toLocaleString() : "—"}
-                  </p>
+            {inactive.map((c) => (
+              <li key={c.code} className="rounded-xl border border-white/10 bg-black/20 p-4 opacity-70">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="font-mono text-lg">{c.code}</p>
+                  <button
+                    type="button"
+                    className="rounded-xl bg-emerald-700 px-4 py-2"
+                    onClick={() => void toggleCode(c.code, true)}
+                  >
+                    تفعيل
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  className="rounded-xl border border-red-400/40 px-4 py-2 text-red-300"
-                  onClick={() => void deactivate(d.deviceId)}
-                >
-                  إيقاف
-                </button>
               </li>
             ))}
           </ul>
-        )}
-      </section>
+        </section>
+      ) : null}
     </main>
   );
 }
