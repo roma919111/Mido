@@ -8,23 +8,22 @@ import { PLATFORMS } from "../lib/platforms";
 const ORDER: PlatformId[] = ["netflix", "shahid", "tod"];
 
 const HINTS: Record<PlatformId, string> = {
-  netflix: "أفلام · مسلسلات · Netflix",
-  shahid: "محتوى عربي · MBC Shahid",
-  tod: "رياضة · beIN · TOD",
+  netflix: "اضغط OK",
+  shahid: "اضغط OK",
+  tod: "اضغط OK",
 };
 
 type PlatformLauncherProps = {
-  onOpened?: (platform: PlatformId, mode: string) => void;
+  onOpen?: (platform: PlatformId) => void | Promise<void>;
 };
 
-export function PlatformLauncher({ onOpened }: PlatformLauncherProps) {
+export function PlatformLauncher({ onOpen }: PlatformLauncherProps) {
   const [installed, setInstalled] = useState<Record<PlatformId, boolean>>({
     netflix: false,
     shahid: false,
     tod: false,
   });
   const [busy, setBusy] = useState<PlatformId | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
@@ -40,32 +39,20 @@ export function PlatformLauncher({ onOpened }: PlatformLauncherProps) {
   async function handleOpen(platform: PlatformId) {
     if (busy) return;
     setBusy(platform);
-    setMsg(null);
-    const result = await openPlatformNow(platform);
-    setBusy(null);
-
-    if (result === "app") {
-      setMsg(`✓ ${PLATFORMS[platform].name} — سجّل دخولك في التطبيق`);
-    } else if (result === "store") {
-      setMsg(`📥 ثبّت ${PLATFORMS[platform].name} من المتجر ثم افتحه مرة أخرى`);
-    } else if (result === "browser") {
-      setMsg(`🌐 ${PLATFORMS[platform].name} في المتصفح`);
+    if (onOpen) {
+      await onOpen(platform);
     } else {
-      setMsg(`⚠️ تعذّر فتح ${PLATFORMS[platform].name}`);
+      await openPlatformNow(platform);
     }
-
-    onOpened?.(platform, result);
-    window.setTimeout(() => setMsg(null), 5000);
+    setBusy(null);
   }
 
   return (
     <section className="platform-launcher">
       <header className="platform-launcher__head">
-        <h1>اختر منصتك</h1>
-        <p>ضغطة واحدة — تثبيت أو تشغيل · بدون خطوات إضافية</p>
+        <h1>ماذا تريد أن تشاهد؟</h1>
+        <p>ضغطة واحدة — بدون كلمة مرور · بدون إعدادات</p>
       </header>
-
-      {msg ? <p className="platform-launcher__msg">{msg}</p> : null}
 
       <div className="platform-launcher__grid">
         {ORDER.map((platform) => {
@@ -86,11 +73,7 @@ export function PlatformLauncher({ onOpened }: PlatformLauncherProps) {
               <strong>{meta.name}</strong>
               <span className="platform-launcher__hint">{HINTS[platform]}</span>
               <span className="platform-launcher__status">
-                {isBusy
-                  ? "جاري الفتح…"
-                  : isInstalled
-                    ? "✓ مثبت — اضغط OK"
-                    : "📥 يفتح Play Store"}
+                {isBusy ? "…" : isInstalled ? "▶ تشغيل" : "📥 تثبيت + تشغيل"}
               </span>
             </button>
           );

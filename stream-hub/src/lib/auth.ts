@@ -1,7 +1,9 @@
+import { Capacitor } from "@capacitor/core";
 import type { Session } from "../types";
+import { isCustomerMode } from "./customer-mode";
 
 const SESSION_KEY = "stream-hub-session";
-const SESSION_TTL_MS = 1000 * 60 * 60 * 12; // 12 hours
+const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 365; // 1 year on TV boxes
 
 function expectedUsername(): string {
   return import.meta.env.VITE_APP_USERNAME?.trim() || "admin";
@@ -9,6 +11,10 @@ function expectedUsername(): string {
 
 function expectedPassword(): string {
   return import.meta.env.VITE_APP_PASSWORD?.trim() || "changeme";
+}
+
+function storage(): Storage {
+  return Capacitor.isNativePlatform() ? localStorage : sessionStorage;
 }
 
 export function login(username: string, password: string): boolean {
@@ -20,17 +26,26 @@ export function login(username: string, password: string): boolean {
     username: username.trim(),
     issuedAt: Date.now(),
   };
-  sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  storage().setItem(SESSION_KEY, JSON.stringify(session));
   return true;
 }
 
+/** Skip login screen on native — customer never sees MAX password. */
+export function ensureAutoSession(): Session | null {
+  const existing = getSession();
+  if (existing) return existing;
+  if (!isCustomerMode()) return null;
+  const ok = login(expectedUsername(), expectedPassword());
+  return ok ? getSession() : null;
+}
+
 export function logout() {
-  sessionStorage.removeItem(SESSION_KEY);
+  storage().removeItem(SESSION_KEY);
 }
 
 export function getSession(): Session | null {
   try {
-    const raw = sessionStorage.getItem(SESSION_KEY);
+    const raw = storage().getItem(SESSION_KEY);
     if (!raw) return null;
     const session = JSON.parse(raw) as Session;
     if (Date.now() - session.issuedAt > SESSION_TTL_MS) {
