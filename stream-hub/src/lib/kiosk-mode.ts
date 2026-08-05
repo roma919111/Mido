@@ -30,6 +30,14 @@ export function setKioskEnabled(enabled: boolean): void {
 export async function enterKioskMode(): Promise<void> {
   document.documentElement.classList.add(KIOSK_CLASS);
   document.body.classList.add(KIOSK_CLASS);
+
+  if (Capacitor.isNativePlatform()) {
+    // MainActivity already hides system bars — theater/fullscreen breaks WebView taps on TV.
+    await acquireWakeLock();
+    attachKioskGuards();
+    return;
+  }
+
   enterImmersiveChrome();
   enterPlaybackMode();
   await acquireWakeLock();
@@ -99,6 +107,13 @@ export async function requestHideBrowserChrome(): Promise<boolean> {
 
 export function setupKioskOnBoot(): void {
   attachKioskGuards();
+  if (Capacitor.isNativePlatform()) {
+    void exitPlaybackMode();
+    document.documentElement.classList.remove(KIOSK_CLASS);
+    document.body.classList.remove(KIOSK_CLASS);
+    if (isKioskEnabled()) void enterKioskMode();
+    return;
+  }
   if (isKioskEnabled()) void enterKioskMode();
 }
 

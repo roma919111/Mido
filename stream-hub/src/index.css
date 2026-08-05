@@ -243,12 +243,28 @@ html.max-kiosk textarea {
   transition: transform 0.2s;
 }
 
-.kiosk-panel__switch input:checked + .kiosk-panel__track {
+.kiosk-panel__switch input:checked + .kiosk-panel__track,
+.kiosk-panel__track.is-on {
   background: var(--max-orange);
 }
 
-.kiosk-panel__switch input:checked + .kiosk-panel__track::after {
+.kiosk-panel__switch input:checked + .kiosk-panel__track::after,
+.kiosk-panel__track.is-on::after {
   transform: translateX(-22px);
+}
+
+button:focus-visible,
+input:focus-visible,
+a:focus-visible {
+  outline: 3px solid #8b5cf6;
+  outline-offset: 3px;
+}
+
+button,
+.max-login__activate,
+.gtv-nav button,
+.gtv-launcher-screen__primary {
+  min-height: 48px;
 }
 
 /* ── Hide browser gate ── */

@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { enterAppShellMode } from "../lib/app-shell";
 import { enterKioskMode, isKioskEnabled } from "../lib/kiosk-mode";
-import { enterPlaybackMode } from "../lib/fullscreen";
+import { exitPlaybackMode } from "../lib/fullscreen";
 import { login } from "../lib/auth";
 import { getDeviceId, getDeviceMac } from "../lib/device-id";
 
@@ -19,6 +19,11 @@ export function MaxLoginPage({ onSuccess }: MaxLoginPageProps) {
   const [activeCodeMode, setActiveCodeMode] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    void exitPlaybackMode();
+    enterAppShellMode();
+  }, []);
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const username = activeCodeMode ? "admin" : code.trim();
@@ -28,7 +33,6 @@ export function MaxLoginPage({ onSuccess }: MaxLoginPageProps) {
     }
     setError(null);
     enterAppShellMode();
-    enterPlaybackMode();
     if (isKioskEnabled()) void enterKioskMode();
     onSuccess();
   }

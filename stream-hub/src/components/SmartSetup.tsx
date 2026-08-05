@@ -1,12 +1,11 @@
-import { Capacitor } from "@capacitor/core";
 import { PLATFORMS } from "../lib/platforms";
 import type { PlatformId } from "../types";
 
 const SETUP_KEY = "streamhub.smartSetupDone";
 
 export function shouldShowSmartSetup(): boolean {
-  if (!Capacitor.isNativePlatform()) return false;
-  return localStorage.getItem(SETUP_KEY) !== "1";
+  // Skipped — web-first flow needs no Play Store setup; old screen blocked TV taps.
+  return false;
 }
 
 export function completeSmartSetup(): void {

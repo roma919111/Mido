@@ -21,10 +21,15 @@ export function KioskModePanel() {
           <h3 className="kiosk-panel__title">🖥️ وضع Kiosk</h3>
           <p className="kiosk-panel__lead">إخفاء شريط المتصفح — واجهة تطبيق كامل</p>
         </div>
-        <label className="kiosk-panel__switch">
-          <input type="checkbox" checked={enabled} onChange={handleToggle} />
-          <span className="kiosk-panel__track" aria-hidden="true" />
-        </label>
+        <button
+          type="button"
+          className="kiosk-panel__switch"
+          role="switch"
+          aria-checked={enabled}
+          onClick={handleToggle}
+        >
+          <span className={`kiosk-panel__track${enabled ? " is-on" : ""}`} aria-hidden="true" />
+        </button>
       </header>
 
       <ul className="kiosk-panel__list">
