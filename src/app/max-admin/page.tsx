@@ -10,15 +10,46 @@ type IptvCode = {
   createdAt: string;
 };
 
+const PLAYER_URL_KEY = "max.playerPublicUrl";
+
+function defaultPlayerUrl(): string {
+  return process.env.NEXT_PUBLIC_MAX_PLAYER_URL?.trim() || "http://localhost:5173";
+}
+
+function customerLink(code: string, playerBase: string): string {
+  return `${playerBase.replace(/\/$/, "")}/?code=${encodeURIComponent(code)}`;
+}
+
+function whatsAppText(code: string, link: string, label?: string): string {
+  const name = label?.trim() ? ` ${label.trim()}` : "";
+  return (
+    `مرحباً${name}! 👋\n\n` +
+    `MAX Media Player جاهز — اضغط الرابط:\n${link}\n\n` +
+    `• القنوات جاهزة\n• Netflix / شاهد / TOD بزر واحد\n• بدون إعداد — افتح واستمتع`
+  );
+}
+
 export default function MaxAdminPage() {
   const [key, setKey] = useState("");
   const [savedKey, setSavedKey] = useState("");
+  const [playerUrl, setPlayerUrl] = useState(defaultPlayerUrl);
   const [codes, setCodes] = useState<IptvCode[]>([]);
   const [m3uUrl, setM3uUrl] = useState("");
   const [label, setLabel] = useState("");
   const [customCode, setCustomCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  useEffect(() => {
+    const stored = localStorage.getItem(PLAYER_URL_KEY);
+    if (stored) setPlayerUrl(stored);
+  }, []);
+
+  function savePlayerUrl(url: string) {
+    setPlayerUrl(url);
+    localStorage.setItem(PLAYER_URL_KEY, url);
+  }
 
   const headers = useCallback(
     () => ({
@@ -48,6 +79,16 @@ export default function MaxAdminPage() {
     void load();
   }, [load]);
 
+  async function copyText(text: string, id: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(id);
+      window.setTimeout(() => setCopied(null), 2000);
+    } catch {
+      setError("تعذر النسخ — انسخ يدوياً");
+    }
+  }
+
   async function createCode() {
     if (!m3uUrl.trim()) {
       setError("أدخل رابط M3U");
@@ -73,7 +114,8 @@ export default function MaxAdminPage() {
     setCustomCode("");
     void load();
     if (data.record) {
-      alert(`تم إنشاء الكود: ${data.record.code}\nأرسله للعميل على WhatsApp`);
+      const link = customerLink(data.record.code, playerUrl);
+      await copyText(whatsAppText(data.record.code, link, data.record.label), "new");
     }
   }
 
@@ -116,10 +158,26 @@ export default function MaxAdminPage() {
     <main className="mx-auto min-h-dvh max-w-3xl p-6">
       <header className="mb-8">
         <h1 className="text-2xl font-bold">MAX IPTV — إدارة الاشتراكات</h1>
-        <p className="mt-1 text-sm text-white/60">أنشئ كود → الصق M3U → أرسل الكود للعميل</p>
+        <p className="mt-1 text-sm text-white/60">
+          جهّز الواجهة → انسخ رابط الزبون → يرسل جاهز بدون إعداد
+        </p>
       </header>
 
       {error ? <p className="mb-4 rounded-lg bg-red-500/20 px-4 py-2 text-red-200">{error}</p> : null}
+      {copied ? (
+        <p className="mb-4 rounded-lg bg-emerald-500/20 px-4 py-2 text-emerald-200">✓ تم النسخ</p>
+      ) : null}
+
+      <section className="mb-8 rounded-2xl border border-white/10 bg-white/5 p-4">
+        <h2 className="mb-2 font-semibold">🔗 رابط المشغّل للزبائن</h2>
+        <p className="mb-3 text-sm text-white/55">الرابط اللي ترسله على WhatsApp (مثال: نشر stream-hub)</p>
+        <input
+          className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2"
+          value={playerUrl}
+          onChange={(e) => savePlayerUrl(e.target.value)}
+          placeholder="https://max.yourdomain.com"
+        />
+      </section>
 
       <section className="mb-8 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4">
         <h2 className="mb-3 font-semibold">➕ عميل جديد</h2>
@@ -148,7 +206,7 @@ export default function MaxAdminPage() {
             className="rounded-xl bg-emerald-600 px-5 py-3 font-semibold"
             onClick={() => void createCode()}
           >
-            إنشاء كود تفعيل
+            إنشاء + نسخ رسالة WhatsApp
           </button>
         </div>
       </section>
@@ -160,27 +218,43 @@ export default function MaxAdminPage() {
           <p className="text-sm text-white/50">لا يوجد اشتراكات بعد</p>
         ) : (
           <ul className="space-y-3">
-            {active.map((c) => (
-              <li
-                key={c.code}
-                className="rounded-xl border border-white/10 bg-white/5 p-4"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
+            {active.map((c) => {
+              const link = customerLink(c.code, playerUrl);
+              return (
+                <li key={c.code} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                  <div className="mb-3">
                     <p className="font-mono text-2xl font-bold tracking-widest">{c.code}</p>
                     <p className="text-sm text-white/70">{c.label ?? "—"}</p>
-                    <p className="mt-1 truncate text-xs text-white/40">{c.m3uUrl}</p>
+                    <p className="mt-2 break-all text-xs text-sky-300/90">{link}</p>
                   </div>
-                  <button
-                    type="button"
-                    className="rounded-xl border border-red-400/40 px-4 py-2 text-red-300"
-                    onClick={() => void toggleCode(c.code, false)}
-                  >
-                    إيقاف
-                  </button>
-                </div>
-              </li>
-            ))}
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="rounded-xl bg-sky-700 px-4 py-2 text-sm font-semibold"
+                      onClick={() => void copyText(link, `link-${c.code}`)}
+                    >
+                      📋 نسخ الرابط
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold"
+                      onClick={() =>
+                        void copyText(whatsAppText(c.code, link, c.label), `wa-${c.code}`)
+                      }
+                    >
+                      💬 نسخ رسالة WhatsApp
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-xl border border-red-400/40 px-4 py-2 text-sm text-red-300"
+                      onClick={() => void toggleCode(c.code, false)}
+                    >
+                      إيقاف
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

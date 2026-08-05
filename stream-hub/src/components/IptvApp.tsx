@@ -8,6 +8,7 @@ import {
   loadPlaylist,
   saveCode,
 } from "../lib/iptv-client";
+import { clearCodeFromUrl, getCodeFromUrl } from "../lib/customer-link";
 import { normalizeDigits } from "../lib/normalize-digits";
 import { IptvPlayer } from "./IptvPlayer";
 import { OttQuickBar } from "./OttQuickBar";
@@ -21,11 +22,12 @@ export function IptvApp() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [ready, setReady] = useState(false);
+  const [autoSetup, setAutoSetup] = useState(false);
 
-  const activate = useCallback(async (activationCode: string) => {
+  const activate = useCallback(async (activationCode: string, silent = false) => {
     const trimmed = normalizeDigits(activationCode, 6);
     if (trimmed.length < 4) {
-      setError("أدخل كود التفعيل (4–6 أرقام)");
+      if (!silent) setError("أدخل كود التفعيل (4–6 أرقام)");
       return;
     }
     setLoading(true);
@@ -40,14 +42,23 @@ export function IptvApp() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "فشل التفعيل");
       setReady(false);
+      setAutoSetup(false);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    const urlCode = getCodeFromUrl();
+    if (urlCode) {
+      setAutoSetup(true);
+      setCode(urlCode);
+      clearCodeFromUrl();
+      void activate(urlCode, true);
+      return;
+    }
     const saved = getSavedCode();
-    if (saved) void activate(saved);
+    if (saved) void activate(saved, true);
   }, [activate]);
 
   const groups = useMemo(() => {
@@ -80,6 +91,19 @@ export function IptvApp() {
   }
 
   if (!ready) {
+    if (autoSetup || loading) {
+      return (
+        <div className="iptv-login">
+          <div className="iptv-login__card">
+            <div className="iptv-login__logo">MAX</div>
+            <h1>جاري تجهيز واجهتك…</h1>
+            <p className="iptv-login__lead">لحظات — القنوات والإعدادات تُحمّل تلقائياً</p>
+            {error ? <p className="iptv-login__error">{error}</p> : null}
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="iptv-login">
         <div className="iptv-login__card">
