@@ -8,6 +8,11 @@ type PlatformLaunchPlugin = {
     packageName?: string;
     fallbackPackage?: string;
   }): Promise<void>;
+  isInstalled(options: {
+    packageName: string;
+    fallbackPackage?: string;
+  }): Promise<{ installed: boolean }>;
+  openPlayStore(options: { packageName: string }): Promise<void>;
 };
 
 const PlatformLaunch = registerPlugin<PlatformLaunchPlugin>("PlatformLaunch");
@@ -31,15 +36,44 @@ export function isAndroidTvDevice(): boolean {
 export function getAndroidPackages(platform: PlatformId): {
   primary: string;
   fallback?: string;
+  playStorePackage: string;
 } {
   const meta = PLATFORMS[platform];
   if (platform === "netflix" && isAndroidTvDevice()) {
-    return { primary: TV_NETFLIX, fallback: PHONE_NETFLIX };
+    return { primary: TV_NETFLIX, fallback: PHONE_NETFLIX, playStorePackage: TV_NETFLIX };
   }
   if (platform === "netflix") {
-    return { primary: PHONE_NETFLIX, fallback: TV_NETFLIX };
+    return { primary: PHONE_NETFLIX, fallback: TV_NETFLIX, playStorePackage: PHONE_NETFLIX };
   }
-  return { primary: meta.androidPackage };
+  return { primary: meta.androidPackage, playStorePackage: meta.androidPackage };
+}
+
+export async function isPlatformAppInstalled(platform: PlatformId): Promise<boolean> {
+  const pkgs = getAndroidPackages(platform);
+  try {
+    const result = await PlatformLaunch.isInstalled({
+      packageName: pkgs.primary,
+      fallbackPackage: pkgs.fallback,
+    });
+    return result.installed;
+  } catch {
+    return false;
+  }
+}
+
+export async function openPlatformPlayStore(platform: PlatformId): Promise<boolean> {
+  const pkgs = getAndroidPackages(platform);
+  try {
+    await PlatformLaunch.openPlayStore({ packageName: pkgs.playStorePackage });
+    return true;
+  } catch {
+    try {
+      window.open(PLATFORMS[platform].playStoreUrl, "_blank", "noopener,noreferrer");
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }
 
 export async function launchNativePlatformApp(platform: PlatformId, url: string): Promise<boolean> {

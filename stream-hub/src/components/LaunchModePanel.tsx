@@ -18,9 +18,17 @@ export function LaunchModePanel() {
     <section className="launch-mode-panel">
       <h3 className="launch-mode-panel__title">طريقة فتح المنصات</h3>
       <p className="launch-mode-panel__hint">
-        الافتراضي: المتصفح داخل MAX — الزبون لا يحتاج تحميل Netflix أو شاهد أو TOD.
+        الافتراضي على TV: <strong>ذكي</strong> — MAX فقط في البداية، Netflix/شاهد من Play Store
+        عند ▶.
       </p>
       <div className="launch-mode-panel__options">
+        <button
+          type="button"
+          className={mode === "smart" ? "active" : ""}
+          onClick={() => select("smart")}
+        >
+          ✨ {launchPreferenceLabel("smart")}
+        </button>
         <button
           type="button"
           className={mode === "web" ? "active" : ""}

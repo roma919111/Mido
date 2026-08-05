@@ -1815,6 +1815,136 @@ html.gtv-launcher-active .install-banner {
   color: #e9d5ff;
 }
 
+.platform-install-prompt {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.88);
+}
+
+.platform-install-prompt__card {
+  width: min(440px, 100%);
+  padding: 22px 20px;
+  border-radius: 18px;
+  background: rgba(20, 20, 26, 0.98);
+  border: 1px solid rgba(139, 92, 246, 0.45);
+  text-align: center;
+}
+
+.platform-install-prompt__badge {
+  display: inline-block;
+  margin-bottom: 10px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(139, 92, 246, 0.2);
+  color: #c4b5fd;
+  font-size: 0.78rem;
+}
+
+.platform-install-prompt__lead {
+  color: var(--muted);
+  line-height: 1.65;
+  margin: 12px 0 18px;
+  font-size: 0.92rem;
+}
+
+.platform-install-prompt__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.platform-install-prompt__primary,
+.platform-install-prompt__secondary,
+.platform-install-prompt__ghost {
+  border: none;
+  border-radius: 999px;
+  padding: 14px 18px;
+  font-weight: 700;
+  cursor: pointer;
+  min-height: 48px;
+}
+
+.platform-install-prompt__primary {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+}
+
+.platform-install-prompt__secondary {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.platform-install-prompt__ghost {
+  background: transparent;
+  color: var(--muted);
+}
+
+.platform-install-prompt__note {
+  margin: 14px 0 0;
+  font-size: 0.82rem;
+  color: #86efac;
+}
+
+.platform-subscription-panel {
+  margin-bottom: 18px;
+  padding: 16px;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.platform-subscription-panel__title {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.platform-subscription-panel__hint {
+  margin: 0 0 14px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.platform-subscription-panel__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.platform-subscription-card {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  border-right: 3px solid var(--platform-color, #8b5cf6);
+}
+
+.platform-subscription-card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.platform-subscription-card .is-installed {
+  color: #86efac;
+  font-size: 0.82rem;
+}
+
+.platform-subscription-card .is-missing {
+  color: #fde68a;
+  font-size: 0.82rem;
+}
+
+.platform-subscription-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .launch-overlay {
   position: fixed;
   inset: 0;

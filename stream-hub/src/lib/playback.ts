@@ -8,22 +8,33 @@ import { getLaunchPreference } from "./launch-preference";
 import { addContinueWatching, ensureInMyList } from "./library";
 import { openPlatformWebView } from "./platform-browser";
 import {
+  forceAppLaunch,
+  openPlatformViaBrowser,
+  smartLaunchPlatform,
+  type SmartLaunchResult,
+} from "./platform-smart-launch";
+import {
   buildLaunchTarget,
   isAndroidDevice,
-  openPlatformHref,
   openPlatformPlayback,
   PLATFORMS,
   toOfficialWebUrl,
 } from "./platforms";
 
 export const LAUNCH_COUNTDOWN_MS = 0;
-/** Popcorn then open platform in browser (no separate app install). */
 export const POPCORN_DURATION_MS = 5000;
 
 let pendingComplete: ((result: { success: boolean; url: string }) => void) | undefined;
 let pendingDestination: string | null = null;
 let pendingPlatform: PlatformId | null = null;
 let pendingUrl: string | null = null;
+let pendingTitle: string | null = null;
+
+export type InstallPromptPayload = {
+  platform: PlatformId;
+  url: string;
+  title: string;
+};
 
 export function launchOnPlatform(
   item: CatalogItem,
@@ -39,6 +50,7 @@ export function launchOnPlatform(
   addContinueWatching(item, platform, target.directUrl);
   ensureInMyList(item.id);
   pendingComplete = onComplete;
+  pendingTitle = item.title;
   onLaunching({
     platform,
     platformName: meta.name,
@@ -61,6 +73,7 @@ export function prepareLaunch(state: LaunchState): void {
   pendingDestination = target.directUrl;
   pendingPlatform = state.platform;
   pendingUrl = state.url;
+  pendingTitle = state.title;
   clearPendingReturnHome();
 }
 
@@ -80,33 +93,9 @@ function navigateToPlatformSameTab(destination: string): void {
   window.location.assign(go.toString());
 }
 
-/** Web mobile (app mode only): open during click. Web mode waits for popcorn. */
 export function openPlatformBrowserSync(state: LaunchState): PlatformLaunchResult {
   const destination =
     pendingDestination ?? buildLaunchTarget(state.platform, state.url).directUrl;
-  const platform = pendingPlatform ?? state.platform;
-  const url = pendingUrl ?? state.url;
-  const preferWeb = getLaunchPreference() === "web";
-
-  if (Capacitor.isNativePlatform() || preferWeb) {
-    notifyLaunchComplete(true, destination);
-    return { opened: false, destination, needsManualOpen: false };
-  }
-
-  if (isAndroidDevice()) {
-    const target = buildLaunchTarget(platform, url);
-    markPlatformOpened();
-    openPlatformHref(target.href);
-    notifyLaunchComplete(true, destination);
-    return { opened: true, destination, needsManualOpen: false };
-  }
-
-  if (isIosDevice()) {
-    markPlatformOpened();
-    openPlatformHref(destination);
-    notifyLaunchComplete(true, destination);
-    return { opened: true, destination, needsManualOpen: false };
-  }
 
   notifyLaunchComplete(true, destination);
   return { opened: false, destination, needsManualOpen: false };
@@ -115,24 +104,28 @@ export function openPlatformBrowserSync(state: LaunchState): PlatformLaunchResul
 export type PopcornFinishResult = {
   success: boolean;
   destination: string;
+  installPrompt?: InstallPromptPayload;
 };
 
-/** After popcorn: open platform in browser (default) or native app. */
-export async function finishPopcornOverlay(state: LaunchState): Promise<PopcornFinishResult> {
-  const platform = pendingPlatform ?? state.platform;
-  const url = pendingUrl ?? state.url;
-  const destination =
-    pendingDestination ?? buildLaunchTarget(platform, url).directUrl;
-  pendingDestination = null;
-  pendingPlatform = null;
-  pendingUrl = null;
+async function dispatchLaunch(
+  platform: PlatformId,
+  url: string,
+  title: string,
+  destination: string,
+): Promise<PopcornFinishResult> {
+  const pref = getLaunchPreference();
 
-  await exitPlaybackMode();
-  markPlatformOpened();
+  if (Capacitor.isNativePlatform() && pref === "smart") {
+    const result = await smartLaunchPlatform(platform, destination, title);
+    return mapSmartResult(result, destination);
+  }
 
-  const preferWeb = getLaunchPreference() === "web";
+  if (Capacitor.isNativePlatform() && pref === "app") {
+    const result = await forceAppLaunch(platform, destination, title);
+    return mapSmartResult(result, destination);
+  }
 
-  if (preferWeb || Capacitor.isNativePlatform()) {
+  if (pref === "web" || Capacitor.isNativePlatform()) {
     const ok = await openPlatformWebView(destination);
     notifyLaunchComplete(ok, destination);
     return { success: ok, destination };
@@ -148,15 +141,63 @@ export async function finishPopcornOverlay(state: LaunchState): Promise<PopcornF
   return { success: true, destination };
 }
 
+function mapSmartResult(result: SmartLaunchResult, destination: string): PopcornFinishResult {
+  if (result.action === "needs-install-prompt") {
+    notifyLaunchComplete(false, destination);
+    return {
+      success: false,
+      destination,
+      installPrompt: {
+        platform: result.platform,
+        url: result.url,
+        title: result.title,
+      },
+    };
+  }
+
+  const success =
+    result.action === "opened-app" ||
+    result.action === "opened-browser" ||
+    result.action === "opened-play-store";
+  notifyLaunchComplete(success, result.url);
+  return { success, destination: result.url };
+}
+
+export async function finishPopcornOverlay(state: LaunchState): Promise<PopcornFinishResult> {
+  const platform = pendingPlatform ?? state.platform;
+  const url = pendingUrl ?? state.url;
+  const title = pendingTitle ?? state.title;
+  const destination =
+    pendingDestination ?? buildLaunchTarget(platform, url).directUrl;
+  pendingDestination = null;
+  pendingPlatform = null;
+  pendingUrl = null;
+  pendingTitle = null;
+
+  await exitPlaybackMode();
+  return dispatchLaunch(platform, url, title, destination);
+}
+
 export async function openPlatformManually(
   platform: PlatformId,
   destination: string,
+  title = platform,
+): Promise<PopcornFinishResult> {
+  await exitPlaybackMode();
+  return dispatchLaunch(platform, destination, title, destination);
+}
+
+export async function confirmInstallFromPlayStore(
+  platform: PlatformId,
+  url: string,
+  title: string,
 ): Promise<boolean> {
-  markPlatformOpened();
-  const ok = await openPlatformWebView(destination);
-  if (ok) return true;
-  const result = await openPlatformPlayback(platform, destination);
-  return result.success;
+  const { installPlatformAndRemember } = await import("./platform-smart-launch");
+  return installPlatformAndRemember(platform, url, title);
+}
+
+export async function confirmBrowserPlayback(url: string): Promise<boolean> {
+  return openPlatformViaBrowser(url);
 }
 
 export function cancelLaunch() {
@@ -164,6 +205,7 @@ export function cancelLaunch() {
   pendingDestination = null;
   pendingPlatform = null;
   pendingUrl = null;
+  pendingTitle = null;
   clearAllReturnFlags();
   void exitPlaybackMode();
 }

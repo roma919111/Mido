@@ -7,18 +7,24 @@ import { enterKioskMode, isKioskEnabled } from "./lib/kiosk-mode";
 import { getContinueWatching, getContinueEntry, getMyList } from "./lib/library";
 import {
   cancelLaunch,
+  confirmBrowserPlayback,
+  confirmInstallFromPlayStore,
   finishPopcornOverlay,
   launchOnPlatform,
   openPlatformBrowserSync,
   openPlatformManually,
   prepareLaunch,
+  type InstallPromptPayload,
 } from "./lib/playback";
 import { enterPlaybackMode } from "./lib/fullscreen";
 import { clearAllReturnFlags, wasPlatformOpened } from "./lib/app-navigation";
 import { pushOverlayHistory, useReturnToHome } from "./hooks/useReturnToHome";
+import { usePendingPlatformRetry } from "./hooks/usePendingPlatformRetry";
 import { ReturnHomeButton } from "./components/ReturnHomeButton";
 import { WelcomeBackBanner } from "./components/WelcomeBackBanner";
 import { LaunchModePanel } from "./components/LaunchModePanel";
+import { PlatformInstallPrompt } from "./components/PlatformInstallPrompt";
+import { PlatformSubscriptionPanel } from "./components/PlatformSubscriptionPanel";
 import { AccountPlatforms } from "./components/AccountPlatforms";
 import { KioskModePanel } from "./components/KioskModePanel";
 import { ContentRow } from "./components/ContentRow";
@@ -50,6 +56,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
   const [manualOpenUrl, setManualOpenUrl] = useState<string | null>(null);
   const [manualOpenPlatform, setManualOpenPlatform] = useState<PlatformId | null>(null);
   const [welcomeBack, setWelcomeBack] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<InstallPromptPayload | null>(null);
 
   const featured = CATALOG.find((i) => i.featured) ?? CATALOG[0]!;
 
@@ -108,6 +115,10 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
   }
 
   function handleBackStep(): boolean {
+    if (installPrompt) {
+      setInstallPrompt(null);
+      return true;
+    }
     if (showPopcorn || launching) {
       cancelLaunch();
       setLaunching(null);
@@ -129,11 +140,21 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
     return false;
   }
 
+  usePendingPlatformRetry({
+    onOpenedApp: (url) => {
+      setInstallPrompt(null);
+      setListHint(`تم فتح التطبيق — «${url.slice(0, 40)}…»`);
+    },
+    onStillPending: () => {
+      /* user returned without installing */
+    },
+  });
+
   useReturnToHome({
     onReturnHome: resetToHomeInterface,
     onWelcomeBack: () => setWelcomeBack(true),
     onBackStep: handleBackStep,
-    isPlaybackActive: () => showPopcorn || launching !== null,
+    isPlaybackActive: () => showPopcorn || launching !== null || installPrompt !== null,
   });
 
   function openDetails(item: CatalogItem) {
@@ -170,7 +191,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
       },
       () => {
         setContinueItems(mapContinueToItems(getContinueWatching()));
-        setListHint(`«${item.title}» — يُفتح في المتصفح · اضغط ✕ للرجوع لـ MAX`);
+        setListHint(`«${item.title}» — تطبيق أو Play Store · أو متصفح`);
       },
     );
   }
@@ -181,6 +202,10 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
     void finishPopcornOverlay(current).then((result) => {
       setShowPopcorn(false);
       setLaunching(null);
+      if (result.installPrompt) {
+        setInstallPrompt(result.installPrompt);
+        return;
+      }
       if (!result.success) {
         setManualOpenUrl(result.destination);
         setManualOpenPlatform(current.platform);
@@ -227,6 +252,28 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
       </header>
 
       <InstallAppBanner />
+
+      {installPrompt ? (
+        <PlatformInstallPrompt
+          platform={installPrompt.platform}
+          title={installPrompt.title}
+          onInstallPlayStore={() => {
+            void confirmInstallFromPlayStore(
+              installPrompt.platform,
+              installPrompt.url,
+              installPrompt.title,
+            ).then((ok) => {
+              if (ok) setInstallPrompt(null);
+            });
+          }}
+          onOpenBrowser={() => {
+            void confirmBrowserPlayback(installPrompt.url).then((ok) => {
+              if (ok) setInstallPrompt(null);
+            });
+          }}
+          onCancel={() => setInstallPrompt(null)}
+        />
+      ) : null}
 
       {welcomeBack ? (
         <WelcomeBackBanner onDismiss={() => setWelcomeBack(false)} />
@@ -319,6 +366,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
         </main>
       ) : tab === "account" ? (
         <main className="gtv-main gtv-main--padded">
+          <PlatformSubscriptionPanel />
           <LaunchModePanel />
           <KioskModePanel />
           <AccountPlatforms streamHubUsername={username} />

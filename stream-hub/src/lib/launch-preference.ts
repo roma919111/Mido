@@ -1,12 +1,16 @@
-export type LaunchPreference = "web" | "app";
+import { Capacitor } from "@capacitor/core";
+
+export type LaunchPreference = "smart" | "web" | "app";
 
 const STORAGE_KEY = "max.launchMode";
 
-/** Default: web browser — no Netflix/Shahid app install required. */
+/** Default on APK/TV: smart lazy install. Web/PWA: browser. */
 export function getLaunchPreference(): LaunchPreference {
   const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored === "app") return "app";
-  return "web";
+  if (stored === "smart" || stored === "web" || stored === "app") {
+    return stored;
+  }
+  return Capacitor.isNativePlatform() ? "smart" : "web";
 }
 
 export function setLaunchPreference(mode: LaunchPreference): void {
@@ -14,5 +18,12 @@ export function setLaunchPreference(mode: LaunchPreference): void {
 }
 
 export function launchPreferenceLabel(mode: LaunchPreference): string {
-  return mode === "web" ? "المتصفح (بدون تحميل تطبيقات)" : "تطبيق المنصة (Netflix / شاهد)";
+  switch (mode) {
+    case "smart":
+      return "ذكي — ثبّت من Play Store عند الحاجة";
+    case "web":
+      return "المتصفح (بدون تحميل تطبيقات)";
+    case "app":
+      return "تطبيق المنصة دائماً";
+  }
 }

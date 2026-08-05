@@ -55,7 +55,7 @@ export const PLATFORMS: Record<PlatformId, PlatformMeta> = {
   },
 };
 
-export type LaunchMode = "web-browser" | "android-app" | "app-link";
+export type LaunchMode = "smart-launch" | "web-browser" | "android-app" | "app-link";
 
 export function isAndroidDevice(): boolean {
   return /Android/i.test(navigator.userAgent);
@@ -76,13 +76,22 @@ export function buildLaunchTarget(
   const directUrl = normalizeDeepLink(platform, webUrl);
   const parsed = new URL(directUrl);
   const meta = PLATFORMS[platform];
-  const preferWeb = getLaunchPreference() === "web";
+  const pref = getLaunchPreference();
 
-  if (preferWeb) {
+  if (pref === "web") {
     return {
       href: directUrl,
       mode: "web-browser",
       label: `${meta.name} في المتصفح`,
+      directUrl,
+    };
+  }
+
+  if (pref === "smart" && Capacitor.isNativePlatform()) {
+    return {
+      href: directUrl,
+      mode: "smart-launch",
+      label: `${meta.name} — تطبيق أو Play Store`,
       directUrl,
     };
   }
