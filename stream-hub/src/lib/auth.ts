@@ -1,5 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import type { Session } from "../types";
+import { isDeviceDelivered } from "./admin-mode";
 import { isCustomerMode } from "./customer-mode";
 
 const SESSION_KEY = "stream-hub-session";
@@ -30,13 +31,20 @@ export function login(username: string, password: string): boolean {
   return true;
 }
 
-/** Skip login screen on native — customer never sees MAX password. */
+/** Auto session only after admin delivered device to customer. */
 export function ensureAutoSession(): Session | null {
   const existing = getSession();
   if (existing) return existing;
-  if (!isCustomerMode()) return null;
+  if (!Capacitor.isNativePlatform() || !isDeviceDelivered() || !isCustomerMode()) {
+    return null;
+  }
   const ok = login(expectedUsername(), expectedPassword());
   return ok ? getSession() : null;
+}
+
+export function isAdminUser(): boolean {
+  const session = getSession();
+  return session?.username === expectedUsername();
 }
 
 export function logout() {

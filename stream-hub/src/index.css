@@ -2535,3 +2535,284 @@ html.max-native-app .gtv-main:focus {
     width: 260px;
   }
 }
+
+/* ── Admin setup (pre-delivery) ── */
+.admin-page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding-bottom: 32px;
+}
+
+.admin-page__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.admin-page__head h1 {
+  margin: 8px 0 6px;
+  font-size: 1.45rem;
+}
+
+.admin-page__badge {
+  margin: 0;
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 111, 0, 0.18);
+  border: 1px solid rgba(255, 111, 0, 0.35);
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.admin-page__lead {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+  font-size: 0.92rem;
+}
+
+.admin-page__close {
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  border-radius: 12px;
+  width: 40px;
+  height: 40px;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.admin-page__msg {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(34, 197, 94, 0.15);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  color: #86efac;
+  font-size: 0.9rem;
+}
+
+.admin-card {
+  margin-bottom: 16px;
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.admin-card h2 {
+  margin: 0 0 10px;
+  font-size: 1.05rem;
+}
+
+.admin-card__hint {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.admin-card p {
+  margin: 0 0 8px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.admin-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.admin-field span {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.admin-field input {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 0.95rem;
+  outline: none;
+}
+
+.admin-field input:focus {
+  border-color: rgba(255, 111, 0, 0.5);
+}
+
+.admin-platform-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-platform-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+.admin-platform-row strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.admin-platform-row .is-ok {
+  font-size: 0.78rem;
+  color: #86efac;
+}
+
+.admin-platform-row .is-no {
+  font-size: 0.78rem;
+  color: #fca5a5;
+}
+
+.admin-platform-row__btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.admin-check input {
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+.admin-card--deliver {
+  border-color: rgba(34, 197, 94, 0.35);
+  background: linear-gradient(180deg, rgba(34, 197, 94, 0.08), var(--surface));
+}
+
+.admin-deliver-btn {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 16px;
+  border: none;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #16a34a, #22c55e);
+  color: #fff;
+  font-weight: 800;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.admin-undeliver-btn {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.admin-unlock {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.admin-unlock__card {
+  width: min(100%, 360px);
+  padding: 24px;
+  border-radius: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.admin-unlock__card h2 {
+  margin: 0 0 6px;
+}
+
+.admin-unlock__card p {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.admin-unlock__card input {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 1rem;
+  outline: none;
+}
+
+.admin-unlock__error {
+  margin: 10px 0 0;
+  color: #fca5a5;
+  font-size: 0.85rem;
+}
+
+.admin-unlock__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.gtv-header__brand-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
+.gtv-header__customer {
+  justify-self: center;
+  font-size: 0.82rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+
+.gtv-header__admin-hint {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  border-radius: 999px;
+  width: 36px;
+  height: 36px;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}

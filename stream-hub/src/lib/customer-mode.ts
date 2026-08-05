@@ -1,12 +1,14 @@
 import { Capacitor } from "@capacitor/core";
+import { isDeviceDelivered } from "./admin-mode";
 
 const CUSTOMER_MODE_KEY = "max.customerMode";
 const BOOT_DONE_KEY = "max.customerBootDone";
 const PREFERRED_PLATFORM_KEY = "max.preferredPlatform";
 
-/** Native APK: zero-friction path for end customers. */
+/** Native APK: zero-friction path for end customers (after admin delivery). */
 export function isCustomerMode(): boolean {
   if (!Capacitor.isNativePlatform()) return false;
+  if (!isDeviceDelivered()) return false;
   return localStorage.getItem(CUSTOMER_MODE_KEY) !== "0";
 }
 
@@ -22,6 +24,10 @@ export function markCustomerBootDone(): void {
   localStorage.setItem(BOOT_DONE_KEY, "1");
 }
 
+export function resetCustomerBoot(): void {
+  localStorage.removeItem(BOOT_DONE_KEY);
+}
+
 export function getPreferredPlatform(): string | null {
   return localStorage.getItem(PREFERRED_PLATFORM_KEY);
 }
@@ -29,3 +35,10 @@ export function getPreferredPlatform(): string | null {
 export function setPreferredPlatform(platform: string): void {
   localStorage.setItem(PREFERRED_PLATFORM_KEY, platform);
 }
+
+/** One-click: ready for customer — skip boot screen, customer tiles only. */
+export function prepareCustomerHandoff(): void {
+  setCustomerMode(true);
+  markCustomerBootDone();
+}
+

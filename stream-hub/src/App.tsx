@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Capacitor } from "@capacitor/core";
+import { isDeviceDelivered } from "./lib/admin-mode";
 import { ensureAutoSession, getSession, logout } from "./lib/auth";
 import { enterAppShellMode, exitAppShellMode } from "./lib/app-shell";
 import { isCustomerBootDone, isCustomerMode } from "./lib/customer-mode";
@@ -12,9 +13,11 @@ export function App() {
   const [ready, setReady] = useState(false);
   const [authed, setAuthed] = useState(false);
   const [booting, setBooting] = useState(false);
+  const [adminSetup, setAdminSetup] = useState(false);
+  const delivered = isDeviceDelivered();
 
   useEffect(() => {
-    if (isCustomerMode()) {
+    if (delivered && isCustomerMode()) {
       const session = ensureAutoSession();
       if (session) {
         enterAppShellMode();
@@ -26,10 +29,11 @@ export function App() {
       if (session) {
         enterAppShellMode();
         setAuthed(true);
+        setAdminSetup(!delivered);
       }
     }
     setReady(true);
-  }, []);
+  }, [delivered]);
 
   if (!ready) return null;
 
@@ -40,13 +44,22 @@ export function App() {
           onSuccess={() => {
             enterAppShellMode();
             setAuthed(true);
+            setAdminSetup(!isDeviceDelivered());
           }}
         />
       </GoogleTvLauncher>
     );
   }
 
-  if (booting && Capacitor.isNativePlatform()) {
+  if (adminSetup || !delivered) {
+    return (
+      <GoogleTvLauncher>
+        <HomePage forceAdmin onAdminClosed={() => setAdminSetup(false)} />
+      </GoogleTvLauncher>
+    );
+  }
+
+  if (booting && Capacitor.isNativePlatform() && !isCustomerBootDone()) {
     return (
       <CustomerBoot
         onDone={() => {
@@ -59,15 +72,11 @@ export function App() {
   return (
     <GoogleTvLauncher>
       <HomePage
-        onLogout={
-          isCustomerMode()
-            ? undefined
-            : () => {
-                exitAppShellMode();
-                logout();
-                setAuthed(false);
-              }
-        }
+        onLogout={() => {
+          exitAppShellMode();
+          logout();
+          setAuthed(false);
+        }}
       />
     </GoogleTvLauncher>
   );
