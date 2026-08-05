@@ -6,6 +6,8 @@ export type VideoQuality = "standard" | "pro";
 
 export type MediaType = "image" | "video";
 
+export type GenerationProvider = "gemini";
+
 export interface VisualReference {
   type: "image";
   id: string;
@@ -19,6 +21,7 @@ export interface GalleryItem {
   historyId: string;
   mediaType: MediaType;
   url: string;
+  playbackUrl?: string;
   thumbnailUrl?: string;
   prompt: string;
   mode: GenerationMode;
@@ -26,6 +29,7 @@ export interface GalleryItem {
   status: "pending" | "running" | "completed" | "failed" | "cancelled";
   error?: string;
   creditsUsed?: number;
+  provider?: GenerationProvider;
 }
 
 export interface AccountInfo {
@@ -34,10 +38,8 @@ export interface AccountInfo {
   credits: number;
   configured: boolean;
   live?: boolean;
-  mcpEndpoint?: string;
+  provider?: GenerationProvider;
   error?: string;
-  needsAuth?: boolean;
-  authMethod?: "oauth" | "env" | null;
 }
 
 export interface GenerateRequest {
@@ -58,10 +60,13 @@ export interface GenerateResponse {
   prompt: string;
   creditsUsed: number;
   urls?: string[];
+  url?: string;
+  playbackUrl?: string;
+  thumbnailUrl?: string;
+  provider?: GenerationProvider;
   error?: string;
   pollAfterSeconds?: number;
   live?: boolean;
-  mcpEndpoint?: string;
   tool?: string;
   details?: unknown;
   raw?: unknown;

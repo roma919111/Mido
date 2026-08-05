@@ -1,56 +1,18 @@
 import { NextResponse } from "next/server";
-import { buildGenerationParams, estimateCredits } from "@/lib/models";
 import {
-  callOpenArtTool,
-  collectMediaUrls,
-  getHistoryId,
-  OpenArtConfigError,
-  parseToolPayload,
-} from "@/lib/openart-mcp";
+  GeminiConfigError,
+  generateGeminiImage,
+  isGeminiConfigured,
+} from "@/lib/gemini-image";
+import {
+  generateGeminiVideo,
+  isGeminiConfigured as isVideoConfigured,
+} from "@/lib/gemini-video";
+import { estimateCredits } from "@/lib/models";
 import type { GenerateRequest, VideoDuration, VideoQuality } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
-
-const MCP_ENDPOINT = process.env.OPENART_MCP_URL ?? "https://mcp.openart.ai/mcp";
-
-async function waitForCreation(historyId: string, attempts = 4) {
-  let lastPayload: Record<string, unknown> = {};
-  let lastRaw: unknown = null;
-
-  for (let i = 0; i < attempts; i += 1) {
-    const waitResult = await callOpenArtTool("openart_creation_wait", {
-      historyId,
-      timeoutSeconds: 45,
-    });
-
-    lastRaw = waitResult;
-    lastPayload = parseToolPayload(waitResult);
-
-    if (waitResult.isError) {
-      return { status: "FAILED", payload: lastPayload, raw: lastRaw };
-    }
-
-    const status = String(
-      lastPayload.status ?? lastPayload.state ?? lastPayload.resultStatus ?? "",
-    ).toUpperCase();
-
-    if (["COMPLETED", "FAILED", "CANCELLED"].includes(status)) {
-      return { status, payload: lastPayload, raw: lastRaw };
-    }
-
-    if (status === "STILL_RUNNING" || status === "PENDING" || status === "RUNNING") {
-      continue;
-    }
-
-    const urls = collectMediaUrls(lastPayload);
-    if (urls.length > 0) {
-      return { status: "COMPLETED", payload: lastPayload, raw: lastRaw };
-    }
-  }
-
-  return { status: "STILL_RUNNING", payload: lastPayload, raw: lastRaw };
-}
 
 export async function POST(request: Request) {
   try {
@@ -65,118 +27,82 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "mode and prompt are required" }, { status: 400 });
     }
 
+    if (!isGeminiConfigured() || !isVideoConfigured()) {
+      return NextResponse.json(
+        {
+          error: "GEMINI_API_KEY is not configured on the server.",
+          live: false,
+          provider: "gemini",
+        },
+        { status: 401 },
+      );
+    }
+
     if (mode === "image-to-video" && !body.startFrame) {
       return NextResponse.json(
-        { error: "Start frame image is required for Image-to-Video" },
+        { error: "Start frame image is required for Image-to-Video." },
+        { status: 400 },
+      );
+    }
+
+    if (!waitForResult) {
+      return NextResponse.json(
+        { error: "Generation requires waitForResult=true", provider: "gemini" },
         { status: 400 },
       );
     }
 
     const creditsUsed = estimateCredits(mode, duration, quality);
 
-    const { model, toolMode, media, params } = buildGenerationParams({
+    if (mode === "text-to-image") {
+      const result = await generateGeminiImage({
+        prompt,
+        referenceImage: body.referenceImage,
+      });
+
+      return NextResponse.json({
+        historyId: result.imageId,
+        status: "COMPLETED",
+        mediaType: "image",
+        mode,
+        prompt,
+        creditsUsed,
+        url: result.url,
+        playbackUrl: result.playbackUrl,
+        provider: "gemini",
+        tool: "gemini.models.generateContent",
+        live: true,
+      });
+    }
+
+    const result = await generateGeminiVideo({
       mode,
       prompt,
       duration,
-      quality,
       startFrame: body.startFrame,
       referenceImage: body.referenceImage,
     });
 
-    const toolName =
-      media === "image" ? "openart_generate_image" : "openart_generate_video";
-
-    const generateResult = await callOpenArtTool(toolName, {
-      model,
-      mode: toolMode,
-      params,
-    });
-
-    const generatePayload = parseToolPayload(generateResult);
-    if (generateResult.isError) {
-      return NextResponse.json(
-        {
-          error: generatePayload.rawText ?? "OpenArt generation failed",
-          live: true,
-          mcpEndpoint: MCP_ENDPOINT,
-          tool: toolName,
-          details: generatePayload,
-          raw: generateResult,
-        },
-        { status: 502 },
-      );
-    }
-
-    const historyId = getHistoryId(generatePayload);
-    if (!historyId) {
-      return NextResponse.json(
-        {
-          error: "Generation started but no historyId was returned",
-          live: true,
-          mcpEndpoint: MCP_ENDPOINT,
-          tool: toolName,
-          details: generatePayload,
-          raw: generateResult,
-        },
-        { status: 502 },
-      );
-    }
-
-    if (!waitForResult) {
-      return NextResponse.json({
-        historyId,
-        status: String(generatePayload.status ?? "PENDING"),
-        mediaType: media,
-        mode,
-        prompt,
-        creditsUsed,
-        live: true,
-        mcpEndpoint: MCP_ENDPOINT,
-        tool: toolName,
-        details: generatePayload,
-        raw: generateResult,
-        pollAfterSeconds:
-          typeof generatePayload.pollAfterSeconds === "number"
-            ? generatePayload.pollAfterSeconds
-            : 3,
-      });
-    }
-
-    const waited = await waitForCreation(historyId);
-    const urls = collectMediaUrls(waited.payload);
-
     return NextResponse.json({
-      historyId,
-      status: waited.status,
-      mediaType: media,
+      historyId: result.interactionId,
+      status: result.status,
+      mediaType: "video",
       mode,
       prompt,
       creditsUsed,
-      urls,
+      url: result.url,
+      playbackUrl: result.playbackUrl,
+      provider: "gemini",
+      tool: "gemini.interactions.create",
       live: true,
-      mcpEndpoint: MCP_ENDPOINT,
-      tool: toolName,
-      error:
-        waited.status === "FAILED"
-          ? String(waited.payload.error ?? waited.payload.message ?? "Generation failed")
-          : undefined,
-      details: {
-        generate: generatePayload,
-        wait: waited.payload,
-      },
-      raw: {
-        generate: generateResult,
-        wait: waited.raw,
-      },
     });
   } catch (error) {
-    if (error instanceof OpenArtConfigError) {
+    if (error instanceof GeminiConfigError) {
       return NextResponse.json(
         {
           error: error.message,
           live: false,
-          needsAuth: error.needsAuth,
-          mcpEndpoint: MCP_ENDPOINT,
+          provider: "gemini",
         },
         { status: 401 },
       );
@@ -186,7 +112,7 @@ export async function POST(request: Request) {
       {
         error: error instanceof Error ? error.message : "Generation failed",
         live: true,
-        mcpEndpoint: MCP_ENDPOINT,
+        provider: "gemini",
         details:
           error instanceof Error
             ? { name: error.name, message: error.message, stack: error.stack }

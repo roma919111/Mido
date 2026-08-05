@@ -30,15 +30,16 @@ export function VideoControls({
       </label>
 
       <label className="space-y-2">
-        <span className="text-sm font-medium text-white/80">Video Quality / Resolution</span>
+        <span className="text-sm font-medium text-white/80">Video Quality</span>
         <select
           value={quality}
           onChange={(e) => onQualityChange(e.target.value as VideoQuality)}
           className="w-full appearance-none rounded-xl border border-white/10 bg-[rgba(8,10,14,0.85)] px-3 py-3 text-sm text-white outline-none transition focus:border-[var(--accent)]/50"
         >
           <option value="standard">Standard 720p</option>
-          <option value="pro">Pro 1080p</option>
+          <option value="pro">High 720p</option>
         </select>
+        <p className="text-xs text-white/40">Gemini Omni Flash · 720p with audio</p>
       </label>
     </div>
   );
