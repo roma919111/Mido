@@ -28,8 +28,7 @@ import { PosterCard } from "./components/PosterCard";
 import { SearchBar } from "./components/SearchBar";
 import { SmartSetup, shouldShowSmartSetup } from "./components/SmartSetup";
 import { MaxLoginPage } from "./components/MaxLoginPage";
-import { HideBrowserGate } from "./components/HideBrowserGate";
-import { isBrowserTab } from "./lib/display-mode";
+import { GoogleTvLauncher } from "./components/GoogleTvLauncher";
 import { InstallAppBanner } from "./components/InstallAppBanner";
 import type { CatalogItem, ContinueEntry, LaunchState, PlatformId } from "./types";
 function mapContinueToItems(entries: ContinueEntry[]): CatalogItem[] {
@@ -212,8 +211,6 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
 
       <InstallAppBanner />
 
-      {isBrowserTab() ? <HideBrowserGate blocking /> : null}
-
       {manualOpenUrl ? (
         <div className="manual-open-banner">
           <p>Safari حظر فتح Netflix تلقائياً</p>
@@ -370,13 +367,16 @@ export function App() {
   }, []);
 
   if (!setupDone) {
-    return <SmartSetup onDone={() => setSetupDone(true)} />;
+    return (
+      <GoogleTvLauncher>
+        <SmartSetup onDone={() => setSetupDone(true)} />
+      </GoogleTvLauncher>
+    );
   }
 
   if (!authed) {
     return (
-      <>
-        {isBrowserTab() ? <HideBrowserGate blocking /> : null}
+      <GoogleTvLauncher>
         <MaxLoginPage
           onSuccess={() => {
             const session = getSession();
@@ -384,9 +384,13 @@ export function App() {
             setAuthed(true);
           }}
         />
-      </>
+      </GoogleTvLauncher>
     );
   }
 
-  return <HomePage username={username} onLogout={() => { exitAppShellMode(); logout(); setAuthed(false); }} />;
+  return (
+    <GoogleTvLauncher>
+      <HomePage username={username} onLogout={() => { exitAppShellMode(); logout(); setAuthed(false); }} />
+    </GoogleTvLauncher>
+  );
 }

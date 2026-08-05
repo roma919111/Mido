@@ -887,6 +887,172 @@ input {
   font-size: 0.85rem;
 }
 
+/* ── Google TV launcher gate (browser blocked) ── */
+.gtv-launcher-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: #050810;
+  overflow: auto;
+}
+
+.gtv-launcher-screen__glow {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% 0%, rgba(255, 111, 0, 0.25), transparent),
+    radial-gradient(ellipse 60% 40% at 80% 80%, rgba(79, 195, 247, 0.12), transparent);
+  pointer-events: none;
+}
+
+.gtv-launcher-screen__content {
+  position: relative;
+  width: min(560px, 100%);
+  text-align: center;
+}
+
+.gtv-launcher-screen__logo {
+  margin-bottom: 20px;
+}
+
+.gtv-launcher-screen__max {
+  display: block;
+  font-size: 3rem;
+  font-weight: 900;
+  color: var(--max-orange);
+  letter-spacing: 0.08em;
+}
+
+.gtv-launcher-screen__sub {
+  display: block;
+  font-size: 0.95rem;
+  letter-spacing: 0.35em;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.gtv-launcher-screen__badge {
+  display: inline-block;
+  margin: 0 0 12px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(138, 180, 248, 0.15);
+  color: #8ab4f8;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.gtv-launcher-screen h1 {
+  margin: 0 0 12px;
+  font-size: clamp(1.4rem, 4vw, 1.85rem);
+  line-height: 1.35;
+}
+
+.gtv-launcher-screen__lead {
+  margin: 0 0 20px;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.65;
+}
+
+.gtv-launcher-screen__steps {
+  margin: 0 0 20px;
+  padding: 0 20px 0 0;
+  text-align: right;
+  list-style: none;
+  counter-reset: gtv-step;
+}
+
+.gtv-launcher-screen__steps li {
+  counter-increment: gtv-step;
+  margin-bottom: 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.gtv-launcher-screen__steps li::before {
+  content: counter(gtv-step);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: 10px;
+  border-radius: 50%;
+  background: var(--max-orange);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.gtv-launcher-screen__help,
+.gtv-launcher-screen__note {
+  margin: 0 0 16px;
+  padding: 12px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+
+.gtv-launcher-screen__help {
+  background: rgba(0, 0, 0, 0.4);
+  color: #fde68a;
+}
+
+.gtv-launcher-screen__note {
+  background: rgba(79, 195, 247, 0.1);
+  color: #93c5fd;
+}
+
+.gtv-launcher-screen__actions {
+  margin-bottom: 16px;
+}
+
+.gtv-launcher-screen__primary {
+  border: none;
+  border-radius: 999px;
+  padding: 14px 28px;
+  background: linear-gradient(135deg, var(--max-orange), #ff9a3c);
+  color: #fff;
+  font-weight: 700;
+  font-size: 1rem;
+  cursor: pointer;
+  box-shadow: 0 8px 32px rgba(255, 111, 0, 0.35);
+}
+
+html.gtv-launcher-active .gtv-shell {
+  min-height: 100dvh;
+  min-height: 100vh;
+}
+
+html.gtv-launcher-active .gtv-header {
+  padding-top: calc(6px + var(--safe-top));
+}
+
+html.gtv-launcher-active .install-banner {
+  display: none;
+}
+
+@media (min-width: 900px) and (orientation: landscape) {
+  html.gtv-launcher-active .hero {
+    min-height: 55vh;
+  }
+
+  html.gtv-launcher-active .gtv-nav button {
+    font-size: 0.85rem;
+    padding: 10px 8px;
+  }
+}
+
 /* ── Google TV shell ── */
 .gtv-shell {
   min-height: 100dvh;

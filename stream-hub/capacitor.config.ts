@@ -2,7 +2,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
   appId: "com.streamhub.app",
-  appName: "Stream Hub",
+  appName: "MAX MEDIA PLAYER",
   webDir: "dist",
   android: {
     allowMixedContent: false,

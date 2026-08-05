@@ -7,6 +7,8 @@ const APP_SHELL_CLASS = "max-app-shell";
 export function enterAppShellMode(): void {
   document.documentElement.classList.add(APP_SHELL_CLASS);
   document.body.classList.add(APP_SHELL_CLASS);
+  document.documentElement.classList.add("gtv-launcher-active");
+  document.body.classList.add("gtv-launcher-active");
   enterImmersiveChrome();
   if (isKioskEnabled()) {
     document.documentElement.classList.add(KIOSK_CLASS);
