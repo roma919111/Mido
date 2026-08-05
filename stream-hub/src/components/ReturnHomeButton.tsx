@@ -4,13 +4,14 @@ import { OverlayPortal } from "./OverlayPortal";
 
 type ReturnHomeButtonProps = {
   onClick: () => void;
+  forceVisible?: boolean;
 };
 
-export function ReturnHomeButton({ onClick }: ReturnHomeButtonProps) {
-  const [visible, setVisible] = useState(wasPlatformOpened());
+export function ReturnHomeButton({ onClick, forceVisible = false }: ReturnHomeButtonProps) {
+  const [visible, setVisible] = useState(forceVisible || wasPlatformOpened());
 
   useEffect(() => {
-    const sync = () => setVisible(wasPlatformOpened());
+    const sync = () => setVisible(forceVisible || wasPlatformOpened());
     sync();
     const id = window.setInterval(sync, 400);
     window.addEventListener("focus", sync);
@@ -22,14 +23,14 @@ export function ReturnHomeButton({ onClick }: ReturnHomeButtonProps) {
       window.removeEventListener("pageshow", sync);
       document.removeEventListener("visibilitychange", sync);
     };
-  }, []);
+  }, [forceVisible]);
 
-  if (!visible) return null;
+  if (!visible && !forceVisible) return null;
 
   return (
     <OverlayPortal>
-      <button type="button" className="return-home-fab" onClick={onClick}>
-        🏠 واجهة MAX
+      <button type="button" className="return-home-fab" onClick={onClick} aria-label="رجوع لـ MAX">
+        ← رجوع لـ MAX
       </button>
     </OverlayPortal>
   );

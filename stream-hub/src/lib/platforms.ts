@@ -1,6 +1,7 @@
 import { Capacitor } from "@capacitor/core";
-import { Browser } from "@capacitor/browser";
 import type { PlatformId } from "../types";
+import { getLaunchPreference } from "./launch-preference";
+import { openPlatformWebView } from "./platform-browser";
 import { normalizeDeepLink } from "./deeplink";
 import { getAndroidPackages, isAndroidTvDevice, launchNativePlatformApp } from "./platform-launch-native";
 
@@ -54,7 +55,7 @@ export const PLATFORMS: Record<PlatformId, PlatformMeta> = {
   },
 };
 
-export type LaunchMode = "android-app" | "app-link";
+export type LaunchMode = "web-browser" | "android-app" | "app-link";
 
 export function isAndroidDevice(): boolean {
   return /Android/i.test(navigator.userAgent);
@@ -75,6 +76,16 @@ export function buildLaunchTarget(
   const directUrl = normalizeDeepLink(platform, webUrl);
   const parsed = new URL(directUrl);
   const meta = PLATFORMS[platform];
+  const preferWeb = getLaunchPreference() === "web";
+
+  if (preferWeb) {
+    return {
+      href: directUrl,
+      mode: "web-browser",
+      label: `${meta.name} في المتصفح`,
+      directUrl,
+    };
+  }
 
   if (isAndroidDevice()) {
     const fallback = Capacitor.isNativePlatform()
@@ -112,29 +123,34 @@ export async function openPlatformPlayback(
   url: string,
 ): Promise<{ success: boolean; mode: LaunchMode; href: string; directUrl: string }> {
   const target = buildLaunchTarget(platform, url);
-  const isNative = Capacitor.isNativePlatform();
+  const preferWeb = getLaunchPreference() === "web";
 
   try {
-    if (isNative && isAndroidDevice()) {
+    if (preferWeb || target.mode === "web-browser") {
+      const ok = await openPlatformWebView(target.directUrl);
+      return {
+        success: ok,
+        mode: "web-browser",
+        href: target.directUrl,
+        directUrl: target.directUrl,
+      };
+    }
+
+    if (Capacitor.isNativePlatform() && isAndroidDevice()) {
       const ok = await launchNativePlatformApp(platform, target.directUrl);
       if (ok) {
         return { success: true, mode: target.mode, href: target.href, directUrl: target.directUrl };
       }
-      openHref(target.href);
-      return { success: true, mode: target.mode, href: target.href, directUrl: target.directUrl };
+      const webOk = await openPlatformWebView(target.directUrl);
+      return {
+        success: webOk,
+        mode: "web-browser",
+        href: target.directUrl,
+        directUrl: target.directUrl,
+      };
     }
 
     if (isAndroidDevice() && target.mode === "android-app") {
-      openHref(target.href);
-      return { success: true, mode: target.mode, href: target.href, directUrl: target.directUrl };
-    }
-
-    if (isNative) {
-      await Browser.open({ url: target.directUrl, toolbarColor: "#0e0e10" });
-      return { success: true, mode: "app-link", href: target.directUrl, directUrl: target.directUrl };
-    }
-
-    if (target.mode === "android-app") {
       openHref(target.href);
       return { success: true, mode: target.mode, href: target.href, directUrl: target.directUrl };
     }
@@ -143,14 +159,13 @@ export async function openPlatformPlayback(
     return { success: true, mode: target.mode, href: target.href, directUrl: target.directUrl };
   } catch {
     try {
-      if (isNative && isAndroidDevice()) {
-        const ok = await launchNativePlatformApp(platform, target.directUrl);
-        if (ok) {
-          return { success: true, mode: target.mode, href: target.href, directUrl: target.directUrl };
-        }
-      }
-      await Browser.open({ url: target.directUrl });
-      return { success: true, mode: "app-link", href: target.directUrl, directUrl: target.directUrl };
+      const ok = await openPlatformWebView(target.directUrl);
+      return {
+        success: ok,
+        mode: "web-browser",
+        href: target.directUrl,
+        directUrl: target.directUrl,
+      };
     } catch {
       return { success: false, mode: target.mode, href: target.href, directUrl: target.directUrl };
     }

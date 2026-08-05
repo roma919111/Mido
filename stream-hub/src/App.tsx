@@ -17,6 +17,8 @@ import { enterPlaybackMode } from "./lib/fullscreen";
 import { clearAllReturnFlags, wasPlatformOpened } from "./lib/app-navigation";
 import { pushOverlayHistory, useReturnToHome } from "./hooks/useReturnToHome";
 import { ReturnHomeButton } from "./components/ReturnHomeButton";
+import { WelcomeBackBanner } from "./components/WelcomeBackBanner";
+import { LaunchModePanel } from "./components/LaunchModePanel";
 import { AccountPlatforms } from "./components/AccountPlatforms";
 import { KioskModePanel } from "./components/KioskModePanel";
 import { ContentRow } from "./components/ContentRow";
@@ -31,7 +33,6 @@ import { MaxLoginPage } from "./components/MaxLoginPage";
 import { GoogleTvLauncher } from "./components/GoogleTvLauncher";
 import { InstallAppBanner } from "./components/InstallAppBanner";
 import type { CatalogItem, ContinueEntry, LaunchState, PlatformId } from "./types";
-import { PLATFORMS } from "./lib/platforms";
 function mapContinueToItems(entries: ContinueEntry[]): CatalogItem[] {
   return entries
     .map((entry) => CATALOG.find((item) => item.id === entry.itemId))
@@ -48,6 +49,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
   const [listHint, setListHint] = useState<string | null>(null);
   const [manualOpenUrl, setManualOpenUrl] = useState<string | null>(null);
   const [manualOpenPlatform, setManualOpenPlatform] = useState<PlatformId | null>(null);
+  const [welcomeBack, setWelcomeBack] = useState(false);
 
   const featured = CATALOG.find((i) => i.featured) ?? CATALOG[0]!;
 
@@ -129,6 +131,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
 
   useReturnToHome({
     onReturnHome: resetToHomeInterface,
+    onWelcomeBack: () => setWelcomeBack(true),
     onBackStep: handleBackStep,
     isPlaybackActive: () => showPopcorn || launching !== null,
   });
@@ -142,6 +145,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
     clearAllReturnFlags();
     setManualOpenUrl(null);
     setManualOpenPlatform(null);
+    setWelcomeBack(false);
     resetToHomeInterface();
   }
 
@@ -166,7 +170,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
       },
       () => {
         setContinueItems(mapContinueToItems(getContinueWatching()));
-        setListHint(`«${item.title}» — Netflix في التطبيق · MAX يبقى هنا`);
+        setListHint(`«${item.title}» — يُفتح في المتصفح · اضغط ✕ للرجوع لـ MAX`);
       },
     );
   }
@@ -212,16 +216,25 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
           <span className="gtv-header__version">v{__APP_VERSION__}</span>
         </div>
         <SearchBar value={search} onChange={setSearch} />
-        <button type="button" className="gtv-header__logout" onClick={onLogout}>
-          خروج
-        </button>
+        <div className="gtv-header__actions">
+          <button type="button" className="gtv-header__max-home" onClick={handleReturnHomeClick}>
+            ← MAX
+          </button>
+          <button type="button" className="gtv-header__logout" onClick={onLogout}>
+            خروج
+          </button>
+        </div>
       </header>
 
       <InstallAppBanner />
 
+      {welcomeBack ? (
+        <WelcomeBackBanner onDismiss={() => setWelcomeBack(false)} />
+      ) : null}
+
       {manualOpenUrl ? (
         <div className="manual-open-banner">
-          <p>لم يُفتح Netflix — ثبّت التطبيق من Play Store ثم اضغط ▶</p>
+          <p>لم يُفتح الرابط — جرّب مرة أخرى من المتصفح داخل MAX</p>
           <button
             type="button"
             className="manual-open-banner__btn"
@@ -235,16 +248,8 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
               });
             }}
           >
-            ▶ افتح Netflix
+            ▶ إعادة فتح في المتصفح
           </button>
-          <a
-            className="manual-open-banner__store"
-            href={PLATFORMS[manualOpenPlatform ?? "netflix"].playStoreUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            📥 تحميل Netflix من Play Store
-          </a>
         </div>
       ) : null}
 
@@ -314,6 +319,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
         </main>
       ) : tab === "account" ? (
         <main className="gtv-main gtv-main--padded">
+          <LaunchModePanel />
           <KioskModePanel />
           <AccountPlatforms streamHubUsername={username} />
         </main>
@@ -369,7 +375,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
           />
         </OverlayPortal>
       ) : null}
-      <ReturnHomeButton onClick={handleReturnHomeClick} />
+      <ReturnHomeButton onClick={handleReturnHomeClick} forceVisible={welcomeBack} />
     </div>
   );
 }

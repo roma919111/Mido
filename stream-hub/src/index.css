@@ -1081,6 +1081,25 @@ html.gtv-launcher-active .install-banner {
   border-bottom: 1px solid var(--border);
 }
 
+.gtv-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gtv-header__max-home {
+  border: none;
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.82rem;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.35);
+}
+
 .gtv-header__brand {
   font-weight: 700;
   white-space: nowrap;
@@ -1687,13 +1706,97 @@ html.gtv-launcher-active .install-banner {
   z-index: 9997;
   border: none;
   border-radius: 999px;
-  padding: 12px 18px;
+  padding: 14px 22px;
   background: linear-gradient(135deg, #6366f1, #8b5cf6);
   color: #fff;
-  font-weight: 700;
-  font-size: 0.9rem;
-  box-shadow: 0 8px 28px rgba(99, 102, 241, 0.45);
+  font-weight: 800;
+  font-size: 1rem;
+  box-shadow: 0 8px 28px rgba(99, 102, 241, 0.55);
   cursor: pointer;
+  animation: return-home-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes return-home-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+}
+
+.welcome-back-banner {
+  margin: 0 14px 10px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.15));
+  border: 1px solid rgba(139, 92, 246, 0.45);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.welcome-back-banner__text strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #e9d5ff;
+}
+
+.welcome-back-banner__text p {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.welcome-back-banner__btn {
+  border: none;
+  border-radius: 999px;
+  padding: 10px 18px;
+  background: #8b5cf6;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.launch-mode-panel {
+  margin-bottom: 20px;
+  padding: 16px;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.launch-mode-panel__title {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.launch-mode-panel__hint {
+  margin: 0 0 12px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.launch-mode-panel__options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.launch-mode-panel__options button {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: transparent;
+  color: var(--text);
+  text-align: right;
+  cursor: pointer;
+  font-size: 0.88rem;
+}
+
+.launch-mode-panel__options button.active {
+  border-color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.15);
+  color: #e9d5ff;
 }
 
 .launch-overlay {

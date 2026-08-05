@@ -22,15 +22,16 @@ export function getPlaybackEnvironment(isNativeApp = false): PlaybackEnvironment
   const isIOS = /iPhone|iPad|iPod/i.test(ua);
   const embedded = isEmbeddedBrowser();
 
-  if (isNativeApp && isAndroid) {
+  if (isNativeApp) {
     return {
-      canPlayInBrowser: false,
+      canPlayInBrowser: true,
       isEmbeddedBrowser: embedded,
       isAndroid,
       isIOS,
       isNativeApp: true,
       warning: null,
-      recommendation: "سيُفتح تطبيق المنصة الرسمي مباشرة — تأكد أنك مسجّل دخول فيه.",
+      recommendation:
+        "يُفتح Netflix/شاهد في المتصفح داخل MAX — اضغط ✕ للرجوع. لا حاجة لتحميل تطبيقات المنصات.",
     };
   }
 
@@ -44,33 +45,21 @@ export function getPlaybackEnvironment(isNativeApp = false): PlaybackEnvironment
       warning:
         "متصفح Cursor/المدمج لا يدعم DRM (Widevine). Netflix وشاهد يرفضون التشغيل هنا حتى لو الموقع رسمي.",
       recommendation: isAndroid
-        ? "افتح Stream Hub في Chrome على الموبايل، أو ثبّت APK — سيُفتح تطبيق Netflix/شاهد."
+        ? "افتح MAX في Chrome على الموبايل أو ثبّت APK — يُفتح المحتوى في المتصفح بدون تحميل Netflix."
         : "افتح الرابط في Chrome أو Safari على جهازك الحقيقي — لا تستخدم متصفح Cursor.",
     };
   }
 
-  if (isAndroid) {
+  if (isAndroid || isIOS) {
     return {
-      canPlayInBrowser: false,
+      canPlayInBrowser: true,
       isEmbeddedBrowser: false,
-      isAndroid: true,
-      isIOS: false,
+      isAndroid,
+      isIOS,
       isNativeApp: false,
-      warning:
-        "المتصفح على أندرويد غالباً يعرض «رفض التشغيل» — Netflix يشغّل من التطبيق فقط.",
-      recommendation: "اضغط «فتح في التطبيق» — أو ثبّت APK ليفتح Netflix/شاهد مباشرة.",
-    };
-  }
-
-  if (isIOS) {
-    return {
-      canPlayInBrowser: false,
-      isEmbeddedBrowser: false,
-      isAndroid: false,
-      isIOS: true,
-      isNativeApp: false,
-      warning: "على iPhone/iPad التشغيل من تطبيق Netflix/شاهد أفضل من Safari.",
-      recommendation: "ثبّت تطبيق المنصة وافتح الرابط من Stream Hub — سيُوجّهك للتطبيق.",
+      warning: null,
+      recommendation:
+        "يُفتح المحتوى في المتصفح من MAX — سجّل دخولك مرة واحدة في netflix.com أو shahid.mbc.net.",
     };
   }
 
@@ -81,6 +70,6 @@ export function getPlaybackEnvironment(isNativeApp = false): PlaybackEnvironment
     isIOS,
     isNativeApp: false,
     warning: null,
-    recommendation: "استخدم Chrome على اللابتوب — تأكد أنك مسجّل دخول في netflix.com.",
+    recommendation: "استخدم Chrome — سجّل دخولك في netflix.com ثم ▶ من MAX.",
   };
 }

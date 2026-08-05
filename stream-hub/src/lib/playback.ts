@@ -4,7 +4,9 @@ import { clearAllReturnFlags, clearPendingReturnHome, markPlatformOpened } from 
 import { isIosDevice } from "./display-mode";
 import { exitPlaybackMode } from "./fullscreen";
 import { deepLinkHint } from "./deeplink";
+import { getLaunchPreference } from "./launch-preference";
 import { addContinueWatching, ensureInMyList } from "./library";
+import { openPlatformWebView } from "./platform-browser";
 import {
   buildLaunchTarget,
   isAndroidDevice,
@@ -15,7 +17,7 @@ import {
 } from "./platforms";
 
 export const LAUNCH_COUNTDOWN_MS = 0;
-/** Popcorn then open Netflix / platform app. */
+/** Popcorn then open platform in browser (no separate app install). */
 export const POPCORN_DURATION_MS = 5000;
 
 let pendingComplete: ((result: { success: boolean; url: string }) => void) | undefined;
@@ -78,14 +80,15 @@ function navigateToPlatformSameTab(destination: string): void {
   window.location.assign(go.toString());
 }
 
-/** Web mobile: open during click. Native/TV: open after popcorn. */
+/** Web mobile (app mode only): open during click. Web mode waits for popcorn. */
 export function openPlatformBrowserSync(state: LaunchState): PlatformLaunchResult {
   const destination =
     pendingDestination ?? buildLaunchTarget(state.platform, state.url).directUrl;
   const platform = pendingPlatform ?? state.platform;
   const url = pendingUrl ?? state.url;
+  const preferWeb = getLaunchPreference() === "web";
 
-  if (Capacitor.isNativePlatform()) {
+  if (Capacitor.isNativePlatform() || preferWeb) {
     notifyLaunchComplete(true, destination);
     return { opened: false, destination, needsManualOpen: false };
   }
@@ -114,7 +117,7 @@ export type PopcornFinishResult = {
   destination: string;
 };
 
-/** After popcorn: open platform app (native/TV) or navigate (desktop web). */
+/** After popcorn: open platform in browser (default) or native app. */
 export async function finishPopcornOverlay(state: LaunchState): Promise<PopcornFinishResult> {
   const platform = pendingPlatform ?? state.platform;
   const url = pendingUrl ?? state.url;
@@ -125,16 +128,20 @@ export async function finishPopcornOverlay(state: LaunchState): Promise<PopcornF
   pendingUrl = null;
 
   await exitPlaybackMode();
+  markPlatformOpened();
 
-  if (Capacitor.isNativePlatform()) {
-    markPlatformOpened();
-    const result = await openPlatformPlayback(platform, url);
-    notifyLaunchComplete(result.success, result.directUrl);
-    return { success: result.success, destination: result.directUrl };
+  const preferWeb = getLaunchPreference() === "web";
+
+  if (preferWeb || Capacitor.isNativePlatform()) {
+    const ok = await openPlatformWebView(destination);
+    notifyLaunchComplete(ok, destination);
+    return { success: ok, destination };
   }
 
   if (isAndroidDevice() || isIosDevice()) {
-    return { success: true, destination };
+    const result = await openPlatformPlayback(platform, url);
+    notifyLaunchComplete(result.success, result.directUrl);
+    return { success: result.success, destination: result.directUrl };
   }
 
   navigateToPlatformSameTab(destination);
@@ -145,13 +152,11 @@ export async function openPlatformManually(
   platform: PlatformId,
   destination: string,
 ): Promise<boolean> {
-  if (Capacitor.isNativePlatform()) {
-    markPlatformOpened();
-    const result = await openPlatformPlayback(platform, destination);
-    return result.success;
-  }
-  navigateToPlatformSameTab(destination);
-  return true;
+  markPlatformOpened();
+  const ok = await openPlatformWebView(destination);
+  if (ok) return true;
+  const result = await openPlatformPlayback(platform, destination);
+  return result.success;
 }
 
 export function cancelLaunch() {

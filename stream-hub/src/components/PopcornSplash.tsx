@@ -57,7 +57,7 @@ export function PopcornSplash({ title, platformName, onDone }: PopcornSplashProp
         <h2>جاري التشغيل</h2>
         <p className="popcorn-splash__title">{title}</p>
         <p className="popcorn-splash__subtitle">
-          🍿 {totalSeconds} ثوانٍ — {platformName} · ← يرجعك لواجهة MAX
+          🍿 {totalSeconds} ثوانٍ — {platformName} في المتصفح · ✕ يرجعك لـ MAX
         </p>
         <p className="popcorn-splash__timer">{secondsLeft || "▶"}</p>
       </div>

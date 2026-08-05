@@ -41,7 +41,7 @@ export type LaunchState = {
   platformName: string;
   title: string;
   url: string;
-  launchMode: "android-app" | "app-link";
+  launchMode: "web-browser" | "android-app" | "app-link";
   launchLabel: string;
   deepLinkHint: string;
   countdownMs: number;
