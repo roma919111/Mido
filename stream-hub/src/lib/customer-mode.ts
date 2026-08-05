@@ -1,14 +1,11 @@
 import { Capacitor } from "@capacitor/core";
-import { isDeviceDelivered } from "./admin-mode";
-
 const CUSTOMER_MODE_KEY = "max.customerMode";
 const BOOT_DONE_KEY = "max.customerBootDone";
 const PREFERRED_PLATFORM_KEY = "max.preferredPlatform";
 
-/** Native APK: zero-friction path for end customers (after admin delivery). */
+/** Native APK: always customer UI — admin is hidden (5× logo tap). */
 export function isCustomerMode(): boolean {
   if (!Capacitor.isNativePlatform()) return false;
-  if (!isDeviceDelivered()) return false;
   return localStorage.getItem(CUSTOMER_MODE_KEY) !== "0";
 }
 

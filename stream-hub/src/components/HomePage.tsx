@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
-import { closeAdminSession, isAdminSessionOpen, isDeviceDelivered } from "../lib/admin-mode";
+import { closeAdminSession, isAdminSessionOpen } from "../lib/admin-mode";
 import { getCustomerLabel } from "../lib/admin-mode";
 import { enterAppShellMode, exitAppShellMode } from "../lib/app-shell";
 import { enterKioskMode, isKioskEnabled } from "../lib/kiosk-mode";
@@ -14,19 +14,17 @@ import type { PlatformId } from "../types";
 
 type HomePageProps = {
   onLogout?: () => void;
-  forceAdmin?: boolean;
-  onAdminClosed?: () => void;
 };
 
-export function HomePage({ onLogout, forceAdmin = false, onAdminClosed }: HomePageProps) {
+export function HomePage({ onLogout }: HomePageProps) {
   const [toast, setToast] = useState<string | null>(null);
-  const [showAdmin, setShowAdmin] = useState(forceAdmin || isAdminSessionOpen());
+  const [showAdmin, setShowAdmin] = useState(isAdminSessionOpen());
   const [showUnlock, setShowUnlock] = useState(false);
   const [logoTaps, setLogoTaps] = useState(0);
   const mainRef = useRef<HTMLElement>(null);
   const customer = isCustomerMode();
-  const delivered = isDeviceDelivered();
   const customerLabel = getCustomerLabel();
+  const native = Capacitor.isNativePlatform();
 
   useTvRemote(mainRef);
 
@@ -45,11 +43,6 @@ export function HomePage({ onLogout, forceAdmin = false, onAdminClosed }: HomePa
     setShowUnlock(true);
   }, [logoTaps]);
 
-  function onLogoTap() {
-    if (!delivered) return;
-    setLogoTaps((n) => n + 1);
-  }
-
   async function handlePlatformOpen(platform: PlatformId) {
     setPreferredPlatform(platform);
     setToast(`جاري فتح ${platform}…`);
@@ -62,19 +55,11 @@ export function HomePage({ onLogout, forceAdmin = false, onAdminClosed }: HomePa
       <div className="gtv-shell">
         <main ref={mainRef} tabIndex={-1} className="gtv-main gtv-main--padded">
           <AdminPage
-            onDelivered={() => {
+            onDelivered={() => setShowAdmin(false)}
+            onClose={() => {
+              closeAdminSession();
               setShowAdmin(false);
-              onAdminClosed?.();
             }}
-            onClose={
-              delivered
-                ? () => {
-                    closeAdminSession();
-                    setShowAdmin(false);
-                    onAdminClosed?.();
-                  }
-                : undefined
-            }
           />
         </main>
       </div>
@@ -84,7 +69,7 @@ export function HomePage({ onLogout, forceAdmin = false, onAdminClosed }: HomePa
   return (
     <div className="gtv-shell">
       <header className={`gtv-header ${customer ? "gtv-header--minimal" : "gtv-header--simple"}`}>
-        <button type="button" className="gtv-header__brand-btn" onClick={onLogoTap}>
+        <button type="button" className="gtv-header__brand-btn" onClick={() => native && setLogoTaps((n) => n + 1)}>
           <span className="gtv-header__max">MAX</span>
           {!customer ? <span className="gtv-header__version"> v{__APP_VERSION__}</span> : null}
         </button>
@@ -94,20 +79,12 @@ export function HomePage({ onLogout, forceAdmin = false, onAdminClosed }: HomePa
             خروج
           </button>
         ) : null}
-        {delivered && Capacitor.isNativePlatform() ? (
-          <button type="button" className="gtv-header__admin-hint" onClick={() => setShowUnlock(true)}>
-            ⚙
-          </button>
-        ) : null}
       </header>
 
       {toast ? <p className="gtv-toast">{toast}</p> : null}
 
       <main ref={mainRef} tabIndex={-1} className="gtv-main gtv-main--center">
         <PlatformLauncher onOpen={(platform) => void handlePlatformOpen(platform)} />
-        {customer ? (
-          <p className="customer-footnote">زر Home للخروج · MAX للتبديل بين المنصات</p>
-        ) : null}
       </main>
 
       {showUnlock ? (
