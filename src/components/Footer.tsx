@@ -7,8 +7,8 @@ export function Footer() {
         <div className="space-y-2">
           <BrandLogo size="sm" />
           <p className="max-w-md text-sm text-white/40">
-            Next-gen AI image &amp; video studio. OpenArt MCP runs on the platform account —
-            customers generate with no login.
+            Next-gen AI image &amp; video studio. Powered by Google Gemini — customers generate
+            with no login.
           </p>
         </div>
         <p className="text-xs text-white/30">

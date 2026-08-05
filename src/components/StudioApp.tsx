@@ -8,9 +8,7 @@ import type {
   GenerationMode,
   GenerateResponse,
   VideoDuration,
-  VideoModel,
   VideoQuality,
-  VideoProvider,
   VisualReference,
 } from "@/lib/types";
 import { BrandLogo } from "./BrandLogo";
@@ -24,7 +22,6 @@ import { PromptInput } from "./PromptInput";
 import { VideoControls } from "./VideoControls";
 
 const GALLERY_KEY = "studio-ai-gallery-v1";
-const MCP_ENDPOINT = "https://mcp.openart.ai/mcp";
 
 function resolveGenerationStatus(
   apiStatus: string | undefined,
@@ -54,7 +51,6 @@ function resolveGenerationStatus(
 async function pollGenerationStatus(
   historyId: string,
   mediaType: "image" | "video",
-  provider: VideoProvider = "openart",
   maxAttempts = 48,
 ): Promise<{
   url: string;
@@ -65,7 +61,7 @@ async function pollGenerationStatus(
 }> {
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const res = await fetch(
-      `/api/status?historyId=${encodeURIComponent(historyId)}&mediaType=${mediaType}&provider=${provider}`,
+      `/api/status?historyId=${encodeURIComponent(historyId)}&mediaType=${mediaType}&provider=gemini`,
     );
     const data = (await res.json()) as {
       status?: string;
@@ -125,7 +121,6 @@ export function StudioApp() {
   const [prompt, setPrompt] = useState("");
   const [duration, setDuration] = useState<VideoDuration>(5);
   const [quality, setQuality] = useState<VideoQuality>("standard");
-  const [videoModel, setVideoModel] = useState<VideoModel>("pixverse");
   const [startFrame, setStartFrame] = useState<VisualReference | null>(null);
   const [startPreview, setStartPreview] = useState<string | null>(null);
   const [referenceImage, setReferenceImage] = useState<VisualReference | null>(null);
@@ -142,8 +137,6 @@ export function StudioApp() {
     credits: 0,
     configured: false,
     live: false,
-    needsAuth: false,
-    mcpEndpoint: MCP_ENDPOINT,
   });
 
   useEffect(() => {
@@ -155,23 +148,6 @@ export function StudioApp() {
   }, [gallery]);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const authError = params.get("authError");
-    const ownerConnected = params.get("ownerConnected");
-    if (authError) {
-      setError(authError);
-      setStatusMessage(null);
-    } else if (ownerConnected) {
-      setStatusMessage("Platform OpenArt account connected. Customers can generate with no login.");
-      setError(null);
-    }
-    if (authError || ownerConnected) {
-      const url = new URL(window.location.href);
-      url.searchParams.delete("authError");
-      url.searchParams.delete("ownerConnected");
-      window.history.replaceState({}, "", url.pathname + url.search);
-    }
-
     let cancelled = false;
     void (async () => {
       if (!cancelled) await refreshAccount();
@@ -182,8 +158,8 @@ export function StudioApp() {
   }, []);
 
   const creditCost = useMemo(
-    () => estimateCredits(mode, duration, quality, videoModel),
-    [mode, duration, quality, videoModel],
+    () => estimateCredits(mode, duration, quality),
+    [mode, duration, quality],
   );
 
   const isVideoMode = mode !== "text-to-image";
@@ -191,20 +167,12 @@ export function StudioApp() {
   async function refreshAccount() {
     try {
       const res = await fetch("/api/account");
-      const data = (await res.json()) as AccountInfo & {
-        error?: string;
-        details?: unknown;
-        raw?: unknown;
-        mcpEndpoint?: string;
-        live?: boolean;
-      };
+      const data = (await res.json()) as AccountInfo & { error?: string; live?: boolean };
 
       setLiveMcpResponse(
         formatLivePayload({
-          route: "GET /api/account → openart_account_get (owner platform account)",
+          route: "GET /api/account → gemini status",
           httpStatus: res.status,
-          mcpEndpoint: data.mcpEndpoint ?? MCP_ENDPOINT,
-          billing: "owner_account",
           body: data,
         }),
       );
@@ -214,13 +182,11 @@ export function StudioApp() {
           credits: 0,
           configured: false,
           live: Boolean(data.live),
-          needsAuth: false,
-          mcpEndpoint: data.mcpEndpoint ?? MCP_ENDPOINT,
           plan: undefined,
           email: undefined,
           error: data.error,
         });
-        setError(data.error || "Studio backend is not connected to OpenArt yet");
+        setError(data.error || "Add GEMINI_API_KEY to the server environment.");
         return;
       }
 
@@ -228,29 +194,24 @@ export function StudioApp() {
         credits: typeof data.credits === "number" ? data.credits : 0,
         configured: Boolean(data.configured),
         live: data.live !== false,
-        needsAuth: false,
-        mcpEndpoint: data.mcpEndpoint ?? MCP_ENDPOINT,
         plan: data.plan,
         email: data.email,
       });
       setError(null);
-      setStatusMessage("Studio ready — generate with no login. Billed to the platform OpenArt account.");
+      setStatusMessage("Studio ready — powered by Google Gemini.");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Account lookup failed";
       setAccount({
         credits: 0,
         configured: false,
         live: false,
-        needsAuth: false,
-        mcpEndpoint: MCP_ENDPOINT,
         error: message,
       });
       setError(message);
       setLiveMcpResponse(
         formatLivePayload({
-          route: "GET /api/account → openart_account_get (owner platform account)",
+          route: "GET /api/account → gemini status",
           error: message,
-          mcpEndpoint: MCP_ENDPOINT,
         }),
       );
     }
@@ -282,9 +243,8 @@ export function StudioApp() {
 
       setLiveMcpResponse(
         formatLivePayload({
-          route: "POST /api/upload → openart_upload_sign",
+          route: "POST /api/upload → local storage",
           httpStatus: res.status,
-          mcpEndpoint: data.mcpEndpoint ?? MCP_ENDPOINT,
           body: data,
         }),
       );
@@ -294,7 +254,7 @@ export function StudioApp() {
       const ref = data.visualReference as VisualReference;
       if (target === "start") setStartFrame(ref);
       else setReferenceImage(ref);
-      setStatusMessage("Uploaded to OpenArt MCP.");
+      setStatusMessage("Image uploaded.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
       if (target === "start") {
@@ -346,11 +306,10 @@ export function StudioApp() {
 
     setGenerating(true);
     setError(null);
-    const provider = isVideoMode && videoModel === "gemini-omni" ? "gemini" : "openart";
     setStatusMessage(
-      provider === "gemini"
+      isVideoMode
         ? "Generating video with Gemini Omni Flash…"
-        : `Calling live OpenArt MCP at ${MCP_ENDPOINT}…`,
+        : "Generating image with Gemini…",
     );
 
     const optimisticId = `local_${Date.now()}`;
@@ -364,8 +323,7 @@ export function StudioApp() {
       createdAt: new Date().toISOString(),
       status: "running",
       creditsUsed: creditCost,
-      videoModel: isVideoMode ? videoModel : undefined,
-      provider: isVideoMode ? provider : undefined,
+      provider: "gemini",
     };
     setGallery((prev) => [optimistic, ...prev]);
 
@@ -378,7 +336,6 @@ export function StudioApp() {
           prompt: currentPrompt,
           duration,
           quality,
-          videoModel: isVideoMode ? videoModel : undefined,
           startFrame,
           referenceImage,
           waitForResult: true,
@@ -390,12 +347,11 @@ export function StudioApp() {
         raw?: unknown;
       };
 
-      const responseProvider = data.provider ?? provider;
+      const responseProvider = data.provider ?? "gemini";
       setLiveMcpResponse(
         formatLivePayload({
-          route: `POST /api/generate → ${data.tool ?? (isVideoMode ? (responseProvider === "gemini" ? "gemini.interactions.create" : "openart_generate_video") : "openart_generate_image")}`,
+          route: `POST /api/generate → ${data.tool ?? (isVideoMode ? "gemini.interactions.create" : "gemini.generateContent")}`,
           httpStatus: res.status,
-          mcpEndpoint: data.mcpEndpoint ?? MCP_ENDPOINT,
           live: data.live,
           body: data,
         }),
@@ -413,16 +369,8 @@ export function StudioApp() {
       let error = data.error;
 
       if (status === "running" && data.historyId) {
-        setStatusMessage(
-          responseProvider === "gemini"
-            ? "Gemini is still rendering the video…"
-            : "Video is still rendering on OpenArt — waiting for the final file…",
-        );
-        const polled = await pollGenerationStatus(
-          data.historyId,
-          mediaType,
-          responseProvider,
-        );
+        setStatusMessage("Gemini is still rendering the video…");
+        const polled = await pollGenerationStatus(data.historyId, mediaType);
         url = polled.url;
         playbackUrl = polled.playbackUrl ?? playbackUrl;
         thumbnailUrl = polled.thumbnailUrl ?? thumbnailUrl;
@@ -443,7 +391,6 @@ export function StudioApp() {
                 status,
                 error,
                 provider: responseProvider,
-                videoModel: data.videoModel ?? (isVideoMode ? videoModel : undefined),
               }
             : item,
         ),
@@ -451,18 +398,12 @@ export function StudioApp() {
 
       if (status === "completed") {
         setStatusMessage(
-          responseProvider === "gemini"
-            ? "Gemini Omni Flash generation complete."
-            : "Live OpenArt MCP generation complete.",
+          isVideoMode ? "Gemini Omni Flash generation complete." : "Gemini image generation complete.",
         );
       } else if (status === "failed") {
         setError(error || "Generation failed");
       } else {
-        setStatusMessage(
-          responseProvider === "gemini"
-            ? "Gemini video is still rendering. Check back in the gallery shortly."
-            : "Generation is still running on OpenArt MCP. Check back in the gallery shortly.",
-        );
+        setStatusMessage("Generation is still running. Check back in the gallery shortly.");
       }
 
       await refreshAccount();
@@ -520,8 +461,8 @@ export function StudioApp() {
             <BrandLogo size="lg" />
           </h1>
           <p className="mt-3 max-w-xl text-base text-white/55 sm:text-lg">
-            Generate images and videos instantly — no account, no token, no login. OpenArt MCP runs
-            behind the scenes on the platform account.
+            Generate images and videos instantly — no account, no token, no login. Powered by Google
+            Gemini on the platform API key.
           </p>
         </section>
 
@@ -583,15 +524,8 @@ export function StudioApp() {
               <VideoControls
                 duration={duration}
                 quality={quality}
-                videoModel={videoModel}
                 onDurationChange={setDuration}
                 onQualityChange={setQuality}
-                onVideoModelChange={(value) => {
-                  setVideoModel(value);
-                  if (value === "gemini-omni") {
-                    setQuality("standard");
-                  }
-                }}
               />
             )}
 
@@ -599,9 +533,8 @@ export function StudioApp() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-xs uppercase tracking-[0.18em] text-cyan-300/80">
-                    Live OpenArt MCP response
+                    Live API response
                   </p>
-                  <p className="text-[10px] text-white/35">{MCP_ENDPOINT}</p>
                 </div>
                 <pre className="max-h-80 overflow-auto rounded-2xl border border-white/10 bg-black/40 p-4 text-xs leading-relaxed text-white/75">
                   {liveMcpResponse}

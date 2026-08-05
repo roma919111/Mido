@@ -1,74 +1,67 @@
 # VYRONIX.AI
 
-A modern Next.js (App Router) studio for generating **AI images** and **AI videos** powered by [OpenArt MCP](https://mcp.openart.ai/mcp).
+A modern Next.js (App Router) studio for generating **AI images** and **AI videos** powered by [Google Gemini](https://ai.google.dev/).
 
 ## How billing works
 
-OpenArt runs **behind the scenes on the platform owner account**.
+Gemini runs **behind the scenes on the platform API key**.
 
 - Customers generate with **no login** and **no token**
-- Every image/video request hits OpenArt MCP from the server
-- Credits are deducted from the **owner OpenArt account** configured on the server
+- Every image/video request hits the Gemini API from the server
+- Usage bills the **owner Google AI Studio / Gemini API account** configured on the server
 
 ## Features
 
 - Dark **VYRONIX.AI** workbench UI (Tailwind CSS)
 - Mode switcher: Text-to-Image · Text-to-Video · Image-to-Video
 - Prompt editor with **Enhance Prompt with AI**
-- Start Frame + Reference Image dropzones
-- Video duration (5s / 10s) and quality (720p / 1080p)
+- Start Frame + Reference Image dropzones (stored locally on the server)
+- Video duration (5s / 10s) and quality (720p) via Gemini Omni Flash
 - Media gallery with video player, download, and copy-prompt
-- Next.js API routes using `@modelcontextprotocol/sdk` → `https://mcp.openart.ai/mcp`
+- Next.js API routes → Gemini `generateContent` (images) and Interactions API (videos)
 
 ## Quick start
 
 ```bash
 npm install
 cp .env.example .env.local
-# set OPENART_ACCESS_TOKEN to the OWNER OpenArt account token
+# set GEMINI_API_KEY to your Google AI Studio API key
 npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) — customers can generate immediately.
 
-## Connect the owner OpenArt account
-
-### Option A (recommended): server env token
+## Environment
 
 ```env
-OPENART_ACCESS_TOKEN=owner_bearer_token
-OPENART_MCP_URL=https://mcp.openart.ai/mcp
-AUTH_SECRET=replace-with-a-long-random-string
+GEMINI_API_KEY=your_google_api_key
+
+# optional overrides:
+# GEMINI_VIDEO_MODEL=gemini-omni-flash-preview
+# GEMINI_IMAGE_MODEL=gemini-2.5-flash-image
+# APP_BASE_URL=http://localhost:3000
 ```
 
-### Option B: one-time owner OAuth setup
-
-1. Set `AUTH_SECRET` + `APP_BASE_URL`
-2. Optionally set `OWNER_SETUP_KEY`
-3. Visit `/api/auth/login` (or `/api/auth/login?key=...`)
-4. Tokens are stored server-side in `.data/openart-owner.enc` (gitignored)
-
-Customers never see this flow.
+For production (e.g. Vercel), add `GEMINI_API_KEY` in the project environment settings.
 
 ## API routes
 
 | Route | Purpose |
 | --- | --- |
-| `GET /api/auth/login` | Owner-only OpenArt connect (optional) |
-| `GET /api/auth/callback` | Owner OAuth callback |
-| `GET/POST /api/auth/logout` | Clear owner credentials (setup key required if set) |
-| `GET /api/auth/session` | Platform connection status |
-| `GET /api/account` | Owner account credits/plan via `openart_account_get` |
+| `GET /api/account` | Gemini configuration status |
 | `POST /api/enhance` | Prompt enhancement |
-| `POST /api/upload` | Sign + PUT reference images via `openart_upload_sign` |
-| `POST /api/generate` | `openart_generate_image` / `openart_generate_video` + wait |
-| `GET /api/status` | Poll `openart_creation_get` |
-| `GET /api/creations` | List history via `openart_creation_list` |
+| `POST /api/upload` | Store reference images locally |
+| `POST /api/generate` | Gemini image/video generation |
+| `GET /api/status` | Poll Gemini video generation status |
+| `GET /api/creations` | Gallery history (client-side storage is primary) |
+| `GET /api/media/gemini/[interactionId]` | Serve generated videos |
+| `GET /api/media/gemini-image/[imageId]` | Serve generated images |
+| `GET /api/media/upload/[uploadId]` | Serve uploaded reference images |
 
 ## Models used
 
-- **Image:** `nano-banana-2-lite` (`text2image` / `image2image`)
-- **Video:** `pixverseV6` (`text2video` / `image2video`) with Standard `720p` or Pro `1080p`
+- **Image:** `gemini-2.5-flash-image` via `generateContent`
+- **Video:** `gemini-omni-flash-preview` via Gemini Interactions API (720p with audio)
 
 ## Scripts
 

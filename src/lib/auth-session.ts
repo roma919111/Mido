@@ -1,44 +1,12 @@
-/**
- * Shared OpenArt auth types + app URL helpers.
- * Customer browsers do NOT hold OpenArt tokens.
- * Owner credentials live server-side (see owner-credentials.ts).
- */
-
-export type OpenArtOAuthTokens = {
-  access_token: string;
-  token_type?: string;
-  expires_in?: number;
-  scope?: string;
-  refresh_token?: string;
-  obtained_at?: number;
-};
-
-export type OpenArtClientInformation = {
-  client_id: string;
-  client_secret?: string;
-  redirect_uris?: string[];
-  [key: string]: unknown;
-};
-
-export type OpenArtAuthSession = {
-  clientInformation?: OpenArtClientInformation;
-  tokens?: OpenArtOAuthTokens;
-  codeVerifier?: string;
-  oauthState?: string;
-};
-
 export function getAppBaseUrl(request?: Request): string {
-  const configured = process.env.APP_BASE_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (configured) return configured.replace(/\/$/, "");
-  if (process.env.VERCEL_URL?.trim()) return `https://${process.env.VERCEL_URL.trim()}`;
-  if (request) return new URL(request.url).origin;
+  const fromEnv = process.env.APP_BASE_URL?.trim();
+  if (fromEnv) return fromEnv.replace(/\/$/, "");
+
+  if (request) {
+    const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+    const proto = request.headers.get("x-forwarded-proto") ?? "https";
+    if (host) return `${proto}://${host}`;
+  }
+
   return "http://localhost:3000";
-}
-
-export function getOAuthCallbackUrl(request?: Request): string {
-  return `${getAppBaseUrl(request)}/api/auth/callback`;
-}
-
-export function hasUsableAccessToken(session: OpenArtAuthSession): boolean {
-  return Boolean(session.tokens?.access_token);
 }

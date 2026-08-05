@@ -34,7 +34,7 @@ yarn-error.log*
 .env*
 !.env.example
 
-# server-side owner OpenArt credentials (never commit)
+# server-side generated media and uploads (never commit)
 .data/
 
 # vercel

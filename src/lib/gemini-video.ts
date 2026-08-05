@@ -1,6 +1,7 @@
 import { access, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { GoogleGenAI } from "@google/genai";
+import { getGeminiClient } from "@/lib/gemini-client";
+import { readUploadedImage } from "@/lib/local-upload";
 import type { GenerationMode, VideoDuration, VisualReference } from "@/lib/types";
 
 export const GEMINI_VIDEO_MODEL =
@@ -19,26 +20,7 @@ type GeminiInteraction = {
   }>;
 };
 
-export class GeminiConfigError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "GeminiConfigError";
-  }
-}
-
-export function isGeminiConfigured(): boolean {
-  return Boolean(process.env.GEMINI_API_KEY?.trim());
-}
-
-function getClient(): GoogleGenAI {
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
-  if (!apiKey) {
-    throw new GeminiConfigError(
-      "GEMINI_API_KEY is not configured on the server. Add it to your environment variables.",
-    );
-  }
-  return new GoogleGenAI({ apiKey });
-}
+export { GeminiConfigError, isGeminiConfigured } from "@/lib/gemini-client";
 
 function sanitizeInteractionId(interactionId: string): string {
   return interactionId.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -52,25 +34,31 @@ export function getGeminiVideoUrl(interactionId: string): string {
   return `/api/media/gemini/${encodeURIComponent(interactionId)}`;
 }
 
-async function fetchImageAsBase64(
-  url: string,
-): Promise<{ data: string; mimeType: string }> {
-  const response = await fetch(url, { redirect: "follow" });
-  if (!response.ok) {
-    throw new Error(`Failed to fetch reference image (${response.status})`);
-  }
-
-  const buffer = Buffer.from(await response.arrayBuffer());
-  const mimeType = response.headers.get("content-type") || "image/jpeg";
-  return { data: buffer.toString("base64"), mimeType };
-}
-
 type GeminiInputPart =
   | string
   | Array<
       | { type: "text"; text: string }
       | { type: "image"; data: string; mime_type: string }
     >;
+
+async function loadReferenceImage(
+  reference: VisualReference,
+): Promise<{ data: string; mimeType: string }> {
+  if (reference.url.startsWith("/api/media/upload/") || reference.metadata?.localPath) {
+    return readUploadedImage(reference);
+  }
+
+  const response = await fetch(reference.url, { redirect: "follow" });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch reference image (${response.status})`);
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  return {
+    data: buffer.toString("base64"),
+    mimeType: response.headers.get("content-type") || "image/jpeg",
+  };
+}
 
 async function buildGeminiInput(
   mode: GenerationMode,
@@ -83,10 +71,10 @@ async function buildGeminiInput(
   > = [];
 
   if (mode === "image-to-video" && startFrame?.url) {
-    const image = await fetchImageAsBase64(startFrame.url);
+    const image = await loadReferenceImage(startFrame);
     parts.push({ type: "image", data: image.data, mime_type: image.mimeType });
   } else if (referenceImage?.url) {
-    const image = await fetchImageAsBase64(referenceImage.url);
+    const image = await loadReferenceImage(referenceImage);
     parts.push({ type: "image", data: image.data, mime_type: image.mimeType });
   }
 
@@ -174,7 +162,7 @@ export async function pollGeminiInteraction(
   interactionId: string,
   options?: { attempts?: number; intervalMs?: number },
 ): Promise<GeminiInteraction> {
-  const client = getClient();
+  const client = getGeminiClient();
   const attempts = options?.attempts ?? 60;
   const intervalMs = options?.intervalMs ?? 5000;
 
@@ -207,7 +195,7 @@ export async function generateGeminiVideo(input: {
   url: string;
   playbackUrl: string;
 }> {
-  const client = getClient();
+  const client = getGeminiClient();
   const geminiInput = await buildGeminiInput(
     input.mode,
     input.prompt,
@@ -275,7 +263,7 @@ export async function getGeminiVideoStatus(interactionId: string): Promise<{
       // still generating or not saved yet
     }
 
-    const client = getClient();
+    const client = getGeminiClient();
     const interaction = (await client.interactions.get(interactionId)) as GeminiInteraction;
     const status = String(interaction.status ?? "UNKNOWN").toUpperCase();
 
