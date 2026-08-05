@@ -15,7 +15,7 @@ import {
 } from "./platforms";
 
 export const LAUNCH_COUNTDOWN_MS = 0;
-/** Popcorn on MAX, then same-tab navigation so browser ← returns home. */
+/** Popcorn then open Netflix / platform app. */
 export const POPCORN_DURATION_MS = 5000;
 
 let pendingComplete: ((result: { success: boolean; url: string }) => void) | undefined;
@@ -54,7 +54,6 @@ function notifyLaunchComplete(success: boolean, url: string) {
   pendingComplete = undefined;
 }
 
-/** Store launch target — call synchronously at the start of the user click. */
 export function prepareLaunch(state: LaunchState): void {
   const target = buildLaunchTarget(state.platform, state.url);
   pendingDestination = target.directUrl;
@@ -69,10 +68,8 @@ export type PlatformLaunchResult = {
   needsManualOpen: boolean;
 };
 
-/** Same-tab navigation — MAX stays in history so ← back returns home. */
 function navigateToPlatformSameTab(destination: string): void {
   markPlatformOpened();
-
   const go = new URL(window.location.href);
   go.search = "";
   go.hash = "";
@@ -81,10 +78,7 @@ function navigateToPlatformSameTab(destination: string): void {
   window.location.assign(go.toString());
 }
 
-/**
- * Android: open native app during click. iOS/web: defer until after popcorn
- * so MAX remains the previous history entry when Netflix loads.
- */
+/** Web mobile: open during click. Native/TV: open after popcorn. */
 export function openPlatformBrowserSync(state: LaunchState): PlatformLaunchResult {
   const destination =
     pendingDestination ?? buildLaunchTarget(state.platform, state.url).directUrl;
@@ -92,11 +86,8 @@ export function openPlatformBrowserSync(state: LaunchState): PlatformLaunchResul
   const url = pendingUrl ?? state.url;
 
   if (Capacitor.isNativePlatform()) {
-    markPlatformOpened();
-    void openPlatformPlayback(platform, url).then((result) => {
-      notifyLaunchComplete(result.success, result.directUrl);
-    });
-    return { opened: true, destination, needsManualOpen: false };
+    notifyLaunchComplete(true, destination);
+    return { opened: false, destination, needsManualOpen: false };
   }
 
   if (isAndroidDevice()) {
@@ -118,24 +109,47 @@ export function openPlatformBrowserSync(state: LaunchState): PlatformLaunchResul
   return { opened: false, destination, needsManualOpen: false };
 }
 
-/** After 5s popcorn: desktop web navigates same-tab; mobile opens app during click. */
-export async function finishPopcornOverlay(state: LaunchState): Promise<void> {
+export type PopcornFinishResult = {
+  success: boolean;
+  destination: string;
+};
+
+/** After popcorn: open platform app (native/TV) or navigate (desktop web). */
+export async function finishPopcornOverlay(state: LaunchState): Promise<PopcornFinishResult> {
+  const platform = pendingPlatform ?? state.platform;
+  const url = pendingUrl ?? state.url;
   const destination =
-    pendingDestination ?? buildLaunchTarget(state.platform, state.url).directUrl;
+    pendingDestination ?? buildLaunchTarget(platform, url).directUrl;
   pendingDestination = null;
   pendingPlatform = null;
   pendingUrl = null;
 
   await exitPlaybackMode();
 
-  if (Capacitor.isNativePlatform()) return;
-  if (isAndroidDevice() || isIosDevice()) return;
+  if (Capacitor.isNativePlatform()) {
+    markPlatformOpened();
+    const result = await openPlatformPlayback(platform, url);
+    notifyLaunchComplete(result.success, result.directUrl);
+    return { success: result.success, destination: result.directUrl };
+  }
+
+  if (isAndroidDevice() || isIosDevice()) {
+    return { success: true, destination };
+  }
 
   navigateToPlatformSameTab(destination);
-  void state;
+  return { success: true, destination };
 }
 
-export function openPlatformManually(destination: string): boolean {
+export async function openPlatformManually(
+  platform: PlatformId,
+  destination: string,
+): Promise<boolean> {
+  if (Capacitor.isNativePlatform()) {
+    markPlatformOpened();
+    const result = await openPlatformPlayback(platform, destination);
+    return result.success;
+  }
   navigateToPlatformSameTab(destination);
   return true;
 }

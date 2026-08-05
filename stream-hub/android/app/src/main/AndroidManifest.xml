@@ -48,6 +48,7 @@
     <!-- Required Android 11+ to launch Netflix / Shahid / TOD apps -->
     <queries>
         <package android:name="com.netflix.mediaclient" />
+        <package android:name="com.netflix.ninja" />
         <package android:name="net.mbc.shahid" />
         <package android:name="com.beincom.tod" />
         <intent>

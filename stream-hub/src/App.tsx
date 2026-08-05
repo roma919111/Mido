@@ -31,6 +31,7 @@ import { MaxLoginPage } from "./components/MaxLoginPage";
 import { GoogleTvLauncher } from "./components/GoogleTvLauncher";
 import { InstallAppBanner } from "./components/InstallAppBanner";
 import type { CatalogItem, ContinueEntry, LaunchState, PlatformId } from "./types";
+import { PLATFORMS } from "./lib/platforms";
 function mapContinueToItems(entries: ContinueEntry[]): CatalogItem[] {
   return entries
     .map((entry) => CATALOG.find((item) => item.id === entry.itemId))
@@ -46,6 +47,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
   const [continueItems, setContinueItems] = useState<CatalogItem[]>([]);
   const [listHint, setListHint] = useState<string | null>(null);
   const [manualOpenUrl, setManualOpenUrl] = useState<string | null>(null);
+  const [manualOpenPlatform, setManualOpenPlatform] = useState<PlatformId | null>(null);
 
   const featured = CATALOG.find((i) => i.featured) ?? CATALOG[0]!;
 
@@ -139,6 +141,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
   function handleReturnHomeClick() {
     clearAllReturnFlags();
     setManualOpenUrl(null);
+    setManualOpenPlatform(null);
     resetToHomeInterface();
   }
 
@@ -170,9 +173,14 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
 
   function handlePopcornDone() {
     if (!launching) return;
-    void finishPopcornOverlay(launching).then(() => {
+    const current = launching;
+    void finishPopcornOverlay(current).then((result) => {
       setShowPopcorn(false);
       setLaunching(null);
+      if (!result.success) {
+        setManualOpenUrl(result.destination);
+        setManualOpenPlatform(current.platform);
+      }
     });
   }
 
@@ -213,16 +221,30 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
 
       {manualOpenUrl ? (
         <div className="manual-open-banner">
-          <p>Safari حظر فتح Netflix تلقائياً</p>
+          <p>لم يُفتح Netflix — ثبّت التطبيق من Play Store ثم اضغط ▶</p>
           <button
             type="button"
             className="manual-open-banner__btn"
             onClick={() => {
-              if (openPlatformManually(manualOpenUrl)) setManualOpenUrl(null);
+              const platform = manualOpenPlatform ?? "netflix";
+              void openPlatformManually(platform, manualOpenUrl).then((ok) => {
+                if (ok) {
+                  setManualOpenUrl(null);
+                  setManualOpenPlatform(null);
+                }
+              });
             }}
           >
             ▶ افتح Netflix
           </button>
+          <a
+            className="manual-open-banner__store"
+            href={PLATFORMS[manualOpenPlatform ?? "netflix"].playStoreUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            📥 تحميل Netflix من Play Store
+          </a>
         </div>
       ) : null}
 

@@ -31,6 +31,18 @@ npm run open:android
 
 ---
 
+## Google TV / Android TV
+
+Netflix على التلفزيون يستخدم تطبيق **`com.netflix.ninja`** (مختلف عن الموبايل).
+
+1. ثبّت **Netflix** من Play Store على التلفزيون أولاً
+2. ثبّت **MAX MEDIA PLAYER** APK
+3. ▶ تشغيل → 🍿 5 ثوانٍ → يفتح Netflix تلقائياً
+
+إذا لم يفتح: اضغط **▶ افتح Netflix** أو حمّل Netflix من الرابط داخل التطبيق.
+
+---
+
 ## الاستخدام
 
 1. ثبّت **Netflix / شاهد / TOD** من Play Store

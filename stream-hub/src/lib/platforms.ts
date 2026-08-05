@@ -2,6 +2,7 @@ import { Capacitor } from "@capacitor/core";
 import { Browser } from "@capacitor/browser";
 import type { PlatformId } from "../types";
 import { normalizeDeepLink } from "./deeplink";
+import { getAndroidPackages, isAndroidTvDevice, launchNativePlatformApp } from "./platform-launch-native";
 
 function openHref(href: string): void {
   const anchor = document.createElement("a");
@@ -80,11 +81,12 @@ export function buildLaunchTarget(
       ? meta.playStoreUrl
       : directUrl;
     const launchFlags = Capacitor.isNativePlatform() ? "0" : "0x10000000";
+    const { primary } = getAndroidPackages(platform);
     const intent = [
       `intent://${parsed.host}${parsed.pathname}${parsed.search}`,
       `#Intent`,
       `scheme=https`,
-      `package=${meta.androidPackage}`,
+      `package=${primary}`,
       `launchFlags=${launchFlags}`,
       `S.browser_fallback_url=${encodeURIComponent(fallback)}`,
       `end`,
@@ -114,6 +116,10 @@ export async function openPlatformPlayback(
 
   try {
     if (isNative && isAndroidDevice()) {
+      const ok = await launchNativePlatformApp(platform, target.directUrl);
+      if (ok) {
+        return { success: true, mode: target.mode, href: target.href, directUrl: target.directUrl };
+      }
       openHref(target.href);
       return { success: true, mode: target.mode, href: target.href, directUrl: target.directUrl };
     }
@@ -137,6 +143,12 @@ export async function openPlatformPlayback(
     return { success: true, mode: target.mode, href: target.href, directUrl: target.directUrl };
   } catch {
     try {
+      if (isNative && isAndroidDevice()) {
+        const ok = await launchNativePlatformApp(platform, target.directUrl);
+        if (ok) {
+          return { success: true, mode: target.mode, href: target.href, directUrl: target.directUrl };
+        }
+      }
       await Browser.open({ url: target.directUrl });
       return { success: true, mode: "app-link", href: target.directUrl, directUrl: target.directUrl };
     } catch {
@@ -144,3 +156,5 @@ export async function openPlatformPlayback(
     }
   }
 }
+
+export { isAndroidTvDevice };
