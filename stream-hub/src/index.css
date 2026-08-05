@@ -2944,16 +2944,32 @@ html.max-native-app .gtv-main:focus {
 
 .iptv-login__input {
   width: 100%;
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-  color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: #1a1a22;
+  color: #ffffff;
+  -webkit-text-fill-color: #ffffff;
+  caret-color: #ff9a3c;
   border-radius: 14px;
   padding: 14px;
-  font-size: 1.4rem;
+  font-size: 1.5rem;
   text-align: center;
-  letter-spacing: 0.2em;
-  font-family: ui-monospace, monospace;
+  letter-spacing: 0.15em;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   margin-bottom: 12px;
+  direction: ltr;
+  unicode-bidi: plaintext;
+  outline: none;
+}
+
+.iptv-login__input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+  -webkit-text-fill-color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.05em;
+}
+
+.iptv-login__input:focus {
+  border-color: rgba(255, 154, 60, 0.7);
+  box-shadow: 0 0 0 3px rgba(255, 111, 0, 0.2);
 }
 
 .iptv-login__error {

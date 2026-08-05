@@ -7,6 +7,7 @@ import {
   loadPlaylist,
   saveCode,
 } from "../lib/iptv-client";
+import { normalizeDigits } from "../lib/normalize-digits";
 import { IptvPlayer } from "./IptvPlayer";
 
 export function IptvApp() {
@@ -20,7 +21,7 @@ export function IptvApp() {
   const [ready, setReady] = useState(false);
 
   const activate = useCallback(async (activationCode: string) => {
-    const trimmed = activationCode.replace(/\D/g, "");
+    const trimmed = normalizeDigits(activationCode, 6);
     if (trimmed.length < 4) {
       setError("أدخل كود التفعيل (4–6 أرقام)");
       return;
@@ -85,10 +86,13 @@ export function IptvApp() {
           <p className="iptv-login__lead">أدخل كود الاشتراك من المزود</p>
           <input
             className="iptv-login__input"
+            type="tel"
             inputMode="numeric"
-            placeholder="كود التفعيل"
+            autoComplete="one-time-code"
+            dir="ltr"
+            placeholder="123456"
             value={code}
-            onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            onChange={(e) => setCode(normalizeDigits(e.target.value, 6))}
             onKeyDown={(e) => e.key === "Enter" && void activate(code)}
           />
           {error ? <p className="iptv-login__error">{error}</p> : null}
