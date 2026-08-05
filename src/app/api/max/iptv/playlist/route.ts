@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchAndParseM3u } from "@/lib/m3u-parser";
-import { getIptvCode, normalizeCode } from "@/lib/iptv-codes";
+import { ensureDemoCode, getIptvCode, normalizeCode } from "@/lib/iptv-codes";
 import { maxApiCors } from "@/lib/max-api-cors";
 
 export const runtime = "nodejs";
@@ -11,6 +11,9 @@ export async function OPTIONS() {
 
 /** Public: customer enters code → get channel list (server loads M3U). */
 export async function GET(request: Request) {
+  const origin = new URL(request.url).origin;
+  await ensureDemoCode(origin);
+
   const url = new URL(request.url);
   const code = normalizeCode(url.searchParams.get("code") ?? "");
   if (code.length < 4) {
@@ -19,7 +22,10 @@ export async function GET(request: Request) {
 
   const record = await getIptvCode(code);
   if (!record || !record.active) {
-    return NextResponse.json({ error: "Invalid or inactive code" }, { status: 403, headers: maxApiCors });
+    return NextResponse.json(
+      { error: "الكود غير صحيح أو موقوف — تواصل مع المزود" },
+      { status: 403, headers: maxApiCors },
+    );
   }
 
   try {

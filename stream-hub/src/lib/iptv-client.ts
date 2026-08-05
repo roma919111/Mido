@@ -16,11 +16,16 @@ const CODE_KEY = "max.iptv.code";
 const LABEL_KEY = "max.iptv.label";
 
 function apiBase(): string {
-  const raw =
-    import.meta.env.VITE_IPTV_API?.trim() ||
-    import.meta.env.VITE_ACTIVATION_API?.replace(/\/activate\/?$/, "/iptv") ||
-    "";
-  return raw.replace(/\/$/, "");
+  const configured = import.meta.env.VITE_IPTV_API?.trim();
+  if (configured) return configured.replace(/\/$/, "");
+
+  const legacy = import.meta.env.VITE_ACTIVATION_API?.replace(/\/activate\/?$/, "/iptv");
+  if (legacy) return legacy.replace(/\/$/, "");
+
+  // Local dev: Vite proxies /api/max → localhost:3000
+  if (import.meta.env.DEV) return "/api/max/iptv";
+
+  return "";
 }
 
 export function getSavedCode(): string | null {
@@ -44,17 +49,30 @@ export function getSavedLabel(): string | null {
 export async function loadPlaylist(code: string): Promise<IptvPlaylist> {
   const base = apiBase();
   if (!base) {
-    throw new Error("السيرفر غير مربوط — تواصل مع المزود");
+    throw new Error("السيرفر غير مربوط — المزود لم يضبط التطبيق بعد");
   }
 
-  const res = await fetch(`${base}/playlist?code=${encodeURIComponent(code)}`, {
-    cache: "no-store",
-  });
-  const data = (await res.json()) as IptvPlaylist & { error?: string };
-  if (!res.ok) throw new Error(data.error ?? "Failed to load playlist");
+  let res: Response;
+  try {
+    res = await fetch(`${base}/playlist?code=${encodeURIComponent(code)}`, {
+      cache: "no-store",
+    });
+  } catch {
+    throw new Error("تعذر الاتصال بالسيرفر — تأكد أن المزود شغّل السيرفر");
+  }
 
-  // Make proxy URLs absolute when API returns relative paths
-  const origin = new URL(base).origin;
+  let data: IptvPlaylist & { error?: string };
+  try {
+    data = (await res.json()) as IptvPlaylist & { error?: string };
+  } catch {
+    throw new Error("استجابة غير صالحة من السيرفر");
+  }
+
+  if (!res.ok) {
+    throw new Error(data.error ?? "فشل التفعيل — تحقق من الكود");
+  }
+
+  const origin = base.startsWith("http") ? new URL(base).origin : window.location.origin;
   const channels = data.channels.map((c) => ({
     ...c,
     url: c.url.startsWith("http") ? c.url : `${origin}${c.url}`,
@@ -63,12 +81,6 @@ export async function loadPlaylist(code: string): Promise<IptvPlaylist> {
   return { ...data, channels };
 }
 
-export function resolveApiOrigin(): string | null {
-  const base = apiBase();
-  if (!base) return null;
-  try {
-    return new URL(base).origin;
-  } catch {
-    return null;
-  }
+export function isDevMode(): boolean {
+  return import.meta.env.DEV;
 }

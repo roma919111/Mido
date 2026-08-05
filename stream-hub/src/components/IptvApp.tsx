@@ -4,6 +4,7 @@ import {
   clearSavedCode,
   getSavedCode,
   getSavedLabel,
+  isDevMode,
   loadPlaylist,
   saveCode,
 } from "../lib/iptv-client";
@@ -96,6 +97,12 @@ export function IptvApp() {
             onKeyDown={(e) => e.key === "Enter" && void activate(code)}
           />
           {error ? <p className="iptv-login__error">{error}</p> : null}
+          {isDevMode() ? (
+            <p className="iptv-login__demo">
+              للتجربة: شغّل <code>npm run dev</code> في المجلد الرئيسي ثم استخدم الكود{" "}
+              <strong>123456</strong>
+            </p>
+          ) : null}
           <button
             type="button"
             className="iptv-login__btn"

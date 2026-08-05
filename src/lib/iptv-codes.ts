@@ -87,4 +87,20 @@ export async function setIptvCodeActive(code: string, active: boolean): Promise<
   return existing;
 }
 
+/** Dev/demo: auto-create code 123456 so browser testing works out of the box. */
+export async function ensureDemoCode(origin: string): Promise<void> {
+  if (process.env.MAX_IPTV_DEMO === "0") return;
+
+  const store = await readStore();
+  if (store.codes["123456"]) return;
+
+  const base = origin.replace(/\/$/, "");
+  await upsertIptvCode({
+    code: "123456",
+    label: "تجربة — Demo",
+    m3uUrl: `${base}/api/max/iptv/demo.m3u`,
+    active: true,
+  });
+}
+
 export { isMaxAdminAuthorized } from "./max-activations";
