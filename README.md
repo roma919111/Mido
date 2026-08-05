@@ -42,7 +42,27 @@ GEMINI_API_KEY=your_google_api_key
 # APP_BASE_URL=http://localhost:3000
 ```
 
-For production (e.g. Vercel), add `GEMINI_API_KEY` in the project environment settings.
+For production on **https://vyronix.app** (Vercel project `mido-g7aq`):
+
+```env
+GEMINI_API_KEY=your_google_api_key
+APP_BASE_URL=https://vyronix.app
+```
+
+Add both in [Vercel → Settings → Environment Variables](https://vercel.com/roma919111s-projects/mido-g7aq/settings/environment-variables) for **Production**, then redeploy.
+
+### Connect vyronix.app to Vercel
+
+If `vyronix.app` shows **502**, Cloudflare is pointing at a dead origin (old Railway/tunnel). Fix:
+
+1. **Vercel** → Project `mido-g7aq` → **Settings → Domains** → Add `vyronix.app` and `www.vyronix.app`
+2. **Cloudflare** → DNS for `vyronix.app`:
+   - Remove old origin/tunnel records that point to Railway or a dead server
+   - Add the records Vercel shows (usually `CNAME` `@` → `cname.vercel-dns.com` or Vercel A records)
+   - SSL/TLS mode: **Full**
+3. Redeploy after adding `GEMINI_API_KEY`
+
+Verify: `https://vyronix.app/api/account` should return `"configured": true` and `"provider": "gemini"`.
 
 ## API routes
 
