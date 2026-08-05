@@ -1,6 +1,7 @@
 import { Capacitor } from "@capacitor/core";
 import type { CatalogItem, LaunchState, PlatformId } from "../types";
 import { clearAllReturnFlags, clearPendingReturnHome, markPlatformOpened } from "./app-navigation";
+import { isIosDevice } from "./display-mode";
 import { exitPlaybackMode } from "./fullscreen";
 import { deepLinkHint } from "./deeplink";
 import { addContinueWatching, ensureInMyList } from "./library";
@@ -106,11 +107,18 @@ export function openPlatformBrowserSync(state: LaunchState): PlatformLaunchResul
     return { opened: true, destination, needsManualOpen: false };
   }
 
+  if (isIosDevice()) {
+    markPlatformOpened();
+    openPlatformHref(destination);
+    notifyLaunchComplete(true, destination);
+    return { opened: true, destination, needsManualOpen: false };
+  }
+
   notifyLaunchComplete(true, destination);
   return { opened: false, destination, needsManualOpen: false };
 }
 
-/** After 5s popcorn: navigate in the same tab (iOS/web) so ← returns to MAX. */
+/** After 5s popcorn: desktop web navigates same-tab; mobile opens app during click. */
 export async function finishPopcornOverlay(state: LaunchState): Promise<void> {
   const destination =
     pendingDestination ?? buildLaunchTarget(state.platform, state.url).directUrl;
@@ -121,7 +129,7 @@ export async function finishPopcornOverlay(state: LaunchState): Promise<void> {
   await exitPlaybackMode();
 
   if (Capacitor.isNativePlatform()) return;
-  if (isAndroidDevice()) return;
+  if (isAndroidDevice() || isIosDevice()) return;
 
   navigateToPlatformSameTab(destination);
   void state;

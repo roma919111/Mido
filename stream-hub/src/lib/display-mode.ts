@@ -40,3 +40,12 @@ export function isChromeBrowser(): boolean {
   const ua = navigator.userAgent;
   return /Chrome|CriOS/i.test(ua) && !/Edg|OPR|Firefox/i.test(ua);
 }
+
+/** Safari/Chrome tab — address bar cannot be hidden without install (iOS) or fullscreen (Android). */
+export function mustInstallToHideBrowser(): boolean {
+  return isBrowserTab() && isIosDevice() && isSafariBrowser();
+}
+
+export function canTapToHideBrowser(): boolean {
+  return isBrowserTab() && !isIosDevice();
+}

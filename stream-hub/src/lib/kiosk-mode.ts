@@ -1,7 +1,7 @@
 import { Capacitor } from "@capacitor/core";
-import { enterImmersiveChrome } from "./browser-chrome";
+import { enterImmersiveChrome, collapseSafariAddressBar } from "./browser-chrome";
 import { isStandaloneApp } from "./display-mode";
-import { enterPlaybackMode, exitPlaybackMode } from "./fullscreen";
+import { enterPlaybackMode, exitPlaybackMode, isFullscreen } from "./fullscreen";
 
 const KIOSK_KEY = "max.kioskMode";
 
@@ -78,6 +78,23 @@ function attachKioskGuards(): void {
   document.addEventListener("contextmenu", preventWhenKiosk);
   document.addEventListener("visibilitychange", onVisibilityRestoreKiosk);
   window.addEventListener("focus", onVisibilityRestoreKiosk);
+  document.addEventListener(
+    "touchstart",
+    () => {
+      if (!isKioskEnabled()) return;
+      enterImmersiveChrome();
+      if (!isFullscreen()) enterPlaybackMode();
+      collapseSafariAddressBar();
+    },
+    { passive: true },
+  );
+}
+
+/** Call from a user tap — only way to hide Chrome toolbar in browser tab. */
+export async function requestHideBrowserChrome(): Promise<boolean> {
+  setKioskEnabled(true);
+  await enterKioskMode();
+  return isFullscreen() || isStandaloneApp() || Capacitor.isNativePlatform();
 }
 
 export function setupKioskOnBoot(): void {

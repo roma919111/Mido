@@ -251,6 +251,117 @@ html.max-kiosk textarea {
   transform: translateX(-22px);
 }
 
+/* ── Hide browser gate ── */
+.hide-browser-gate {
+  margin: 0 14px 12px;
+}
+
+.hide-browser-gate--blocking {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(4, 8, 20, 0.92);
+  backdrop-filter: blur(8px);
+}
+
+.hide-browser-gate__card {
+  width: min(420px, 100%);
+  padding: 22px 20px;
+  border-radius: 20px;
+  background: linear-gradient(160deg, #0f1628, #1a2744);
+  border: 1px solid rgba(255, 111, 0, 0.45);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+  text-align: center;
+}
+
+.hide-browser-gate__badge {
+  display: inline-block;
+  margin: 0 0 10px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(255, 111, 0, 0.2);
+  color: #ffb74d;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.hide-browser-gate__card h2 {
+  margin: 0 0 8px;
+  font-size: 1.35rem;
+}
+
+.hide-browser-gate__lead {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.hide-browser-gate__help {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fde68a;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.hide-browser-gate__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hide-browser-gate__primary,
+.hide-browser-gate__secondary,
+.hide-browser-gate__ghost {
+  border: none;
+  border-radius: 999px;
+  padding: 12px 16px;
+  font-weight: 700;
+  font-size: 0.92rem;
+  cursor: pointer;
+}
+
+.hide-browser-gate__primary {
+  background: var(--max-orange);
+  color: #fff;
+}
+
+.hide-browser-gate__secondary {
+  background: rgba(79, 195, 247, 0.2);
+  color: #7dd3fc;
+  border: 1px solid rgba(79, 195, 247, 0.4);
+}
+
+.hide-browser-gate__ghost {
+  background: transparent;
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 0.82rem;
+}
+
+.hide-browser-gate__note,
+.hide-browser-gate__ok {
+  margin: 12px 0 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.hide-browser-gate__note {
+  color: #93c5fd;
+}
+
+.hide-browser-gate__ok {
+  color: #86efac;
+}
+
 .manual-open-banner {
   margin: 0 14px 10px;
   padding: 12px 14px;

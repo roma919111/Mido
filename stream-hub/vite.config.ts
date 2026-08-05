@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
-export const APP_VERSION = "0.3.9";
+export const APP_VERSION = "0.4.0";
 
 const pagesBase = process.env.GITHUB_PAGES === "true" ? "/Mido/" : "/";
 

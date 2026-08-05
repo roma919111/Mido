@@ -28,6 +28,8 @@ import { PosterCard } from "./components/PosterCard";
 import { SearchBar } from "./components/SearchBar";
 import { SmartSetup, shouldShowSmartSetup } from "./components/SmartSetup";
 import { MaxLoginPage } from "./components/MaxLoginPage";
+import { HideBrowserGate } from "./components/HideBrowserGate";
+import { isBrowserTab } from "./lib/display-mode";
 import { InstallAppBanner } from "./components/InstallAppBanner";
 import type { CatalogItem, ContinueEntry, LaunchState, PlatformId } from "./types";
 function mapContinueToItems(entries: ContinueEntry[]): CatalogItem[] {
@@ -162,7 +164,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
       },
       () => {
         setContinueItems(mapContinueToItems(getContinueWatching()));
-        setListHint(`«${item.title}» — للرجوع: اضغط ← في المتصفح`);
+        setListHint(`«${item.title}» — Netflix في التطبيق · MAX يبقى هنا`);
       },
     );
   }
@@ -209,6 +211,8 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
       </header>
 
       <InstallAppBanner />
+
+      {isBrowserTab() ? <HideBrowserGate blocking /> : null}
 
       {manualOpenUrl ? (
         <div className="manual-open-banner">
@@ -371,13 +375,16 @@ export function App() {
 
   if (!authed) {
     return (
-      <MaxLoginPage
-        onSuccess={() => {
-          const session = getSession();
-          setUsername(session?.username ?? "");
-          setAuthed(true);
-        }}
-      />
+      <>
+        {isBrowserTab() ? <HideBrowserGate blocking /> : null}
+        <MaxLoginPage
+          onSuccess={() => {
+            const session = getSession();
+            setUsername(session?.username ?? "");
+            setAuthed(true);
+          }}
+        />
+      </>
     );
   }
 
