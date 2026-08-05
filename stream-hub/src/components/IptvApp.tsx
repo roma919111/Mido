@@ -10,6 +10,7 @@ import {
 } from "../lib/iptv-client";
 import { normalizeDigits } from "../lib/normalize-digits";
 import { IptvPlayer } from "./IptvPlayer";
+import { OttQuickBar } from "./OttQuickBar";
 
 export function IptvApp() {
   const [code, setCode] = useState(() => getSavedCode() ?? "");
@@ -135,6 +136,10 @@ export function IptvApp() {
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         />
+      </div>
+
+      <div className="iptv-app__ott">
+        <OttQuickBar />
       </div>
 
       <main className="iptv-app__main">

@@ -3055,7 +3055,63 @@ html.max-native-app .gtv-main:focus {
 }
 
 .iptv-app__search-wrap {
-  padding: 12px 16px;
+  padding: 12px 16px 0;
+}
+
+.iptv-app__ott {
+  padding: 12px 16px 0;
+}
+
+.ott-bar {
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), var(--surface));
+}
+
+.ott-bar__title {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+}
+
+.ott-bar__hint {
+  margin: 0 0 12px;
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.ott-bar__msg {
+  margin: 0 0 10px;
+  font-size: 0.85rem;
+  color: #86efac;
+}
+
+.ott-bar__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.ott-bar__btn {
+  border: 1px solid color-mix(in srgb, var(--ott-color) 50%, transparent);
+  background: color-mix(in srgb, var(--ott-color) 18%, #111);
+  color: #fff;
+  border-radius: 14px;
+  padding: 16px 10px;
+  cursor: pointer;
+  font-weight: 800;
+  font-size: 0.95rem;
+}
+
+.ott-bar__btn:hover:not(:disabled),
+.ott-bar__btn:focus-visible {
+  background: color-mix(in srgb, var(--ott-color) 32%, #111);
+}
+
+.ott-bar__btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
 
 .iptv-app__search {
@@ -3071,7 +3127,7 @@ html.max-native-app .gtv-main:focus {
 .iptv-app__main {
   flex: 1;
   overflow: auto;
-  padding: 0 16px 24px;
+  padding: 12px 16px 24px;
 }
 
 .iptv-app__group-title {
