@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { enterPlaybackMode } from "../lib/fullscreen";
 import { POPCORN_DURATION_MS } from "../lib/playback";
 
 type PopcornSplashProps = {
@@ -14,15 +13,12 @@ const KERNELS = [
 ];
 
 export function PopcornSplash({ title, platformName, onDone }: PopcornSplashProps) {
-  const rootRef = useRef<HTMLDivElement>(null);
   const totalSeconds = Math.ceil(POPCORN_DURATION_MS / 1000);
   const [secondsLeft, setSecondsLeft] = useState(totalSeconds);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
 
   useEffect(() => {
-    enterPlaybackMode(rootRef.current);
-
     const tick = window.setInterval(() => {
       setSecondsLeft((s) => Math.max(0, s - 1));
     }, 1000);
@@ -39,7 +35,6 @@ export function PopcornSplash({ title, platformName, onDone }: PopcornSplashProp
 
   return (
     <div
-      ref={rootRef}
       className="popcorn-splash"
       style={{ "--popcorn-duration": `${POPCORN_DURATION_MS}ms` } as React.CSSProperties}
       role="status"
@@ -59,7 +54,7 @@ export function PopcornSplash({ title, platformName, onDone }: PopcornSplashProp
         <h2>جاري التشغيل</h2>
         <p className="popcorn-splash__title">{title}</p>
         <p className="popcorn-splash__subtitle">
-          🍿 {totalSeconds} ثوانٍ — {platformName} · تطبيق أو Play Store · ✕ يرجعك لـ MAX
+          🍿 {totalSeconds} ثوانٍ — يُفتح {platformName} بملء الشاشة في تطبيقه · ✕ للإلغاء
         </p>
         <p className="popcorn-splash__timer">{secondsLeft || "▶"}</p>
       </div>

@@ -451,10 +451,23 @@ html.stream-hub-theater #root {
   min-height: 100dvh !important;
 }
 
+html.stream-hub-theater .gtv-shell {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 html.stream-hub-theater .gtv-shell > .gtv-header,
 html.stream-hub-theater .gtv-shell > .gtv-nav,
 html.stream-hub-theater .gtv-shell > .install-banner,
 html.stream-hub-theater .gtv-shell > .gtv-scroll-hint {
+  display: none !important;
+}
+
+html.stream-hub-theater .return-home-fab,
+html.stream-hub-theater .manual-open-banner,
+html.stream-hub-theater .list-hint,
+html.stream-hub-theater .welcome-back-banner,
+html.stream-hub-theater .sheet-backdrop {
   display: none !important;
 }
 
@@ -1795,10 +1808,15 @@ html.max-native-app .gtv-main:focus {
   position: fixed;
   inset: 0;
   width: 100vw;
+  width: 100svw;
   height: 100dvh;
+  height: 100svh;
+  min-height: -webkit-fill-available;
   z-index: 2147483646;
   display: grid;
   place-items: center;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
   background: radial-gradient(circle at center, rgba(251, 191, 36, 0.22) 0%, rgba(0, 0, 0, 0.96) 60%);
   overflow: hidden;
 }

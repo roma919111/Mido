@@ -1,3 +1,6 @@
+import { Capacitor } from "@capacitor/core";
+import { enterImmersiveChrome } from "./browser-chrome";
+
 type FullscreenElement = HTMLElement & {
   webkitRequestFullscreen?: () => Promise<void> | void;
 };
@@ -38,15 +41,25 @@ function requestFullscreenOn(el: FullscreenElement): void {
       el.webkitRequestFullscreen();
     }
   } catch {
-    /* theater CSS fallback */
+    /* theater CSS fallback — still covers the viewport */
   }
 }
 
-/** Theater CSS + element fullscreen — call synchronously from click/tap. */
+function playbackFullscreenTarget(target?: HTMLElement | null): FullscreenElement {
+  return (target ?? document.body) as FullscreenElement;
+}
+
+/** Theater CSS + browser fullscreen — must run synchronously from click/tap. */
 export function enterPlaybackMode(target?: HTMLElement | null): void {
   enterTheaterMode();
-  const el = (target ?? document.documentElement) as FullscreenElement;
-  requestFullscreenOn(el);
+  enterImmersiveChrome();
+
+  if (Capacitor.isNativePlatform()) {
+    /* APK/WebView: native MainActivity hides system bars; element fullscreen breaks TV taps. */
+    return;
+  }
+
+  requestFullscreenOn(playbackFullscreenTarget(target));
 }
 
 export async function exitPlaybackMode(): Promise<void> {
