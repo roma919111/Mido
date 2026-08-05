@@ -18,6 +18,7 @@ import { Header } from "./Header";
 import { ImageDropzone } from "./ImageDropzone";
 import { MediaGallery } from "./MediaGallery";
 import { ModeSwitcher } from "./ModeSwitcher";
+import { ModelSelector } from "./ModelSelector";
 import { PromptInput } from "./PromptInput";
 import { VideoControls } from "./VideoControls";
 
@@ -469,6 +470,8 @@ export function StudioApp() {
         <section className="animate-fade-up animation-delay-1 rounded-[28px] border border-white/10 bg-[rgba(12,14,20,0.72)] p-4 shadow-[0_30px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:p-6">
           <div className="space-y-5">
             <ModeSwitcher mode={mode} onChange={setMode} />
+
+            <ModelSelector mode={mode} />
 
             <PromptInput
               value={prompt}
