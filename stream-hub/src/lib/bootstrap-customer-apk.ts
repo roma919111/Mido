@@ -2,7 +2,6 @@ import { Capacitor } from "@capacitor/core";
 import { deliverToCustomer } from "./admin-mode";
 import { ensureAutoSession } from "./auth";
 import { prepareCustomerHandoff } from "./customer-mode";
-import { pingProvisionerOnce } from "./provision-ping";
 
 /** Native APK: customer installs → 3 tiles immediately. Mohammed configures remotely. */
 export function bootstrapCustomerApk(): void {
@@ -10,7 +9,6 @@ export function bootstrapCustomerApk(): void {
   prepareCustomerHandoff();
   deliverToCustomer();
   ensureAutoSession();
-  void pingProvisionerOnce();
 }
 
 export function isNativeCustomerApk(): boolean {
