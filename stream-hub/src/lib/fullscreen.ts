@@ -28,10 +28,7 @@ export function exitTheaterMode(): void {
   document.body.classList.remove(THEATER_CLASS);
 }
 
-/** Theater CSS + document fullscreen — safe on user click (login ACTIVATE / play). */
-export function enterPlaybackMode(): void {
-  enterTheaterMode();
-  const el = document.documentElement as FullscreenElement;
+function requestFullscreenOn(el: FullscreenElement): void {
   try {
     if (typeof el.requestFullscreen === "function") {
       void el.requestFullscreen();
@@ -41,8 +38,15 @@ export function enterPlaybackMode(): void {
       el.webkitRequestFullscreen();
     }
   } catch {
-    /* theater CSS covers viewport */
+    /* theater CSS fallback */
   }
+}
+
+/** Theater CSS + element fullscreen — call synchronously from click/tap. */
+export function enterPlaybackMode(target?: HTMLElement | null): void {
+  enterTheaterMode();
+  const el = (target ?? document.documentElement) as FullscreenElement;
+  requestFullscreenOn(el);
 }
 
 export async function exitPlaybackMode(): Promise<void> {

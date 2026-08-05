@@ -175,7 +175,6 @@ export async function finishPopcornOverlay(state: LaunchState): Promise<PopcornF
   pendingUrl = null;
   pendingTitle = null;
 
-  await exitPlaybackMode();
   return dispatchLaunch(platform, url, title, destination);
 }
 

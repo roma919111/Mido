@@ -16,7 +16,7 @@ import {
   prepareLaunch,
   type InstallPromptPayload,
 } from "./lib/playback";
-import { enterPlaybackMode } from "./lib/fullscreen";
+import { enterPlaybackMode, exitPlaybackMode } from "./lib/fullscreen";
 import { clearAllReturnFlags, wasPlatformOpened } from "./lib/app-navigation";
 import { pushOverlayHistory, useReturnToHome } from "./hooks/useReturnToHome";
 import { usePendingPlatformRetry } from "./hooks/usePendingPlatformRetry";
@@ -181,6 +181,7 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
     platform: CatalogItem["platforms"][0]["platform"],
     url: string,
   ) {
+    enterPlaybackMode();
     launchOnPlatform(
       item,
       platform,
@@ -188,7 +189,6 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
       (state) => {
         prepareLaunch(state);
         const result = openPlatformBrowserSync(state);
-        enterPlaybackMode();
         flushSync(() => {
           setLaunching(state);
           setShowPopcorn(true);
@@ -209,13 +209,17 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
       setShowPopcorn(false);
       setLaunching(null);
       if (result.installPrompt) {
+        void exitPlaybackMode();
         setInstallPrompt(result.installPrompt);
         return;
       }
       if (!result.success) {
+        void exitPlaybackMode();
         setManualOpenUrl(result.destination);
         setManualOpenPlatform(current.platform);
+        return;
       }
+      /* success + same-tab navigation to Netflix — page unloads; keep fullscreen until then */
     });
   }
 

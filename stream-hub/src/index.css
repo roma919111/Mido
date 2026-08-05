@@ -451,6 +451,13 @@ html.stream-hub-theater #root {
   min-height: 100dvh !important;
 }
 
+html.stream-hub-theater .gtv-shell > .gtv-header,
+html.stream-hub-theater .gtv-shell > .gtv-nav,
+html.stream-hub-theater .gtv-shell > .install-banner,
+html.stream-hub-theater .gtv-shell > .gtv-scroll-hint {
+  display: none !important;
+}
+
 html.stream-hub-theater .mobile-lab {
   padding: 0 !important;
   gap: 0 !important;
