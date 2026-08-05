@@ -8,7 +8,9 @@ import type {
   GenerationMode,
   GenerateResponse,
   VideoDuration,
+  VideoModel,
   VideoQuality,
+  VideoProvider,
   VisualReference,
 } from "@/lib/types";
 import { BrandLogo } from "./BrandLogo";
@@ -52,6 +54,7 @@ function resolveGenerationStatus(
 async function pollGenerationStatus(
   historyId: string,
   mediaType: "image" | "video",
+  provider: VideoProvider = "openart",
   maxAttempts = 48,
 ): Promise<{
   url: string;
@@ -62,7 +65,7 @@ async function pollGenerationStatus(
 }> {
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const res = await fetch(
-      `/api/status?historyId=${encodeURIComponent(historyId)}&mediaType=${mediaType}`,
+      `/api/status?historyId=${encodeURIComponent(historyId)}&mediaType=${mediaType}&provider=${provider}`,
     );
     const data = (await res.json()) as {
       status?: string;
@@ -122,6 +125,7 @@ export function StudioApp() {
   const [prompt, setPrompt] = useState("");
   const [duration, setDuration] = useState<VideoDuration>(5);
   const [quality, setQuality] = useState<VideoQuality>("standard");
+  const [videoModel, setVideoModel] = useState<VideoModel>("pixverse");
   const [startFrame, setStartFrame] = useState<VisualReference | null>(null);
   const [startPreview, setStartPreview] = useState<string | null>(null);
   const [referenceImage, setReferenceImage] = useState<VisualReference | null>(null);
@@ -178,8 +182,8 @@ export function StudioApp() {
   }, []);
 
   const creditCost = useMemo(
-    () => estimateCredits(mode, duration, quality),
-    [mode, duration, quality],
+    () => estimateCredits(mode, duration, quality, videoModel),
+    [mode, duration, quality, videoModel],
   );
 
   const isVideoMode = mode !== "text-to-image";
@@ -342,7 +346,12 @@ export function StudioApp() {
 
     setGenerating(true);
     setError(null);
-    setStatusMessage(`Calling live OpenArt MCP at ${MCP_ENDPOINT}…`);
+    const provider = isVideoMode && videoModel === "gemini-omni" ? "gemini" : "openart";
+    setStatusMessage(
+      provider === "gemini"
+        ? "Generating video with Gemini Omni Flash…"
+        : `Calling live OpenArt MCP at ${MCP_ENDPOINT}…`,
+    );
 
     const optimisticId = `local_${Date.now()}`;
     const optimistic: GalleryItem = {
@@ -355,6 +364,8 @@ export function StudioApp() {
       createdAt: new Date().toISOString(),
       status: "running",
       creditsUsed: creditCost,
+      videoModel: isVideoMode ? videoModel : undefined,
+      provider: isVideoMode ? provider : undefined,
     };
     setGallery((prev) => [optimistic, ...prev]);
 
@@ -367,6 +378,7 @@ export function StudioApp() {
           prompt: currentPrompt,
           duration,
           quality,
+          videoModel: isVideoMode ? videoModel : undefined,
           startFrame,
           referenceImage,
           waitForResult: true,
@@ -378,9 +390,10 @@ export function StudioApp() {
         raw?: unknown;
       };
 
+      const responseProvider = data.provider ?? provider;
       setLiveMcpResponse(
         formatLivePayload({
-          route: `POST /api/generate → ${data.tool ?? (isVideoMode ? "openart_generate_video" : "openart_generate_image")}`,
+          route: `POST /api/generate → ${data.tool ?? (isVideoMode ? (responseProvider === "gemini" ? "gemini.interactions.create" : "openart_generate_video") : "openart_generate_image")}`,
           httpStatus: res.status,
           mcpEndpoint: data.mcpEndpoint ?? MCP_ENDPOINT,
           live: data.live,
@@ -400,8 +413,16 @@ export function StudioApp() {
       let error = data.error;
 
       if (status === "running" && data.historyId) {
-        setStatusMessage("Video is still rendering on OpenArt — waiting for the final file…");
-        const polled = await pollGenerationStatus(data.historyId, mediaType);
+        setStatusMessage(
+          responseProvider === "gemini"
+            ? "Gemini is still rendering the video…"
+            : "Video is still rendering on OpenArt — waiting for the final file…",
+        );
+        const polled = await pollGenerationStatus(
+          data.historyId,
+          mediaType,
+          responseProvider,
+        );
         url = polled.url;
         playbackUrl = polled.playbackUrl ?? playbackUrl;
         thumbnailUrl = polled.thumbnailUrl ?? thumbnailUrl;
@@ -421,18 +442,26 @@ export function StudioApp() {
                 thumbnailUrl,
                 status,
                 error,
+                provider: responseProvider,
+                videoModel: data.videoModel ?? (isVideoMode ? videoModel : undefined),
               }
             : item,
         ),
       );
 
       if (status === "completed") {
-        setStatusMessage("Live OpenArt MCP generation complete.");
+        setStatusMessage(
+          responseProvider === "gemini"
+            ? "Gemini Omni Flash generation complete."
+            : "Live OpenArt MCP generation complete.",
+        );
       } else if (status === "failed") {
         setError(error || "Generation failed");
       } else {
         setStatusMessage(
-          "Generation is still running on OpenArt MCP. Check back in the gallery shortly.",
+          responseProvider === "gemini"
+            ? "Gemini video is still rendering. Check back in the gallery shortly."
+            : "Generation is still running on OpenArt MCP. Check back in the gallery shortly.",
         );
       }
 
@@ -554,8 +583,15 @@ export function StudioApp() {
               <VideoControls
                 duration={duration}
                 quality={quality}
+                videoModel={videoModel}
                 onDurationChange={setDuration}
                 onQualityChange={setQuality}
+                onVideoModelChange={(value) => {
+                  setVideoModel(value);
+                  if (value === "gemini-omni") {
+                    setQuality("standard");
+                  }
+                }}
               />
             )}
 

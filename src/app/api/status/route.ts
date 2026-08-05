@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getGeminiVideoStatus } from "@/lib/gemini-video";
 import {
   callOpenArtTool,
   collectMediaUrls,
@@ -19,9 +20,23 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const historyId = searchParams.get("historyId");
   const mediaType = (searchParams.get("mediaType") ?? "video") as "image" | "video";
+  const provider = searchParams.get("provider") ?? "openart";
 
   if (!historyId) {
     return NextResponse.json({ error: "historyId is required" }, { status: 400 });
+  }
+
+  if (provider === "gemini") {
+    const result = await getGeminiVideoStatus(historyId);
+    return NextResponse.json({
+      historyId,
+      status: result.status,
+      url: result.url,
+      playbackUrl: result.playbackUrl,
+      provider: "gemini",
+      pollAfterSeconds: result.status === "COMPLETED" ? undefined : 5,
+      error: result.error,
+    });
   }
 
   try {

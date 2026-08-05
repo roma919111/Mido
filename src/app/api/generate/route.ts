@@ -1,4 +1,9 @@
 import { NextResponse } from "next/server";
+import {
+  GeminiConfigError,
+  generateGeminiVideo,
+  isGeminiConfigured,
+} from "@/lib/gemini-video";
 import { buildGenerationParams, estimateCredits } from "@/lib/models";
 import {
   callOpenArtTool,
@@ -76,6 +81,7 @@ export async function POST(request: Request) {
     const prompt = body.prompt?.trim();
     const duration = (body.duration ?? 5) as VideoDuration;
     const quality = (body.quality ?? "standard") as VideoQuality;
+    const videoModel = body.videoModel ?? "pixverse";
     const waitForResult = body.waitForResult !== false;
 
     if (!mode || !prompt) {
@@ -89,16 +95,64 @@ export async function POST(request: Request) {
       );
     }
 
-    const creditsUsed = estimateCredits(mode, duration, quality);
+    const creditsUsed = estimateCredits(mode, duration, quality, videoModel);
 
-    const { model, toolMode, media, params } = buildGenerationParams({
+    const { model, toolMode, media, provider, params } = buildGenerationParams({
       mode,
       prompt,
       duration,
       quality,
+      videoModel,
       startFrame: body.startFrame,
       referenceImage: body.referenceImage,
     });
+
+    if (media === "video" && provider === "gemini") {
+      if (!isGeminiConfigured()) {
+        return NextResponse.json(
+          {
+            error:
+              "Gemini Omni Flash is selected but GEMINI_API_KEY is not configured on the server.",
+            live: false,
+            provider: "gemini",
+          },
+          { status: 401 },
+        );
+      }
+
+      if (!waitForResult) {
+        return NextResponse.json(
+          {
+            error: "Gemini video generation requires waitForResult=true",
+            provider: "gemini",
+          },
+          { status: 400 },
+        );
+      }
+
+      const result = await generateGeminiVideo({
+        mode,
+        prompt,
+        duration,
+        startFrame: body.startFrame,
+        referenceImage: body.referenceImage,
+      });
+
+      return NextResponse.json({
+        historyId: result.interactionId,
+        status: result.status,
+        mediaType: "video",
+        mode,
+        prompt,
+        creditsUsed,
+        url: result.url,
+        playbackUrl: result.playbackUrl,
+        provider: "gemini",
+        videoModel: "gemini-omni",
+        tool: "gemini.interactions.create",
+        live: true,
+      });
+    }
 
     const toolName =
       media === "image" ? "openart_generate_image" : "openart_generate_video";
@@ -215,6 +269,17 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
+    if (error instanceof GeminiConfigError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          live: false,
+          provider: "gemini",
+        },
+        { status: 401 },
+      );
+    }
+
     if (error instanceof OpenArtConfigError) {
       return NextResponse.json(
         {

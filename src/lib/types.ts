@@ -4,6 +4,10 @@ export type VideoDuration = 5 | 10;
 
 export type VideoQuality = "standard" | "pro";
 
+export type VideoModel = "pixverse" | "gemini-omni";
+
+export type VideoProvider = "openart" | "gemini";
+
 export type MediaType = "image" | "video";
 
 export interface VisualReference {
@@ -27,6 +31,8 @@ export interface GalleryItem {
   status: "pending" | "running" | "completed" | "failed" | "cancelled";
   error?: string;
   creditsUsed?: number;
+  videoModel?: VideoModel;
+  provider?: VideoProvider;
 }
 
 export interface AccountInfo {
@@ -46,6 +52,7 @@ export interface GenerateRequest {
   prompt: string;
   duration?: VideoDuration;
   quality?: VideoQuality;
+  videoModel?: VideoModel;
   startFrame?: VisualReference | null;
   referenceImage?: VisualReference | null;
   waitForResult?: boolean;
@@ -63,6 +70,8 @@ export interface GenerateResponse {
   playbackUrl?: string;
   thumbnailUrl?: string;
   resourceIds?: string[];
+  provider?: VideoProvider;
+  videoModel?: VideoModel;
   error?: string;
   pollAfterSeconds?: number;
   live?: boolean;

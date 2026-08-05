@@ -83,7 +83,7 @@ export function MediaGallery({ items }: MediaGalleryProps) {
                   ) : (
                     <video
                       key={`${item.id}-${retryCounts[item.id] ?? 0}`}
-                      src={toPlaybackUrl(item.url, "video")}
+                      src={item.playbackUrl || toPlaybackUrl(item.url, "video")}
                       controls
                       playsInline
                       preload="metadata"
