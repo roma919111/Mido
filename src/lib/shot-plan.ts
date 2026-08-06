@@ -8,6 +8,8 @@
  */
 
 import { resolveGeminiVisionModel } from "@/lib/gemini-constants";
+import {
+  countActionVerbs,
   injectEntitiesIntoAction,
   splitActionClauses,
   splitByActionVerbs,

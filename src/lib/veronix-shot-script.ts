@@ -7,6 +7,10 @@
  */
 
 import { resolveGeminiTextModel } from "@/lib/gemini-constants";
+import {
+  countActionVerbs,
+  splitActionClauses,
+} from "@/lib/prompt-chain";
 import { hasArabic, isMostlyArabic } from "@/lib/prompt-translate";
 
 export type ShotRole = "action" | "subject_state" | "object_state";
