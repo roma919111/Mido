@@ -85,6 +85,22 @@ function buildMediaApiPath(
         ? "/api/media/poster"
         : "/api/media/stream";
 
+  const historyId = input.historyId?.trim();
+  // Provider tasks: resolve via historyId (fresh CDN URL). Stale `url` in the DB
+  // often 404s on PixVerse/BytePlus for stream + poster extraction.
+  if (
+    historyId &&
+    (historyId.startsWith("pv:") || historyId.startsWith("bp:")) &&
+    (mode === "poster" || mode === "stream")
+  ) {
+    const qs = new URLSearchParams({
+      historyId,
+      type: mediaType,
+      filename,
+    });
+    return `${endpoint}?${qs.toString()}`;
+  }
+
   const existing = input.url?.trim();
   // Branded files live under `.data/generations` — always proxy (never raw /generations).
   if (existing?.startsWith("/generations/")) {

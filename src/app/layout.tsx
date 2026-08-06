@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import { Outfit, Syne } from "next/font/google";
 import { LocaleProvider } from "@/components/veronix/LocaleProvider";
+import { AnalyticsScripts } from "@/components/veronix/AnalyticsScripts";
+import { ReferralCapture } from "@/components/veronix/ReferralCapture";
 import { getRequestDictionary, localeDir } from "@/lib/i18n";
+import { modelsItemListJsonLd, SEO_KEYWORDS } from "@/lib/seo";
+import { Suspense } from "react";
 import "./globals.css";
 
 const syne = Syne({
@@ -26,16 +30,7 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     description: t.meta.description,
     applicationName: "Veronix.ai",
-    keywords: [
-      "Veronix",
-      "Veronix.ai",
-      "vyronix.app",
-      "AI video",
-      "AI image",
-      "توليد فيديو",
-      "ذكاء اصطناعي",
-      "AI studio",
-    ],
+    keywords: SEO_KEYWORDS,
     authors: [{ name: "Veronix.ai", url: "https://vyronix.app" }],
     creator: "Veronix.ai",
     publisher: "Veronix.ai",
@@ -135,6 +130,7 @@ export default async function RootLayout({
       },
       description: t.meta.description,
     },
+    modelsItemListJsonLd(),
   ];
 
   return (
@@ -144,11 +140,17 @@ export default async function RootLayout({
       className={`${syne.variable} ${outfit.variable} h-full antialiased`}
     >
       <body className="min-h-full overflow-x-hidden font-sans">
+        <AnalyticsScripts />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
-        <LocaleProvider initialLocale={locale}>{children}</LocaleProvider>
+        <LocaleProvider initialLocale={locale}>
+          <Suspense fallback={null}>
+            <ReferralCapture />
+          </Suspense>
+          {children}
+        </LocaleProvider>
       </body>
     </html>
   );

@@ -36,6 +36,7 @@ export type Dictionary = {
   nav: {
     home: string;
     inspire: string;
+    editing: string;
     create: string;
     tools: string;
     assets: string;
@@ -44,6 +45,8 @@ export type Dictionary = {
     createImage: string;
     createVideoHint: string;
     createImageHint: string;
+    modelsStrip: string;
+    invite: string;
   };
   header: {
     upgrade: string;
@@ -72,6 +75,7 @@ export type Dictionary = {
     privacy: string;
     terms: string;
     pricing: string;
+    models: string;
     rights: string;
     backHome: string;
   };
@@ -182,10 +186,14 @@ export type Dictionary = {
     play: string;
     pause: string;
     edit: string;
+    sendToStudio: string;
+    selectedCount: string;
+    clearSelection: string;
     delete: string;
     download: string;
     showMore: string;
     showLess: string;
+    promptLabel: string;
     noPrompt: string;
     swipeUp: string;
     gridHint: string;
@@ -199,6 +207,143 @@ export type Dictionary = {
     mute: string;
     unmute: string;
     zoom: string;
+  };
+  models: {
+    eyebrow: string;
+    title: string;
+    subtitle: string;
+    videoTitle: string;
+    videoSub: string;
+    imageTitle: string;
+    imageSub: string;
+    available: string;
+    soon: string;
+    video: string;
+    image: string;
+    footerNote: string;
+    detailAbout: string;
+    detailVideoBody: string;
+    detailImageBody: string;
+    detailAvailable: string;
+    detailSoon: string;
+    detailCta: string;
+  };
+  invite: {
+    eyebrow: string;
+    title: string;
+    subtitle: string;
+    loginRequired: string;
+    loading: string;
+    rewardTitle: string;
+    rewardYou: string;
+    rewardFriend: string;
+    yourLink: string;
+    copy: string;
+    share: string;
+    copied: string;
+    copyFailed: string;
+    shared: string;
+    shareFailed: string;
+  };
+  editStudio: {
+    tab: string;
+    tabList: string;
+    title: string;
+    subtitle: string;
+    trim: string;
+    trimStart: string;
+    trimEnd: string;
+    trimLock: string;
+    aspect: string;
+    filters: string;
+    filterNone: string;
+    filterCinematic: string;
+    filterVintage: string;
+    filterContrast: string;
+    filterBw: string;
+    export: string;
+    exporting: string;
+    exportDone: string;
+    exportFailed: string;
+    clear: string;
+    noVideo: string;
+    noVideoHint: string;
+    clientNote: string;
+    timeline: string;
+    clipCount: string;
+    moveBack: string;
+    moveForward: string;
+    deleteClip: string;
+    mergeExport: string;
+    exportActiveClip: string;
+    clearAll: string;
+    transition: string;
+    transitionNone: string;
+    transitionFade: string;
+    transitionDissolve: string;
+    transitionWipe: string;
+    subtitlesTitle: string;
+    manualDialogueHint: string;
+    addDialogueLine: string;
+    addDialogueAtPlayhead: string;
+    dialogueStartTime: string;
+    dialogueEndTime: string;
+    deleteDialogueLine: string;
+    extractAllHint: string;
+    manualDialogueLabel: string;
+    setStartToPlayhead: string;
+    setEndToPlayhead: string;
+    dialogueSpeakerOptional: string;
+    charactersOptionalLabel: string;
+    subtitleClock: string;
+    subtitleWaiting: string;
+    dialoguePlaceholder: string;
+    dialogueSpeaker: string;
+    dialogueLinesEmpty: string;
+    charactersTitle: string;
+    characterNamePlaceholder: string;
+    addCharacter: string;
+    deleteCharacter: string;
+    charactersHint: string;
+    characterExists: string;
+    selectCharacterFirst: string;
+    extractCharacterDialogue: string;
+    extractCharacterDialoguePick: string;
+    extractAllSpeech: string;
+    extractAllSpeechDone: string;
+    extractFallback: string;
+    extractAllCharacters: string;
+    extractDoneForCharacter: string;
+    extractAllDone: string;
+    noDialogueForCharacter: string;
+    noDialogueInClip: string;
+    translateToArabic: string;
+    translating: string;
+    translateFailed: string;
+    extractDialogue: string;
+    extractAllDialogue: string;
+    extractingDialogue: string;
+    extractPreparingAudio: string;
+    extractTranscribingProgress: string;
+    extractFailed: string;
+    noAudioTrack: string;
+    extractDone: string;
+    subtitlePosition: string;
+    subtitlePositionBottom: string;
+    subtitlePositionTop: string;
+    subtitlePositionCenter: string;
+    subtitleSize: string;
+    subtitleSizeSmall: string;
+    subtitleSizeMedium: string;
+    subtitleSizeLarge: string;
+    subtitleBackground: string;
+    subtitleBgTransparent: string;
+    subtitleBgBox: string;
+    subtitleBgShadow: string;
+    pressHoldHint: string;
+    subtitlePreviewSample: string;
+    lookAndFeel: string;
+    previewBadge: string;
   };
   lang: {
     ar: string;
@@ -222,6 +367,7 @@ export const ar: Dictionary = {
       "Veronix.ai منصة رسمية على vyronix.app لتوليد الصور والفيديو بالذكاء الاصطناعي. سجّل حسابك، جرّب أول فيديو مجانًا، واختر الباقة المناسبة.",
     homeBullets: [
       "أول فيديو Veronix مجاني مرة واحدة",
+      "موديلات: VYRONIX · PixVerse · MiniMax H3 · Gemini · Kling · Seedance",
       "توليد صور وفيديو 480p / 720p",
       "محفظة كريدت وباقات شهرية",
       "واجهة عربية وإنجليزية",
@@ -230,6 +376,7 @@ export const ar: Dictionary = {
   nav: {
     home: "الرئيسية",
     inspire: "إلهام",
+    editing: "Vyronix Editing",
     create: "إنشاء",
     tools: "أدوات",
     assets: "أصولي",
@@ -238,6 +385,8 @@ export const ar: Dictionary = {
     createImage: "صور VYRONIX",
     createVideoHint: "4–15 ثانية · 480p / 720p",
     createImageHint: "جودة 2K · بدون واترمارك",
+    modelsStrip: "موديلات الذكاء الاصطناعي",
+    invite: "ادعُ أصدقاء",
   },
   header: {
     upgrade: "ترقية",
@@ -267,6 +416,7 @@ export const ar: Dictionary = {
     privacy: "الخصوصية",
     terms: "الشروط",
     pricing: "الباقات",
+    models: "الموديلات",
     rights: "جميع الحقوق محفوظة.",
     backHome: "العودة للرئيسية",
   },
@@ -411,10 +561,14 @@ export const ar: Dictionary = {
     play: "تشغيل",
     pause: "إيقاف",
     edit: "تعديل",
+    sendToStudio: "نقل إلى الاستديو",
+    selectedCount: "تم تحديد {n} فيديو",
+    clearSelection: "إلغاء التحديد",
     delete: "حذف",
     download: "تحميل",
     showMore: "عرض المزيد",
     showLess: "عرض أقل",
+    promptLabel: "الوصف الكامل",
     noPrompt: "بدون وصف",
     swipeUp: "اسحب للأعلى",
     gridHint: "شبكة الفيديوهات",
@@ -428,6 +582,146 @@ export const ar: Dictionary = {
     mute: "كتم الصوت",
     unmute: "تشغيل الصوت",
     zoom: "زوم الشبكة",
+  },
+  models: {
+    eyebrow: "الموديلات",
+    title: "موديلات الصور والفيديو بالذكاء الاصطناعي",
+    subtitle:
+      "اختر من VYRONIX وPixVerse وMiniMax H3 وGemini Omni Flash وKling وSeedance وعشرات الموديلات الأخرى على Veronix.ai — صور وفيديو من نص أو صورة مرجعية.",
+    videoTitle: "موديلات الفيديو",
+    videoSub: "Text-to-video و image-to-video مع دعم الشخصيات والإطارات.",
+    imageTitle: "موديلات الصور",
+    imageSub: "Text-to-image و image-to-image بجودة عالية.",
+    available: "متاح",
+    soon: "قريبًا",
+    video: "فيديو",
+    image: "صورة",
+    footerNote:
+      "اضغط أي موديل للانتقال إلى الاستوديو. الموديلات القادمة تظهر للمعاينة وستُفعَّل تدريجيًا.",
+    detailAbout: "عن الموديل",
+    detailVideoBody: "أنشئ فيديوهات احترافية بالذكاء الاصطناعي باستخدام",
+    detailImageBody: "أنشئ صورًا بالذكاء الاصطناعي باستخدام",
+    detailAvailable: " — متاح الآن على Veronix.ai.",
+    detailSoon: " — قريبًا على Veronix.ai.",
+    detailCta: "ابدأ الإنشاء",
+  },
+  invite: {
+    eyebrow: "نمو",
+    title: "ادعُ أصدقاءك واكسب كريدت",
+    subtitle:
+      "شارك رابطك. عندما يسجّل صديق حسابًا جديدًا، يحصل على كريدت مجاني وأنت تكسب مكافأة.",
+    loginRequired: "سجّل الدخول لتحصل على رابط الدعوة الخاص بك.",
+    loading: "جاري تحميل رابطك…",
+    rewardTitle: "المكافآت",
+    rewardYou: "أنت: +{n} كريدت لكل صديق يسجّل",
+    rewardFriend: "صديقك: +{n} كريدت عند التسجيل",
+    yourLink: "رابط الدعوة",
+    copy: "نسخ",
+    share: "مشاركة",
+    copied: "تم نسخ الرابط",
+    copyFailed: "تعذّر النسخ",
+    shared: "تمت المشاركة",
+    shareFailed: "تعذّرت المشاركة",
+  },
+  editStudio: {
+    tab: "الإيديتينج",
+    tabList: "تبويبات الاستوديو",
+    title: "استوديو الإيديتينج",
+    subtitle: "قصّ الفيديو، غيّر النسبة، طبّق فلاتر، وصدّر — كل المعالجة على جهازك بدون تحميل على السيرفر.",
+    trim: "قص الفيديو",
+    trimStart: "البداية",
+    trimEnd: "النهاية",
+    trimLock: "تثبيت القص",
+    aspect: "نسبة العرض",
+    filters: "الفلاتر",
+    filterNone: "بدون",
+    filterCinematic: "سينمائي",
+    filterVintage: "كلاسيك",
+    filterContrast: "تباين",
+    filterBw: "أبيض وأسود",
+    export: "تصدير / تحميل",
+    exporting: "جاري التصدير",
+    exportDone: "تم التحميل بنجاح",
+    exportFailed: "فشل التصدير — جرّب فيديو أقصر أو متصفحًا آخر",
+    clear: "مسح الفيديو",
+    noVideo: "لا يوجد فيديو في الاستديو",
+    noVideoHint: "من «أصولي» أو نتائج التوليد، اضغط «نقل إلى الاستديو» لتحميل مقطع هنا.",
+    clientNote: "المعالجة بالكامل على متصفحك (FFmpeg.wasm) — لا استهلاك لموارد السيرفر.",
+    timeline: "الخط الزمني",
+    clipCount: "{n} مقطع",
+    moveBack: "تأخير",
+    moveForward: "تقديم",
+    deleteClip: "حذف",
+    mergeExport: "دمج الفيديو",
+    exportActiveClip: "تصدير المقطع النشط",
+    clearAll: "مسح الكل",
+    transition: "انتقال",
+    transitionNone: "بدون",
+    transitionFade: "تلاشي",
+    transitionDissolve: "ذوبان",
+    transitionWipe: "مسح",
+    subtitlesTitle: "الترجمة والترجمة النصية",
+    manualDialogueHint: "أضف سطوراً يدوياً أو عدّل الأوقات (مثال: 0:05 أو 1:30). يمكنك أيضاً الاستخراج التلقائي من الصوت أدناه.",
+    addDialogueLine: "إضافة سطر",
+    addDialogueAtPlayhead: "إضافة عند الموضع الحالي",
+    dialogueStartTime: "البداية",
+    dialogueEndTime: "النهاية",
+    deleteDialogueLine: "حذف السطر",
+    extractAllHint: "استخراج الحوار على السيرفر (ffmpeg + Gemini) — طلب واحد مع توقيت كل سطر.",
+    manualDialogueLabel: "كتابة يدوية",
+    setStartToPlayhead: "← البداية هنا",
+    setEndToPlayhead: "← النهاية هنا",
+    dialogueSpeakerOptional: "الشخصية (اختياري)",
+    charactersOptionalLabel: "تصفية حسب شخصية (اختياري)",
+    subtitleClock: "وقت الترجمة",
+    subtitleWaiting: "بانتظار السطر التالي",
+    dialoguePlaceholder: "اكتب الحوار هنا…",
+    dialogueSpeaker: "الشخصية",
+    dialogueLinesEmpty: "لا توجد سطور — اضغط «إضافة سطر» للكتابة يدوياً، أو استخدم الاستخراج التلقائي",
+    charactersTitle: "الشخصيات",
+    characterNamePlaceholder: "اسم الشخصية (مثال: أحمد)",
+    addCharacter: "إضافة",
+    deleteCharacter: "حذف الشخصية",
+    charactersHint: "اختياري — لاستخراج حوار شخصية محددة فقط. الاستخراج العام لا يحتاج أسماء.",
+    characterExists: "هذه الشخصية مضافة مسبقاً",
+    selectCharacterFirst: "اختر شخصية أولاً",
+    extractCharacterDialogue: "استخراج حوار {name}",
+    extractCharacterDialoguePick: "استخراج حوار الشخصية",
+    extractAllSpeech: "استخراج كل الحوار (بدون اسم شخصية)",
+    extractAllSpeechDone: "تم استخراج كل الحوار",
+    extractFallback: "تم الاستخراج — راجع أسماء الشخصيات وعدّلها إن لزم",
+    extractAllCharacters: "استخراج كل الشخصيات",
+    extractDoneForCharacter: "تم استخراج حوار {name}",
+    extractAllDone: "تم استخراج حوار كل الشخصيات",
+    noDialogueForCharacter: "لم يُعثر على حوار لهذه الشخصية في المقطع",
+    noDialogueInClip: "لم يُعثر على حوار — أضف السطور يدوياً أو جرّب مقطعاً أقصر",
+    translateToArabic: "ترجمة للعربية",
+    translating: "جاري الترجمة…",
+    translateFailed: "تعذّرت الترجمة — حاول مرة أخرى",
+    extractDialogue: "استخراج الحوار من المقطع",
+    extractAllDialogue: "استخراج حوار كل المقاطع",
+    extractingDialogue: "جاري استخراج الحوار…",
+    extractPreparingAudio: "جاري تحضير الصوت على جهازك…",
+    extractTranscribingProgress: "جاري تحليل الصوت {current}/{total}…",
+    extractFailed: "تعذّر استخراج الحوار — حاول مرة أخرى",
+    noAudioTrack: "لا يوجد مسار صوت في هذا المقطع — جرّب فيديو فيه كلام أو فعّل الصوت عند التوليد",
+    extractDone: "تم استخراج الحوار",
+    subtitlePosition: "موضع النص",
+    subtitlePositionBottom: "أسفل",
+    subtitlePositionTop: "أعلى",
+    subtitlePositionCenter: "وسط",
+    subtitleSize: "حجم الخط",
+    subtitleSizeSmall: "صغير",
+    subtitleSizeMedium: "متوسط",
+    subtitleSizeLarge: "كبير",
+    subtitleBackground: "خلفية النص",
+    subtitleBgTransparent: "شفاف",
+    subtitleBgBox: "صندوق أسود",
+    subtitleBgShadow: "ظل",
+    pressHoldHint: "👇 اضغط مطولاً على أي زر — شاهد الفيديو — ارفع إصبعك للحفظ",
+    subtitlePreviewSample: "معاينة الترجمة على الفيديو",
+    lookAndFeel: "المظهر — نسبة العرض والفلاتر",
+    previewBadge: "معاينة",
   },
   lang: {
     ar: "العربية",
@@ -451,6 +745,7 @@ export const en: Dictionary = {
       "Veronix.ai is the official studio on vyronix.app for AI image and video generation. Sign up, try your first free video, and pick a plan that fits.",
     homeBullets: [
       "One free Veronix video per new empty wallet",
+      "Models: VYRONIX · PixVerse · MiniMax H3 · Gemini · Kling · Seedance",
       "Image & video at 480p / 720p",
       "Credit wallet and monthly plans",
       "Arabic and English interface",
@@ -459,6 +754,7 @@ export const en: Dictionary = {
   nav: {
     home: "Home",
     inspire: "Inspire",
+    editing: "Vyronix Editing",
     create: "Create",
     tools: "Tools",
     assets: "Assets",
@@ -467,6 +763,8 @@ export const en: Dictionary = {
     createImage: "VYRONIX Image",
     createVideoHint: "4–15s · 480p / 720p",
     createImageHint: "2K quality · no watermark",
+    modelsStrip: "AI models",
+    invite: "Invite",
   },
   header: {
     upgrade: "Upgrade",
@@ -496,6 +794,7 @@ export const en: Dictionary = {
     privacy: "Privacy",
     terms: "Terms",
     pricing: "Pricing",
+    models: "Models",
     rights: "All rights reserved.",
     backHome: "Back to home",
   },
@@ -640,10 +939,14 @@ export const en: Dictionary = {
     play: "Play",
     pause: "Pause",
     edit: "Edit",
+    sendToStudio: "Send to studio",
+    selectedCount: "{n} videos selected",
+    clearSelection: "Clear selection",
     delete: "Delete",
     download: "Download",
     showMore: "Show more",
     showLess: "Show less",
+    promptLabel: "Full prompt",
     noPrompt: "No description",
     swipeUp: "Swipe up",
     gridHint: "Video grid",
@@ -657,6 +960,146 @@ export const en: Dictionary = {
     mute: "Mute",
     unmute: "Unmute",
     zoom: "Grid zoom",
+  },
+  models: {
+    eyebrow: "Models",
+    title: "AI Image & Video Models",
+    subtitle:
+      "Choose from VYRONIX, PixVerse, MiniMax H3, Gemini Omni Flash, Kling, Seedance, and dozens more on Veronix.ai — images and video from text or reference frames.",
+    videoTitle: "Video models",
+    videoSub: "Text-to-video and image-to-video with characters and frame control.",
+    imageTitle: "Image models",
+    imageSub: "Text-to-image and image-to-image at high quality.",
+    available: "Available",
+    soon: "Coming soon",
+    video: "Video",
+    image: "Image",
+    footerNote:
+      "Tap any model to open the studio. Upcoming models are listed for preview and roll out over time.",
+    detailAbout: "About this model",
+    detailVideoBody: "Create professional AI videos with",
+    detailImageBody: "Create AI images with",
+    detailAvailable: " — available now on Veronix.ai.",
+    detailSoon: " — coming soon on Veronix.ai.",
+    detailCta: "Start creating",
+  },
+  invite: {
+    eyebrow: "Growth",
+    title: "Invite friends, earn credits",
+    subtitle:
+      "Share your link. When a friend signs up, they get free credits and you earn a bonus.",
+    loginRequired: "Sign in to get your personal invite link.",
+    loading: "Loading your link…",
+    rewardTitle: "Rewards",
+    rewardYou: "You: +{n} credits per friend signup",
+    rewardFriend: "Friend: +{n} credits on signup",
+    yourLink: "Invite link",
+    copy: "Copy",
+    share: "Share",
+    copied: "Link copied",
+    copyFailed: "Could not copy",
+    shared: "Shared",
+    shareFailed: "Could not share",
+  },
+  editStudio: {
+    tab: "Editing",
+    tabList: "Studio tabs",
+    title: "Editing studio",
+    subtitle: "Trim, change aspect ratio, apply filters, and export — all processing runs in your browser with zero server load.",
+    trim: "Trim video",
+    trimStart: "Start",
+    trimEnd: "End",
+    trimLock: "Lock trim",
+    aspect: "Aspect ratio",
+    filters: "Filters",
+    filterNone: "None",
+    filterCinematic: "Cinematic",
+    filterVintage: "Vintage",
+    filterContrast: "Contrast",
+    filterBw: "B&W",
+    export: "Export / download",
+    exporting: "Exporting",
+    exportDone: "Download started",
+    exportFailed: "Export failed — try a shorter clip or another browser",
+    clear: "Clear video",
+    noVideo: "No video loaded in the studio",
+    noVideoHint: "From Assets or generation results, tap “Send to studio” to load a clip here.",
+    clientNote: "100% client-side processing (FFmpeg.wasm) — no server CPU/GPU used.",
+    timeline: "Timeline",
+    clipCount: "{n} clips",
+    moveBack: "Move back",
+    moveForward: "Move forward",
+    deleteClip: "Delete",
+    mergeExport: "Merge & export",
+    exportActiveClip: "Export active clip",
+    clearAll: "Clear all",
+    transition: "Transition",
+    transitionNone: "None",
+    transitionFade: "Fade",
+    transitionDissolve: "Dissolve",
+    transitionWipe: "Wipe",
+    subtitlesTitle: "Subtitles & dialogue",
+    manualDialogueHint: "Add lines manually or edit times (e.g. 0:05 or 1:30). You can also auto-extract from audio below.",
+    addDialogueLine: "Add line",
+    addDialogueAtPlayhead: "Add at playhead",
+    dialogueStartTime: "Start",
+    dialogueEndTime: "End",
+    deleteDialogueLine: "Delete line",
+    extractAllHint: "Dialogue extraction runs on the server (ffmpeg + Gemini) — one request with timestamps.",
+    manualDialogueLabel: "Manual entry",
+    setStartToPlayhead: "← Start here",
+    setEndToPlayhead: "← End here",
+    dialogueSpeakerOptional: "Character (optional)",
+    charactersOptionalLabel: "Filter by character (optional)",
+    subtitleClock: "Subtitle time",
+    subtitleWaiting: "waiting for next line",
+    dialoguePlaceholder: "Type dialogue here…",
+    dialogueSpeaker: "Character",
+    dialogueLinesEmpty: "No lines yet — tap “Add line” to type manually, or use auto-extract",
+    charactersTitle: "Characters",
+    characterNamePlaceholder: "Character name (e.g. Ahmed)",
+    addCharacter: "Add",
+    deleteCharacter: "Remove character",
+    charactersHint: "Optional — only needed to extract one character's lines. General extraction needs no names.",
+    characterExists: "This character is already added",
+    selectCharacterFirst: "Select a character first",
+    extractCharacterDialogue: "Extract {name}'s dialogue",
+    extractCharacterDialoguePick: "Extract character dialogue",
+    extractAllSpeech: "Extract all dialogue (no character name)",
+    extractAllSpeechDone: "All dialogue extracted",
+    extractFallback: "Extracted — review character names and edit if needed",
+    extractAllCharacters: "Extract all characters",
+    extractDoneForCharacter: "Extracted dialogue for {name}",
+    extractAllDone: "Extracted all characters' dialogue",
+    noDialogueForCharacter: "No dialogue found for this character in the clip",
+    noDialogueInClip: "No dialogue detected — add lines manually or try a shorter clip",
+    translateToArabic: "Translate to Arabic",
+    translating: "Translating…",
+    translateFailed: "Translation failed — try again",
+    extractDialogue: "Extract dialogue from clip",
+    extractAllDialogue: "Extract dialogue from all clips",
+    extractingDialogue: "Extracting dialogue…",
+    extractPreparingAudio: "Preparing audio on your device…",
+    extractTranscribingProgress: "Analyzing audio {current}/{total}…",
+    extractFailed: "Could not extract dialogue — try again",
+    noAudioTrack: "No clear audio in this clip",
+    extractDone: "Dialogue extracted",
+    subtitlePosition: "Text position",
+    subtitlePositionBottom: "Bottom",
+    subtitlePositionTop: "Top",
+    subtitlePositionCenter: "Center",
+    subtitleSize: "Font size",
+    subtitleSizeSmall: "Small",
+    subtitleSizeMedium: "Medium",
+    subtitleSizeLarge: "Large",
+    subtitleBackground: "Text background",
+    subtitleBgTransparent: "Transparent",
+    subtitleBgBox: "Black box",
+    subtitleBgShadow: "Shadow",
+    pressHoldHint: "👇 Press and hold any option — watch the video — release to save",
+    subtitlePreviewSample: "Subtitle preview on video",
+    lookAndFeel: "Look — aspect ratio & filters",
+    previewBadge: "Preview",
   },
   lang: {
     ar: "العربية",

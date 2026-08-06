@@ -5,13 +5,15 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "next start --hostname 0.0.0.0 --port ${PORT:-8080}",
     "lint": "eslint",
     "tunnel:vyronix": "npx --yes localtunnel --port 3000 --subdomain vyronix-ai",
     "tunnel:named": "bash scripts/run-named-tunnel.sh",
     "verify:pricing": "node scripts/verify-pricing.mjs"
   },
   "dependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "bcryptjs": "^3.0.3",
     "jose": "^6.2.4",

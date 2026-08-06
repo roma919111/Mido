@@ -18,9 +18,10 @@ export async function GET(request: Request) {
   const incoming = new URL(request.url);
   const next = incoming.searchParams.get("next") || "/";
   const paywall = incoming.searchParams.get("paywall");
+  const ref = incoming.searchParams.get("ref")?.trim().toLowerCase() || undefined;
   const nextPath =
     paywall === "1" ? `/pricing?paywall=1` : next.startsWith("/") ? next : "/";
 
-  const state = createOAuthState(nextPath);
+  const state = createOAuthState(nextPath, ref);
   return NextResponse.redirect(await buildGoogleAuthUrl(state, request));
 }

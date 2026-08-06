@@ -12,6 +12,21 @@ import {
   parsePixVerseHistoryId,
   pixVerseFailureMessage,
 } from "@/lib/pixverse";
+import {
+  downloadMiniMaxVideo,
+  getMiniMaxVideoTask,
+  parseMiniMaxHistoryId,
+} from "@/lib/minimax-video";
+import {
+  extractVideoPart,
+  getGeminiInteraction,
+  mapGeminiInteractionStatus,
+  parseGeminiHistoryId,
+  persistGeminiVideoFromInteraction,
+} from "@/lib/gemini-video";
+import { MINIMAX_HARD_FAIL_MS } from "@/lib/minimax-constants";
+import { GEMINI_JOB_TIMEOUT_MS } from "@/lib/gemini-constants";
+import { recoverUserProviderAssets } from "@/lib/recover-provider-assets";
 import { getCurrentUser } from "@/lib/customer-auth";
 import {
   listAssetsForUser,
@@ -172,12 +187,112 @@ async function stitchPendingJobs(userId: string) {
   }
 }
 
-/** Refresh running assets from BytePlus, PixVerse, or legacy OpenArt ids. */
+/** Refresh running assets from BytePlus, PixVerse, MiniMax, or Gemini ids. */
 async function syncRunningAssets(userId: string) {
+  const assetAgeMs = (createdAt?: string | null) => {
+    const createdMs = Date.parse(createdAt || "");
+    return Number.isFinite(createdMs) && createdMs > 0 ? Date.now() - createdMs : 0;
+  };
+
+  await recoverUserProviderAssets(userId).catch((err) => {
+    console.warn(
+      "[veronix] recoverFailedProviderAssets:",
+      err instanceof Error ? err.message : err,
+    );
+  });
+
   const assets = await listAssetsForUser(userId, { includeHidden: true });
   const running = assets.filter((a) => a.status === "running" && a.historyId).slice(0, 8);
   for (const asset of running) {
     try {
+      const mmId = parseMiniMaxHistoryId(asset.historyId || "");
+      if (mmId) {
+        const createdMs = Date.parse(asset.createdAt || "");
+        const ageMs =
+          Number.isFinite(createdMs) && createdMs > 0 ? Date.now() - createdMs : 0;
+
+        const task = await getMiniMaxVideoTask(mmId);
+        if (task.status === "COMPLETED" && task.remoteUrl) {
+          const localPath = await downloadMiniMaxVideo(task.remoteUrl);
+          await updateAsset(asset.id, userId, {
+            url: localPath,
+            status: "completed",
+            error: undefined,
+            hidden: asset.mode === "sequence-part" ? true : false,
+          });
+          warmVideoPosterBackground({ url: localPath, historyId: asset.historyId });
+          continue;
+        }
+        if (task.status === "FAILED") {
+          const failMsg = task.error || "فشل توليد MiniMax H3";
+          await updateAsset(asset.id, userId, { status: "failed", error: failMsg });
+          await refundFailedAssetCredits({
+            userId,
+            assetId: asset.id,
+            errorMessage: failMsg,
+          });
+          continue;
+        }
+
+        // Still running on MiniMax — only hard-fail after 90 min.
+        if (ageMs > MINIMAX_HARD_FAIL_MS) {
+          await updateAsset(asset.id, userId, {
+            status: "failed",
+            error: "انتهت مهلة MiniMax (90 دقيقة) — تم استرجاع الكريديت.",
+          });
+          await refundFailedAssetCredits({
+            userId,
+            assetId: asset.id,
+            errorMessage: "انتهت مهلة MiniMax (90 دقيقة)",
+          });
+        }
+        continue;
+      }
+
+      const gmId = parseGeminiHistoryId(asset.historyId || "");
+      if (gmId) {
+        const createdMs = Date.parse(asset.createdAt || "");
+        const ageMs =
+          Number.isFinite(createdMs) && createdMs > 0 ? Date.now() - createdMs : 0;
+        if (ageMs > GEMINI_JOB_TIMEOUT_MS) {
+          await updateAsset(asset.id, userId, {
+            status: "failed",
+            error: "انتهت مهلة Gemini (20 دقيقة) — تم استرجاع الكريديت.",
+          });
+          await refundFailedAssetCredits({
+            userId,
+            assetId: asset.id,
+            errorMessage: "انتهت مهلة Gemini (20 دقيقة)",
+          });
+          continue;
+        }
+        const interaction = await getGeminiInteraction(gmId);
+        let status = mapGeminiInteractionStatus(interaction.status);
+        const part = extractVideoPart(interaction);
+        if (part && status === "RUNNING") status = "COMPLETED";
+        if (status === "COMPLETED" && part) {
+          const localPath = await persistGeminiVideoFromInteraction(interaction);
+          if (localPath) {
+            await updateAsset(asset.id, userId, {
+              url: localPath,
+              status: "completed",
+              error: undefined,
+              hidden: asset.mode === "sequence-part" ? true : false,
+            });
+            warmVideoPosterBackground({ url: localPath, historyId: asset.historyId });
+          }
+        } else if (status === "FAILED") {
+          const failMsg = "فشل توليد Gemini Omni Flash";
+          await updateAsset(asset.id, userId, { status: "failed", error: failMsg });
+          await refundFailedAssetCredits({
+            userId,
+            assetId: asset.id,
+            errorMessage: failMsg,
+          });
+        }
+        continue;
+      }
+
       const pvId = parsePixVerseHistoryId(asset.historyId || "");
       if (pvId) {
         const task = await getPixVerseVideoTask(pvId);
@@ -188,7 +303,7 @@ async function syncRunningAssets(userId: string) {
             url: videoUrl || asset.url,
             status: "completed",
             error: undefined,
-            hidden: asset.mode === "sequence-part" ? true : asset.hidden === true,
+            hidden: asset.mode === "sequence-part" ? true : false,
           });
           if (asset.mode !== "sequence-part" && videoUrl) {
             warmVideoPosterBackground({
@@ -213,7 +328,7 @@ async function syncRunningAssets(userId: string) {
 
       const bpId = parseBytePlusHistoryId(asset.historyId || "");
       if (bpId) {
-        const task = await getBytePlusVideoTask(bpId);
+        const task = await getBytePlusVideoTask(bpId, asset.model || undefined);
         const status = mapBytePlusStatus(task.status);
         const videoUrl = task.content?.video_url || "";
         if (videoUrl || status === "COMPLETED") {
@@ -239,7 +354,7 @@ async function syncRunningAssets(userId: string) {
             url: cdnUrl,
             status: "completed",
             error: undefined,
-            hidden: asset.mode === "sequence-part" ? true : asset.hidden === true,
+            hidden: asset.mode === "sequence-part" ? true : false,
           });
           if (asset.mode !== "sequence-part" && cdnUrl) {
             warmVideoPosterBackground({
@@ -378,14 +493,52 @@ async function syncRunningAssets(userId: string) {
           } else {
             await updateAsset(asset.id, userId, { hidden: false });
           }
+        } else {
+          const ageMs = assetAgeMs(asset.createdAt);
+          const timeoutMs = Math.max(
+            estimateGenerateSeconds(asset.targetSeconds || 8) * 1000 * 2,
+            20 * 60 * 1000,
+          );
+          if (ageMs > timeoutMs) {
+            const failMsg = "انتهت مهلة التوليد — تم استرجاع الكريديت.";
+            await updateAsset(asset.id, userId, { status: "failed", error: failMsg });
+            await refundFailedAssetCredits({
+              userId,
+              assetId: asset.id,
+              errorMessage: failMsg,
+            });
+          }
         }
         continue;
       }
 
       // Non-BytePlus history ids are ignored (OpenArt retired).
+      {
+        const ageMs = assetAgeMs(asset.createdAt);
+        if (ageMs > 15 * 60 * 1000) {
+          const failMsg = "توقف التوليد — أعد المحاولة من الاستوديو";
+          await updateAsset(asset.id, userId, { status: "failed", error: failMsg });
+          await refundFailedAssetCredits({
+            userId,
+            assetId: asset.id,
+            errorMessage: failMsg,
+          });
+        }
+      }
     } catch {
       // leave as running; next poll retries
     }
+  }
+
+  for (const asset of assets.filter((a) => a.status === "running" && !a.historyId).slice(0, 4)) {
+    if (assetAgeMs(asset.createdAt) <= 10 * 60 * 1000) continue;
+    const failMsg = "توقف التوليد — أعد المحاولة من الاستوديو";
+    await updateAsset(asset.id, userId, { status: "failed", error: failMsg });
+    await refundFailedAssetCredits({
+      userId,
+      assetId: asset.id,
+      errorMessage: failMsg,
+    });
   }
 
   // Brand any completed free Veronix clips that still point at a remote CDN.

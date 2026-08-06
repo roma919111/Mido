@@ -15,10 +15,13 @@ import {
   Download,
   LayoutGrid,
   Loader2,
+  Check,
   Pause,
   Pencil,
   Play,
   Rows3,
+  Scissors,
+  Share2,
   Trash2,
   Volume2,
   VolumeX,
@@ -36,6 +39,11 @@ import {
   lockEtaStart,
 } from "@/lib/generate-eta";
 import { writeEditDraft } from "@/lib/edit-draft";
+import { sendVideoToEditStudio, sendVideosToEditStudio } from "@/lib/send-to-edit-studio";
+import { assetToClipInput } from "@/lib/edit-studio-timeline";
+import { assetModelLabel } from "@/lib/model-logos";
+import { shareAsset } from "@/lib/share-asset";
+import { isRecoverableProviderAsset } from "@/lib/recover-provider-asset-utils";
 import {
   hydrateReferenceImages,
   hydrateRefImageUrl,
@@ -122,6 +130,9 @@ function videoMetaChips(
   const ar = item.aspectRatio?.trim();
   if (ar) chips.push(ar);
 
+  const modelName = assetModelLabel(item.model, item.historyId);
+  if (modelName) chips.push(modelName);
+
   const audio =
     typeof item.generateAudio === "boolean"
       ? item.generateAudio
@@ -129,7 +140,11 @@ function videoMetaChips(
         ? item.jobMeta.generateAudio
         : undefined;
   if (typeof audio === "boolean") {
-    chips.push(audio ? labels.withAudio : labels.noAudio);
+    const isMiniMax =
+      item.model === "minimax-h3" || item.historyId?.startsWith("mm:");
+    if (!isMiniMax) {
+      chips.push(audio ? labels.withAudio : labels.noAudio);
+    }
   }
   return chips;
 }
@@ -200,6 +215,10 @@ async function captureVideoFrame(
   }
 }
 
+function isRecoverableAsset(item: AssetItem): boolean {
+  return isRecoverableProviderAsset(item);
+}
+
 function FeedVideoSlide({
   item,
   active,
@@ -207,6 +226,10 @@ function FeedVideoSlide({
   muted,
   onToggleMute,
   onDeleted,
+  onRecover,
+  referralCode,
+  selected,
+  onToggleSelect,
 }: {
   item: AssetItem;
   active: boolean;
@@ -215,6 +238,10 @@ function FeedVideoSlide({
   muted: boolean;
   onToggleMute: () => void;
   onDeleted: (id: string) => void;
+  onRecover?: (id: string) => void | Promise<void>;
+  referralCode?: string | null;
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }) {
   const router = useRouter();
   const { t, dir } = useLocale();
@@ -223,8 +250,13 @@ function FeedVideoSlide({
   const [downloading, setDownloading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [posterFailed, setPosterFailed] = useState(false);
-  const [promptExpanded, setPromptExpanded] = useState(false);
+  const [promptMenuOpen, setPromptMenuOpen] = useState(false);
+  const promptMenuRef = useRef<HTMLDivElement | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [recovering, setRecovering] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const [shareNote, setShareNote] = useState<string | null>(null);
+  const [sendingStudio, setSendingStudio] = useState(false);
   /** Only attach video src after Play — neighbors stay on poster (CDN bytes). */
   const [armed, setArmed] = useState(false);
 
@@ -238,16 +270,16 @@ function FeedVideoSlide({
     [item.historyId, item.url],
   );
   const src = loadMedia && armed ? mediaUrl : null;
-  // Prefer URL-based posters (CDN) — skip BytePlus history lookup on cold open.
+  // Prefer historyId for PixVerse/BytePlus — stale CDN urls break playback.
   const poster = useMemo(
     () =>
       loadMedia
         ? veronixPosterSrc({
-            url: item.url,
             historyId: item.historyId,
+            url: item.url,
           })
         : null,
-    [loadMedia, item.url, item.historyId],
+    [loadMedia, item.historyId, item.url],
   );
   const prompt = cleanAssetPrompt(item.prompt);
   const title = assetPromptTitle(item.prompt);
@@ -258,11 +290,27 @@ function FeedVideoSlide({
     item.status !== "running";
 
   useEffect(() => {
-    setPromptExpanded(false);
+    setPromptMenuOpen(false);
     setPosterFailed(false);
     setPlaying(false);
     setArmed(false);
   }, [item.id]);
+
+  useEffect(() => {
+    if (!promptMenuOpen) return;
+    const onPointerDown = (event: MouseEvent | TouchEvent) => {
+      const root = promptMenuRef.current;
+      if (root && !root.contains(event.target as Node)) {
+        setPromptMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+    };
+  }, [promptMenuOpen]);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -414,6 +462,7 @@ function FeedVideoSlide({
         startFrame: null,
         referenceImages: characters,
         sourceAssetId: item.id,
+        modelId: item.model,
         duration: durationSec,
         resolution: item.resolution,
         aspectRatio: item.aspectRatio,
@@ -421,12 +470,31 @@ function FeedVideoSlide({
       });
       const qs = new URLSearchParams({ edit: "1" });
       qs.set("duration", String(durationSec));
+      if (item.model) qs.set("model", item.model);
       if (item.resolution) qs.set("resolution", item.resolution);
       if (item.aspectRatio) qs.set("aspect", item.aspectRatio);
       if (item.preferClarity) qs.set("clarity", "1");
       router.push(`/create/video?${qs.toString()}`);
     } finally {
       setEditing(false);
+    }
+  };
+
+  const handleSendToStudio = () => {
+    if (sendingStudio || !mediaUrl || item.status !== "completed") return;
+    setSendingStudio(true);
+    try {
+      sendVideoToEditStudio(router, {
+        videoUrl: mediaUrl,
+        posterUrl: poster || undefined,
+        assetId: item.id,
+        historyId: item.historyId,
+        prompt: prompt || item.prompt,
+        durationSec: inferTargetSecondsFromAsset(item),
+        aspectRatio: item.aspectRatio,
+      });
+    } finally {
+      setSendingStudio(false);
     }
   };
 
@@ -482,11 +550,38 @@ function FeedVideoSlide({
     }
   };
 
+  const canSelect =
+    Boolean(mediaUrl) && item.status === "completed";
+
   return (
     <section
       data-asset-id={item.id}
-      className="relative h-[calc(100dvh-5.25rem-env(safe-area-inset-bottom))] w-full snap-start snap-always overflow-hidden bg-black"
+      className={`relative h-[calc(100dvh-5.25rem-env(safe-area-inset-bottom))] w-full snap-start snap-always overflow-hidden bg-black ${
+        selected ? "ring-2 ring-inset ring-[#22f0ff]" : ""
+      }`}
     >
+      {canSelect && onToggleSelect ? (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleSelect();
+          }}
+          className={`absolute end-3 top-[5.5rem] z-50 flex h-10 w-10 items-center justify-center rounded-xl border backdrop-blur-md transition sm:top-[6rem] ${
+            selected
+              ? "border-[#22f0ff] bg-[#22f0ff]/25 text-[#22f0ff]"
+              : "border-white/30 bg-black/45 text-white/80"
+          }`}
+          aria-pressed={selected}
+          aria-label={t.assets.sendToStudio}
+        >
+          {selected ? (
+            <Check className="h-5 w-5" strokeWidth={2.5} />
+          ) : (
+            <span className="h-4 w-4 rounded border-2 border-current" />
+          )}
+        </button>
+      ) : null}
       {canPlay ? (
         <>
           {/* Poster always for active+neighbors; video bytes only after Play. */}
@@ -542,19 +637,19 @@ function FeedVideoSlide({
               </button>
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handlePlayClick();
-              }}
-              className="absolute inset-0 z-30 flex items-center justify-center"
-              aria-label={t.assets.play}
-            >
-              <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white/90 text-black shadow-lg transition active:scale-95">
+            <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handlePlayClick();
+                }}
+                className="pointer-events-auto flex h-16 w-16 items-center justify-center rounded-full bg-white/90 text-black shadow-lg transition active:scale-95"
+                aria-label={t.assets.play}
+              >
                 <Play className="h-7 w-7 translate-x-0.5" fill="currentColor" />
-              </span>
-            </button>
+              </button>
+            </div>
           )}
         </>
       ) : (
@@ -594,6 +689,22 @@ function FeedVideoSlide({
               {t.assets.creditReturned}
             </p>
           ) : null}
+          {isRecoverableAsset(item) && onRecover ? (
+            <button
+              type="button"
+              disabled={recovering}
+              onClick={(e) => {
+                e.stopPropagation();
+                setRecovering(true);
+                void Promise.resolve(onRecover(item.id)).finally(() =>
+                  setRecovering(false),
+                );
+              }}
+              className="relative z-10 mt-2 rounded-full bg-[#22f0ff]/20 px-3 py-1.5 text-xs font-bold text-[#22f0ff] ring-1 ring-[#22f0ff]/40 disabled:opacity-50"
+            >
+              {recovering ? "جاري الاسترجاع…" : "استرجاع الفيديو"}
+            </button>
+          ) : null}
         </div>
       )}
 
@@ -630,6 +741,30 @@ function FeedVideoSlide({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
+              handleSendToStudio();
+            }}
+            disabled={
+              sendingStudio || item.status === "running" || item.status !== "completed"
+            }
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-[#7c5cff]/25 text-[#d4c4ff] ring-1 ring-[#7c5cff]/35 backdrop-blur-md disabled:opacity-40"
+            aria-label={t.assets.sendToStudio}
+          >
+            {sendingStudio ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <Scissors className="h-5 w-5" />
+            )}
+          </button>
+          <span className="max-w-[4.5rem] text-center text-[9px] font-semibold leading-tight text-white/80">
+            {t.assets.sendToStudio}
+          </span>
+        </div>
+
+        <div className="flex flex-col items-center gap-1">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
               void handleDelete();
             }}
             disabled={deleting}
@@ -643,6 +778,37 @@ function FeedVideoSlide({
             )}
           </button>
           <span className="text-[10px] font-semibold text-white/80">{t.assets.delete}</span>
+        </div>
+
+        <div className="flex flex-col items-center gap-1">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              void (async () => {
+                setSharing(true);
+                setShareNote(null);
+                const result = await shareAsset(
+                  { prompt, referralCode, locale: dir === "rtl" ? "ar" : "en" },
+                  "native",
+                );
+                setShareNote(
+                  result.ok ? t.create.resultShare : t.invite.shareFailed,
+                );
+                setSharing(false);
+              })();
+            }}
+            disabled={sharing || item.status !== "completed"}
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-[#22f0ff]/15 text-[#22f0ff] ring-1 ring-[#22f0ff]/30 backdrop-blur-md disabled:opacity-40"
+            aria-label={t.create.resultShare}
+          >
+            {sharing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Share2 className="h-4 w-4" />
+            )}
+          </button>
+          <span className="text-[10px] font-semibold text-white/80">{t.create.resultShare}</span>
         </div>
 
         <div className="flex flex-col items-center gap-1">
@@ -686,7 +852,7 @@ function FeedVideoSlide({
       {/* Title + meta — shown when paused / stopped */}
       {!playing ? (
       <div
-        className="pointer-events-none absolute inset-x-0 bottom-16 z-20 px-3 pb-[env(safe-area-inset-bottom)] pl-16 sm:bottom-20 sm:px-6 sm:pl-24"
+        className="pointer-events-none absolute inset-x-0 bottom-16 z-40 px-3 pb-[env(safe-area-inset-bottom)] pl-16 sm:bottom-20 sm:px-6 sm:pl-24"
         dir={dir}
       >
         <div className="pointer-events-auto max-w-[min(100%,28rem)]">
@@ -697,29 +863,41 @@ function FeedVideoSlide({
             {title}
           </h2>
           {prompt ? (
-            <div className="mt-1.5">
-              <p
-                className={`text-sm leading-relaxed text-white/80 sm:text-[15px] ${
-                  promptExpanded ? "" : "line-clamp-2"
-                }`}
-              >
+            <div className="relative mt-1.5" ref={promptMenuRef}>
+              <p className="line-clamp-2 text-sm leading-relaxed text-white/80 sm:text-[15px]">
                 {prompt}
               </p>
               <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5">
                 {promptLong ? (
                   <button
                     type="button"
+                    aria-expanded={promptMenuOpen}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setPromptExpanded((v) => !v);
+                      setPromptMenuOpen((v) => !v);
                     }}
                     className="text-xs font-semibold text-white/95 underline-offset-2 hover:underline"
                   >
-                    {promptExpanded ? t.assets.showLess : t.assets.showMore}
+                    {promptMenuOpen ? t.assets.showLess : t.assets.showMore}
                   </button>
                 ) : null}
                 <VideoMetaNotes item={item} />
               </div>
+              {promptLong && promptMenuOpen ? (
+                <div
+                  className="absolute bottom-full left-0 z-50 mb-2 w-full max-w-[min(100%,28rem)] overflow-hidden rounded-xl border border-white/15 bg-[#0d1118]/96 shadow-2xl ring-1 ring-black/40 backdrop-blur-md"
+                  dir={dir}
+                >
+                  <div className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold text-[#22f0ff]/90">
+                    {t.assets.promptLabel}
+                  </div>
+                  <div className="max-h-[min(42vh,260px)] overflow-y-auto overscroll-contain px-3 py-2.5">
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-white/90 sm:text-[15px]">
+                      {prompt}
+                    </p>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5">
@@ -742,40 +920,89 @@ function FeedVideoSlide({
 function GridVideoTile({
   item,
   onOpen,
+  selected,
+  onToggleSelect,
 }: {
   item: AssetItem;
   onOpen: (id: string) => void;
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }) {
   const { dir } = useLocale();
+  const [posterFailed, setPosterFailed] = useState(false);
+  // Prefer historyId for PixVerse/BytePlus posters in Assets grid tiles.
   const poster = veronixPosterSrc({
-    url: item.url,
     historyId: item.historyId,
+    url: item.url,
+  });
+  const mediaUrl = veronixMediaSrc({
+    historyId: item.historyId,
+    url: item.url,
+    mediaType: "video",
   });
   const title = assetPromptTitle(item.prompt) || "فيديو";
   const running = item.status === "running" || item.status === "pending";
+  const canSelect = Boolean(mediaUrl) && item.status === "completed";
   const ratio = String(item.aspectRatio || "16:9").trim();
   const portrait =
     ratio === "9:16" || ratio === "3:4" || ratio === "2:3" || ratio === "4:5";
 
+  useEffect(() => {
+    setPosterFailed(false);
+  }, [item.id, item.url, poster]);
+
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(item.id)}
-      className="group relative overflow-hidden rounded-lg bg-[#10141c] text-right ring-1 ring-white/10 transition hover:ring-white/25"
-      dir={dir}
-    >
+    <div className="relative">
+      {canSelect && onToggleSelect ? (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleSelect();
+          }}
+          className={`absolute start-1.5 top-1.5 z-10 flex h-8 w-8 items-center justify-center rounded-lg border backdrop-blur-sm ${
+            selected
+              ? "border-[#22f0ff] bg-[#22f0ff]/25 text-[#22f0ff]"
+              : "border-white/25 bg-black/50 text-white/80"
+          }`}
+          aria-pressed={selected}
+        >
+          {selected ? (
+            <Check className="h-4 w-4" strokeWidth={2.5} />
+          ) : (
+            <span className="h-3.5 w-3.5 rounded border-2 border-current" />
+          )}
+        </button>
+      ) : null}
+      <button
+        type="button"
+        onClick={() => onOpen(item.id)}
+        className={`group relative w-full overflow-hidden rounded-lg bg-[#10141c] text-right ring-1 transition hover:ring-white/25 ${
+          selected ? "ring-2 ring-[#22f0ff]" : "ring-white/10"
+        }`}
+        dir={dir}
+      >
       <div
         className={`relative bg-black/50 ${
           portrait ? "aspect-[3/4]" : "aspect-video"
         }`}
       >
-        {poster ? (
+        {poster && !posterFailed ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={poster}
             alt=""
             className="h-full w-full object-cover"
             loading="lazy"
+            onError={() => setPosterFailed(true)}
+          />
+        ) : mediaUrl && !running ? (
+          <video
+            src={mediaUrl}
+            muted
+            playsInline
+            preload="metadata"
+            className="h-full w-full object-cover"
           />
         ) : (
           <div className="flex h-full items-center justify-center text-white/30">
@@ -802,6 +1029,7 @@ function GridVideoTile({
         </div>
       </div>
     </button>
+    </div>
   );
 }
 
@@ -871,10 +1099,13 @@ function ImageTile({
                   startFrame: null,
                   referenceImages: characters,
                   sourceAssetId: item.id,
+                  modelId: item.model,
                   aspectRatio: item.aspectRatio,
                   resolution: item.resolution,
                 });
-                router.push("/create/image?edit=1");
+                router.push(
+                  `/create/image?edit=1${item.model ? `&model=${encodeURIComponent(item.model)}` : ""}`,
+                );
               })();
             }}
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#22f0ff]"
@@ -961,6 +1192,7 @@ function useActiveSlide(
 
 export function AssetsPage() {
   const { t, dir, locale } = useLocale();
+  const router = useRouter();
   const { user, ready, refreshing, logout } = useCustomerUser();
   const [assets, setAssets] = useState<AssetItem[]>(() => readAssetsCache() || []);
   const [error, setError] = useState<string | null>(null);
@@ -970,6 +1202,10 @@ export function AssetsPage() {
   const [focusAssetId, setFocusAssetId] = useState<string | null>(null);
   const [muted, setMuted] = useState(true);
   const [loading, setLoading] = useState(() => !readAssetsCache()?.length);
+  const [recoverNote, setRecoverNote] = useState<string | null>(null);
+  const [selectedVideoIds, setSelectedVideoIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const feedRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -996,6 +1232,31 @@ export function AssetsPage() {
       sessionStorage.setItem(GRID_ZOOM_KEY, String(next));
     } catch {
       // ignore
+    }
+  }, []);
+
+  const recoverAsset = useCallback(async (assetId?: string, opts?: { silent?: boolean }) => {
+    const { res, data } = await fetchJson<{
+      assets?: AssetItem[];
+      message?: string;
+      error?: string;
+    }>("/api/assets/recover", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(assetId ? { id: assetId } : {}),
+    });
+    if (!res.ok) {
+      if (!opts?.silent) {
+        setRecoverNote(data.error || "تعذر استرجاع الفيديو");
+      }
+      return;
+    }
+    clearAssetsCache();
+    const next = (data.assets || []).filter((a) => a.mode !== "sequence-part");
+    setAssets(next);
+    writeAssetsCache(next);
+    if (!opts?.silent) {
+      setRecoverNote(data.message || null);
     }
   }, []);
 
@@ -1056,23 +1317,33 @@ export function AssetsPage() {
       const needsSync = cachedNow.some(
         (a) => a.status === "running" || a.status === "pending",
       );
+      const needsRecover = cachedNow.some((a) => isRecoverableProviderAsset(a));
       if (needsSync) {
         void loadAssets({ sync: true });
+      } else if (needsRecover) {
+        void recoverAsset(undefined, { silent: true });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [ready, user?.id, loadAssets]);
+  }, [ready, user?.id, loadAssets, recoverAsset]);
 
   useEffect(() => {
-    const hasRunning = assets.some((a) => a.status === "running");
-    if (!hasRunning || !user) return;
+    const hasRunning = assets.some(
+      (a) => a.status === "running" || a.status === "pending",
+    );
+    const hasRecoverable = assets.some((a) => isRecoverableProviderAsset(a));
+    if ((!hasRunning && !hasRecoverable) || !user) return;
     const t = window.setInterval(() => {
-      void loadAssets({ sync: true });
-    }, 8000);
+      if (hasRunning) {
+        void loadAssets({ sync: true });
+      } else if (hasRecoverable) {
+        void recoverAsset(undefined, { silent: true });
+      }
+    }, hasRunning ? 8000 : 20_000);
     return () => window.clearInterval(t);
-  }, [assets, user, loadAssets]);
+  }, [assets, user, loadAssets, recoverAsset]);
 
   const videos = assets.filter((a) => a.mediaType === "video");
   const images = assets.filter((a) => a.mediaType === "image");
@@ -1103,6 +1374,53 @@ export function AssetsPage() {
     },
     [setVideoViewMode],
   );
+
+  const toggleVideoSelection = useCallback((id: string) => {
+    setSelectedVideoIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const clearVideoSelection = useCallback(() => {
+    setSelectedVideoIds(new Set());
+  }, []);
+
+  const buildClipInputsFromSelection = useCallback(
+    (ids: Set<string>) => {
+      return videos
+        .filter((v) => ids.has(v.id) && v.status === "completed" && v.url)
+        .map((v) =>
+          assetToClipInput(
+            v,
+            veronixMediaSrc({
+              historyId: v.historyId,
+              url: v.url,
+              mediaType: "video",
+            }),
+            veronixPosterSrc({ historyId: v.historyId, url: v.url }),
+          ),
+        )
+        .filter((x): x is NonNullable<typeof x> => Boolean(x));
+    },
+    [videos],
+  );
+
+  const sendSelectedVideosToStudio = useCallback(() => {
+    const inputs = buildClipInputsFromSelection(selectedVideoIds);
+    if (!inputs.length) return;
+    sendVideosToEditStudio(router, inputs);
+    clearVideoSelection();
+  }, [
+    buildClipInputsFromSelection,
+    selectedVideoIds,
+    router,
+    clearVideoSelection,
+  ]);
+
+  const selectionCount = selectedVideoIds.size;
 
   if (filter === "video") {
     return (
@@ -1145,6 +1463,12 @@ export function AssetsPage() {
                 >
                   {t.assets.photos}
                 </button>
+                <Link
+                  href="/edit"
+                  className="rounded-full border border-white/20 px-2.5 py-1 text-[11px] font-semibold text-white/80 sm:px-3 sm:text-xs"
+                >
+                  {t.editStudio.tab}
+                </Link>
               </div>
             </div>
 
@@ -1198,6 +1522,12 @@ export function AssetsPage() {
             </div>
           </div>
         </div>
+
+        {recoverNote ? (
+          <div className="fixed inset-x-0 top-20 z-50 mx-auto w-[min(100%-1.5rem,24rem)] rounded-2xl border border-cyan-400/35 bg-[#0d1520]/95 px-4 py-3 text-center text-sm font-semibold text-cyan-50 shadow-lg backdrop-blur-md">
+            {recoverNote}
+          </div>
+        ) : null}
 
         {error && (
           <div className="flex min-h-[100dvh] items-center justify-center px-6 text-center text-sm text-white/70">
@@ -1253,6 +1583,10 @@ export function AssetsPage() {
                       return next;
                     });
                   }}
+                  onRecover={recoverAsset}
+                  referralCode={user?.referralCode}
+                  selected={selectedVideoIds.has(item.id)}
+                  onToggleSelect={() => toggleVideoSelection(item.id)}
                 />
               );
             })}
@@ -1272,11 +1606,42 @@ export function AssetsPage() {
                   key={item.id}
                   item={item}
                   onOpen={openVideoInBrowse}
+                  selected={selectedVideoIds.has(item.id)}
+                  onToggleSelect={() => toggleVideoSelection(item.id)}
                 />
               ))}
             </div>
           </div>
         )}
+
+        {selectionCount > 0 ? (
+          <div
+            className="pointer-events-auto fixed inset-x-0 bottom-[calc(4.35rem+env(safe-area-inset-bottom))] z-[125] mx-auto max-w-lg px-3"
+            dir={dir}
+          >
+            <div className="flex flex-col gap-2 rounded-2xl border border-[#22f0ff]/30 bg-[#0d1118]/95 p-3 shadow-xl backdrop-blur-md sm:flex-row sm:items-center">
+              <p className="flex-1 text-center text-sm font-semibold text-white sm:text-start">
+                {t.assets.selectedCount.replace("{n}", String(selectionCount))}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={clearVideoSelection}
+                  className="flex-1 rounded-xl border border-white/15 px-3 py-2.5 text-xs font-semibold text-white/70 sm:flex-none"
+                >
+                  {t.assets.clearSelection}
+                </button>
+                <button
+                  type="button"
+                  onClick={sendSelectedVideosToStudio}
+                  className="flex-1 rounded-xl bg-[linear-gradient(135deg,#22f0ff,#7c5cff)] px-4 py-2.5 text-xs font-bold text-[#0b0d12] sm:flex-none"
+                >
+                  {t.assets.sendToStudio}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <BottomNav />
       </div>
@@ -1296,7 +1661,7 @@ export function AssetsPage() {
           });
         }}
       />
-      <main className="mx-auto max-w-6xl px-4 pb-28 pt-6 sm:px-6" dir={dir}>
+      <main className="mx-auto max-w-6xl px-4 pb-bottom-nav pt-6 sm:px-6" dir={dir}>
         <div className="flex items-center justify-between gap-3">
           <div>
             <h1 className="font-display text-3xl font-extrabold">Assets</h1>
@@ -1319,6 +1684,12 @@ export function AssetsPage() {
             >
               {t.assets.photos}
             </button>
+            <Link
+              href="/edit"
+              className="rounded-full border border-white/20 px-3 py-1.5 text-xs font-semibold text-white/80"
+            >
+              {t.editStudio.tab}
+            </Link>
           </div>
         </div>
 

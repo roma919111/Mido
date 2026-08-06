@@ -36,7 +36,11 @@ export default async function HomePage() {
             <li key={item}>{item}</li>
           ))}
         </ul>
+        <a href="/invite">{t.invite.title}</a>
         <a href="/pricing">{t.footer.pricing}</a>
+        <a href="/models">{t.models.title}</a>
+        <a href="/create/video">{t.create.videoTitle}</a>
+        <a href="/create/image">{t.create.imageTitle}</a>
         <a href="/about">{t.footer.about}</a>
         <a href="/faq">{t.footer.faq}</a>
         <a href="/contact">{t.footer.contact}</a>

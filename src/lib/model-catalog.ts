@@ -106,6 +106,14 @@ export const VIDEO_FORM_FALLBACKS: Record<string, VideoFormFallback> = {
     audioDefault: false,
     audioParam: null,
   },
+  "minimax-h3": {
+    duration: { min: 1, max: 15, default: 5 },
+    resolutions: ["768P", "2K"],
+    resolutionDefault: "768P",
+    audioSupported: false,
+    audioDefault: false,
+    audioParam: null,
+  },
 };
 
 /** @deprecated use VIDEO_FORM_FALLBACKS */
@@ -187,6 +195,8 @@ export function resolutionLabel(value: string): string {
   if (v === "std") return "قياسي";
   if (v === "pro") return "Pro";
   if (v === "4k") return "4K";
+  if (v === "768p" || v.includes("768")) return "768P";
+  if (v === "2k" || v.includes("2k")) return "2K";
   return value;
 }
 
@@ -274,7 +284,7 @@ const VIDEO_MODELS_BASE: CatalogModel[] = [
     tagline: "تم إنشاؤه بواسطة VYRONIX — أول فيديو مجاني (مقدمة + 4 ثوانٍ · 480p)",
     available: true,
   },
-  { id: "seedance-2", name: "Seedance 2.0", kind: "video", mcpId: "byte-plus-seedance-2", modes: ["text2video", "image2video", "element2video"], available: true },
+  { id: "seedance-2", name: "Seedance 2.0", kind: "video", mcpId: "byte-plus-seedance-2", modes: ["text2video", "image2video", "element2video"], badge: "Seedance", tagline: "صورة / فيديو / صوت مرجعي — 4–15s", available: true },
   { id: "seedance-2-fast", name: "Seedance 2.0 Fast", kind: "video", mcpId: "byte-plus-seedance-2-fast", modes: ["text2video", "image2video", "element2video"], available: true },
   { id: "gemini-omni-flash", name: "Gemini Omni Flash", kind: "video", mcpId: "gemini-omni-flash", modes: ["text2video", "image2video", "element2video"], available: true },
   { id: "kling-3-omni", name: "Kling 3.0 Omni", kind: "video", mcpId: "kling-3-omni", modes: ["text2video", "image2video", "element2video"], available: true },
@@ -296,6 +306,23 @@ const VIDEO_MODELS_BASE: CatalogModel[] = [
   },
   { id: "wan-2-7", name: "Wan 2.7", kind: "video", mcpId: "wan2-7", modes: ["text2video", "image2video", "element2video"], available: true },
   { id: "grok-imagine", name: "Grok Imagine", kind: "video", mcpId: "grok-imagine-1-5", modes: ["image2video"], available: true },
+  {
+    id: "minimax-h3",
+    name: "MiniMax H3",
+    kind: "video",
+    mcpId: "minimax-h3",
+    modes: ["text2video", "image2video", "element2video"],
+    resolutions: ["768P", "2K"],
+    resolutionDefault: "768P",
+    durationMin: 1,
+    durationMax: 15,
+    durationDefault: 5,
+    audioSupported: false,
+    audioDefault: false,
+    audioParam: null,
+    tagline: "MiniMax H series — 768P / 2K",
+    available: false,
+  },
   { id: "pixverse-c1", name: "PixVerse C1", kind: "video", available: false },
   { id: "happyhorse-1-1", name: "HappyHorse 1.1", kind: "video", available: false },
   { id: "happyhorse", name: "HappyHorse", kind: "video", available: false },

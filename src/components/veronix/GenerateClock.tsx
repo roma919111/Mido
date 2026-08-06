@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 /**
  * Lightweight stopwatch — updates digits via DOM (no React re-render storm).
@@ -20,34 +20,32 @@ export function formatFastTimer(displaySec: number): string {
   return `${pad2(m)}:${pad2(s)}.${pad2(cs)}`;
 }
 
-/** ~20 display-seconds per real second (racing timer feel). */
+/** ~60 display-seconds per real second (speedometer feel). */
 export function fastDisplaySeconds(startedAtMs: number, nowMs = Date.now()): number {
   const wallMs = Math.max(0, nowMs - startedAtMs);
-  return wallMs / (1000 / 20);
+  return wallMs / (1000 / 60);
 }
 
 type GenerateClockProps = {
   startedAt: number;
   size?: "large" | "compact";
   className?: string;
-  /** When false, timer and hand freeze (generation done, media still loading). */
-  running?: boolean;
-  /** Wall-clock ms to freeze at when `running` is false. */
-  frozenAt?: number;
 };
 
 export function GenerateClock({
   startedAt,
   size = "large",
   className = "",
-  running = true,
-  frozenAt,
 }: GenerateClockProps) {
   const labelRef = useRef<HTMLSpanElement>(null);
-  const safeStart =
-    Number.isFinite(startedAt) && startedAt > 0 ? startedAt : Date.now();
-  const freezeWall =
-    typeof frozenAt === "number" && frozenAt > 0 ? frozenAt : Date.now();
+  const fallbackStartRef = useRef<number | null>(null);
+  const safeStart = useMemo(() => {
+    if (Number.isFinite(startedAt) && startedAt > 0) return startedAt;
+    if (fallbackStartRef.current == null) {
+      fallbackStartRef.current = Date.now();
+    }
+    return fallbackStartRef.current;
+  }, [startedAt]);
 
   useEffect(() => {
     let cancelled = false;
@@ -55,9 +53,8 @@ export function GenerateClock({
 
     const paint = () => {
       if (cancelled || !labelRef.current) return;
-      if (running && typeof document !== "undefined" && document.hidden) return;
-      const nowMs = running ? Date.now() : freezeWall;
-      const next = formatFastTimer(fastDisplaySeconds(safeStart, nowMs));
+      if (typeof document !== "undefined" && document.hidden) return;
+      const next = formatFastTimer(fastDisplaySeconds(safeStart));
       if (next !== lastShown) {
         lastShown = next;
         labelRef.current.textContent = next;
@@ -65,10 +62,6 @@ export function GenerateClock({
     };
 
     paint();
-    if (!running) return () => {
-      cancelled = true;
-    };
-
     const id = window.setInterval(paint, 120);
     const onVis = () => {
       if (!document.hidden) paint();
@@ -79,15 +72,9 @@ export function GenerateClock({
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", onVis);
     };
-  }, [safeStart, running, freezeWall]);
+  }, [safeStart]);
 
-  const initial = formatFastTimer(
-    fastDisplaySeconds(safeStart, running ? Date.now() : freezeWall),
-  );
-  const handStyle = {
-    transformOrigin: "50% 100%",
-    animationPlayState: running ? ("running" as const) : ("paused" as const),
-  };
+  const initial = formatFastTimer(fastDisplaySeconds(safeStart));
 
   if (size === "compact") {
     return (
@@ -98,7 +85,7 @@ export function GenerateClock({
         <span className="relative inline-flex h-4 w-4 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-[#22f0ff]/80 bg-black/40">
           <span
             className="vyronix-clock-hand absolute left-1/2 top-1/2 h-[6px] w-[1.5px] rounded-full bg-[#22f0ff]"
-            style={handStyle}
+            style={{ transformOrigin: "50% 100%" }}
           />
           <span className="absolute h-0.5 w-0.5 rounded-full bg-white" />
         </span>
@@ -156,7 +143,7 @@ export function GenerateClock({
         </svg>
         <span
           className="vyronix-clock-hand pointer-events-none absolute left-1/2 top-1/2 mt-[-28px] block h-[28px] w-[2px] rounded-full bg-[#22f0ff]"
-          style={handStyle}
+          style={{ transformOrigin: "50% 100%" }}
         />
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center pt-7">
           <span

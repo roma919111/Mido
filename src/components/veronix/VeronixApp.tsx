@@ -24,7 +24,7 @@ export function VeronixApp() {
         refreshing={refreshing}
         onLogout={() => void logout()}
       />
-      <main className="w-full pb-28">
+      <main className="w-full pb-bottom-nav">
         <section className="relative w-full overflow-hidden border-b border-white/8">
           <div className="relative mx-auto w-full max-w-6xl">
             <div className="relative aspect-[16/9] w-full sm:aspect-[21/9] sm:max-h-[420px]">
@@ -93,7 +93,7 @@ export function VeronixApp() {
           <CreateStudio user={user} onUserRefresh={refreshUser} />
         </section>
       </main>
-      <div className="pb-24">
+      <div className="pb-bottom-nav">
         <SiteFooter />
       </div>
       <BottomNav />

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search, X } from "lucide-react";
 import type { CatalogModel } from "@/lib/model-catalog";
+import { ModelLogo } from "@/components/veronix/ModelLogo";
 
 interface ModelsModalProps {
   open: boolean;
@@ -126,21 +127,26 @@ export function ModelsModal({
                           : "border-white/10 bg-white/[0.03] hover:border-white/25"
                     }`}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="text-sm font-medium text-white">{model.name}</p>
-                      <span
-                        className={`mt-0.5 h-4 w-4 shrink-0 rounded-full border ${
-                          selected
-                            ? "border-[#22f0ff] bg-[#22f0ff]"
-                            : "border-white/25"
-                        }`}
-                      />
+                    <div className="flex items-start gap-2.5">
+                      <ModelLogo model={model} size={28} className="mt-0.5" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-sm font-medium text-white">{model.name}</p>
+                          <span
+                            className={`mt-0.5 h-4 w-4 shrink-0 rounded-full border ${
+                              selected
+                                ? "border-[#22f0ff] bg-[#22f0ff]"
+                                : "border-white/25"
+                            }`}
+                          />
+                        </div>
+                        <p className="mt-1 text-[11px] text-white/40">
+                          {model.tagline
+                            ? `${model.tagline}${model.badge ? ` · ${model.badge}` : ""}`
+                            : `${model.available ? "متاح" : "قريبًا"}${model.badge ? ` · ${model.badge}` : ""}`}
+                        </p>
+                      </div>
                     </div>
-                    <p className="mt-1 text-[11px] text-white/40">
-                      {model.tagline
-                        ? `${model.tagline}${model.badge ? ` · ${model.badge}` : ""}`
-                        : `${model.available ? "متاح" : "قريبًا"}${model.badge ? ` · ${model.badge}` : ""}`}
-                    </p>
                   </button>
                 );
               })}

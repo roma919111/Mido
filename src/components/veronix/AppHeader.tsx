@@ -15,7 +15,8 @@ export interface CustomerUser {
   credits: number;
   planId: string | null;
   freeVeronixUsed?: boolean;
-  locked?: boolean;
+  referralCode?: string | null;
+  referredByUserId?: string | null;
 }
 
 export interface AppHeaderProps {

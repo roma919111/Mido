@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { allModelSlugs } from "@/lib/model-seo";
 
 const BASE = "https://vyronix.app";
 
@@ -10,7 +11,14 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: number;
   }> = [
     { path: "/", changeFrequency: "daily", priority: 1 },
+    { path: "/models", changeFrequency: "weekly", priority: 0.95 },
+    { path: "/create/video", changeFrequency: "daily", priority: 0.95 },
+    { path: "/edit", changeFrequency: "weekly", priority: 0.85 },
+    { path: "/create/image", changeFrequency: "daily", priority: 0.95 },
+    { path: "/invite", changeFrequency: "weekly", priority: 0.85 },
     { path: "/pricing", changeFrequency: "weekly", priority: 0.9 },
+    { path: "/inspire", changeFrequency: "weekly", priority: 0.85 },
+    { path: "/tools", changeFrequency: "weekly", priority: 0.75 },
     { path: "/about", changeFrequency: "monthly", priority: 0.8 },
     { path: "/faq", changeFrequency: "weekly", priority: 0.8 },
     { path: "/contact", changeFrequency: "monthly", priority: 0.7 },
@@ -18,6 +26,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { path: "/terms", changeFrequency: "monthly", priority: 0.6 },
     { path: "/login", changeFrequency: "monthly", priority: 0.5 },
     { path: "/signup", changeFrequency: "monthly", priority: 0.5 },
+    ...allModelSlugs().map((slug) => ({
+      path: `/models/${slug}`,
+      changeFrequency: "weekly" as const,
+      priority: 0.88,
+    })),
   ];
   return entries.map((entry) => ({
     url: `${BASE}${entry.path === "/" ? "" : entry.path}`,

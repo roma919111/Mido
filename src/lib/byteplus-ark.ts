@@ -10,6 +10,11 @@ import {
   stylizeReferenceImage,
   toSemiRealisticScenePrompt,
 } from "@/lib/reference-sanitize";
+import {
+  getBytePlusApiKeyForModel,
+  getBytePlusArkModelId,
+  SEEDANCE_2_MODEL_ID,
+} from "@/lib/byteplus-constants";
 import { resolveGenerationFile } from "@/lib/veronix-outro";
 import type { VisualReference } from "@/lib/types";
 import { readFile } from "node:fs/promises";
@@ -66,12 +71,8 @@ async function toCompressedDataUrl(
   }
 }
 
-export function getBytePlusApiKey(): string | undefined {
-  return (
-    process.env.BYTEPLUS_API_KEY?.trim() ||
-    process.env.ARK_API_KEY?.trim() ||
-    undefined
-  );
+export function getBytePlusApiKey(catalogModelId?: string | null): string | undefined {
+  return getBytePlusApiKeyForModel(catalogModelId);
 }
 
 export function getBytePlusBaseUrl(): string {
@@ -87,12 +88,8 @@ export function getBytePlusBaseUrl(): string {
   return raw;
 }
 
-export function getBytePlusModelId(): string {
-  return (
-    process.env.BYTEPLUS_VIDEO_MODEL?.trim() ||
-    process.env.ARK_VIDEO_MODEL?.trim() ||
-    DEFAULT_MODEL
-  );
+export function getBytePlusModelId(catalogModelId?: string | null): string {
+  return getBytePlusArkModelId(catalogModelId);
 }
 
 export function isBytePlusConfigured(): boolean {
@@ -115,9 +112,21 @@ type ContentPart =
       type: "image_url";
       image_url: { url: string };
       role?: string;
+    }
+  | {
+      type: "video_url";
+      video_url: { url: string };
+      role?: string;
+    }
+  | {
+      type: "audio_url";
+      audio_url: { url: string };
+      role?: string;
     };
 
 export type BytePlusCreateInput = {
+  /** Catalog model id — selects Ark model + API key. */
+  catalogModelId?: string;
   prompt: string;
   duration: number;
   ratio?: string;
@@ -129,9 +138,14 @@ export type BytePlusCreateInput = {
   lastFrameUrl?: string | null;
   /**
    * Multimodal visual references (role=reference_image).
-   * Mutually exclusive with first/last frame mode per Seedance rules.
+   * Mutually exclusive with first/last frame mode per Seedance rules (mini).
+   * Seedance 2.0 supports mixed reference_image + reference_video + reference_audio.
    */
   referenceImageUrls?: string[];
+  referenceVideoUrls?: string[];
+  referenceAudioUrls?: string[];
+  /** Seedance 2.0 — allow image + video + audio refs in one task. */
+  multimodalRefs?: boolean;
   resolution?: string;
   /** Ark image role when only a single start frame is provided */
   imageRole?: "first_frame" | "reference_image";
@@ -149,8 +163,8 @@ export type BytePlusTask = {
   raw: Record<string, unknown>;
 };
 
-function authHeaders(): HeadersInit {
-  const key = getBytePlusApiKey();
+function authHeaders(catalogModelId?: string | null): HeadersInit {
+  const key = getBytePlusApiKey(catalogModelId);
   if (!key) throw new Error("BYTEPLUS_API_KEY is not configured");
   return {
     "Content-Type": "application/json",
@@ -253,6 +267,24 @@ export async function ensureBytePlusMediaUrl(
   return null;
 }
 
+/** Public fetchable URL for video/audio refs (no image compression). */
+export async function ensureBytePlusPublicMediaUrl(
+  url: string | null | undefined,
+): Promise<string | null> {
+  if (!url?.trim()) return null;
+  const trimmed = url.trim();
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  const base = process.env.APP_BASE_URL?.trim()?.replace(/\/+$/, "");
+  if (base && trimmed.startsWith("/")) return `${base}${trimmed}`;
+  if (trimmed.startsWith("/generations/")) {
+    const filePath = resolveGenerationFile(trimmed);
+    if (!filePath) return null;
+    const pub = process.env.APP_BASE_URL?.trim()?.replace(/\/+$/, "");
+    return pub ? `${pub}${trimmed}` : null;
+  }
+  return null;
+}
+
 export async function ensureBytePlusRefUrl(
   ref: VisualReference | null | undefined,
   opts?: { aiDigitalFilter?: boolean },
@@ -278,10 +310,13 @@ function errorTextFromCreate(data: Record<string, unknown>, status: number): str
   return code ? `${code}: ${msg}` : msg;
 }
 
-async function postCreateTask(payload: Record<string, unknown>) {
+async function postCreateTask(
+  payload: Record<string, unknown>,
+  catalogModelId?: string | null,
+) {
   const res = await fetch(`${getBytePlusBaseUrl()}/contents/generations/tasks`, {
     method: "POST",
-    headers: authHeaders(),
+    headers: authHeaders(catalogModelId),
     body: JSON.stringify(payload),
   });
   const data = await parseJson(res);
@@ -294,8 +329,11 @@ function buildCreatePayload(
     frameUrl?: string | null;
     lastFrameUrl?: string | null;
     referenceUrls?: string[] | null;
+    referenceVideoUrls?: string[] | null;
+    referenceAudioUrls?: string[] | null;
     imageRole?: string;
     generateAudio?: boolean;
+    catalogModelId?: string | null;
   },
 ): Record<string, unknown> {
   const content: ContentPart[] = [{ type: "text", text: input.prompt }];
@@ -308,9 +346,46 @@ function buildCreatePayload(
     opts?.referenceUrls !== undefined
       ? opts.referenceUrls
       : input.referenceImageUrls;
+  const videoUrls =
+    opts?.referenceVideoUrls !== undefined
+      ? opts.referenceVideoUrls
+      : input.referenceVideoUrls;
+  const audioUrls =
+    opts?.referenceAudioUrls !== undefined
+      ? opts.referenceAudioUrls
+      : input.referenceAudioUrls;
 
-  // Seedance: first/last frame mode XOR multimodal reference_image mode.
-  if (startUrl) {
+  const multimodal =
+    input.multimodalRefs ||
+    input.catalogModelId === SEEDANCE_2_MODEL_ID ||
+    Boolean(videoUrls?.length || audioUrls?.length);
+
+  if (multimodal) {
+    for (const url of refUrls?.slice(0, 4) || []) {
+      if (!url?.trim()) continue;
+      content.push({
+        type: "image_url",
+        image_url: { url: url.trim() },
+        role: "reference_image",
+      });
+    }
+    for (const url of videoUrls?.slice(0, 2) || []) {
+      if (!url?.trim()) continue;
+      content.push({
+        type: "video_url",
+        video_url: { url: url.trim() },
+        role: "reference_video",
+      });
+    }
+    for (const url of audioUrls?.slice(0, 2) || []) {
+      if (!url?.trim()) continue;
+      content.push({
+        type: "audio_url",
+        audio_url: { url: url.trim() },
+        role: "reference_audio",
+      });
+    }
+  } else if (startUrl) {
     content.push({
       type: "image_url",
       image_url: { url: startUrl },
@@ -336,8 +411,9 @@ function buildCreatePayload(
 
   // Seedance / OpenArt window: 4–15 seconds (integer steps).
   const duration = Math.max(4, Math.min(15, Math.round(input.duration)));
+  const catalogModelId = opts?.catalogModelId ?? input.catalogModelId;
   const body: Record<string, unknown> = {
-    model: getBytePlusModelId(),
+    model: getBytePlusModelId(catalogModelId),
     content,
     generate_audio:
       opts?.generateAudio !== undefined
@@ -359,8 +435,9 @@ function buildCreatePayload(
 export async function createBytePlusVideoTask(
   input: BytePlusCreateInput,
 ): Promise<BytePlusTask> {
-  let payload = buildCreatePayload(input);
-  let { res, data } = await postCreateTask(payload);
+  const catalogModelId = input.catalogModelId;
+  let payload = buildCreatePayload(input, { catalogModelId });
+  let { res, data } = await postCreateTask(payload, catalogModelId);
 
   // Retry without resolution if the Ark build rejects the field.
   if (!res.ok && input.resolution) {
@@ -368,7 +445,7 @@ export async function createBytePlusVideoTask(
     if (/resolution|unknown|invalid|not support/i.test(msg) || res.status === 400) {
       const { resolution: _drop, ...rest } = payload;
       payload = rest;
-      ({ res, data } = await postCreateTask(payload));
+      ({ res, data } = await postCreateTask(payload, catalogModelId));
     }
   }
 
@@ -377,7 +454,7 @@ export async function createBytePlusVideoTask(
     const msg = errorTextFromCreate(data, res.status);
     if (/OutputAudioSensitive|AudioSensitive/i.test(msg)) {
       payload = { ...payload, generate_audio: false };
-      ({ res, data } = await postCreateTask(payload));
+      ({ res, data } = await postCreateTask(payload, catalogModelId));
     }
   }
 
@@ -407,7 +484,7 @@ export async function createBytePlusVideoTask(
         generateAudio: Boolean(payload.generate_audio),
       },
     );
-    ({ res, data } = await postCreateTask(payload));
+    ({ res, data } = await postCreateTask(payload, catalogModelId));
   }
 
   // Privacy block: second pass of the same frozen AI digital filter + prompt rewrite.
@@ -447,7 +524,7 @@ export async function createBytePlusVideoTask(
             generateAudio: Boolean(payload.generate_audio),
           });
         }
-        ({ res, data } = await postCreateTask(payload));
+        ({ res, data } = await postCreateTask(payload, catalogModelId));
       } catch (styleErr) {
         console.warn(
           "[veronix] privacy retry failed:",
@@ -472,12 +549,15 @@ export async function createBytePlusVideoTask(
   };
 }
 
-export async function getBytePlusVideoTask(taskId: string): Promise<BytePlusTask> {
+export async function getBytePlusVideoTask(
+  taskId: string,
+  catalogModelId?: string | null,
+): Promise<BytePlusTask> {
   const res = await fetch(
     `${getBytePlusBaseUrl()}/contents/generations/tasks/${encodeURIComponent(taskId)}`,
     {
       method: "GET",
-      headers: authHeaders(),
+      headers: authHeaders(catalogModelId),
     },
   );
   const data = await parseJson(res);
@@ -561,6 +641,7 @@ export async function waitForBytePlusVideoTask(
     intervalMs?: number;
     /** Original create input — needed for mute / privacy retries */
     retryInput?: BytePlusCreateInput;
+    catalogModelId?: string | null;
   },
 ): Promise<BytePlusTask> {
   const timeoutMs = options?.timeoutMs ?? 240_000;
@@ -570,9 +651,11 @@ export async function waitForBytePlusVideoTask(
   let mutedRetryUsed = false;
   let privacyRetryUsed = false;
   let privacyDropUsed = false;
+  const catalogModelId =
+    options?.catalogModelId ?? options?.retryInput?.catalogModelId;
 
   while (Date.now() - started < timeoutMs) {
-    const task = await getBytePlusVideoTask(currentId);
+    const task = await getBytePlusVideoTask(currentId, catalogModelId);
     const status = mapBytePlusStatus(task.status);
     if (status === "COMPLETED" && task.content?.video_url) {
       return task;
@@ -666,5 +749,5 @@ export async function waitForBytePlusVideoTask(
     await sleep(intervalMs);
   }
 
-  return getBytePlusVideoTask(currentId);
+  return getBytePlusVideoTask(currentId, catalogModelId);
 }

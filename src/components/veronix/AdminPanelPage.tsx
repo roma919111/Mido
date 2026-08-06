@@ -172,7 +172,7 @@ export function AdminPanelPage() {
   return (
     <div className="min-h-screen bg-[#0b0d12] text-white">
       <AppHeader user={me} />
-      <main className="mx-auto max-w-6xl px-4 pb-28 pt-6 sm:px-6" dir="rtl">
+      <main className="mx-auto max-w-6xl px-4 pb-bottom-nav pt-6 sm:px-6" dir="rtl">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#22f0ff]/90">

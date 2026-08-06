@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { access } from "node:fs/promises";
 import path from "node:path";
+import { isBytePlusConfigured } from "@/lib/byteplus-ark";
+import { isPixVerseConfigured } from "@/lib/pixverse";
+import { isGeminiVideoConfigured } from "@/lib/gemini-video";
+import { isMiniMaxVideoConfigured } from "@/lib/minimax-video";
 
 export const runtime = "nodejs";
 
@@ -19,6 +23,12 @@ export async function GET() {
     ok: true,
     service: "vyronix",
     dataDirOk,
+    providers: {
+      byteplus: isBytePlusConfigured(),
+      pixverse: isPixVerseConfigured(),
+      gemini: isGeminiVideoConfigured(),
+      minimax: isMiniMaxVideoConfigured(),
+    },
     ts: new Date().toISOString(),
   });
 }

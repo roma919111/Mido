@@ -88,9 +88,34 @@ function looksLikeQuota(raw: string): boolean {
   return t.includes("quota") || t.includes("insufficient") || t.includes("balance") || t.includes("billing");
 }
 
+export function translateGeminiError(input: unknown, fallback = "فشل توليد Gemini"): string {
+  const raw = typeof input === "string" ? input : collectRawText(input);
+  const text = raw.trim();
+  if (!text) return fallback;
+
+  const lower = text.toLowerCase();
+  if (
+    lower.includes("access_token_type_unsupported") ||
+    (lower.includes("gemini api 401") && lower.includes("authentication"))
+  ) {
+    return "مفتاح GEMINI_API_KEY غير مقبول — أنشئ مفتاحاً جديداً من Google AI Studio وتأكد أن Generative Language API مفعّل على المشروع.";
+  }
+  if (lower.includes("gemini api 401") || lower.includes("gemini api 403")) {
+    return "مصادقة Gemini فشلت — راجع GEMINI_API_KEY على السيرفر (AI Studio → API Keys).";
+  }
+  if (lower.includes("gemini api")) {
+    const snippet = text.replace(/\s+/g, " ").slice(0, 160);
+    return `فشل Gemini: ${snippet}`;
+  }
+  return translateBytePlusError(input, fallback);
+}
+
 /** Map a raw upstream error string (or object blob) to Arabic for the UI. */
 export function translateBytePlusError(input: unknown, fallback = "فشل إنشاء الفيديو"): string {
   const raw = typeof input === "string" ? input : collectRawText(input);
+  if (/gemini api/i.test(raw)) {
+    return translateGeminiError(raw, fallback);
+  }
   const text = raw.trim();
   if (!text) return brandForCustomer(fallback);
 

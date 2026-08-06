@@ -5,6 +5,10 @@ import {
   parseBytePlusHistoryId,
 } from "@/lib/byteplus-ark";
 import {
+  parseMiniMaxHistoryId,
+  tryRecoverMiniMaxAsset,
+} from "@/lib/minimax-video";
+import {
   findUserByEmail,
   listAssetsForAdmin,
   listUsersForAdmin,
@@ -81,6 +85,26 @@ export async function POST(request: Request) {
       let unhidden = 0;
       let rehiddenParts = 0;
       for (const asset of assets) {
+        const mmId = parseMiniMaxHistoryId(asset.historyId || "");
+        if (
+          mmId &&
+          (asset.status === "failed" ||
+            asset.status === "running" ||
+            !asset.url)
+        ) {
+          try {
+            const result = await tryRecoverMiniMaxAsset({
+              userId: t.id,
+              assetId: asset.id,
+              historyId: asset.historyId || "",
+              hidden: asset.hidden === true,
+              mode: asset.mode,
+            });
+            if (result === "completed") fixed += 1;
+          } catch {
+            // skip
+          }
+        }
         // Intermediate beats must stay hidden forever.
         if (asset.mode === "sequence-part" && asset.hidden !== true) {
           await updateAsset(asset.id, t.id, { hidden: true });

@@ -8,8 +8,12 @@ import {
   type VideoQuality,
 } from "@/config/modelPricing";
 import { PIXVERSE_MODEL_ID } from "@/lib/pixverse-constants";
+import { MINIMAX_H3_MODEL_ID } from "@/lib/minimax-constants";
+import { ModelLogo } from "@/components/veronix/ModelLogo";
+import { VIDEO_MODELS } from "@/lib/model-catalog";
 
 const PIXVERSE_QUALITIES: VideoQuality[] = ["360p", "540p", "720p", "1080p"];
+const MINIMAX_QUALITIES: VideoQuality[] = ["768p", "2k"];
 
 export function ModelPricingTable() {
   const models = listVideoModelPricing();
@@ -34,22 +38,44 @@ export function ModelPricingTable() {
           >
             <div className="border-b border-white/8 px-5 py-4">
               <p className="text-sm text-white/45">Video model</p>
-              <p className="font-display text-lg font-semibold">{model.displayName}</p>
+              <div className="mt-1 flex items-center gap-2.5">
+                {model.modelId === MINIMAX_H3_MODEL_ID ? (
+                  <ModelLogo
+                    model={
+                      VIDEO_MODELS.find((m) => m.id === MINIMAX_H3_MODEL_ID) ?? {
+                        id: MINIMAX_H3_MODEL_ID,
+                        name: model.displayName,
+                        mcpId: MINIMAX_H3_MODEL_ID,
+                      }
+                    }
+                    size={26}
+                  />
+                ) : null}
+                <p className="font-display text-lg font-semibold">{model.displayName}</p>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="border-b border-white/8 text-left text-white/45">
                     <th className="px-5 py-3 font-medium">Quality</th>
-                    <th className="px-5 py-3 font-medium">No audio</th>
-                    <th className="px-5 py-3 font-medium">With audio</th>
+                    {model.modelId === MINIMAX_H3_MODEL_ID ? (
+                      <th className="px-5 py-3 font-medium">Credits/sec</th>
+                    ) : (
+                      <>
+                        <th className="px-5 py-3 font-medium">No audio</th>
+                        <th className="px-5 py-3 font-medium">With audio</th>
+                      </>
+                    )}
                     <th className="px-5 py-3 font-medium">5s example</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(model.modelId === PIXVERSE_MODEL_ID
                     ? PIXVERSE_QUALITIES
-                    : (Object.keys(model.creditsPerSecond) as VideoQuality[])
+                    : model.modelId === MINIMAX_H3_MODEL_ID
+                      ? MINIMAX_QUALITIES
+                      : (Object.keys(model.creditsPerSecond) as VideoQuality[])
                   ).map((quality) => {
                     const tier = model.creditsPerSecond[quality];
                     if (!tier) return null;
@@ -64,12 +90,20 @@ export function ModelPricingTable() {
                         <td className="px-5 py-3 font-medium text-white" dir="ltr">
                           {quality}
                         </td>
-                        <td className="px-5 py-3 tabular-nums text-[#22f0ff]" dir="ltr">
-                          {tier.noAudio}/sec
-                        </td>
-                        <td className="px-5 py-3 tabular-nums text-[#22f0ff]" dir="ltr">
-                          {tier.withAudio}/sec
-                        </td>
+                        {model.modelId === MINIMAX_H3_MODEL_ID ? (
+                          <td className="px-5 py-3 tabular-nums text-[#22f0ff]" dir="ltr">
+                            {tier.noAudio}/sec
+                          </td>
+                        ) : (
+                          <>
+                            <td className="px-5 py-3 tabular-nums text-[#22f0ff]" dir="ltr">
+                              {tier.noAudio}/sec
+                            </td>
+                            <td className="px-5 py-3 tabular-nums text-[#22f0ff]" dir="ltr">
+                              {tier.withAudio}/sec
+                            </td>
+                          </>
+                        )}
                         <td className="px-5 py-3 tabular-nums text-white/70" dir="ltr">
                           {example.toLocaleString("en-US")} credits
                         </td>
@@ -79,6 +113,12 @@ export function ModelPricingTable() {
                 </tbody>
               </table>
             </div>
+            {model.modelId === MINIMAX_H3_MODEL_ID ? (
+              <p className="border-t border-white/8 px-5 py-3 text-xs text-white/40">
+                Input: first 5 reference images free · extra images $0.04 each (×
+                markup) · reference video billed at output rate per second.
+              </p>
+            ) : null}
             {model.videoReferenceExtraPerSecond ? (
               <p className="border-t border-white/8 px-5 py-3 text-xs text-white/40">
                 Fusion (video reference): extra surcharge per second by quality — see

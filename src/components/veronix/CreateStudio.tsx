@@ -72,14 +72,19 @@ import {
 import {
   newStudioClientId,
   patchJob,
+  patchOrUpsertJob,
+  upsertJob,
   readStoredJobs,
+  pruneGhostRunningJobs,
   syncRunningJobsFromAssets,
   writeStoredJobs,
   type StudioJob,
 } from "@/lib/studio-jobs";
 import { StudioResultGrid } from "@/components/veronix/StudioResultGrid";
-import { GenerateClock } from "@/components/veronix/GenerateClock";
+import { ModelSelect } from "@/components/veronix/ModelSelect";
+import { StudioMediaTabs } from "@/components/veronix/StudioMediaTabs";
 import { useLocale } from "@/components/veronix/LocaleProvider";
+import { shareAsset } from "@/lib/share-asset";
 import type { CustomerUser } from "./AppHeader";
 
 /** Catalog id for VYRONIX image studio (Seedream under the hood). */
@@ -101,8 +106,42 @@ const PREVIEW_POLL_MS = 5000;
  * and also falsely tripped on stale localStorage "running" cards.
  */
 const MAX_GENERATE_WALL_MS = 10 * 60 * 1000;
+/** Gemini / MiniMax background jobs can take up to ~45 minutes. */
+const LONG_GENERATE_WALL_MS = 45 * 60 * 1000;
+
+function generateWallMs(job: StudioJob): number {
+  if (job.historyId?.startsWith("gm:") || job.historyId?.startsWith("mm:")) {
+    return LONG_GENERATE_WALL_MS;
+  }
+  return MAX_GENERATE_WALL_MS;
+}
+
+function studioMaxWallMs(jobs: StudioJob[]): number {
+  return jobs.some(
+    (j) => j.historyId?.startsWith("gm:") || j.historyId?.startsWith("mm:"),
+  )
+    ? LONG_GENERATE_WALL_MS
+    : MAX_GENERATE_WALL_MS;
+}
+
+function mergeHydratedJobs(prev: StudioJob[], stored: StudioJob[]): StudioJob[] {
+  const inFlight = prev.filter((j) => j.status === "running");
+  if (!inFlight.length) return stored;
+  const seen = new Set(
+    inFlight.flatMap((j) =>
+      [j.clientId, j.assetId, j.historyId].filter(Boolean) as string[],
+    ),
+  );
+  const rest = stored.filter(
+    (j) =>
+      !seen.has(j.clientId) &&
+      !(j.assetId && seen.has(j.assetId)) &&
+      !(j.historyId && seen.has(j.historyId)),
+  );
+  return [...inFlight, ...rest].slice(0, 12);
+}
 /** Drop restored "running" jobs that outlived the job (no server progress). */
-const STALE_RUNNING_GRACE_MS = 12 * 60 * 1000;
+const STALE_RUNNING_GRACE_MS = 5 * 60 * 1000;
 /** Deduplicate concurrent status pollers (hydrate + generate). */
 const activePreviewPolls = new Set<string>();
 
@@ -119,6 +158,9 @@ interface CreateStudioProps {
 
 export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioProps) {
   const router = useRouter();
+  const aliveRef = useRef(true);
+  const resultsRef = useRef<HTMLDivElement | null>(null);
+  const reconcileTickRef = useRef(0);
   const { t, dir, locale } = useLocale();
   /** Assets → Edit: keep restored duration/ratio/clarity until the user changes model. */
   const restoreFromEditRef = useRef(false);
@@ -131,12 +173,20 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   }
   const boot = editBootRef.current ?? null;
 
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
   const [media, setMedia] = useState<"image" | "video">(lockedMedia || "video");
   const [imageModels, setImageModels] = useState<CatalogModel[]>(IMAGE_MODELS);
   const [videoModels, setVideoModels] = useState<CatalogModel[]>(VIDEO_MODELS);
-  const [selectedModelId, setSelectedModelId] = useState(
-    lockedMedia === "image" ? VERONIX_IMAGE_MODEL_ID : VERONIX_MODEL_ID,
-  );
+  const [selectedModelId, setSelectedModelId] = useState(() => {
+    if (boot?.modelId?.trim()) return boot.modelId.trim();
+    return lockedMedia === "image" ? VERONIX_IMAGE_MODEL_ID : VERONIX_MODEL_ID;
+  });
   const [prompt, setPrompt] = useState(() =>
     boot?.prompt ? boot.prompt : "",
   );
@@ -150,9 +200,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     return lockedMedia === "image" ? "1:1" : "16:9";
   });
   const [resolution, setResolution] = useState<string>(() => {
-    if (boot?.resolution && ["480p", "720p"].includes(boot.resolution)) {
-      return boot.resolution;
-    }
+    if (boot?.resolution?.trim()) return boot.resolution.trim();
     return lockedMedia === "image" ? DEFAULT_IMAGE_RESOLUTION : FREE_VERONIX_RESOLUTION;
   });
   const [duration, setDuration] = useState<number>(() => {
@@ -229,7 +277,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     [jobs],
   );
   const hasRunningJobs = runningJobs.length > 0;
-  const waitingResult = generating || hasRunningJobs;
   /** Concurrent cap: at most 4 running videos total. */
   const MAX_CONCURRENT = 4;
   const slotsLeft = Math.max(0, MAX_CONCURRENT - runningJobs.length);
@@ -416,8 +463,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     if (draft.media === "video" || lockedMedia === "video") {
       const restoredDuration = clampEditDuration(draft.duration);
       if (restoredDuration != null) setDuration(restoredDuration);
-      if (draft.resolution && ["480p", "720p"].includes(draft.resolution)) {
-        setResolution(draft.resolution);
+      if (draft.resolution?.trim()) {
+        setResolution(draft.resolution.trim());
       }
       if (
         draft.aspectRatio &&
@@ -430,6 +477,16 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       }
     } else if (draft.aspectRatio) {
       setAspectRatio(draft.aspectRatio);
+    }
+
+    if (draft.modelId?.trim()) {
+      const pool =
+        draft.media === "image" || lockedMedia === "image"
+          ? imageModels
+          : videoModels;
+      if (pool.some((m) => m.id === draft.modelId && m.available)) {
+        setSelectedModelId(draft.modelId.trim());
+      }
     }
 
     const chars = (draft.referenceImages || [])
@@ -482,13 +539,42 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     // Strip edit query params so refresh does not re-apply forever.
     if (typeof window !== "undefined" && window.location.search.includes("edit=")) {
       const url = new URL(window.location.href);
-      ["edit", "duration", "d", "resolution", "r", "aspect", "ar", "clarity", "c"].forEach(
+      ["edit", "duration", "d", "resolution", "r", "aspect", "ar", "clarity", "c", "model", "m"].forEach(
         (k) => url.searchParams.delete(k),
       );
       const next = url.pathname + (url.searchParams.toString() ? `?${url.searchParams}` : "");
       window.history.replaceState({}, "", next);
     }
-  }, [lockedMedia]);
+  }, [lockedMedia, imageModels, videoModels]);
+
+  // Deep link: /create/video?model=minimax-h3
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const modelId = new URLSearchParams(window.location.search).get("model")?.trim();
+    if (!modelId) return;
+    const videoHit = videoModels.find((m) => m.id === modelId);
+    const imageHit = imageModels.find((m) => m.id === modelId);
+    if (videoHit) {
+      if (!lockedMedia) setMedia("video");
+      setSelectedModelId(modelId);
+      return;
+    }
+    if (imageHit) {
+      if (!lockedMedia) setMedia("image");
+      setSelectedModelId(modelId);
+    }
+  }, [videoModels, imageModels, lockedMedia]);
+
+  // Assets → Edit: re-select model once the live catalog finishes loading.
+  useEffect(() => {
+    if (!restoreFromEditRef.current) return;
+    const modelId = editBootRef.current?.modelId?.trim();
+    if (!modelId) return;
+    const pool = media === "image" ? imageModels : videoModels;
+    if (pool.some((m) => m.id === modelId && m.available)) {
+      setSelectedModelId(modelId);
+    }
+  }, [media, imageModels, videoModels]);
 
   // Re-assert Edit duration after user finishes loading (user=null looked "free" and wiped slider).
   useEffect(() => {
@@ -497,8 +583,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     const bootDraft = editBootRef.current;
     const restored = clampEditDuration(bootDraft?.duration);
     if (restored != null) setDuration(restored);
-    if (bootDraft?.resolution && ["480p", "720p"].includes(bootDraft.resolution)) {
-      setResolution(bootDraft.resolution);
+    if (bootDraft?.resolution?.trim()) {
+      setResolution(bootDraft.resolution.trim());
     }
     if (
       bootDraft?.aspectRatio &&
@@ -515,28 +601,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const stored = readStoredJobs().map((j) => {
-        if (j.status !== "running") return j;
-        const started = j.startedAt ?? 0;
-        // Drop stale running ghosts — do NOT show a fake "180s timeout" card.
-        if (started > 0 && Date.now() - started >= MAX_GENERATE_WALL_MS) {
-          return null;
-        }
-        const target = j.targetSeconds || (media === "video" ? duration : 4);
-        const etaMs = estimateGenerateSeconds(target, j.mediaType) * 1000;
-        if (started > 0 && Date.now() - started > etaMs + STALE_RUNNING_GRACE_MS) {
-          return null;
-        }
-        return j;
-      }).filter((j): j is NonNullable<typeof j> => Boolean(j));
+      const storedRaw = readStoredJobs();
+      const stored = pruneGhostRunningJobs(storedRaw, {
+        maxWallMs: studioMaxWallMs(storedRaw),
+        staleGraceMs: STALE_RUNNING_GRACE_MS,
+      }).jobs;
 
       if (!cancelled && stored.length) {
-        setJobs(stored);
-        const running = stored.find((j) => j.status === "running");
-        if (running?.startedAt) setGenStartedAt(running.startedAt);
-        if (running) {
-          setStatus("توليد سابق يُتابع — يمكنك توليد المزيد ضمن حد 4");
-        }
+        setJobs((prev) => mergeHydratedJobs(prev, stored));
       }
 
       if (user) {
@@ -557,9 +629,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           }>("/api/assets?sync=1");
           if (!cancelled && res.ok) {
             const assets = (data.assets || []).filter(
-              (a) =>
-                a.mediaType === (lockedMedia || media) &&
-                a.mode !== "sequence-part",
+              (a) => a.mode !== "sequence-part",
             );
             const byId = new Map(assets.map((a) => [a.id, a]));
 
@@ -598,42 +668,35 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 };
               });
 
-              const synced = syncRunningJobsFromAssets(next, assets, {
-                mediaType: lockedMedia || media,
-              });
+              const synced = syncRunningJobsFromAssets(next, assets);
               next = synced.jobs;
               for (const key of synced.clearedKeys) activePreviewPolls.delete(key);
-              // Attach live running jobs that aren't already on the grid.
-              for (const a of assets) {
-                if (a.status !== "running") continue;
-                if (next.some((j) => j.assetId === a.id)) continue;
-                const started = lockEtaStart(a.id, a.createdAt);
-                // Skip ancient server "running" ghosts — avoid false timeout cards.
-                if (Date.now() - started >= MAX_GENERATE_WALL_MS) continue;
-                next = [
-                  {
-                    clientId: newStudioClientId(),
-                    url: a.url || "",
-                    mediaType: a.mediaType,
-                    historyId: a.historyId,
-                    status: "running",
-                    assetId: a.id,
-                    targetSeconds: inferTargetSecondsFromAsset(a),
-                    startedAt: started,
-                  },
-                  ...next,
-                ];
-              }
+              next = pruneGhostRunningJobs(next, {
+                maxWallMs: studioMaxWallMs(next),
+                staleGraceMs: STALE_RUNNING_GRACE_MS,
+              }).jobs;
               return next.slice(0, 12);
             });
 
-            // Resume polling for running jobs that have ids.
+            // Resume polling only for jobs already restored on the grid (no ghost cards).
             const resumeTargets = assets.filter((a) => {
               if (a.status !== "running") return false;
               const started = lockEtaStart(a.id, a.createdAt);
-              return Date.now() - started < MAX_GENERATE_WALL_MS;
+              const wallMs = generateWallMs({
+                clientId: "",
+                url: "",
+                mediaType: (a.mediaType as StudioJob["mediaType"]) || "video",
+                historyId: a.historyId,
+                status: "running",
+                startedAt: started,
+              });
+              return Date.now() - started < wallMs;
             });
+            const storedAssetIds = new Set(
+              stored.map((j) => j.assetId).filter(Boolean) as string[],
+            );
             for (const running of resumeTargets) {
+              if (!storedAssetIds.has(running.id)) continue;
               if (!(running.historyId || running.mediaType === "image")) continue;
               const started = lockEtaStart(running.id, running.createdAt);
               setGenStartedAt(started);
@@ -663,11 +726,26 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
   useEffect(() => {
     if (!previewHydrated) return;
+    const prune = () => {
+      setJobs((prev) => {
+        const pruned = pruneGhostRunningJobs(prev, {
+          maxWallMs: studioMaxWallMs(prev),
+          staleGraceMs: STALE_RUNNING_GRACE_MS,
+        });
+        return pruned.changed ? pruned.jobs : prev;
+      });
+    };
+    prune();
+    const id = window.setInterval(prune, 15_000);
+    return () => window.clearInterval(id);
+  }, [previewHydrated]);
+
+  useEffect(() => {
+    if (!previewHydrated) return;
     const t = window.setTimeout(() => writeStoredJobs(jobs), 1200);
     return () => window.clearTimeout(t);
   }, [jobs, previewHydrated]);
 
-  // Keep +/- within remaining concurrent slots (e.g. 1 running → max selectable 3).
   useEffect(() => {
     if (slotsLeft <= 0) return;
     setOutputCount((n) => Math.min(Math.max(1, n), slotsLeft));
@@ -685,7 +763,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           const started = j.startedAt || 0;
           // Missing/corrupt start → don't fake a timeout; wait for poll/server.
           if (!(started > 0) || started > now) return j;
-          if (now - started < MAX_GENERATE_WALL_MS) return j;
+          if (now - started < generateWallMs(j)) return j;
           changed = true;
           if (j.assetId) activePreviewPolls.delete(j.assetId);
           if (j.historyId) activePreviewPolls.delete(j.historyId);
@@ -693,7 +771,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           return {
             ...j,
             status: "failed" as const,
-            error: "انتهت المهلة (10 دقائق) — تم إيقاف التوليد تلقائياً",
+            error:
+              j.historyId?.startsWith("gm:") || j.historyId?.startsWith("mm:")
+                ? "انتهت مهلة التوليد (45 دقيقة) — تم إيقاف التوليد تلقائياً"
+                : "انتهت المهلة (10 دقائق) — تم إيقاف التوليد تلقائياً",
           };
         });
         return changed ? next : prev;
@@ -714,6 +795,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
     const reconcile = async () => {
       try {
+        reconcileTickRef.current += 1;
+        const useSync =
+          reconcileTickRef.current === 1 || reconcileTickRef.current % 10 === 0;
         const { res, data } = await fetchJson<{
           assets?: Array<{
             id: string;
@@ -727,21 +811,25 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             createdAt?: string;
             targetSeconds?: number;
           }>;
-        }>("/api/assets?sync=1");
-        if (cancelled || !res.ok) return;
+        }>(useSync ? "/api/assets?sync=1" : "/api/assets");
+        if (cancelled || !aliveRef.current || !res.ok) return;
         const assets = data.assets || [];
 
         // Immediate setState so clocks drop as soon as Assets is done.
+        if (!aliveRef.current) return;
         setJobs((prev) => {
-          const { jobs: next, changed, clearedKeys } = syncRunningJobsFromAssets(
+          const { jobs: synced, changed, clearedKeys } = syncRunningJobsFromAssets(
             prev,
             assets,
-            { mediaType: lockedMedia || media },
           );
-          if (!changed) return prev;
+          const pruned = pruneGhostRunningJobs(synced, {
+            maxWallMs: studioMaxWallMs(synced),
+            staleGraceMs: STALE_RUNNING_GRACE_MS,
+          });
+          if (!changed && !pruned.changed) return prev;
           for (const key of clearedKeys) activePreviewPolls.delete(key);
-          writeStoredJobs(next);
-          return next;
+          writeStoredJobs(pruned.jobs);
+          return pruned.jobs;
         });
       } catch {
         // ignore — next tick retries
@@ -749,7 +837,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     };
 
     void reconcile();
-    const id = window.setInterval(() => void reconcile(), 3_000);
+    const id = window.setInterval(() => void reconcile(), 8_000);
     const onVis = () => {
       if (!document.hidden) void reconcile();
     };
@@ -867,7 +955,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   useEffect(() => {
     if (media === "image") {
       const stillValid = imageModels.some((m) => m.id === selectedModelId && m.available);
-      if (!stillValid) {
+      if (!stillValid && !restoreFromEditRef.current) {
         const firstLive =
           imageModels.find((m) => m.id === VERONIX_IMAGE_MODEL_ID && m.available)?.id ||
           imageModels.find((m) => m.available)?.id ||
@@ -875,10 +963,12 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         setSelectedModelId(firstLive);
       }
       setAspectRatio((prev) => (IMAGE_ASPECTS.includes(prev as (typeof IMAGE_ASPECTS)[number]) ? prev : "1:1"));
-      setResolution(DEFAULT_IMAGE_RESOLUTION);
+      if (!restoreFromEditRef.current) {
+        setResolution(DEFAULT_IMAGE_RESOLUTION);
+      }
     } else {
       const stillValid = videoModels.some((m) => m.id === selectedModelId && m.available);
-      if (!stillValid) {
+      if (!stillValid && !restoreFromEditRef.current) {
         const next =
           videoModels.find((m) => m.id === VERONIX_MODEL_ID && m.available) ||
           videoModels.find((m) => m.available) ||
@@ -1419,6 +1509,27 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     const match = { clientId, assetId, historyId: historyId || undefined };
     let liveHistoryId = historyId || "";
 
+    const jobFallback = (): StudioJob => ({
+      clientId: clientId || newStudioClientId(),
+      url: "",
+      mediaType,
+      historyId: liveHistoryId || undefined,
+      assetId,
+      status: "running",
+      startedAt,
+      targetSeconds: countdownTargetSeconds,
+    });
+
+    const applyJobPatch = (
+      patch: Partial<StudioJob>,
+      urgent = false,
+    ) => {
+      const updater = (prev: StudioJob[]) =>
+        patchOrUpsertJob(prev, match, patch, jobFallback());
+      if (urgent) setJobs(updater);
+      else setJobsDeferred(updater);
+    };
+
     const markCompleted = async (url: string, hid?: string) => {
       const finalHistoryId = hid || liveHistoryId || undefined;
       if (brandOutro) {
@@ -1429,48 +1540,66 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           mediaType,
           clientId,
         });
-      } else if (mediaType === "video") {
-        if (applyClarity) setStatus("ترقية الوضوح مجاناً…");
+        setGenStartedAt(null);
+        await onUserRefresh().catch(() => undefined);
+        return;
+      }
+
+      applyJobPatch(
+        {
+          url,
+          mediaType,
+          historyId: finalHistoryId,
+          assetId,
+          status: "completed",
+          completedAt: Date.now(),
+          resolution: mediaType === "video" ? quotedVideoResolution : undefined,
+          clarityPending:
+            mediaType === "video" &&
+            applyClarity &&
+            String(quotedVideoResolution).toLowerCase() !== "720p",
+        },
+        true,
+      );
+      writeStoredJobs(
+        patchOrUpsertJob(readStoredJobs(), match, {
+          url,
+          mediaType,
+          historyId: finalHistoryId,
+          assetId,
+          status: "completed",
+          completedAt: Date.now(),
+        }, jobFallback()),
+      );
+      setGenStartedAt(null);
+      setStatus(null);
+
+      if (mediaType === "video" && applyClarity) {
+        setStatus("ترقية الوضوح مجاناً…");
         try {
           const graded = await finalizePaidVideo({
             url,
             historyId: finalHistoryId,
             assetId,
           });
-          setJobsDeferred((prev) =>
-            patchJob(prev, match, {
+          if (graded && graded !== url) {
+            applyJobPatch({
               url: graded,
               mediaType,
               historyId: finalHistoryId,
               assetId,
               status: "completed",
-            }),
-          );
+              clarityPending: false,
+            });
+          } else {
+            applyJobPatch({ clarityPending: false });
+          }
         } catch {
-          setJobsDeferred((prev) =>
-            patchJob(prev, match, {
-              url,
-              mediaType,
-              historyId: finalHistoryId,
-              assetId,
-              status: "completed",
-            }),
-          );
+          applyJobPatch({ clarityPending: false });
         }
         setStatus(null);
-      } else {
-        setJobsDeferred((prev) =>
-          patchJob(prev, match, {
-            url,
-            mediaType,
-            historyId: finalHistoryId,
-            assetId,
-            status: "completed",
-          }),
-        );
-        setStatus(null);
       }
-      setGenStartedAt(null);
+
       await onUserRefresh().catch(() => undefined);
     };
 
@@ -1520,16 +1649,37 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       return false;
     };
 
+    let pollErrors = 0;
+    const pollWallMs = generateWallMs({
+      historyId: liveHistoryId || undefined,
+      startedAt,
+      status: "running",
+      clientId: clientId || "",
+      url: "",
+      mediaType,
+    });
+    const maxPollAttempts =
+      mediaType === "video"
+        ? Math.max(PREVIEW_POLL_ATTEMPTS, Math.ceil(pollWallMs / PREVIEW_POLL_MS) + 2)
+        : PREVIEW_POLL_ATTEMPTS;
     try {
-    for (let i = 0; i < PREVIEW_POLL_ATTEMPTS; i += 1) {
-      if (Date.now() - startedAt >= MAX_GENERATE_WALL_MS) {
+    for (let i = 0; i < maxPollAttempts; i += 1) {
+      if (!aliveRef.current) return;
+      if (Date.now() - startedAt >= pollWallMs) {
         setJobsDeferred((prev) =>
           patchJob(prev, match, {
             status: "failed",
-            error: "انتهت المهلة (10 دقائق) — تم إيقاف التوليد تلقائياً",
+            error:
+              liveHistoryId?.startsWith("gm:") || liveHistoryId?.startsWith("mm:")
+                ? "انتهت مهلة التوليد (45 دقيقة) — تم إيقاف التوليد تلقائياً"
+                : "انتهت المهلة (10 دقائق) — تم إيقاف التوليد تلقائياً",
           }),
         );
-        setError("انتهت المهلة (10 دقائق) — تم إيقاف التوليد تلقائياً");
+        setError(
+          liveHistoryId?.startsWith("gm:") || liveHistoryId?.startsWith("mm:")
+            ? "انتهت مهلة التوليد (45 دقيقة) — تم إيقاف التوليد تلقائياً"
+            : "انتهت المهلة (10 دقائق) — تم إيقاف التوليد تلقائياً",
+        );
         setGenStartedAt(null);
         return;
       }
@@ -1552,13 +1702,42 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           historyId?: string;
         }>(`/api/status?${statusQs.toString()}`);
         if (!res.ok) {
+          pollErrors += 1;
+          if (pollErrors >= 8) {
+            const apiErr =
+              (data as { error?: string }).error ||
+              "تعذر متابعة حالة Gemini — تحقق من إعدادات المزود";
+            setJobsDeferred((prev) =>
+              patchJob(prev, match, {
+                status: "failed",
+                error: apiErr,
+              }),
+            );
+            setError(apiErr);
+            setGenStartedAt(null);
+            return;
+          }
           if (await tryAssetReady()) return;
           continue;
         }
+        pollErrors = 0;
         const st = String(data.status || "").toUpperCase();
         const url = data.urls?.[0];
         if (url) {
           await markCompleted(url, liveHistoryId);
+          return;
+        }
+        if (st === "COMPLETED" && !url) {
+          const failMsg =
+            data.error || "اكتمل التوليد لكن الفيديو غير متاح — أعد المحاولة";
+          setJobsDeferred((prev) =>
+            patchJob(prev, match, {
+              status: "failed",
+              error: failMsg,
+            }),
+          );
+          setError(failMsg);
+          setGenStartedAt(null);
           return;
         }
         if (st === "FAILED" || st === "CANCELLED") {
@@ -1643,59 +1822,32 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     const target = job || preview;
     if (!target?.url) return;
     setShareNote(null);
-    const shareUrl =
-      typeof window !== "undefined" ? `${window.location.origin}/assets` : "/assets";
-    try {
-      if (navigator.share) {
-        await navigator.share({
-          title: "Veronix.ai",
-          text: prompt.trim() || "Generated with Veronix.ai",
-          url: shareUrl,
-        });
-        return;
-      }
-      await navigator.clipboard.writeText(shareUrl);
-      setShareNote("تم نسخ رابط المشاركة");
-    } catch {
-      try {
-        await navigator.clipboard.writeText(shareUrl);
-        setShareNote("تم نسخ رابط المشاركة");
-      } catch {
-        setShareNote("تعذر المشاركة — انسخ الرابط يدوياً");
-      }
-    }
+    const result = await shareAsset(
+      {
+        prompt: prompt.trim() || target.prompt,
+        referralCode: user?.referralCode,
+        locale,
+      },
+      "native",
+    );
+    setShareNote(result.ok ? "تم نسخ رابط المشاركة" : "تعذر المشاركة — انسخ الرابط يدوياً");
   }
 
   const handleShareJob = useCallback((job: StudioJob) => {
     void (async () => {
       if (!job.url) return;
       setShareNote(null);
-      const shareUrl =
-        typeof window !== "undefined"
-          ? `${window.location.origin}/assets`
-          : "/assets";
-      const text = job.prompt || "Generated with Veronix.ai";
-      try {
-        if (navigator.share) {
-          await navigator.share({
-            title: "Veronix.ai",
-            text,
-            url: shareUrl,
-          });
-          return;
-        }
-        await navigator.clipboard.writeText(shareUrl);
-        setShareNote("تم نسخ رابط المشاركة");
-      } catch {
-        try {
-          await navigator.clipboard.writeText(shareUrl);
-          setShareNote("تم نسخ رابط المشاركة");
-        } catch {
-          setShareNote("تعذر المشاركة — انسخ الرابط يدوياً");
-        }
-      }
+      const result = await shareAsset(
+        {
+          prompt: job.prompt || "Generated with Veronix.ai",
+          referralCode: user?.referralCode,
+          locale,
+        },
+        "native",
+      );
+      setShareNote(result.ok ? "تم نسخ رابط المشاركة" : "تعذر المشاركة — انسخ الرابط يدوياً");
     })();
-  }, []);
+  }, [user?.referralCode, locale]);
 
   const handleDeleteJob = useCallback((job: StudioJob) => {
     setJobs((prev) => prev.filter((j) => j.clientId !== job.clientId));
@@ -1979,12 +2131,16 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       targetSeconds: outputTargetSeconds,
       startedAt,
       prompt: userPrompt,
+      resolution: media === "video" ? quotedVideoResolution : undefined,
     }));
     setGenerating(true);
     setGenStartedAt(startedAt);
     setMultiProgress(null);
     // Append new cards — keep previous results on the grid.
     setJobs((prev) => [...placeholders, ...prev].slice(0, 12));
+    window.requestAnimationFrame(() => {
+      resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
     setStatus(
       freeTrial
         ? "جاري توليد فيديوك المجاني…"
@@ -2135,67 +2291,98 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               mediaType: media,
               clientId: placeholder.clientId,
             });
-          } else if (media === "video") {
-            let finalUrl = firstUrl;
-            if (applyClarity) {
-              setStatus("ترقية الوضوح مجاناً…");
-              try {
-                finalUrl = await finalizePaidVideo({
-                  url: firstUrl,
-                  historyId,
-                  assetId,
-                });
-              } catch {
-                // keep original
-              }
-            }
+          } else {
             if (!stillMine()) return;
             setJobs((prev) =>
-              patchJob(
+              patchOrUpsertJob(
                 prev,
-                { clientId: placeholder.clientId },
-                {
-                  url: finalUrl,
-                  mediaType: media,
-                  historyId,
-                  assetId,
-                  status: "completed",
-                },
-              ),
-            );
-          } else {
-            setJobs((prev) =>
-              patchJob(
-                prev,
-                { clientId: placeholder.clientId },
+                { clientId: placeholder.clientId, assetId, historyId },
                 {
                   url: firstUrl,
                   mediaType: media,
                   historyId,
                   assetId,
                   status: "completed",
+                  completedAt: Date.now(),
+                  resolution: media === "video" ? quotedVideoResolution : undefined,
+                  clarityPending:
+                    media === "video" &&
+                    applyClarity &&
+                    String(quotedVideoResolution).toLowerCase() !== "720p",
                 },
+                placeholder,
               ),
             );
+            if (media === "video" && applyClarity) {
+              setStatus("ترقية الوضوح مجاناً…");
+              void (async () => {
+                try {
+                  const graded = await finalizePaidVideo({
+                    url: firstUrl,
+                    historyId,
+                    assetId,
+                  });
+                  if (!stillMine()) return;
+                  if (graded && graded !== firstUrl) {
+                    setJobs((prev) =>
+                      patchJob(
+                        prev,
+                        { clientId: placeholder.clientId },
+                        {
+                          url: graded,
+                          mediaType: media,
+                          historyId,
+                          assetId,
+                          status: "completed",
+                          clarityPending: false,
+                        },
+                      ),
+                    );
+                  } else {
+                    setJobs((prev) =>
+                      patchJob(
+                        prev,
+                        { clientId: placeholder.clientId },
+                        { clarityPending: false },
+                      ),
+                    );
+                  }
+                } catch {
+                  setJobs((prev) =>
+                    patchJob(
+                      prev,
+                      { clientId: placeholder.clientId },
+                      { clarityPending: false },
+                    ),
+                  );
+                } finally {
+                  setStatus(null);
+                }
+              })();
+            }
           }
           completedCount += 1;
         } else if (historyId || (assetId && (resultRunning || media === "image"))) {
           anyRunning = true;
-          setJobs((prev) =>
-            patchJob(
+          const runningPatch = {
+            url: "",
+            mediaType: media,
+            historyId,
+            assetId,
+            status: "running" as const,
+            targetSeconds: outputTargetSeconds,
+            startedAt,
+          };
+          setJobs((prev) => {
+            const patched = patchJob(
               prev,
               { clientId: placeholder.clientId },
-              {
-                url: "",
-                mediaType: media,
-                historyId,
-                assetId,
-                status: "running",
-                targetSeconds: outputTargetSeconds,
-                startedAt,
-              },
-            ),
-          );
+              runningPatch,
+            );
+            const exists = patched.some((j) => j.clientId === placeholder.clientId);
+            if (exists) return patched;
+            return upsertJob(prev, { ...placeholder, ...runningPatch });
+          });
           void pollPreview(
             historyId || "",
             media,
@@ -2294,25 +2481,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         )}
 
       {!lockedMedia && (
-        <div className="flex gap-2">
-          {(
-            [
-              { id: "image" as const, label: t.create.mediaImage },
-              { id: "video" as const, label: t.create.mediaVideo },
-            ] as const
-          ).map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setMedia(item.id)}
-              className={`rounded-full px-4 py-2 text-sm font-semibold ${
-                media === item.id ? "bg-white text-black" : "border border-white/10 text-white/70"
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
+        <StudioMediaTabs />
       )}
 
       {lockedMedia && (
@@ -2332,10 +2501,12 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           <p className="text-[10px] uppercase tracking-[0.16em] text-white/40 sm:text-xs">{t.create.model}</p>
           <ChevronDown className="h-4 w-4 text-white/50" />
         </div>
-        <select
+        <ModelSelect
+          label={t.create.model}
+          comingSoonLabel={t.create.comingSoon}
+          models={media === "image" ? imageModels : videoModels}
           value={selectedModelId}
-          onChange={(e) => {
-            const id = e.target.value;
+          onChange={(id) => {
             restoreFromEditRef.current = false;
             setSelectedModelId(id);
             const videoModel = videoModels.find((m) => m.id === id);
@@ -2349,20 +2520,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               setAspectRatio("1:1");
             }
           }}
-          className="w-full appearance-none rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none sm:py-2.5"
-        >
-          {(media === "image" ? imageModels : videoModels).map((model) => (
-            <option
-              key={model.id}
-              value={model.id}
-              disabled={!model.available}
-            >
-              {model.available
-                ? model.name
-                : `${model.name} · ${t.create.comingSoon}`}
-            </option>
-          ))}
-        </select>
+        />
         {selectedModel?.id === VERONIX_MODEL_ID ||
         selectedModel?.id === "vyronix-image" ? (
           <p className="mt-2 text-xs text-white/45">{t.create.createdBy}</p>
@@ -2941,27 +3099,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         </div>
       ) : null}
 
-      {waitingResult ? (
-        <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-[#22f0ff]/25 bg-[#141821] px-4 py-4">
-          <GenerateClock
-            startedAt={
-              genStartedAt ||
-              runningJobs[0]?.startedAt ||
-              Date.now()
-            }
-            size="large"
-          />
-          <p className="text-sm font-semibold text-white">
-            جاري التوليد…
-            {runningJobs.length > 0 ? ` (${runningJobs.length}/${MAX_CONCURRENT})` : ""}
-          </p>
-        </div>
-      ) : null}
-
       <StudioResultGrid
         jobs={jobs}
         onShare={handleShareJob}
         onDelete={handleDeleteJob}
+        sectionRef={resultsRef}
       />
       {shareNote ? (
         <p className="text-center text-xs text-[#22f0ff]">{shareNote}</p>

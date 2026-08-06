@@ -6,6 +6,14 @@ import {
   getPixVerseVideoTask,
   parsePixVerseHistoryId,
 } from "@/lib/pixverse";
+import {
+  parseGeminiHistoryId,
+  resolveGeminiVideoUrl,
+} from "@/lib/gemini-video";
+import {
+  parseMiniMaxHistoryId,
+  resolveMiniMaxVideoUrl,
+} from "@/lib/minimax-video";
 
 /** Resolve a remote MP4 URL from a Veronix history id (`bp:` or `pv:`). */
 export async function resolveHistoryVideoUrl(
@@ -24,6 +32,16 @@ export async function resolveHistoryVideoUrl(
   if (pvId) {
     const task = await getPixVerseVideoTask(pvId);
     return task.url || null;
+  }
+
+  const gmId = parseGeminiHistoryId(trimmed);
+  if (gmId) {
+    return resolveGeminiVideoUrl(gmId);
+  }
+
+  const mmId = parseMiniMaxHistoryId(trimmed);
+  if (mmId) {
+    return resolveMiniMaxVideoUrl(mmId);
   }
 
   return null;

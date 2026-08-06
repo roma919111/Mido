@@ -79,6 +79,7 @@ export async function registerUser(input: {
   email: string;
   password: string;
   name?: string;
+  referralCode?: string | null;
 }) {
   const email = input.email.trim().toLowerCase();
   const password = input.password;
@@ -91,8 +92,13 @@ export async function registerUser(input: {
     name: input.name?.trim() || email.split("@")[0] || "Creator",
     passwordHash,
   });
+
+  const { applyReferralOnSignup } = await import("@/lib/referral");
+  await applyReferralOnSignup(user.id, input.referralCode);
+
+  const fresh = await findUserById(user.id);
   await setSessionCookie(user.id);
-  return publicUser(user);
+  return publicUser(fresh || user);
 }
 
 export async function loginUser(input: { email: string; password: string }) {

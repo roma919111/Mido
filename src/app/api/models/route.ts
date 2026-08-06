@@ -9,7 +9,16 @@ import {
 import { getLiveCatalog } from "@/lib/openart-catalog-sync";
 import { VERONIX_CREDIT_MULTIPLIER } from "@/lib/credit-quote";
 import { isBytePlusConfigured } from "@/lib/byteplus-ark";
+import { isSeedance2Configured, SEEDANCE_2_MODEL_ID } from "@/lib/byteplus-constants";
 import { isPixVerseConfigured, PIXVERSE_MODEL_ID } from "@/lib/pixverse";
+import {
+  GEMINI_OMNI_FLASH_MODEL_ID,
+  isGeminiVideoConfigured,
+} from "@/lib/gemini-video";
+import {
+  isMiniMaxVideoConfigured,
+  MINIMAX_H3_MODEL_ID,
+} from "@/lib/minimax-video";
 import { VERONIX_IMAGE_MODEL_ID } from "@/lib/byteplus-image";
 
 export const runtime = "nodejs";
@@ -38,6 +47,21 @@ function productCatalog(video: CatalogModel[], image: CatalogModel[]) {
         available: true,
       }));
 
+  if (isSeedance2Configured()) {
+    const seedance2 =
+      video.find((m) => m.id === SEEDANCE_2_MODEL_ID) ||
+      VIDEO_MODELS.find((m) => m.id === SEEDANCE_2_MODEL_ID);
+    if (seedance2) {
+      videoOut.push({
+        ...seedance2,
+        name: "Seedance 2.0",
+        available: true,
+        badge: "Seedance",
+        tagline: "BytePlus Seedance 2.0 — صورة / فيديو / صوت مرجعي (4–15s)",
+      });
+    }
+  }
+
   if (isPixVerseConfigured()) {
     const pixverse =
       video.find((m) => m.id === PIXVERSE_MODEL_ID) ||
@@ -48,6 +72,36 @@ function productCatalog(video: CatalogModel[], image: CatalogModel[]) {
         name: "PixVerse V6",
         available: true,
         badge: "تجربة",
+      });
+    }
+  }
+
+  if (isGeminiVideoConfigured()) {
+    const gemini =
+      video.find((m) => m.id === GEMINI_OMNI_FLASH_MODEL_ID) ||
+      VIDEO_MODELS.find((m) => m.id === GEMINI_OMNI_FLASH_MODEL_ID);
+    if (gemini) {
+      videoOut.push({
+        ...gemini,
+        name: "Gemini Omni Flash",
+        available: true,
+        badge: "Gemini",
+        tagline: "Google Gemini — text / image to video (3–10s)",
+      });
+    }
+  }
+
+  if (isMiniMaxVideoConfigured()) {
+    const minimax =
+      video.find((m) => m.id === MINIMAX_H3_MODEL_ID) ||
+      VIDEO_MODELS.find((m) => m.id === MINIMAX_H3_MODEL_ID);
+    if (minimax) {
+      videoOut.push({
+        ...minimax,
+        name: "MiniMax H3",
+        available: true,
+        badge: "MiniMax",
+        tagline: "MiniMax H series — 768P / 2K (1–15s)",
       });
     }
   }

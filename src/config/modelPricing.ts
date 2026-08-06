@@ -8,10 +8,14 @@
 
 import { PIXVERSE_MODEL_ID } from "@/lib/pixverse-constants";
 import { VERONIX_MODEL_ID } from "@/lib/free-trial";
+import { SEEDANCE_2_MODEL_ID } from "@/lib/byteplus-constants";
+import { MINIMAX_H3_MODEL_ID, MINIMAX_H3_OUTPUT_USD_PER_SEC } from "@/lib/minimax-constants";
+import { GEMINI_OMNI_FLASH_MODEL_ID, GEMINI_VIDEO_USD_PER_SEC } from "@/lib/gemini-constants";
 import {
   bytePlusCostUsd,
   estimateBytePlusTokens,
   normalizeVideoResolution,
+  VERONIX_PROFIT_MARKUP,
   withProfitMarkup,
 } from "@/lib/byteplus-pricing";
 
@@ -27,7 +31,9 @@ export type VideoQuality =
   | "480p"
   | "540p"
   | "720p"
-  | "1080p";
+  | "768p"
+  | "1080p"
+  | "2k";
 
 export type VideoTierRates = {
   noAudio: number;
@@ -58,6 +64,24 @@ function veronixCreditsPerSecond(resolution: "480p" | "720p"): number {
 
 const VERONIX_480_PER_SEC = veronixCreditsPerSecond("480p");
 const VERONIX_720_PER_SEC = veronixCreditsPerSecond("720p");
+/** Seedance 2.0 full — ~2× mini (OpenArt list cost reference). */
+const SEEDANCE_2_480_PER_SEC = Math.max(1, VERONIX_480_PER_SEC * 2);
+const SEEDANCE_2_720_PER_SEC = Math.max(1, VERONIX_720_PER_SEC * 2);
+
+function listCostToCreditsPerSecond(costUsdPerSec: number): number {
+  return Math.max(
+    1,
+    Math.ceil((costUsdPerSec * VERONIX_PROFIT_MARKUP) / CREDIT_USD),
+  );
+}
+
+const MINIMAX_768_PER_SEC = listCostToCreditsPerSecond(
+  MINIMAX_H3_OUTPUT_USD_PER_SEC["768p"],
+);
+const MINIMAX_2K_PER_SEC = listCostToCreditsPerSecond(
+  MINIMAX_H3_OUTPUT_USD_PER_SEC["2k"],
+);
+const GEMINI_OMNI_PER_SEC = listCostToCreditsPerSecond(GEMINI_VIDEO_USD_PER_SEC);
 
 /**
  * Per-model video pricing table.
@@ -88,6 +112,33 @@ export const VIDEO_MODEL_PRICING: Record<string, VideoModelPricingConfig> = {
       "720p": { noAudio: VERONIX_720_PER_SEC, withAudio: VERONIX_720_PER_SEC },
     },
   },
+  [SEEDANCE_2_MODEL_ID]: {
+    modelId: SEEDANCE_2_MODEL_ID,
+    displayName: "Seedance 2.0",
+    creditsPerSecond: {
+      "480p": { noAudio: SEEDANCE_2_480_PER_SEC, withAudio: SEEDANCE_2_480_PER_SEC },
+      "720p": { noAudio: SEEDANCE_2_720_PER_SEC, withAudio: SEEDANCE_2_720_PER_SEC },
+    },
+    videoReferenceExtraPerSecond: {
+      "480p": SEEDANCE_2_480_PER_SEC,
+      "720p": SEEDANCE_2_720_PER_SEC,
+    },
+  },
+  [MINIMAX_H3_MODEL_ID]: {
+    modelId: MINIMAX_H3_MODEL_ID,
+    displayName: "MiniMax H3",
+    creditsPerSecond: {
+      "768p": { noAudio: MINIMAX_768_PER_SEC, withAudio: MINIMAX_768_PER_SEC },
+      "2k": { noAudio: MINIMAX_2K_PER_SEC, withAudio: MINIMAX_2K_PER_SEC },
+    },
+  },
+  [GEMINI_OMNI_FLASH_MODEL_ID]: {
+    modelId: GEMINI_OMNI_FLASH_MODEL_ID,
+    displayName: "Gemini Omni Flash",
+    creditsPerSecond: {
+      "720p": { noAudio: GEMINI_OMNI_PER_SEC, withAudio: GEMINI_OMNI_PER_SEC },
+    },
+  },
 };
 
 export function usdToCredits(usd: number): number {
@@ -102,7 +153,12 @@ export function creditsToUsd(credits: number): number {
 export function normalizeModelPricingId(model?: string | null): string {
   const id = String(model || "").trim().toLowerCase();
   if (id === "veronix" || id === "vyronix") return VERONIX_MODEL_ID;
+  if (id === SEEDANCE_2_MODEL_ID || id === "seedance-2") return SEEDANCE_2_MODEL_ID;
   if (id === "pixverse-v6" || id.includes("pixverse")) return PIXVERSE_MODEL_ID;
+  if (id === MINIMAX_H3_MODEL_ID || id.includes("minimax")) return MINIMAX_H3_MODEL_ID;
+  if (id === GEMINI_OMNI_FLASH_MODEL_ID || id.includes("gemini-omni")) {
+    return GEMINI_OMNI_FLASH_MODEL_ID;
+  }
   return id;
 }
 
@@ -122,6 +178,13 @@ export function normalizePricingQuality(
     }
     if (r.includes("480") || r === "std") return "360p";
     return "540p";
+  }
+
+  if (model === MINIMAX_H3_MODEL_ID || model.includes("minimax")) {
+    if (r === "2k" || r.includes("2k") || r.includes("1440") || r.includes("2160")) {
+      return "2k";
+    }
+    return "768p";
   }
 
   const veronix = normalizeVideoResolution(resolution);

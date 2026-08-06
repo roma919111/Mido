@@ -3,6 +3,8 @@
  * Prefer localStorage so jobs survive remounts; migrate old session preview.
  */
 
+import { estimateGenerateSeconds } from "@/lib/generate-eta";
+
 export type StudioJob = {
   clientId: string;
   url: string;
@@ -17,6 +19,12 @@ export type StudioJob = {
   error?: string;
   /** Prompt used for this job — restored on Edit */
   prompt?: string;
+  /** When the clip URL first landed (prep timer anchor). */
+  completedAt?: number;
+  /** Output resolution label — clarity ETA only. */
+  resolution?: string;
+  /** Clarity grade still running server-side. */
+  clarityPending?: boolean;
 };
 
 const JOBS_KEY = "veronix.create.jobs.v2";
@@ -91,18 +99,36 @@ export function upsertJob(jobs: StudioJob[], next: StudioJob): StudioJob[] {
   return copy;
 }
 
+export function jobMatches(
+  j: StudioJob,
+  match: { clientId?: string; assetId?: string; historyId?: string },
+): boolean {
+  return Boolean(
+    (match.clientId && j.clientId === match.clientId) ||
+      (match.assetId && j.assetId === match.assetId) ||
+      (match.historyId && j.historyId && j.historyId === match.historyId),
+  );
+}
+
 export function patchJob(
   jobs: StudioJob[],
   match: { clientId?: string; assetId?: string; historyId?: string },
   patch: Partial<StudioJob>,
 ): StudioJob[] {
-  return jobs.map((j) => {
-    const hit =
-      (match.clientId && j.clientId === match.clientId) ||
-      (match.assetId && j.assetId === match.assetId) ||
-      (match.historyId && j.historyId && j.historyId === match.historyId);
-    return hit ? { ...j, ...patch } : j;
-  });
+  return jobs.map((j) => (jobMatches(j, match) ? { ...j, ...patch } : j));
+}
+
+/** Patch an existing card, or insert when hydrate/prune dropped the placeholder. */
+export function patchOrUpsertJob(
+  jobs: StudioJob[],
+  match: { clientId?: string; assetId?: string; historyId?: string },
+  patch: Partial<StudioJob>,
+  fallback: StudioJob,
+): StudioJob[] {
+  if (jobs.some((j) => jobMatches(j, match))) {
+    return patchJob(jobs, match, patch);
+  }
+  return upsertJob(jobs, { ...fallback, ...patch, clientId: fallback.clientId });
 }
 
 export type AssetSyncRow = {
@@ -168,6 +194,7 @@ export function syncRunningJobsFromAssets(
       error: undefined,
       targetSeconds: j.targetSeconds || a.targetSeconds || j.targetSeconds,
       prompt: j.prompt || a.prompt || j.prompt,
+      completedAt: j.completedAt || Date.now(),
     };
   };
 
@@ -261,5 +288,100 @@ export function syncRunningJobsFromAssets(
   });
 
   return { jobs: next, changed, clearedKeys };
+}
+
+const DEFAULT_MAX_WALL_MS = 10 * 60 * 1000;
+const DEFAULT_STALE_GRACE_MS = 5 * 60 * 1000;
+
+/** Drop or resolve stale "running" cards that freeze clocks in the UI. */
+export function pruneGhostRunningJobs(
+  jobs: StudioJob[],
+  opts?: { maxWallMs?: number; staleGraceMs?: number },
+): { jobs: StudioJob[]; changed: boolean } {
+  const maxWallMs = opts?.maxWallMs ?? DEFAULT_MAX_WALL_MS;
+  const staleGraceMs = opts?.staleGraceMs ?? DEFAULT_STALE_GRACE_MS;
+  const now = Date.now();
+  let changed = false;
+
+  const next: StudioJob[] = [];
+  for (const j of jobs) {
+    if (j.status !== "running") {
+      next.push(j);
+      continue;
+    }
+
+    if (j.url) {
+      changed = true;
+      next.push({
+        ...j,
+        status: "completed",
+        completedAt: j.completedAt || now,
+        error: undefined,
+      });
+      continue;
+    }
+
+    const started = j.startedAt || 0;
+    if (started <= 0) {
+      changed = true;
+      next.push({
+        ...j,
+        status: "failed",
+        error: "توقف التوليد — أعد المحاولة",
+      });
+      continue;
+    }
+
+    const wallMs =
+      j.historyId?.startsWith("gm:") || j.historyId?.startsWith("mm:")
+        ? 45 * 60 * 1000
+        : maxWallMs;
+
+    if (started > 0 && now - started >= wallMs) {
+      changed = true;
+      next.push({
+        ...j,
+        status: "failed",
+        error:
+          j.historyId?.startsWith("gm:") || j.historyId?.startsWith("mm:")
+            ? "انتهت مهلة التوليد (45 دقيقة) — افتح Assets أو أعد التوليد"
+            : "انتهت المهلة (10 دقائق) — أعد التوليد",
+      });
+      continue;
+    }
+
+    if (!j.assetId && !j.historyId) {
+      // Generate API still in flight — placeholders have no ids yet.
+      if (started > 0 && now - started < 5 * 60 * 1000) {
+        next.push(j);
+        continue;
+      }
+      changed = true;
+      continue;
+    }
+
+    // Gemini / MiniMax can take many minutes — don't fail on short BytePlus ETA.
+    if (
+      !j.historyId?.startsWith("gm:") &&
+      !j.historyId?.startsWith("mm:") &&
+      started > 0
+    ) {
+      const target = j.targetSeconds || (j.mediaType === "image" ? 4 : 5);
+      const etaMs = estimateGenerateSeconds(target, j.mediaType) * 1000;
+      if (now - started > etaMs + staleGraceMs) {
+        changed = true;
+        next.push({
+          ...j,
+          status: "failed",
+          error: "توقف التوليد — أعد المحاولة",
+        });
+        continue;
+      }
+    }
+
+    next.push(j);
+  }
+
+  return { jobs: next.slice(0, MAX_JOBS), changed };
 }
 

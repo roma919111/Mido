@@ -144,7 +144,7 @@ export function PricingPage() {
           void logout();
         }}
       />
-      <main className="mx-auto max-w-5xl px-4 pb-28 pt-8 sm:px-6" dir={dir}>
+      <main className="mx-auto max-w-5xl px-4 pb-bottom-nav pt-8 sm:px-6" dir={dir}>
         <p className="text-xs uppercase tracking-[0.22em] text-[#22f0ff]/80">
           {t.pricing.eyebrow}
         </p>
@@ -430,7 +430,7 @@ export function PricingPage() {
 
         <ModelPricingTable />
       </main>
-      <div className="pb-24">
+      <div className="pb-bottom-nav">
         <SiteFooter />
       </div>
       <BottomNav />

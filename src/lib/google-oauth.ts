@@ -53,20 +53,22 @@ export async function readRememberedGoogleRedirectUri(
   return getGoogleRedirectUri(fallbackRequest);
 }
 
-export function createOAuthState(nextPath: string): string {
+export function createOAuthState(nextPath: string, referralCode?: string | null): string {
   const nonce = randomBytes(16).toString("hex");
+  const ref = referralCode?.trim().toLowerCase() || undefined;
   return Buffer.from(
-    JSON.stringify({ n: nonce, next: nextPath || "/", t: Date.now() }),
+    JSON.stringify({ n: nonce, next: nextPath || "/", t: Date.now(), ref }),
   ).toString("base64url");
 }
 
-export function parseOAuthState(state: string | null): { next: string } {
+export function parseOAuthState(state: string | null): { next: string; ref?: string } {
   if (!state) return { next: "/" };
   try {
     const raw = Buffer.from(state, "base64url").toString("utf8");
-    const parsed = JSON.parse(raw) as { next?: string };
+    const parsed = JSON.parse(raw) as { next?: string; ref?: string };
     const next = parsed.next && parsed.next.startsWith("/") ? parsed.next : "/";
-    return { next };
+    const ref = parsed.ref?.trim().toLowerCase() || undefined;
+    return { next, ref };
   } catch {
     return { next: "/" };
   }

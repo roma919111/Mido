@@ -86,6 +86,26 @@ export async function GET(request: Request) {
 
     const source = await resolveVideoSource(request);
     if (!source) {
+      const historyId = searchParams.get("historyId")?.trim();
+      if (historyId) {
+        const resolved = await resolveHistoryVideoUrl(historyId);
+        if (resolved) {
+          try {
+            const jpeg = await extractFirstFrameJpeg(resolved);
+            await writeFile(file, jpeg);
+            return new NextResponse(new Uint8Array(jpeg), {
+              status: 200,
+              headers: {
+                "Content-Type": "image/jpeg",
+                "Cache-Control": "private, max-age=86400, immutable",
+                "X-Content-Type-Options": "nosniff",
+              },
+            });
+          } catch {
+            // fall through
+          }
+        }
+      }
       return NextResponse.json({ error: "Media not ready" }, { status: 404 });
     }
 

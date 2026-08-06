@@ -1,14 +1,19 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { BrandLogo } from "@/components/BrandLogo";
 import { LanguageSwitcher } from "@/components/veronix/LanguageSwitcher";
 import { useLocale } from "@/components/veronix/LocaleProvider";
 import { fetchJson } from "@/lib/fetch-json";
 import type { CustomerUser } from "@/components/veronix/AppHeader";
 import { writeCustomerSnapshot } from "@/lib/customer-user-cache";
+import {
+  persistReferralCodeClient,
+  readReferralCodeClient,
+} from "@/lib/referral-shared";
+import { trackAnalyticsEvent } from "@/components/veronix/AnalyticsScripts";
 
 interface AuthFormProps {
   mode: "login" | "signup";
@@ -23,6 +28,7 @@ export function AuthForm({ mode, embedded = false }: AuthFormProps) {
   const next = params.get("next") || "/";
   const paywall = params.get("paywall");
   const urlError = params.get("error");
+  const refParam = params.get("ref");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -30,6 +36,16 @@ export function AuthForm({ mode, embedded = false }: AuthFormProps) {
   const [loading, setLoading] = useState(false);
   const [googleConfigured, setGoogleConfigured] = useState(false);
   const [redirectUri, setRedirectUri] = useState("");
+
+  useEffect(() => {
+    if (!refParam?.trim()) return;
+    persistReferralCodeClient(refParam);
+    void fetchJson("/api/referral/capture", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: refParam }),
+    });
+  }, [refParam]);
 
   useEffect(() => {
     void (async () => {
@@ -56,12 +72,14 @@ export function AuthForm({ mode, embedded = false }: AuthFormProps) {
         mode === "login"
           ? "/api/auth/customer/login"
           : "/api/auth/customer/signup";
+      const referralCode = readReferralCodeClient();
       const { res, data } = await fetchJson<{ error?: string }>(path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, name }),
+        body: JSON.stringify({ email, password, name, referralCode }),
       });
       if (!res.ok) throw new Error(data.error || "Auth failed");
+      if (mode === "signup") trackAnalyticsEvent("sign_up", { method: "email" });
       try {
         const me = await fetchJson<{ user: CustomerUser | null }>(
           "/api/auth/customer/me",
@@ -82,11 +100,11 @@ export function AuthForm({ mode, embedded = false }: AuthFormProps) {
 
   const googleHref = `/api/auth/google?next=${encodeURIComponent(next)}${
     paywall ? "&paywall=1" : ""
-  }`;
+  }${refParam?.trim() ? `&ref=${encodeURIComponent(refParam.trim())}` : ""}`;
 
   return (
     <div
-      className="mx-auto flex max-w-md flex-col justify-center px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-6"
+      className="mx-auto flex max-w-md flex-col justify-center px-4 pb-bottom-nav pt-6"
       dir={dir}
     >
       {!embedded ? (

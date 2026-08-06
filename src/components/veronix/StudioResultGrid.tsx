@@ -1,17 +1,19 @@
 "use client";
 
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { flushSync } from "react-dom";
 import {
   Loader2,
   Pencil,
   Play,
+  Scissors,
   Share2,
   Trash2,
 } from "lucide-react";
 import { veronixMediaSrc, veronixPosterSrc } from "@/lib/media-proxy";
 import type { StudioJob } from "@/lib/studio-jobs";
 import { writeEditDraft } from "@/lib/edit-draft";
+import { sendVideoToEditStudio } from "@/lib/send-to-edit-studio";
 import { fetchJson } from "@/lib/fetch-json";
 import { inferTargetSecondsFromAsset } from "@/lib/generate-eta";
 import { useRouter } from "next/navigation";
@@ -45,17 +47,27 @@ const ResultCard = memo(function ResultCard({
   const { t } = useLocale();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [editing, setEditing] = useState(false);
+  const [sendingStudio, setSendingStudio] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [armed, setArmed] = useState(false);
-  const [mediaReady, setMediaReady] = useState(false);
-  const [finishedAt, setFinishedAt] = useState<number | null>(null);
-  const waiting = job.status === "running";
+  const [posterFailed, setPosterFailed] = useState(false);
+  const clockAnchorRef = useRef<number | null>(null);
+  const generating = job.status === "running";
+  const waiting = generating && !job.url;
   const failed = job.status === "failed";
-  const clockStart =
-    typeof job.startedAt === "number" && job.startedAt > 0
-      ? job.startedAt
-      : Date.now();
+  if (
+    typeof job.startedAt === "number" &&
+    job.startedAt > 0 &&
+    clockAnchorRef.current !== job.startedAt
+  ) {
+    clockAnchorRef.current = job.startedAt;
+  }
+  if (clockAnchorRef.current == null) {
+    clockAnchorRef.current = Date.now();
+  }
+  const clockStart = clockAnchorRef.current;
+  const showLiveClock = generating;
   const mediaUrl =
     job.url && job.mediaType === "video"
       ? veronixMediaSrc({
@@ -84,8 +96,11 @@ const ResultCard = memo(function ResultCard({
   useEffect(() => {
     setPlaying(false);
     setArmed(false);
-    setMediaReady(false);
-    setFinishedAt(null);
+    setPosterFailed(false);
+    clockAnchorRef.current =
+      typeof job.startedAt === "number" && job.startedAt > 0
+        ? job.startedAt
+        : null;
     const el = videoRef.current;
     if (el) {
       try {
@@ -96,76 +111,7 @@ const ResultCard = memo(function ResultCard({
         // ignore
       }
     }
-  }, [job.clientId, job.url, job.historyId, job.status]);
-
-  useEffect(() => {
-    if (waiting) return;
-    if (job.status === "completed") {
-      setFinishedAt((prev) => prev ?? Date.now());
-    }
-  }, [waiting, job.status]);
-
-  useEffect(() => {
-    if (failed) return;
-    if (job.mediaType === "image") {
-      if (!imgSrc) return;
-      let cancelled = false;
-      const img = new Image();
-      img.onload = () => {
-        if (!cancelled) setMediaReady(true);
-      };
-      img.onerror = () => {
-        if (!cancelled) setMediaReady(true);
-      };
-      img.src = imgSrc;
-      return () => {
-        cancelled = true;
-      };
-    }
-    if (!mediaUrl) return;
-    let cancelled = false;
-    const markReady = () => {
-      if (!cancelled) setMediaReady(true);
-    };
-    if (posterSrc) {
-      const img = new Image();
-      img.onload = markReady;
-      img.onerror = () => {
-        const probe = document.createElement("video");
-        probe.preload = "metadata";
-        probe.onloadeddata = markReady;
-        probe.onerror = markReady;
-        probe.src = mediaUrl;
-      };
-      img.src = posterSrc;
-      return () => {
-        cancelled = true;
-      };
-    }
-    const probe = document.createElement("video");
-    probe.preload = "metadata";
-    probe.onloadeddata = markReady;
-    probe.onerror = markReady;
-    probe.src = mediaUrl;
-    return () => {
-      cancelled = true;
-    };
-  }, [failed, job.mediaType, imgSrc, mediaUrl, posterSrc]);
-
-  useEffect(() => {
-    setPlaying(false);
-    setArmed(false);
-    const el = videoRef.current;
-    if (el) {
-      try {
-        el.pause();
-        el.removeAttribute("src");
-        el.load();
-      } catch {
-        // ignore
-      }
-    }
-  }, [mediaUrl]);
+  }, [job.clientId, job.startedAt, mediaUrl]);
 
   useEffect(() => {
     if (!armed || !mediaUrl) return;
@@ -301,6 +247,23 @@ const ResultCard = memo(function ResultCard({
     }
   };
 
+  const handleSendToStudio = () => {
+    if (sendingStudio || waiting || !mediaUrl || job.mediaType !== "video") return;
+    setSendingStudio(true);
+    try {
+      sendVideoToEditStudio(router, {
+        videoUrl: mediaUrl,
+        posterUrl: posterSrc || undefined,
+        assetId: job.assetId,
+        historyId: job.historyId,
+        prompt: job.prompt,
+        durationSec: job.targetSeconds,
+      });
+    } finally {
+      setSendingStudio(false);
+    }
+  };
+
   const handleDelete = async () => {
     if (deleting || waiting) return;
     setDeleting(true);
@@ -320,74 +283,57 @@ const ResultCard = memo(function ResultCard({
     }
   };
 
-  const showClock =
-    !failed &&
-    (waiting || Boolean((mediaUrl || imgSrc) && !mediaReady));
-  const showMedia =
-    !failed && mediaReady && Boolean(mediaUrl || imgSrc);
-  const headerLabel = waiting
-    ? t.assets.generating
-    : showClock
-      ? t.assets.generating
-      : failed
-        ? t.assets.failed
-        : t.create.resultReady;
-
   return (
     <div className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-[#141821]">
       <div className="flex items-center justify-between gap-1 border-b border-white/8 px-2 py-1.5">
         <p className="truncate text-[11px] font-semibold text-white/80">
-          {headerLabel}
+          {waiting
+            ? t.assets.generating
+            : failed
+              ? t.assets.failed
+              : t.create.resultReady}
         </p>
-        {showClock ? (
-          <GenerateClock
-            startedAt={clockStart}
-            running={waiting}
-            frozenAt={finishedAt ?? undefined}
-            size="compact"
-          />
-        ) : null}
+        {showLiveClock ? <GenerateClock startedAt={clockStart} size="compact" /> : null}
       </div>
 
-      <div className="relative aspect-video bg-[#141821]">
-        {showClock ? (
-          <div className="flex h-full flex-col items-center justify-center gap-1.5 px-2">
-            <GenerateClock
-              startedAt={clockStart}
-              running={waiting}
-              frozenAt={finishedAt ?? undefined}
-              size="large"
-            />
-            <p className="text-xs font-semibold text-white/80">
-              {waiting ? t.assets.generating : "جاري تجهيز المعاينة…"}
-            </p>
-          </div>
-        ) : showMedia && mediaUrl ? (
+      <div className="relative aspect-video bg-black/50">
+        {mediaUrl ? (
           <>
-            {!armed && posterSrc ? (
+            {!armed && posterSrc && !posterFailed ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={posterSrc}
                 alt=""
                 className="absolute inset-0 h-full w-full object-cover"
+                onError={() => setPosterFailed(true)}
               />
             ) : null}
             <video
               ref={videoRef}
               key={mediaUrl}
-              src={src || undefined}
-              poster={posterSrc || undefined}
+              src={src || (posterFailed && !armed ? mediaUrl : undefined)}
+              poster={!posterFailed && posterSrc ? posterSrc : undefined}
               playsInline
-              preload={armed ? "auto" : "none"}
+              preload={
+                waiting
+                  ? "none"
+                  : armed
+                    ? "auto"
+                    : posterFailed
+                      ? "metadata"
+                      : "none"
+              }
               controls={false}
               controlsList="nodownload"
-              className="h-full w-full object-cover"
+              className={`h-full w-full object-cover${
+                !armed && posterSrc && !posterFailed ? " opacity-0" : ""
+              }`}
               onClick={togglePlay}
               onPlay={() => setPlaying(true)}
               onPause={() => setPlaying(false)}
               onEnded={() => setPlaying(false)}
             />
-            {!playing ? (
+            {!playing && !generating ? (
               <button
                 type="button"
                 onClick={(e) => {
@@ -402,8 +348,16 @@ const ResultCard = memo(function ResultCard({
                 </span>
               </button>
             ) : null}
+            {generating ? (
+              <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-1.5 bg-black/55">
+                <GenerateClock startedAt={clockStart} size="large" />
+                <p className="text-xs font-semibold text-white/85">
+                  {t.assets.generating}
+                </p>
+              </div>
+            ) : null}
           </>
-        ) : showMedia && imgSrc ? (
+        ) : imgSrc ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={imgSrc}
@@ -412,7 +366,21 @@ const ResultCard = memo(function ResultCard({
           />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-1 px-2 text-center">
-            {failed ? (
+            {generating ? (
+              <div className="flex flex-col items-center gap-1.5">
+                <GenerateClock startedAt={clockStart} size="large" />
+                <p className="text-xs font-semibold text-white/80">
+                  {t.assets.generating}
+                </p>
+              </div>
+            ) : waiting ? (
+              <div className="flex flex-col items-center gap-1.5">
+                <Loader2 className="h-8 w-8 animate-spin text-[#22f0ff]" />
+                <p className="text-xs font-semibold text-white/80">
+                  {t.assets.generating}
+                </p>
+              </div>
+            ) : failed ? (
               <p className="text-[11px] font-semibold leading-snug text-rose-200">
                 {job.error || t.assets.failed}
               </p>
@@ -427,12 +395,12 @@ const ResultCard = memo(function ResultCard({
         VYRONIX
       </div>
 
-      <div className="grid grid-cols-3 gap-1.5 p-2">
+      <div className="grid grid-cols-2 gap-1.5 p-2 sm:grid-cols-4">
         <button
           type="button"
           onClick={() => void handleEdit()}
           disabled={waiting || editing}
-          className="inline-flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-xl border border-white/20 bg-white/10 px-1 py-1.5 text-[11px] font-bold text-white disabled:opacity-40"
+          className="inline-flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-xl border border-white/20 bg-white/10 px-1 py-1.5 text-[10px] font-bold text-white disabled:opacity-40 sm:text-[11px]"
         >
           {editing ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -441,11 +409,26 @@ const ResultCard = memo(function ResultCard({
           )}
           {t.assets.edit}
         </button>
+        {job.mediaType === "video" ? (
+          <button
+            type="button"
+            onClick={handleSendToStudio}
+            disabled={waiting || sendingStudio || !job.url}
+            className="inline-flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-xl border border-[#7c5cff]/30 bg-[#7c5cff]/10 px-1 py-1.5 text-[10px] font-bold text-white disabled:opacity-40 sm:text-[11px]"
+          >
+            {sendingStudio ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Scissors className="h-4 w-4 text-[#b9a6ff]" />
+            )}
+            {t.assets.sendToStudio}
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => onShare(job)}
           disabled={!job.url}
-          className="inline-flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-xl border border-white/20 bg-white/10 px-1 py-1.5 text-[11px] font-bold text-white disabled:opacity-40"
+          className="inline-flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-xl border border-white/20 bg-white/10 px-1 py-1.5 text-[10px] font-bold text-white disabled:opacity-40 sm:text-[11px]"
         >
           <Share2 className="h-4 w-4 text-[#22f0ff]" />
           {t.create.resultShare}
@@ -454,7 +437,7 @@ const ResultCard = memo(function ResultCard({
           type="button"
           onClick={() => void handleDelete()}
           disabled={waiting || deleting}
-          className="inline-flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-xl border border-rose-400/30 bg-rose-500/15 px-1 py-1.5 text-[11px] font-bold text-rose-100 disabled:opacity-40"
+          className="inline-flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-xl border border-rose-400/30 bg-rose-500/15 px-1 py-1.5 text-[10px] font-bold text-rose-100 disabled:opacity-40 sm:text-[11px]"
         >
           {deleting ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -478,10 +461,12 @@ export const StudioResultGrid = memo(function StudioResultGrid({
   jobs,
   onShare,
   onDelete,
+  sectionRef,
 }: {
   jobs: StudioJob[];
   onShare: (job: StudioJob) => void;
   onDelete: (job: StudioJob) => void;
+  sectionRef?: RefObject<HTMLDivElement | null>;
 }) {
   const { t, dir } = useLocale();
   const [tab, setTab] = useState<PreviewTab>("all");
@@ -504,6 +489,37 @@ export const StudioResultGrid = memo(function StudioResultGrid({
     else setTab("all");
   }, [jobs.length, videos.length, images.length]);
 
+  useEffect(() => {
+    if (!jobs.length) return;
+    const runningVideo = videos.some((v) => v.status === "running");
+    if (!runningVideo) return;
+    if (tab === "image" && videos.length > 0) {
+      setTab(images.length > 0 ? "all" : "video");
+    }
+  }, [jobs, videos, images, tab]);
+
+  useEffect(() => {
+    if (!jobs.length) return;
+    const completedVideo = videos.some(
+      (v) => v.status === "completed" && Boolean(v.url),
+    );
+    if (!completedVideo) return;
+    if (tab === "image" && videos.length > 0) {
+      setTab(images.length > 0 ? "all" : "video");
+    }
+  }, [jobs, videos, images, tab]);
+
+  const runningJobs = useMemo(
+    () => jobs.filter((j) => j.status === "running"),
+    [jobs],
+  );
+  const gridClockStart = useMemo(() => {
+    const stamps = runningJobs
+      .map((j) => j.startedAt)
+      .filter((t): t is number => typeof t === "number" && t > 0);
+    return stamps.length ? Math.min(...stamps) : Date.now();
+  }, [runningJobs]);
+
   if (!jobs.length) return null;
 
   const showVideos = tab === "all" || tab === "video";
@@ -511,7 +527,19 @@ export const StudioResultGrid = memo(function StudioResultGrid({
   const sideBySide = tab === "all" && videos.length > 0 && images.length > 0;
 
   return (
-    <div className="space-y-3" dir={dir}>
+    <div ref={sectionRef} className="space-y-3" dir={dir}>
+      {runningJobs.length > 0 ? (
+        <div className="flex flex-col items-center gap-2 rounded-2xl border border-[#22f0ff]/30 bg-[#22f0ff]/8 px-4 py-4">
+          <GenerateClock startedAt={gridClockStart} size="large" />
+          <p className="text-center text-sm font-semibold text-white/85">
+            {runningJobs.length > 1
+              ? `جاري توليد ${runningJobs.length} ${runningJobs[0]?.mediaType === "image" ? "صور" : "فيديوهات"}…`
+              : runningJobs[0]?.mediaType === "image"
+                ? "جاري توليد الصورة…"
+                : "جاري توليد الفيديو…"}
+          </p>
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-semibold text-white">{t.create.resultPreview}</p>
         <div className="flex rounded-full bg-white/10 p-0.5 ring-1 ring-white/15">

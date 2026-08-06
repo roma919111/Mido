@@ -3,6 +3,7 @@
 import { AppHeader } from "./AppHeader";
 import { BottomNav } from "./BottomNav";
 import { CreateStudio } from "./CreateStudio";
+import { StudioMediaTabs } from "./StudioMediaTabs";
 import { useLocale } from "@/components/veronix/LocaleProvider";
 import { useCustomerUser } from "@/hooks/useCustomerUser";
 
@@ -23,7 +24,7 @@ export function CreatePage({ media }: { media: "image" | "video" }) {
         refreshing={refreshing}
         onLogout={() => void logout()}
       />
-      <main className="pb-[calc(6.75rem+env(safe-area-inset-bottom))] sm:pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
+      <main className="pb-bottom-nav">
         <section className="mx-auto max-w-3xl px-4 pt-3 sm:px-6 sm:pt-6" dir={dir}>
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#22f0ff]/80 sm:text-xs sm:tracking-[0.22em]">
             {t.home.studioEyebrow}
@@ -34,6 +35,9 @@ export function CreatePage({ media }: { media: "image" | "video" }) {
           <p className="mt-1 max-w-xl text-[12px] leading-relaxed text-white/55 sm:mt-2 sm:text-sm">
             {subtitle}
           </p>
+          <div className="mt-4">
+            <StudioMediaTabs />
+          </div>
         </section>
         <CreateStudio
           user={user}

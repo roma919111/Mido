@@ -17,6 +17,7 @@ export type CreateEditDraft = {
   /** Character stills (+ names in `label`) restored into Create */
   referenceImages?: VisualReference[];
   sourceAssetId?: string;
+  modelId?: string;
   duration?: number;
   resolution?: string;
   aspectRatio?: string;
@@ -116,6 +117,7 @@ export function resolveEditBoot(): CreateEditDraft | null {
     .trim() || undefined;
   const aspectRatio = (sp.get("aspect") || sp.get("ar") || draft?.aspectRatio || "")
     .trim() || undefined;
+  const modelId = (sp.get("model") || sp.get("m") || draft?.modelId || "").trim() || undefined;
   const clarityRaw = sp.get("clarity") || sp.get("c");
   const preferClarity =
     clarityRaw === "1" || clarityRaw === "true"
@@ -135,6 +137,7 @@ export function resolveEditBoot(): CreateEditDraft | null {
     startFrame: draft?.startFrame ?? null,
     referenceImages: draft?.referenceImages,
     sourceAssetId: draft?.sourceAssetId,
+    modelId,
     duration: duration ?? undefined,
     resolution,
     aspectRatio,

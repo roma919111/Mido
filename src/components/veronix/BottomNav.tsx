@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -8,7 +8,7 @@ import {
   FolderOpen,
   Home,
   ImageIcon,
-  Lightbulb,
+  Scissors,
   Sparkles,
   Wrench,
 } from "lucide-react";
@@ -20,6 +20,7 @@ import {
 import { fetchJson } from "@/lib/fetch-json";
 import { veronixPosterSrc } from "@/lib/media-proxy";
 import { useLocale } from "@/components/veronix/LocaleProvider";
+import { BottomNavModelStrip } from "@/components/veronix/BottomNavModelStrip";
 
 function prefetchAssets() {
   if (typeof window === "undefined") return;
@@ -51,7 +52,7 @@ export function BottomNav() {
 
   const items = [
     { href: "/", label: t.nav.home, icon: Home },
-    { href: "/inspire", label: t.nav.inspire, icon: Lightbulb },
+    { href: "/edit", label: t.nav.editing, icon: Scissors },
     { href: "/create", label: t.nav.create, icon: Sparkles, center: true as const },
     { href: "/tools", label: t.nav.tools, icon: Wrench },
     { href: "/assets", label: t.nav.assets, icon: FolderOpen },
@@ -60,16 +61,6 @@ export function BottomNav() {
   useEffect(() => {
     setCreateOpen(false);
   }, [pathname]);
-
-  useEffect(() => {
-    if (pathname.startsWith("/assets") || prefetched.current) return;
-    const timer = window.setTimeout(() => {
-      prefetched.current = true;
-      router.prefetch("/assets");
-      prefetchAssets();
-    }, 800);
-    return () => window.clearTimeout(timer);
-  }, [pathname, router]);
 
   useEffect(() => {
     if (!createOpen) return;
@@ -94,11 +85,17 @@ export function BottomNav() {
 
   return (
     <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-[120] border-t border-white/10 bg-[#0b0d12]/96 pb-[env(safe-area-inset-bottom)] backdrop-blur-md">
+      <div className="pointer-events-auto">
+        <Suspense fallback={<div className="h-10 border-b border-white/8 bg-[#0b0d12]/98" aria-hidden />}>
+          <BottomNavModelStrip />
+        </Suspense>
+      </div>
       <div className="pointer-events-auto mx-auto grid h-[4.35rem] max-w-lg grid-cols-5 items-center px-1.5">
         {items.map((item) => {
           const Icon = item.icon;
           const active = item.center
-            ? pathname.startsWith("/create") || (pathname === "/" && createOpen)
+            ? pathname.startsWith("/create") ||
+              (pathname === "/" && createOpen)
             : item.href === "/"
               ? pathname === "/"
               : pathname.startsWith(item.href);

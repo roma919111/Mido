@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomUUID, randomBytes } from "node:crypto";
 
 const DATA_DIR = path.join(process.cwd(), ".data");
 const DB_FILE = path.join(DATA_DIR, "veronix-db.json");
@@ -27,6 +27,10 @@ export interface UserRecord {
   adminNote?: string;
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
+  /** Unique invite code for referral program */
+  referralCode?: string;
+  /** User id who referred this account (set once on signup) */
+  referredByUserId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -68,6 +72,8 @@ export interface AssetRecord {
   /** Whether the generation requested native audio. */
   generateAudio?: boolean;
   createdAt: string;
+  /** When the provider URL first landed (wall clock, ISO). */
+  completedAt?: string;
 }
 
 export interface DbShape {
@@ -158,6 +164,13 @@ export async function findUserByGoogleId(googleId: string): Promise<UserRecord |
   return db.users.find((u) => u.googleId === googleId) ?? null;
 }
 
+export async function findUserByReferralCode(code: string): Promise<UserRecord | null> {
+  const key = code.trim().toLowerCase();
+  if (!key) return null;
+  const db = await ensureDb();
+  return db.users.find((u) => u.referralCode?.trim().toLowerCase() === key) ?? null;
+}
+
 export async function createUser(input: {
   email: string;
   name: string;
@@ -171,6 +184,16 @@ export async function createUser(input: {
       throw new Error("Email already registered");
     }
     const now = new Date().toISOString();
+    let referralCode = "";
+    for (let i = 0; i < 8; i++) {
+      const candidate = randomBytes(4).toString("hex");
+      if (!db.users.some((u) => u.referralCode?.toLowerCase() === candidate)) {
+        referralCode = candidate;
+        break;
+      }
+    }
+    if (!referralCode) referralCode = randomUUID().replace(/-/g, "").slice(0, 10);
+
     const user: UserRecord = {
       id: randomUUID(),
       email: input.email.trim().toLowerCase(),
@@ -181,6 +204,7 @@ export async function createUser(input: {
       credits: 0,
       planId: "free",
       freeVeronixUsed: false,
+      referralCode,
       createdAt: now,
       updatedAt: now,
     };
@@ -413,6 +437,14 @@ export async function updateAsset(
     if (idx < 0) return null;
     const prev = db.assets[idx]!;
     const next = { ...prev, ...patch };
+    if (
+      next.status === "completed" &&
+      next.url &&
+      !prev.completedAt &&
+      !next.completedAt
+    ) {
+      next.completedAt = new Date().toISOString();
+    }
     // Customer delete is sticky — never un-delete via sync/repair patches.
     if (prev.deletedAt) {
       next.deletedAt = prev.deletedAt;
@@ -453,6 +485,25 @@ export async function listAssetsForAdmin(
 ): Promise<AssetRecord[]> {
   const db = await ensureDb();
   return db.assets.filter((a) => a.userId === userId).slice(0, limit);
+}
+
+/** Ops: most recent completed video with a URL. */
+export async function getLastCompletedVideoAsset(
+  userId: string,
+): Promise<AssetRecord | null> {
+  const db = await ensureDb();
+  return (
+    db.assets
+      .filter(
+        (a) =>
+          a.userId === userId &&
+          a.mediaType === "video" &&
+          a.status === "completed" &&
+          Boolean(a.url),
+      )
+      .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""))[0] ??
+    null
+  );
 }
 
 /** Full lookup — never miss a multi-shot pending buried under newer parts. */
@@ -511,6 +562,23 @@ export async function deleteAssetForUser(
     };
     await saveDb(db);
     return true;
+  });
+}
+
+/** Ops: soft-delete every asset for a user (including hidden / intermediate parts). */
+export async function deleteAllAssetsForUser(userId: string): Promise<number> {
+  return withDbLock(async () => {
+    const db = await ensureDb();
+    const now = new Date().toISOString();
+    let n = 0;
+    for (let i = 0; i < db.assets.length; i += 1) {
+      const a = db.assets[i]!;
+      if (a.userId !== userId || a.deletedAt) continue;
+      db.assets[i] = { ...a, hidden: true, deletedAt: now };
+      n += 1;
+    }
+    if (n > 0) await saveDb(db);
+    return n;
   });
 }
 
@@ -708,6 +776,8 @@ export function publicUser(user: UserRecord) {
     planId: user.planId,
     freeVeronixUsed: Boolean(user.freeVeronixUsed),
     locked: Boolean(user.locked),
+    referralCode: user.referralCode || null,
+    referredByUserId: user.referredByUserId || null,
     createdAt: user.createdAt,
   };
 }

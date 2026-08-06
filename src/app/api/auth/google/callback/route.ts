@@ -7,7 +7,9 @@ import {
   resolvePublicOrigin,
 } from "@/lib/google-oauth";
 import { setSessionCookie, clearSessionCookie } from "@/lib/customer-auth";
-import { upsertGoogleUser } from "@/lib/db";
+import { findUserByEmail, findUserByGoogleId, upsertGoogleUser } from "@/lib/db";
+import { applyReferralOnSignup } from "@/lib/referral";
+import { readReferralCookie } from "@/lib/referral-cookie";
 import { reconcileCustomerWallet } from "@/lib/wallet-reconcile";
 
 export const runtime = "nodejs";
@@ -18,7 +20,7 @@ export async function GET(request: Request) {
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   const oauthError = url.searchParams.get("error");
-  const { next } = parseOAuthState(state);
+  const { next, ref: refFromState } = parseOAuthState(state);
 
   if (!(await isGoogleOAuthConfigured())) {
     return NextResponse.redirect(
@@ -45,7 +47,14 @@ export async function GET(request: Request) {
   try {
     const tokens = await exchangeGoogleCode(code, request);
     const profile = await fetchGoogleUser(tokens.access_token);
+    const existing =
+      (await findUserByGoogleId(profile.googleId)) ||
+      (await findUserByEmail(profile.email));
     const user = await upsertGoogleUser(profile);
+    if (!existing) {
+      const cookieRef = await readReferralCookie();
+      await applyReferralOnSignup(user.id, refFromState || cookieRef);
+    }
     if (user.locked) {
       await clearSessionCookie();
       return NextResponse.redirect(

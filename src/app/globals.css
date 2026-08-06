@@ -11,6 +11,11 @@
   --surface-elevated: #171b24;
   --font-display: var(--font-syne), ui-sans-serif, system-ui, sans-serif;
   --font-body: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
+  --bottom-nav-pad: calc(7.25rem + env(safe-area-inset-bottom));
+}
+
+.pb-bottom-nav {
+  padding-bottom: var(--bottom-nav-pad);
 }
 
 .font-display {

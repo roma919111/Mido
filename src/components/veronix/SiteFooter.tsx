@@ -12,6 +12,8 @@ export function SiteFooter() {
     { href: "/contact", label: t.footer.contact },
     { href: "/privacy", label: t.footer.privacy },
     { href: "/terms", label: t.footer.terms },
+    { href: "/models", label: t.footer.models },
+    { href: "/invite", label: t.nav.invite },
     { href: "/pricing", label: t.footer.pricing },
   ];
 

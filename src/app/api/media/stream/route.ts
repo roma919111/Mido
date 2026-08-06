@@ -152,14 +152,23 @@ export async function GET(request: Request) {
     }
 
     const range = request.headers.get("range");
-    const upstream = await fetch(source.url, {
-      headers: {
-        Accept: "*/*",
-        "User-Agent": "VyronixMedia/1.0",
-        ...(range ? { Range: range } : {}),
-      },
-      redirect: "follow",
-    });
+    const fetchUpstream = (url: string) =>
+      fetch(url, {
+        headers: {
+          Accept: "*/*",
+          "User-Agent": "VyronixMedia/1.0",
+          ...(range ? { Range: range } : {}),
+        },
+        redirect: "follow",
+      });
+
+    let upstream = await fetchUpstream(source.url);
+    if ((!upstream.ok || !upstream.body) && searchParams.get("historyId")?.trim()) {
+      const fresh = await resolveHistoryVideoUrl(searchParams.get("historyId")!.trim());
+      if (fresh && fresh !== source.url) {
+        upstream = await fetchUpstream(fresh);
+      }
+    }
     if (!upstream.ok || !upstream.body) {
       return NextResponse.json(
         { error: `Upstream media failed (${upstream.status})` },

@@ -23,6 +23,17 @@ import {
   normalizePixVerseQuality,
   quotePixVerseVideoBreakdown,
 } from "@/lib/pixverse-pricing";
+import {
+  formatMiniMaxH3PricingNote,
+  isMiniMaxH3Model,
+  normalizeMiniMaxH3Quality,
+  quoteMiniMaxH3VideoBreakdown,
+} from "@/lib/minimax-pricing";
+import {
+  formatGeminiVideoPricingNote,
+  isGeminiOmniFlashModel,
+  quoteGeminiVideoBreakdown,
+} from "@/lib/gemini-pricing";
 
 export {
   VERONIX_CREDIT_MULTIPLIER,
@@ -223,6 +234,81 @@ function quotePixVerseResult(
   };
 }
 
+function quoteMiniMaxH3Result(
+  input: QuoteInput,
+  mcpModel: string,
+  mode: string,
+  params: Record<string, unknown>,
+  available: boolean,
+): QuoteResult | null {
+  if (input.media !== "video" || !isMiniMaxH3Model(input.modelId, mcpModel)) {
+    return null;
+  }
+  const resolution = normalizeMiniMaxH3Quality(
+    typeof params.resolution === "string"
+      ? params.resolution
+      : input.resolution,
+  );
+  const breakdown = quoteMiniMaxH3VideoBreakdown({
+    duration: input.duration,
+    resolution,
+    referenceImageCount: input.referenceImageCount,
+    referenceVideoDurationSec: input.referenceVideoDurationSec,
+    videoCount: input.videoCount ?? 1,
+  });
+  return {
+    modelId: input.modelId,
+    mcpModel,
+    mode,
+    totalCredits: breakdown.walletCredits,
+    unitCredits: breakdown.walletCredits,
+    openArtCredits: breakdown.outputCredits,
+    multiplier: VERONIX_PROFIT_MARKUP,
+    available: available || true,
+    config: {
+      ...params,
+      resolution,
+      outputCredits: breakdown.outputCredits,
+      extraImageCredits: breakdown.extraImageCredits,
+      referenceVideoCredits: breakdown.referenceVideoCredits,
+    },
+    pricingNote: formatMiniMaxH3PricingNote(breakdown),
+    source: "estimate",
+  };
+}
+
+function quoteGeminiVideoResult(
+  input: QuoteInput,
+  mcpModel: string,
+  mode: string,
+  params: Record<string, unknown>,
+  available: boolean,
+): QuoteResult | null {
+  if (input.media !== "video" || !isGeminiOmniFlashModel(input.modelId, mcpModel)) {
+    return null;
+  }
+  const breakdown = quoteGeminiVideoBreakdown({
+    duration: input.duration,
+    videoCount: input.videoCount ?? 1,
+  });
+  return {
+    modelId: input.modelId,
+    mcpModel,
+    mode,
+    totalCredits: breakdown.walletCredits,
+    unitCredits: breakdown.walletCredits,
+    openArtCredits: breakdown.outputCredits,
+    multiplier: VERONIX_PROFIT_MARKUP,
+    available: available || true,
+    config: {
+      ...params,
+      outputCredits: breakdown.outputCredits,
+    },
+    pricingNote: formatGeminiVideoPricingNote(breakdown),
+    source: "estimate",
+  };
+}
+
 function quoteResultFromCached(
   input: QuoteInput,
   mcpModel: string,
@@ -322,6 +408,12 @@ export async function quoteOpenArtCredits(
   // PixVerse direct API — official credit table × USD × 55% markup.
   const pixVerse = quotePixVerseResult(input, mcpModel, mode, params, available);
   if (pixVerse) return pixVerse;
+
+  const miniMax = quoteMiniMaxH3Result(input, mcpModel, mode, params, available);
+  if (miniMax) return miniMax;
+
+  const gemini = quoteGeminiVideoResult(input, mcpModel, mode, params, available);
+  if (gemini) return gemini;
 
   if (allowCache) {
     const fromCache = await quoteFromCache(input, mcpModel, mode, params);

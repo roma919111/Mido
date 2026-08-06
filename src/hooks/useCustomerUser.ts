@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { CustomerUser } from "@/components/veronix/AppHeader";
 import {
   readCustomerSnapshot,
@@ -9,9 +8,11 @@ import {
 } from "@/lib/customer-user-cache";
 import { fetchJson } from "@/lib/fetch-json";
 
+const AUTH_REFRESH_TTL_MS = 60_000;
+
 /** Customer session — hydrates from cache instantly; refreshes in background. */
 export function useCustomerUser() {
-  const pathname = usePathname();
+  const lastFetchRef = useRef(0);
   const [user, setUserState] = useState<CustomerUser | null>(() =>
     readCustomerSnapshot(),
   );
@@ -23,7 +24,13 @@ export function useCustomerUser() {
     writeCustomerSnapshot(next);
   }, []);
 
-  const refreshUser = useCallback(async () => {
+  const refreshUser = useCallback(async (force = false) => {
+    const now = Date.now();
+    if (!force && now - lastFetchRef.current < AUTH_REFRESH_TTL_MS) {
+      setReady(true);
+      return;
+    }
+    lastFetchRef.current = now;
     setRefreshing(true);
     try {
       const { res, data } = await fetchJson<{ user: CustomerUser | null }>(
@@ -41,12 +48,12 @@ export function useCustomerUser() {
   }, [applyUser]);
 
   useEffect(() => {
-    void refreshUser();
-  }, [refreshUser, pathname]);
+    void refreshUser(true);
+  }, [refreshUser]);
 
   useEffect(() => {
     const onVis = () => {
-      if (!document.hidden) void refreshUser();
+      if (!document.hidden) void refreshUser(false);
     };
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
@@ -55,7 +62,15 @@ export function useCustomerUser() {
   const logout = useCallback(async () => {
     await fetch("/api/auth/customer/logout", { method: "POST" });
     applyUser(null);
+    lastFetchRef.current = 0;
   }, [applyUser]);
 
-  return { user, setUser: applyUser, refreshUser, logout, ready, refreshing };
+  return {
+    user,
+    setUser: applyUser,
+    refreshUser: () => refreshUser(true),
+    logout,
+    ready,
+    refreshing,
+  };
 }

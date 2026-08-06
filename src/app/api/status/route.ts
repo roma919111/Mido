@@ -10,6 +10,23 @@ import {
   parsePixVerseHistoryId,
   pixVerseFailureMessage,
 } from "@/lib/pixverse";
+import {
+  extractVideoPart,
+  finalizeGeminiVideoJob,
+  geminiFailureMessage,
+  getGeminiInteraction,
+  mapGeminiInteractionStatus,
+  parseGeminiHistoryId,
+  persistGeminiVideoFromInteraction,
+} from "@/lib/gemini-video";
+import { GEMINI_JOB_TIMEOUT_MS } from "@/lib/gemini-constants";
+import {
+  downloadMiniMaxVideo,
+  finalizeMiniMaxVideoJob,
+  getMiniMaxVideoTask,
+  parseMiniMaxHistoryId,
+} from "@/lib/minimax-video";
+import { MINIMAX_HARD_FAIL_MS } from "@/lib/minimax-constants";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { findAssetByHistoryId, findAssetById, updateAsset } from "@/lib/db";
 import { ensureClarityUrl, shouldApplyClarityGrade } from "@/lib/ensure-clarity";
@@ -77,6 +94,99 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "historyId is required" }, { status: 400 });
   }
 
+  const miniMaxId = parseMiniMaxHistoryId(historyId);
+  if (miniMaxId) {
+    try {
+      const task = await getMiniMaxVideoTask(miniMaxId);
+      let status = task.status;
+      let urls: string[] = [];
+      let failureError = task.error || "فشل توليد MiniMax H3";
+
+      const user = await getCurrentUser().catch(() => null);
+      let creditsRefunded = false;
+      const byHistory = user ? await findAssetByHistoryId(user.id, historyId) : null;
+      const targetId = assetId || byHistory?.id;
+      const assetRow =
+        user && targetId ? await findAssetById(user.id, targetId) : byHistory;
+      const createdMs = assetRow?.createdAt ? Date.parse(assetRow.createdAt) : NaN;
+      const jobAgeMs =
+        Number.isFinite(createdMs) && createdMs > 0 ? Date.now() - createdMs : 0;
+
+      if (status === "COMPLETED" && task.remoteUrl) {
+        try {
+          const localPath = await downloadMiniMaxVideo(task.remoteUrl);
+          urls = [localPath];
+          if (user && targetId) {
+            await updateAsset(targetId, user.id, {
+              historyId,
+              url: localPath,
+              status: "completed",
+              error: undefined,
+            }).catch(() => null);
+            warmVideoPosterBackground({ url: localPath, historyId });
+          }
+        } catch (error) {
+          console.warn(
+            `[veronix] minimax video persist failed ${miniMaxId}:`,
+            error instanceof Error ? error.message : error,
+          );
+        }
+      }
+
+      if (status === "RUNNING" && jobAgeMs > MINIMAX_HARD_FAIL_MS) {
+        status = "FAILED";
+        failureError =
+          "انتهت مهلة MiniMax (90 دقيقة) — تم استرجاع الكريديت.";
+      } else if (
+        status === "RUNNING" &&
+        !urls.length &&
+        user &&
+        targetId &&
+        jobAgeMs > 45_000
+      ) {
+        void finalizeMiniMaxVideoJob({
+          taskId: miniMaxId,
+          historyId,
+          assetId: targetId,
+          userId: user.id,
+        });
+      }
+
+      if (status === "FAILED" && user && targetId) {
+        const refund = await refundFailedAssetCredits({
+          userId: user.id,
+          assetId: targetId,
+          errorMessage: failureError,
+        });
+        creditsRefunded = refund.refunded > 0;
+        failureError = refund.errorMessage;
+      }
+
+      return NextResponse.json({
+        historyId,
+        status,
+        urls,
+        live: true,
+        provider: "minimax",
+        pollAfterSeconds: status === "RUNNING" ? 10 : undefined,
+        error: status === "FAILED" ? failureError : undefined,
+        creditsRefunded: status === "FAILED" ? creditsRefunded : undefined,
+        note:
+          status === "FAILED" && creditsRefunded ? "تم استرجاع الكريديت" : undefined,
+      });
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error:
+            error instanceof Error ? error.message : "MiniMax status failed",
+          historyId,
+          provider: "minimax",
+        },
+        { status: 502 },
+      );
+    }
+  }
+
   const pixverseId = parsePixVerseHistoryId(historyId);
   if (pixverseId) {
     try {
@@ -136,6 +246,154 @@ export async function GET(request: Request) {
     }
   }
 
+  const geminiId = parseGeminiHistoryId(historyId);
+  if (geminiId) {
+    try {
+      const interaction = await getGeminiInteraction(geminiId);
+      let status = mapGeminiInteractionStatus(interaction.status);
+      let urls: string[] = [];
+      let failureError = geminiFailureMessage(interaction);
+      const part = extractVideoPart(interaction);
+
+      console.info(
+        `[veronix] gemini status ${geminiId} raw=${interaction.status} mapped=${status} hasPart=${Boolean(part)}`,
+      );
+
+      const user = await getCurrentUser().catch(() => null);
+      let creditsRefunded = false;
+      const byHistory = user ? await findAssetByHistoryId(user.id, historyId) : null;
+      const targetId = assetId || byHistory?.id;
+      const assetRow =
+        user && targetId ? await findAssetById(user.id, targetId) : byHistory;
+      const createdMs = assetRow?.createdAt ? Date.parse(assetRow.createdAt) : NaN;
+      const jobAgeMs =
+        Number.isFinite(createdMs) && createdMs > 0 ? Date.now() - createdMs : 0;
+
+      // Video payload may appear while Google still reports in_progress.
+      if (part && status === "RUNNING") {
+        try {
+          const localPath = await persistGeminiVideoFromInteraction(interaction);
+          if (localPath) {
+            urls = [localPath];
+            status = "COMPLETED";
+            if (user && targetId) {
+              await updateAsset(targetId, user.id, {
+                historyId,
+                url: localPath,
+                status: "completed",
+                error: undefined,
+              }).catch(() => null);
+              warmVideoPosterBackground({ url: localPath, historyId });
+            }
+          }
+        } catch (error) {
+          console.warn(
+            `[veronix] gemini early video persist failed ${geminiId}:`,
+            error instanceof Error ? error.message : error,
+          );
+        }
+      }
+
+      if (status === "RUNNING" && jobAgeMs > GEMINI_JOB_TIMEOUT_MS) {
+        status = "FAILED";
+        failureError =
+          "انتهت مهلة Gemini (20 دقيقة) — تم استرجاع الكريديت. Google قد يكون خصم الرصيد عندهم.";
+      } else if (
+        status === "RUNNING" &&
+        !urls.length &&
+        user &&
+        targetId &&
+        jobAgeMs > 45_000
+      ) {
+        void finalizeGeminiVideoJob({
+          interactionId: geminiId,
+          historyId,
+          assetId: targetId,
+          userId: user.id,
+        });
+      }
+
+      if (status === "COMPLETED" && !part) {
+        const updatedMs = interaction.updated
+          ? Date.parse(interaction.updated)
+          : NaN;
+        const ageMs =
+          Number.isFinite(updatedMs) && updatedMs > 0
+            ? Date.now() - updatedMs
+            : 0;
+        if (ageMs < 3 * 60_000) {
+          status = "RUNNING";
+        } else {
+          status = "FAILED";
+          failureError = "اكتمل Gemini لكن الفيديو لم يظهر — أعد المحاولة";
+        }
+      }
+
+      if (status === "COMPLETED" && part) {
+        try {
+          const localPath = await persistGeminiVideoFromInteraction(interaction);
+          if (localPath) {
+            urls = [localPath];
+            if (user && targetId) {
+              await updateAsset(targetId, user.id, {
+                historyId,
+                url: localPath,
+                status: "completed",
+                error: undefined,
+              }).catch(() => null);
+              warmVideoPosterBackground({ url: localPath, historyId });
+            }
+          } else {
+            status = "FAILED";
+            failureError = "اكتمل Gemini لكن لم يُرجع ملف فيديو";
+          }
+        } catch (error) {
+          status = "FAILED";
+          failureError =
+            error instanceof Error
+              ? error.message
+              : "فشل حفظ فيديو Gemini على السيرفر";
+        }
+      }
+
+      if (user && targetId && status === "FAILED") {
+        const refund = await refundFailedAssetCredits({
+          userId: user.id,
+          assetId: targetId,
+          errorMessage: failureError,
+        });
+        creditsRefunded = refund.refunded > 0;
+        await updateAsset(targetId, user.id, {
+          status: "failed",
+          error: failureError,
+        }).catch(() => null);
+      }
+
+      return NextResponse.json({
+        historyId,
+        status,
+        urls,
+        live: true,
+        provider: "gemini",
+        pollAfterSeconds: status === "RUNNING" ? 6 : undefined,
+        error: status === "FAILED" ? failureError : undefined,
+        creditsRefunded: status === "FAILED" ? creditsRefunded : undefined,
+        note:
+          status === "FAILED" && creditsRefunded ? "تم استرجاع الكريديت" : undefined,
+      });
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error:
+            error instanceof Error ? error.message : "Gemini status failed",
+          historyId,
+          provider: "gemini",
+        },
+        { status: 502 },
+      );
+    }
+  }
+
   const byteplusId = parseBytePlusHistoryId(historyId);
   if (!byteplusId) {
     return NextResponse.json(
@@ -149,7 +407,17 @@ export async function GET(request: Request) {
   }
 
   try {
-    const task = await getBytePlusVideoTask(byteplusId);
+    const pollUser = await getCurrentUser().catch(() => null);
+    const pollAsset =
+      pollUser && (assetId || historyId)
+        ? assetId
+          ? await findAssetById(pollUser.id, assetId)
+          : await findAssetByHistoryId(pollUser.id, historyId!)
+        : null;
+    const task = await getBytePlusVideoTask(
+      byteplusId,
+      pollAsset?.model || undefined,
+    );
     const status = mapBytePlusStatus(task.status);
     const urls = task.content?.video_url ? [task.content.video_url] : [];
     const errMsg =

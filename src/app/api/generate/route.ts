@@ -1,6 +1,6 @@
 import { after, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/customer-auth";
-import { adjustCredits, createAsset, updateAsset, updateUser } from "@/lib/db";
+import { adjustCredits, createAsset, findAssetById, updateAsset, updateUser } from "@/lib/db";
 import { refundFailedAssetCredits } from "@/lib/credit-refund";
 import { quoteOpenArtCredits } from "@/lib/credit-quote";
 import {
@@ -8,10 +8,12 @@ import {
   isBytePlusConfigured,
   mapBytePlusStatus,
   ensureBytePlusRefUrl,
+  ensureBytePlusPublicMediaUrl,
   ensurePlainRefUrl,
   toBytePlusHistoryId,
   waitForBytePlusVideoTask,
 } from "@/lib/byteplus-ark";
+import { isSeedance2Configured, SEEDANCE_2_MODEL_ID } from "@/lib/byteplus-constants";
 import {
   createPixVerseVideoTask,
   createPixVerseFusionTask,
@@ -24,6 +26,25 @@ import {
   waitForPixVerseVideoTask,
   type PixVerseFusionImageRef,
 } from "@/lib/pixverse";
+import {
+  createGeminiVideoInteraction,
+  finalizeGeminiVideoJob,
+  GEMINI_OMNI_FLASH_MODEL_ID,
+  isGeminiVideoConfigured,
+  toGeminiHistoryId,
+} from "@/lib/gemini-video";
+import { clampGeminiVideoDuration } from "@/lib/gemini-pricing";
+import {
+  createMiniMaxVideoTask,
+  finalizeMiniMaxVideoJob,
+  isMiniMaxVideoConfigured,
+  MINIMAX_H3_MODEL_ID,
+  toMiniMaxHistoryId,
+} from "@/lib/minimax-video";
+import {
+  clampMiniMaxH3Duration,
+  normalizeMiniMaxH3Quality,
+} from "@/lib/minimax-pricing";
 import {
   createBytePlusImage,
   resolveImageReference,
@@ -67,7 +88,7 @@ import {
   stripInternalPromptNotes,
 } from "@/lib/character-names";
 import { toSemiRealisticScenePrompt } from "@/lib/reference-sanitize";
-import { translateBytePlusError } from "@/lib/byteplus-errors";
+import { translateBytePlusError, translateGeminiError } from "@/lib/byteplus-errors";
 import { saveLocalImage } from "@/lib/local-media";
 import { warmVideoPosterBackground } from "@/lib/poster-cache";
 import type { VisualReference } from "@/lib/types";
@@ -135,6 +156,7 @@ type GenBody = {
   endFrame?: import("@/lib/types").VisualReference | null;
   referenceImages?: import("@/lib/types").VisualReference[];
   referenceVideos?: import("@/lib/types").VisualReference[];
+  referenceAudios?: import("@/lib/types").VisualReference[];
   waitForResult?: boolean;
   /** Intermediate multi-shot clip — hidden from Assets; final stitch is shown */
   sequencePart?: boolean;
@@ -174,7 +196,13 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!isBytePlusConfigured()) {
+    const body = (await request.json()) as GenBody;
+    const requestedMedia = body.media ?? "video";
+
+    if (
+      requestedMedia === "image" &&
+      !isBytePlusConfigured()
+    ) {
       return NextResponse.json(
         {
           error: "توليد الوسائط عبر Veronix غير مُعدّ على السيرفر. راجع إعدادات المسؤول.",
@@ -185,9 +213,25 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = (await request.json()) as GenBody;
+    if (
+      requestedMedia === "video" &&
+      !isBytePlusConfigured() &&
+      !isPixVerseConfigured() &&
+      !isGeminiVideoConfigured() &&
+      !isMiniMaxVideoConfigured()
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "لا يوجد مزود فيديو مُعدّ على السيرفر (BytePlus / PixVerse / Gemini / MiniMax).",
+          provider: "video",
+          needsOwnerSetup: true,
+        },
+        { status: 503 },
+      );
+    }
+
     const prompt = body.prompt?.trim();
-    const requestedMedia = body.media ?? "video";
     const modelIds = [...new Set(body.modelIds?.filter(Boolean) ?? [])].slice(0, 4);
     const variantCount = Math.min(
       4,
@@ -377,14 +421,31 @@ export async function POST(request: Request) {
     // ——— Video studio (VYRONIX / Seedance) ———
     const media = "video" as const;
     // Product: Veronix video — VYRONIX + optional PixVerse direct API.
-    const allowedVideo = [VERONIX_MODEL_ID];
+    const allowedVideo: string[] = [];
+    if (isBytePlusConfigured()) allowedVideo.push(VERONIX_MODEL_ID);
+    if (isSeedance2Configured()) allowedVideo.push(SEEDANCE_2_MODEL_ID);
     if (isPixVerseConfigured()) allowedVideo.push(PIXVERSE_MODEL_ID);
+    if (isGeminiVideoConfigured()) allowedVideo.push(GEMINI_OMNI_FLASH_MODEL_ID);
+    if (isMiniMaxVideoConfigured()) allowedVideo.push(MINIMAX_H3_MODEL_ID);
+    if (!allowedVideo.length) {
+      return NextResponse.json(
+        {
+          error: "لا يوجد مزود فيديو مُعدّ على السيرفر.",
+          provider: "video",
+          needsOwnerSetup: true,
+        },
+        { status: 503 },
+      );
+    }
     if (!modelIds.every((id) => allowedVideo.includes(id))) {
       return NextResponse.json(
         {
-          error: isPixVerseConfigured()
-            ? "الموديلات المتاحة: VYRONIX و PixVerse V6."
-            : "الموديل المتاح حالياً هو VYRONIX فقط.",
+          error:
+            allowedVideo.length > 1
+              ? `الموديلات المتاحة: ${allowedVideo.join(" · ")}.`
+              : allowedVideo[0] === VERONIX_MODEL_ID
+                ? "الموديل المتاح حالياً هو VYRONIX فقط."
+                : "الموديل المختار غير متاح على السيرفر.",
         },
         { status: 422 },
       );
@@ -409,7 +470,7 @@ export async function POST(request: Request) {
               duration: body.duration,
               generateAudio: body.generateAudio,
               hasVideoReferences:
-                modelId === PIXVERSE_MODEL_ID &&
+                (modelId === PIXVERSE_MODEL_ID || modelId === SEEDANCE_2_MODEL_ID) &&
                 Array.isArray(body.referenceVideos) &&
                 body.referenceVideos.some((r) => r?.url),
             },
@@ -495,7 +556,11 @@ export async function POST(request: Request) {
           ? normalizePixVerseQuality(
               body.resolution || catalog?.resolutionDefault || "720p",
             )
-          : normalizeVideoResolution(
+          : quote.modelId === MINIMAX_H3_MODEL_ID
+            ? normalizeMiniMaxH3Quality(
+                body.resolution || catalog?.resolutionDefault || "768p",
+              )
+            : normalizeVideoResolution(
               body.resolution || catalog?.resolutionDefault || "720p",
             );
       const bounds = durationBoundsForModel(catalog);
@@ -671,9 +736,403 @@ export async function POST(request: Request) {
           throw new Error("PixVerse completed without a video URL.");
         }
 
+        if (quote.modelId === GEMINI_OMNI_FLASH_MODEL_ID) {
+          if (body.sequencePart) {
+            throw new Error("Gemini Omni Flash لا يدعم لقطات Multi-shot حالياً.");
+          }
+
+          const geminiDuration = clampGeminiVideoDuration(modelDuration);
+          const refList = (
+            Array.isArray(body.referenceImages) ? body.referenceImages : []
+          ).filter((r): r is VisualReference => Boolean(r?.url));
+
+          const created = await createGeminiVideoInteraction({
+            prompt: cleanPrompt,
+            durationSec: geminiDuration,
+            aspectRatio: body.aspectRatio,
+            startFrame: body.startFrame,
+            endFrame: body.endFrame,
+            referenceImages: refList,
+          });
+
+          const historyId = toGeminiHistoryId(created.interactionId);
+          await updateAsset(asset.id, user.id, {
+            historyId,
+            url: "",
+            status: "running",
+            hidden: false,
+            referenceImages: savedRefs,
+            targetSeconds: geminiDuration,
+          });
+
+          const runGeminiJob = async () => {
+            await finalizeGeminiVideoJob({
+              interactionId: created.interactionId,
+              historyId,
+              assetId: asset.id,
+              userId: user.id,
+            });
+          };
+
+          if (body.waitForResult === true) {
+            await runGeminiJob();
+            const fresh = await findAssetById(user.id, asset.id);
+            if (fresh?.status === "completed" && fresh.url) {
+              results.push({
+                assetId: asset.id,
+                modelId: quote.modelId,
+                historyId,
+                status: "completed",
+                urls: [fresh.url],
+                creditsUsed: quote.totalCredits,
+                freeTrial: false,
+                live: true,
+                provider: "gemini",
+                tool: "gemini_omni_flash_video",
+                quote,
+              });
+            } else {
+              results.push({
+                assetId: asset.id,
+                modelId: quote.modelId,
+                historyId,
+                status: "failed",
+                urls: [] as string[],
+                error: fresh?.error || "فشل توليد Gemini",
+                creditsUsed: 0,
+                freeTrial: false,
+                provider: "gemini",
+                tool: "gemini_omni_flash_video",
+                quote,
+              });
+            }
+            continue;
+          }
+
+          after(() => {
+            void runGeminiJob();
+          });
+
+          results.push({
+            assetId: asset.id,
+            modelId: quote.modelId,
+            historyId,
+            status: "running",
+            urls: [] as string[],
+            creditsUsed: quote.totalCredits,
+            freeTrial: false,
+            live: true,
+            provider: "gemini",
+            tool: "gemini_omni_flash_video",
+            quote,
+          });
+          continue;
+        }
+
+        if (quote.modelId === MINIMAX_H3_MODEL_ID) {
+          if (body.sequencePart) {
+            throw new Error("MiniMax H3 لا يدعم لقطات Multi-shot حالياً.");
+          }
+
+          const miniMaxDuration = clampMiniMaxH3Duration(modelDuration);
+          const miniMaxQuality = normalizeMiniMaxH3Quality(
+            body.resolution || catalog?.resolutionDefault || "768p",
+          );
+          if (asset.resolution !== miniMaxQuality) {
+            await updateAsset(asset.id, user.id, { resolution: miniMaxQuality });
+          }
+
+          const refList = (
+            Array.isArray(body.referenceImages) ? body.referenceImages : []
+          ).filter((r): r is VisualReference => Boolean(r?.url));
+
+          const created = await createMiniMaxVideoTask({
+            prompt: cleanPrompt,
+            durationSec: miniMaxDuration,
+            resolution: miniMaxQuality,
+            aspectRatio: body.aspectRatio,
+            startFrame: body.startFrame,
+            endFrame: body.endFrame,
+            referenceImages: refList,
+          });
+
+          const historyId = toMiniMaxHistoryId(created.taskId);
+          await updateAsset(asset.id, user.id, {
+            historyId,
+            url: "",
+            status: "running",
+            hidden: false,
+            referenceImages: savedRefs,
+            targetSeconds: miniMaxDuration,
+          });
+
+          const runMiniMaxJob = async () => {
+            await finalizeMiniMaxVideoJob({
+              taskId: created.taskId,
+              historyId,
+              assetId: asset.id,
+              userId: user.id,
+            });
+          };
+
+          if (body.waitForResult === true) {
+            await runMiniMaxJob();
+            const fresh = await findAssetById(user.id, asset.id);
+            if (fresh?.status === "completed" && fresh.url) {
+              results.push({
+                assetId: asset.id,
+                modelId: quote.modelId,
+                historyId,
+                status: "completed",
+                urls: [fresh.url],
+                creditsUsed: quote.totalCredits,
+                freeTrial: false,
+                live: true,
+                provider: "minimax",
+                tool: "minimax_h3_video",
+                quote,
+              });
+            } else {
+              results.push({
+                assetId: asset.id,
+                modelId: quote.modelId,
+                historyId,
+                status: "failed",
+                urls: [] as string[],
+                error: fresh?.error || "فشل توليد MiniMax H3",
+                creditsUsed: 0,
+                freeTrial: false,
+                provider: "minimax",
+                tool: "minimax_h3_video",
+                quote,
+              });
+            }
+            continue;
+          }
+
+          after(() => {
+            void runMiniMaxJob();
+          });
+
+          results.push({
+            assetId: asset.id,
+            modelId: quote.modelId,
+            historyId,
+            status: "running",
+            urls: [] as string[],
+            creditsUsed: quote.totalCredits,
+            freeTrial: false,
+            live: true,
+            provider: "minimax",
+            tool: "minimax_h3_video",
+            quote,
+          });
+          continue;
+        }
+
         const refList = (
           Array.isArray(body.referenceImages) ? body.referenceImages : []
         ).filter((r): r is VisualReference => Boolean(r?.url));
+        const isSeedance2 = quote.modelId === SEEDANCE_2_MODEL_ID;
+
+        if (isSeedance2) {
+          const imageRefUrls: string[] = [];
+          for (const r of refList.slice(0, 4)) {
+            const u = await ensurePlainRefUrl(r);
+            if (u) imageRefUrls.push(u);
+          }
+          const videoRefUrls: string[] = [];
+          for (const r of (
+            Array.isArray(body.referenceVideos) ? body.referenceVideos : []
+          ).slice(0, 2)) {
+            const u = await ensureBytePlusPublicMediaUrl(r.url);
+            if (u) videoRefUrls.push(u);
+          }
+          const audioRefUrls: string[] = [];
+          for (const r of (
+            Array.isArray(body.referenceAudios) ? body.referenceAudios : []
+          ).slice(0, 2)) {
+            const u = await ensureBytePlusPublicMediaUrl(r.url);
+            if (u) audioRefUrls.push(u);
+          }
+
+          let startUrl = await ensurePlainRefUrl(body.startFrame);
+          let lastUrl = await ensurePlainRefUrl(body.endFrame);
+          if (imageRefUrls.length || videoRefUrls.length || audioRefUrls.length) {
+            startUrl = null;
+            lastUrl = null;
+          }
+
+          const videoRatio = normalizeVideoRatio(body.aspectRatio);
+          if (asset.aspectRatio !== videoRatio) {
+            await updateAsset(asset.id, user.id, { aspectRatio: videoRatio });
+          }
+
+          const createInput = {
+            catalogModelId: SEEDANCE_2_MODEL_ID,
+            prompt: cleanPrompt,
+            duration: modelDuration,
+            ratio: videoRatio,
+            generateAudio: Boolean(body.generateAudio),
+            watermark: false,
+            startFrameUrl: startUrl,
+            lastFrameUrl: lastUrl,
+            referenceImageUrls: imageRefUrls,
+            referenceVideoUrls: videoRefUrls,
+            referenceAudioUrls: audioRefUrls,
+            multimodalRefs:
+              imageRefUrls.length > 0 ||
+              videoRefUrls.length > 0 ||
+              audioRefUrls.length > 0,
+            resolution: uiResolution,
+          };
+          const created = await createBytePlusVideoTask(createInput);
+          let historyId = toBytePlusHistoryId(created.id);
+          await updateAsset(asset.id, user.id, {
+            historyId,
+            url: "",
+            status: "running",
+            hidden: Boolean(body.sequencePart),
+            referenceImages: savedRefs || (await persistableReferenceImages(refList)),
+          });
+
+          if (body.waitForResult !== true && !body.sequencePart) {
+            results.push({
+              assetId: asset.id,
+              modelId: quote.modelId,
+              historyId,
+              status: "running",
+              urls: [] as string[],
+              creditsUsed: quote.totalCredits,
+              freeTrial: false,
+              live: true,
+              provider: "byteplus",
+              tool: "byteplus_contents_generations",
+              quote,
+            });
+            continue;
+          }
+
+          const waitMs = body.waitForResult === true ? 240_000 : 90_000;
+          const finished = await waitForBytePlusVideoTask(created.id, {
+            timeoutMs: body.sequencePart ? Math.min(waitMs, 90_000) : waitMs,
+            intervalMs: 4_000,
+            retryInput: createInput,
+            catalogModelId: SEEDANCE_2_MODEL_ID,
+          });
+          if (finished.id && finished.id !== created.id) {
+            historyId = toBytePlusHistoryId(finished.id);
+          }
+          const st = mapBytePlusStatus(finished.status);
+          const videoUrl = finished.content?.video_url || "";
+
+          if (videoUrl) {
+            await updateAsset(asset.id, user.id, {
+              historyId,
+              url: videoUrl,
+              status: "completed",
+              error: undefined,
+              hidden: Boolean(body.sequencePart),
+              preferClarity,
+            });
+            if (!body.sequencePart) {
+              warmVideoPosterBackground({ url: videoUrl, historyId });
+            }
+            if (
+              !body.sequencePart &&
+              shouldApplyClarityGrade({
+                preferClarity,
+                resolution: uiResolution,
+              })
+            ) {
+              void (async () => {
+                try {
+                  const graded = await ensureClarityUrl(videoUrl);
+                  if (graded && graded !== videoUrl) {
+                    await updateAsset(asset.id, user.id, { url: graded });
+                    warmVideoPosterBackground({ url: graded, historyId });
+                  }
+                } catch (err) {
+                  console.warn(
+                    "[veronix] generate clarity skipped:",
+                    err instanceof Error ? err.message : err,
+                  );
+                }
+              })();
+            }
+            results.push({
+              assetId: asset.id,
+              modelId: quote.modelId,
+              historyId,
+              status: "completed",
+              urls: [videoUrl],
+              creditsUsed: quote.totalCredits,
+              freeTrial: false,
+              preferClarity,
+              live: true,
+              provider: "byteplus",
+              tool: "byteplus_contents_generations",
+              quote,
+            });
+            continue;
+          }
+
+          if (st === "FAILED") {
+            const rawErr =
+              typeof finished.error === "string"
+                ? finished.error
+                : finished.error && typeof finished.error === "object"
+                  ? String(
+                      (finished.error as { message?: string }).message ||
+                        (finished.error as { code?: string }).code ||
+                        "",
+                    )
+                  : "";
+            const failMsg = rawErr
+              ? translateBytePlusError(rawErr)
+              : "فشل توليد Seedance 2.0";
+            await updateAsset(asset.id, user.id, {
+              status: "failed",
+              error: failMsg,
+              hidden: Boolean(body.sequencePart),
+            });
+            await refundFailedAssetCredits({
+              userId: user.id,
+              assetId: asset.id,
+              errorMessage: failMsg,
+            });
+            results.push({
+              assetId: asset.id,
+              modelId: quote.modelId,
+              historyId,
+              status: "failed",
+              urls: [] as string[],
+              error: failMsg,
+              creditsUsed: 0,
+              freeTrial: false,
+              provider: "byteplus",
+              tool: "byteplus_contents_generations",
+              quote,
+            });
+            continue;
+          }
+
+          results.push({
+            assetId: asset.id,
+            modelId: quote.modelId,
+            historyId,
+            status: "running",
+            urls: [] as string[],
+            creditsUsed: quote.totalCredits,
+            freeTrial: false,
+            live: true,
+            provider: "byteplus",
+            tool: "byteplus_contents_generations",
+            quote,
+          });
+          continue;
+        }
+
         let startUrl = await ensureBytePlusRefUrl(body.startFrame);
         let lastUrl = await ensureBytePlusRefUrl(body.endFrame);
 
@@ -720,6 +1179,7 @@ export async function POST(request: Request) {
           await updateAsset(asset.id, user.id, { aspectRatio: videoRatio });
         }
         const createInput = {
+          catalogModelId: quote.modelId,
           prompt: finalPrompt,
           duration: modelDuration,
           ratio: videoRatio,
@@ -774,6 +1234,7 @@ export async function POST(request: Request) {
             : waitMs,
           intervalMs: 4_000,
           retryInput: createInput,
+          catalogModelId: quote.modelId,
         });
         // Mute/privacy-retry may have created a new task id.
         if (finished.id && finished.id !== created.id) {

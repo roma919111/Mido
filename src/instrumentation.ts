@@ -1,6 +1,16 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
+  // Never block Railway healthchecks — backup/webhook sync can take minutes on large volumes.
+  void runStartupTasks().catch((error) => {
+    console.warn(
+      "[veronix] Startup tasks failed:",
+      error instanceof Error ? error.message : error,
+    );
+  });
+}
+
+async function runStartupTasks() {
   try {
     const { getAppBaseUrl } = await import("@/lib/app-url");
     const { syncStripeWebhookToPublicUrl } = await import("@/lib/stripe-webhook-sync");

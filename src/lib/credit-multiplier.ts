@@ -36,6 +36,10 @@ export interface QuoteInput {
   generateAudio?: boolean;
   /** PixVerse Fusion — video_references attached (higher per-second rate). */
   hasVideoReferences?: boolean;
+  /** MiniMax H3 — total reference stills (first 5 free). */
+  referenceImageCount?: number;
+  /** MiniMax H3 — reference video length in seconds. */
+  referenceVideoDurationSec?: number;
 }
 
 export interface QuoteResult {
