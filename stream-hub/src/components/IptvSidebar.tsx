@@ -12,6 +12,7 @@ const ITEMS: { id: IptvNav; label: string; icon: string }[] = [
   { id: "movies", label: "Movies", icon: "🎬" },
   { id: "series", label: "Series", icon: "🎞️" },
   { id: "favorites", label: "Favorites", icon: "❤️" },
+  { id: "apps", label: "Apps", icon: "📲" },
 ];
 
 export function IptvSidebar({ active, onChange, onLogout, label }: IptvSidebarProps) {

@@ -18,6 +18,7 @@ import { clearCodeFromUrl, getCodeFromUrl } from "../lib/customer-link";
 import { normalizeDigits } from "../lib/normalize-digits";
 import { useTvRemote } from "../hooks/useTvRemote";
 import { IptvMediaRow } from "./IptvMediaRow";
+import { IptvOttPanel } from "./IptvOttPanel";
 import { IptvPlayer } from "./IptvPlayer";
 import { IptvSidebar } from "./IptvSidebar";
 
@@ -73,6 +74,7 @@ export function IptvApp() {
   }, [activate]);
 
   const filteredChannels = useMemo(() => {
+    if (nav === "apps") return [];
     const q = filter.trim().toLowerCase();
     const base = filterByNav(channels, nav, favoriteIds);
     if (!q) return base;
@@ -80,6 +82,7 @@ export function IptvApp() {
   }, [channels, nav, favoriteIds, filter]);
 
   const rows = useMemo(() => {
+    if (nav === "apps") return [];
     if (filter.trim()) {
       return [{ id: "search", title: `نتائج البحث (${filteredChannels.length})`, channels: filteredChannels }];
     }
@@ -164,17 +167,23 @@ export function IptvApp() {
         <div className="max-show__pattern" aria-hidden="true" />
 
         <header className="max-show__header">
-          <input
-            className="max-show__search"
-            placeholder="بحث…"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-          />
+          {nav !== "apps" ? (
+            <input
+              className="max-show__search"
+              placeholder="بحث…"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+            />
+          ) : (
+            <span className="max-show__header-title">البرامج الرسمية</span>
+          )}
           <span className="max-show__version">v{__APP_VERSION__}</span>
         </header>
 
         <main ref={mainRef} tabIndex={-1} className="max-show__content">
-          {rows.length ? (
+          {nav === "apps" ? (
+            <IptvOttPanel />
+          ) : rows.length ? (
             rows.map((row) => (
               <IptvMediaRow
                 key={row.id}

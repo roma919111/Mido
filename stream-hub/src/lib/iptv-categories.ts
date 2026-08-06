@@ -1,6 +1,6 @@
 import type { IptvChannel } from "./iptv-client";
 
-export type IptvNav = "live" | "movies" | "series" | "favorites";
+export type IptvNav = "live" | "movies" | "series" | "favorites" | "apps";
 
 export type IptvRow = {
   id: string;
@@ -24,6 +24,7 @@ export function classifyChannel(ch: IptvChannel): Exclude<IptvNav, "favorites"> 
 }
 
 export function filterByNav(channels: IptvChannel[], nav: IptvNav, favoriteIds: string[]): IptvChannel[] {
+  if (nav === "apps") return [];
   if (nav === "favorites") {
     const set = new Set(favoriteIds);
     return channels.filter((ch) => set.has(ch.id));

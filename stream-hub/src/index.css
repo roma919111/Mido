@@ -3425,6 +3425,12 @@ html.max-native-app .gtv-main:focus {
   color: rgba(255, 255, 255, 0.4);
 }
 
+.max-show__header-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+}
+
 .max-show__version {
   margin-inline-start: auto;
   font-size: 0.75rem;
@@ -3612,5 +3618,103 @@ html.max-native-app .gtv-main:focus {
   .max-show__card {
     width: 128px;
   }
+}
+
+/* ── Official apps (Netflix / Shahid / TOD) ── */
+.max-show__ott {
+  max-width: 920px;
+}
+
+.max-show__ott-head h1 {
+  margin: 0 0 8px;
+  font-size: clamp(1.35rem, 3vw, 1.85rem);
+}
+
+.max-show__ott-head p {
+  margin: 0 0 22px;
+  color: rgba(255, 255, 255, 0.58);
+  line-height: 1.55;
+}
+
+.max-show__ott-msg {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(99, 102, 241, 0.18);
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  color: #e9d5ff;
+}
+
+.max-show__ott-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.max-show__ott-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-height: 200px;
+  padding: 24px 16px;
+  border: 2px solid color-mix(in srgb, var(--ott-color) 50%, transparent);
+  border-radius: 20px;
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--ott-color) 22%, #111) 0%,
+    #0a0a0f 100%
+  );
+  color: #fff;
+  cursor: pointer;
+  text-align: center;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.max-show__ott-tile:hover:not(:disabled),
+.max-show__ott-tile:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--ott-color) 35%, transparent);
+}
+
+.max-show__ott-tile:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.max-show__ott-logo {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  font-size: 1.6rem;
+  font-weight: 900;
+  background: color-mix(in srgb, var(--ott-color) 75%, #000);
+}
+
+.max-show__ott-tile strong {
+  font-size: 1.15rem;
+}
+
+.max-show__ott-tagline {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.62);
+  line-height: 1.4;
+}
+
+.max-show__ott-status {
+  margin-top: auto;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: color-mix(in srgb, var(--ott-color) 80%, #fff);
+}
+
+.max-show__ott-note {
+  margin: 24px 0 0;
+  max-width: 560px;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.45);
 }
 
