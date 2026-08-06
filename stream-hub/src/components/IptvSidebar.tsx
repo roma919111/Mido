@@ -1,10 +1,12 @@
 import type { IptvNav } from "../lib/iptv-categories";
+import { formatSubscriptionExpiry } from "../lib/iptv-client";
 
 type IptvSidebarProps = {
   active: IptvNav;
   onChange: (nav: IptvNav) => void;
   onLogout: () => void;
   label: string | null;
+  expiresAt: string | null;
 };
 
 const ITEMS: { id: IptvNav; label: string; icon: string }[] = [
@@ -15,7 +17,7 @@ const ITEMS: { id: IptvNav; label: string; icon: string }[] = [
   { id: "apps", label: "Apps", icon: "📲" },
 ];
 
-export function IptvSidebar({ active, onChange, onLogout, label }: IptvSidebarProps) {
+export function IptvSidebar({ active, onChange, onLogout, label, expiresAt }: IptvSidebarProps) {
   return (
     <aside className="max-show__sidebar">
       <div className="max-show__logo-wrap">
@@ -27,6 +29,7 @@ export function IptvSidebar({ active, onChange, onLogout, label }: IptvSidebarPr
           <span>SHOW TV</span>
         </div>
         {label ? <p className="max-show__subscription">{label}</p> : null}
+        <p className="max-show__subscription-status">{formatSubscriptionExpiry(expiresAt)}</p>
       </div>
 
       <nav className="max-show__nav" aria-label="IPTV">

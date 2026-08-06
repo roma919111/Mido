@@ -9,11 +9,13 @@ export type IptvChannel = {
 export type IptvPlaylist = {
   code: string;
   label: string | null;
+  expiresAt: string | null;
   channels: IptvChannel[];
 };
 
 const CODE_KEY = "max.iptv.code";
 const LABEL_KEY = "max.iptv.label";
+const EXPIRES_KEY = "max.iptv.expires";
 
 function apiBase(): string {
   const configured = import.meta.env.VITE_IPTV_API?.trim();
@@ -32,18 +34,35 @@ export function getSavedCode(): string | null {
   return localStorage.getItem(CODE_KEY);
 }
 
-export function saveCode(code: string, label?: string | null): void {
+export function saveCode(code: string, label?: string | null, expiresAt?: string | null): void {
   localStorage.setItem(CODE_KEY, code);
   if (label) localStorage.setItem(LABEL_KEY, label);
+  else localStorage.removeItem(LABEL_KEY);
+  if (expiresAt) localStorage.setItem(EXPIRES_KEY, expiresAt);
+  else localStorage.removeItem(EXPIRES_KEY);
 }
 
 export function clearSavedCode(): void {
   localStorage.removeItem(CODE_KEY);
   localStorage.removeItem(LABEL_KEY);
+  localStorage.removeItem(EXPIRES_KEY);
 }
 
 export function getSavedLabel(): string | null {
   return localStorage.getItem(LABEL_KEY);
+}
+
+export function getSavedExpiry(): string | null {
+  return localStorage.getItem(EXPIRES_KEY);
+}
+
+export function formatSubscriptionExpiry(expiresAt: string | null): string {
+  if (!expiresAt) return "اشتراك مفتوح";
+  const days = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  if (days < 0) return "انتهى الاشتراك";
+  if (days === 0) return "ينتهي اليوم";
+  if (days <= 7) return `ينتهي خلال ${days} أيام`;
+  return `نشط حتى ${new Date(expiresAt).toLocaleDateString("ar")}`;
 }
 
 export async function loadPlaylist(code: string): Promise<IptvPlaylist> {

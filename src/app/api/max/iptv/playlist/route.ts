@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchAndParseM3u } from "@/lib/m3u-parser";
-import { ensureDemoCode, getIptvCode, normalizeCode } from "@/lib/iptv-codes";
+import { ensureDemoCode, getIptvCode, isCodeValid, normalizeCode } from "@/lib/iptv-codes";
 import { maxApiCors } from "@/lib/max-api-cors";
 
 export const runtime = "nodejs";
@@ -21,9 +21,21 @@ export async function GET(request: Request) {
   }
 
   const record = await getIptvCode(code);
-  if (!record || !record.active) {
+  if (!record) {
     return NextResponse.json(
-      { error: "الكود غير صحيح أو موقوف — تواصل مع المزود" },
+      { error: "الكود غير صحيح — تواصل مع المزود" },
+      { status: 403, headers: maxApiCors },
+    );
+  }
+  if (!record.active) {
+    return NextResponse.json(
+      { error: "الاشتراك موقوف — تواصل مع المزود للتجديد" },
+      { status: 403, headers: maxApiCors },
+    );
+  }
+  if (!isCodeValid(record)) {
+    return NextResponse.json(
+      { error: "انتهى اشتراكك — تواصل مع المزود للتجديد" },
       { status: 403, headers: maxApiCors },
     );
   }
@@ -35,6 +47,7 @@ export async function GET(request: Request) {
       {
         code: record.code,
         label: record.label ?? null,
+        expiresAt: record.expiresAt ?? null,
         channels: channels.map((c) => ({
           id: c.id,
           name: c.name,

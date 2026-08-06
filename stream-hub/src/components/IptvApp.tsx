@@ -13,6 +13,7 @@ import {
   isDevMode,
   loadPlaylist,
   saveCode,
+  getSavedExpiry,
 } from "../lib/iptv-client";
 import { clearCodeFromUrl, getCodeFromUrl } from "../lib/customer-link";
 import { normalizeDigits } from "../lib/normalize-digits";
@@ -25,6 +26,7 @@ import { IptvSidebar } from "./IptvSidebar";
 export function IptvApp() {
   const [code, setCode] = useState(() => getSavedCode() ?? "");
   const [label, setLabel] = useState<string | null>(() => getSavedLabel());
+  const [expiresAt, setExpiresAt] = useState<string | null>(() => getSavedExpiry());
   const [channels, setChannels] = useState<IptvChannel[]>([]);
   const [active, setActive] = useState<IptvChannel | null>(null);
   const [filter, setFilter] = useState("");
@@ -46,9 +48,10 @@ export function IptvApp() {
     setError(null);
     try {
       const playlist = await loadPlaylist(trimmed);
-      saveCode(trimmed, playlist.label);
+      saveCode(trimmed, playlist.label, playlist.expiresAt);
       setCode(trimmed);
       setLabel(playlist.label);
+      setExpiresAt(playlist.expiresAt);
       setChannels(playlist.channels);
       setReady(true);
     } catch (e) {
@@ -97,6 +100,7 @@ export function IptvApp() {
     setChannels([]);
     setCode("");
     setLabel(null);
+    setExpiresAt(null);
     setActive(null);
   }
 
@@ -161,7 +165,7 @@ export function IptvApp() {
 
   return (
     <div className="max-show">
-      <IptvSidebar active={nav} onChange={setNav} onLogout={logout} label={label} />
+      <IptvSidebar active={nav} onChange={setNav} onLogout={logout} label={label} expiresAt={expiresAt} />
 
       <div className="max-show__main">
         <div className="max-show__pattern" aria-hidden="true" />
