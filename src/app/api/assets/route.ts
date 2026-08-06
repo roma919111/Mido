@@ -53,6 +53,13 @@ import { tickUserMultiShotJobs, isMultiShotStillGenerating } from "@/lib/multi-s
 import { estimateGenerateSeconds } from "@/lib/generate-eta";
 import { appendVyronixOutro } from "@/lib/veronix-outro";
 import { warmVideoPosterBackground } from "@/lib/poster-cache";
+import {
+  serverFfmpegEnabled,
+  syncIncludesHeavyPipeline,
+  syncIncludesPostProcess,
+  syncIncludesRecover,
+  syncIncludesStitch,
+} from "@/lib/server-load-policy";
 
 export const runtime = "nodejs";
 export const maxDuration = 180;
@@ -188,18 +195,20 @@ async function stitchPendingJobs(userId: string) {
 }
 
 /** Refresh running assets from BytePlus, PixVerse, MiniMax, or Gemini ids. */
-async function syncRunningAssets(userId: string) {
+async function syncRunningAssets(userId: string, opts?: { includeRecover?: boolean }) {
   const assetAgeMs = (createdAt?: string | null) => {
     const createdMs = Date.parse(createdAt || "");
     return Number.isFinite(createdMs) && createdMs > 0 ? Date.now() - createdMs : 0;
   };
 
-  await recoverUserProviderAssets(userId).catch((err) => {
-    console.warn(
-      "[veronix] recoverFailedProviderAssets:",
-      err instanceof Error ? err.message : err,
-    );
-  });
+  if (opts?.includeRecover && syncIncludesRecover()) {
+    await recoverUserProviderAssets(userId).catch((err) => {
+      console.warn(
+        "[veronix] recoverFailedProviderAssets:",
+        err instanceof Error ? err.message : err,
+      );
+    });
+  }
 
   const assets = await listAssetsForUser(userId, { includeHidden: true });
   const running = assets.filter((a) => a.status === "running" && a.historyId).slice(0, 8);
@@ -541,44 +550,51 @@ async function syncRunningAssets(userId: string) {
     });
   }
 
-  // Brand any completed free Veronix clips that still point at a remote CDN.
+  // Brand / clarity — never block sync response (background only unless SYNC_POST_PROCESS=1).
   const latest = await listAssetsForUser(userId);
-  for (const asset of latest.filter(needsLocalBrand).slice(0, 4)) {
-    try {
-      const branded = await appendVyronixOutro(asset.url);
-      await updateAsset(asset.id, userId, { url: branded, status: "completed" });
-      warmVideoPosterBackground({
-        url: branded,
-        historyId: asset.historyId,
-      });
-    } catch {
-      // retry next load
-    }
-  }
+  const runPostProcess = syncIncludesPostProcess() && serverFfmpegEnabled();
 
-  // Lazy clarity only for videos the customer opted into (skip native 720p).
-  for (const asset of latest
-    .filter(
-      (a) =>
-        a.status === "completed" &&
-        a.mediaType === "video" &&
-        a.mode !== "sequence-part" &&
-        a.hidden !== true &&
-        shouldApplyClarityGrade(a) &&
-        needsClarityGrade(a.url),
-    )
-    .slice(0, 4)) {
-    try {
-      const graded = await ensureClarityUrl(asset.url);
-      if (graded && graded !== asset.url) {
-        await updateAsset(asset.id, userId, { url: graded });
-        warmVideoPosterBackground({
-          url: graded,
-          historyId: asset.historyId,
-        });
-      }
-    } catch {
-      // retry next load
+  if (runPostProcess) {
+    for (const asset of latest.filter(needsLocalBrand).slice(0, 2)) {
+      void (async () => {
+        try {
+          const branded = await appendVyronixOutro(asset.url);
+          await updateAsset(asset.id, userId, { url: branded, status: "completed" });
+          warmVideoPosterBackground({
+            url: branded,
+            historyId: asset.historyId,
+          });
+        } catch {
+          // retry next sync
+        }
+      })();
+    }
+
+    for (const asset of latest
+      .filter(
+        (a) =>
+          a.status === "completed" &&
+          a.mediaType === "video" &&
+          a.mode !== "sequence-part" &&
+          a.hidden !== true &&
+          shouldApplyClarityGrade(a) &&
+          needsClarityGrade(a.url),
+      )
+      .slice(0, 2)) {
+      void (async () => {
+        try {
+          const graded = await ensureClarityUrl(asset.url);
+          if (graded && graded !== asset.url) {
+            await updateAsset(asset.id, userId, { url: graded });
+            warmVideoPosterBackground({
+              url: graded,
+              historyId: asset.historyId,
+            });
+          }
+        } catch {
+          // retry next sync
+        }
+      })();
     }
   }
 
@@ -591,7 +607,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Login required", needsAuth: true }, { status: 401 });
   }
 
-  const wantSync = new URL(request.url).searchParams.get("sync") === "1";
+  const url = new URL(request.url);
+  const wantSync = url.searchParams.get("sync") === "1";
+  const wantHeavy =
+    url.searchParams.get("heavy") === "1" || syncIncludesHeavyPipeline();
 
   // Fast path: return the customer's library immediately so Assets feels instant.
   // Heavy recover / stitch / BytePlus sync only runs when explicitly requested.
@@ -611,21 +630,26 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Restore paid multi-shot clips if stitch never produced a visible final.
+    // Light DB fixes only — no ffmpeg unless heavy=1.
     await recoverOrphanedHiddenAssets(user.id);
     await recoverStuckSequencePending(user.id);
-    // Kick / resume in-process multi-shot runners (non-blocking).
     {
       const all = await listAssetsForUser(user.id, { includeHidden: true });
       await tickUserMultiShotJobs(user.id, all);
     }
-    await stitchPendingJobs(user.id);
-    const assets = await syncRunningAssets(user.id);
-    return NextResponse.json({ assets, synced: true });
+    if (wantHeavy && syncIncludesStitch()) {
+      await stitchPendingJobs(user.id);
+    }
+    const assets = await syncRunningAssets(user.id, {
+      includeRecover: wantHeavy,
+    });
+    return NextResponse.json({ assets, synced: true, heavy: wantHeavy });
   } catch (error) {
     await recoverOrphanedHiddenAssets(user.id).catch(() => 0);
     await recoverStuckSequencePending(user.id).catch(() => 0);
-    await stitchPendingJobs(user.id).catch(() => 0);
+    if (wantHeavy && syncIncludesStitch()) {
+      await stitchPendingJobs(user.id).catch(() => 0);
+    }
     const assets = await listAssetsForUser(user.id);
     return NextResponse.json({
       assets,

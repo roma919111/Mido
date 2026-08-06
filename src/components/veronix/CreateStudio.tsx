@@ -626,7 +626,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               targetSeconds?: number;
               error?: string;
             }>;
-          }>("/api/assets?sync=1");
+          }>("/api/assets");
           if (!cancelled && res.ok) {
             const assets = (data.assets || []).filter(
               (a) => a.mode !== "sequence-part",
@@ -796,8 +796,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     const reconcile = async () => {
       try {
         reconcileTickRef.current += 1;
-        const useSync =
-          reconcileTickRef.current === 1 || reconcileTickRef.current % 10 === 0;
+        const useSync = reconcileTickRef.current % 15 === 0;
         const { res, data } = await fetchJson<{
           assets?: Array<{
             id: string;
@@ -811,7 +810,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             createdAt?: string;
             targetSeconds?: number;
           }>;
-        }>(useSync ? "/api/assets?sync=1" : "/api/assets");
+        }>(useSync ? "/api/assets?sync=1&heavy=1" : "/api/assets");
         if (cancelled || !aliveRef.current || !res.ok) return;
         const assets = data.assets || [];
 
@@ -837,7 +836,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     };
 
     void reconcile();
-    const id = window.setInterval(() => void reconcile(), 8_000);
+    const id = window.setInterval(() => void reconcile(), 15_000);
     const onVis = () => {
       if (!document.hidden) void reconcile();
     };

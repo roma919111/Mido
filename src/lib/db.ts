@@ -5,6 +5,14 @@ import { randomUUID, randomBytes } from "node:crypto";
 const DATA_DIR = path.join(process.cwd(), ".data");
 const DB_FILE = path.join(DATA_DIR, "veronix-db.json");
 
+/** Short-lived read cache — cuts JSON parse churn under Assets polling. */
+const DB_READ_CACHE_MS = 2_000;
+let dbReadCache: { db: DbShape; expiresAt: number } | null = null;
+
+function invalidateDbReadCache() {
+  dbReadCache = null;
+}
+
 export type PlanId = "free" | "mini" | "standard" | "pro" | null; // standard kept for legacy users only
 
 export interface UserRecord {
@@ -84,17 +92,24 @@ export interface DbShape {
 }
 
 async function ensureDb(): Promise<DbShape> {
+  const now = Date.now();
+  if (dbReadCache && now < dbReadCache.expiresAt) {
+    return dbReadCache.db;
+  }
+
   await mkdir(DATA_DIR, { recursive: true });
   try {
     const raw = await readFile(DB_FILE, "utf8");
     const parsed = JSON.parse(raw) as DbShape;
-    return {
+    const db = {
       users: Array.isArray(parsed.users) ? parsed.users : [],
       assets: Array.isArray(parsed.assets) ? parsed.assets : [],
       processedCheckoutSessions: Array.isArray(parsed.processedCheckoutSessions)
         ? parsed.processedCheckoutSessions
         : [],
     };
+    dbReadCache = { db, expiresAt: Date.now() + DB_READ_CACHE_MS };
+    return db;
   } catch {
     // Corrupt / missing — try richest backup before writing empty.
     try {
@@ -105,19 +120,22 @@ async function ensureDb(): Promise<DbShape> {
         await mergeDbFromBackup({ backupName: best.name, fullReplace: true });
         const raw = await readFile(DB_FILE, "utf8");
         const parsed = JSON.parse(raw) as DbShape;
-        return {
+        const db = {
           users: Array.isArray(parsed.users) ? parsed.users : [],
           assets: Array.isArray(parsed.assets) ? parsed.assets : [],
           processedCheckoutSessions: Array.isArray(parsed.processedCheckoutSessions)
             ? parsed.processedCheckoutSessions
             : [],
         };
+        dbReadCache = { db, expiresAt: Date.now() + DB_READ_CACHE_MS };
+        return db;
       }
     } catch {
       // fall through to empty
     }
     const empty: DbShape = { users: [], assets: [], processedCheckoutSessions: [] };
     await atomicWriteDb(empty);
+    dbReadCache = { db: empty, expiresAt: Date.now() + DB_READ_CACHE_MS };
     return empty;
   }
 }
@@ -131,6 +149,7 @@ async function atomicWriteDb(db: DbShape): Promise<void> {
 
 async function saveDb(db: DbShape): Promise<void> {
   await atomicWriteDb(db);
+  dbReadCache = { db, expiresAt: Date.now() + DB_READ_CACHE_MS };
   // Best-effort rotating snapshots — never block the write path on backup errors.
   void import("@/lib/db-backup")
     .then(({ backupCustomerDb }) => backupCustomerDb("save"))
@@ -141,7 +160,13 @@ async function saveDb(db: DbShape): Promise<void> {
 let dbWriteChain: Promise<unknown> = Promise.resolve();
 
 function withDbLock<T>(fn: () => Promise<T>): Promise<T> {
-  const run = dbWriteChain.then(fn, fn);
+  const run = dbWriteChain.then(async () => {
+    invalidateDbReadCache();
+    return fn();
+  }, async () => {
+    invalidateDbReadCache();
+    return fn();
+  });
   dbWriteChain = run.then(
     () => undefined,
     () => undefined,

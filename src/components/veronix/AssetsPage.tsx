@@ -1207,6 +1207,7 @@ export function AssetsPage() {
     () => new Set(),
   );
   const feedRef = useRef<HTMLDivElement | null>(null);
+  const syncPollRef = useRef(0);
 
   useEffect(() => {
     setViewMode(readStoredViewMode());
@@ -1260,8 +1261,11 @@ export function AssetsPage() {
     }
   }, []);
 
-  const loadAssets = useCallback(async (opts?: { sync?: boolean }) => {
-    const qs = opts?.sync ? "?sync=1" : "";
+  const loadAssets = useCallback(async (opts?: { sync?: boolean; heavy?: boolean }) => {
+    const params = new URLSearchParams();
+    if (opts?.sync) params.set("sync", "1");
+    if (opts?.heavy) params.set("heavy", "1");
+    const qs = params.toString() ? `?${params.toString()}` : "";
     const { res, data } = await fetchJson<{ assets?: AssetItem[]; error?: string }>(
       `/api/assets${qs}`,
     );
@@ -1319,7 +1323,11 @@ export function AssetsPage() {
       );
       const needsRecover = cachedNow.some((a) => isRecoverableProviderAsset(a));
       if (needsSync) {
-        void loadAssets({ sync: true });
+        syncPollRef.current += 1;
+        void loadAssets({
+          sync: true,
+          heavy: syncPollRef.current === 1 || syncPollRef.current % 5 === 0,
+        });
       } else if (needsRecover) {
         void recoverAsset(undefined, { silent: true });
       }
@@ -1337,11 +1345,15 @@ export function AssetsPage() {
     if ((!hasRunning && !hasRecoverable) || !user) return;
     const t = window.setInterval(() => {
       if (hasRunning) {
-        void loadAssets({ sync: true });
+        syncPollRef.current += 1;
+        void loadAssets({
+          sync: true,
+          heavy: syncPollRef.current % 5 === 0,
+        });
       } else if (hasRecoverable) {
         void recoverAsset(undefined, { silent: true });
       }
-    }, hasRunning ? 8000 : 20_000);
+    }, hasRunning ? 20_000 : 45_000);
     return () => window.clearInterval(t);
   }, [assets, user, loadAssets, recoverAsset]);
 

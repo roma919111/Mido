@@ -113,23 +113,25 @@ export async function GET(request: Request) {
         Number.isFinite(createdMs) && createdMs > 0 ? Date.now() - createdMs : 0;
 
       if (status === "COMPLETED" && task.remoteUrl) {
-        try {
-          const localPath = await downloadMiniMaxVideo(task.remoteUrl);
-          urls = [localPath];
-          if (user && targetId) {
-            await updateAsset(targetId, user.id, {
-              historyId,
-              url: localPath,
-              status: "completed",
-              error: undefined,
-            }).catch(() => null);
-            warmVideoPosterBackground({ url: localPath, historyId });
-          }
-        } catch (error) {
-          console.warn(
-            `[veronix] minimax video persist failed ${miniMaxId}:`,
-            error instanceof Error ? error.message : error,
-          );
+        urls = [task.remoteUrl];
+        if (user && targetId) {
+          void (async () => {
+            try {
+              const localPath = await downloadMiniMaxVideo(task.remoteUrl!);
+              await updateAsset(targetId, user.id, {
+                historyId,
+                url: localPath,
+                status: "completed",
+                error: undefined,
+              }).catch(() => null);
+              warmVideoPosterBackground({ url: localPath, historyId });
+            } catch (error) {
+              console.warn(
+                `[veronix] minimax video persist failed ${miniMaxId}:`,
+                error instanceof Error ? error.message : error,
+              );
+            }
+          })();
         }
       }
 

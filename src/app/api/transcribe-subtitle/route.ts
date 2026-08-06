@@ -5,6 +5,7 @@ import {
   resolveClipVideoSource,
 } from "@/lib/extract-clip-audio-server";
 import { transcribeClipDialogue, type TranscribeMode } from "@/lib/transcribe-subtitle";
+import { serverFfmpegEnabled } from "@/lib/server-load-policy";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -48,6 +49,16 @@ export async function POST(request: Request) {
     let mimeType = body.mimeType?.trim() || "audio/wav";
 
     if (!audioBase64) {
+      if (!serverFfmpegEnabled()) {
+        return NextResponse.json(
+          {
+            error: "client_audio_required",
+            cues: [],
+            text: "",
+          },
+          { status: 422 },
+        );
+      }
       const sourceUrl = await resolveClipVideoSource({
         videoUrl: body.videoUrl,
         historyId: body.historyId,

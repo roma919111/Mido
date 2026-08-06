@@ -10,6 +10,7 @@ import path from "node:path";
 import { isAllowedMediaHost } from "@/lib/media-proxy";
 import { resolveHistoryVideoUrl } from "@/lib/resolve-history-url";
 import { resolveGenerationFile } from "@/lib/veronix-outro";
+import { serverFfmpegEnabled } from "@/lib/server-load-policy";
 
 function run(cmd: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -110,6 +111,9 @@ export async function extractClipAudioFromSource(
   trimStart = 0,
   playDurationSec = 0,
 ): Promise<{ buffer: Buffer; mimeType: string; durationSec: number } | null> {
+  if (!serverFfmpegEnabled()) {
+    return null;
+  }
   const dir = await mkdtemp(path.join(tmpdir(), "vx-audio-"));
   const inPath = path.join(dir, "clip-in.mp4");
   const outPath = path.join(dir, "clip-audio.wav");

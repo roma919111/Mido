@@ -4,6 +4,10 @@ import {
   normalizeDialogueCues,
   resolveClipPlayRange,
 } from "@/lib/edit-studio-dialogue";
+import {
+  extractClipAudio,
+  uint8ToBase64,
+} from "@/lib/edit-studio-ffmpeg";
 import type { DialogueCue, TimelineClip } from "@/lib/edit-studio-timeline";
 import { fetchJson } from "@/lib/fetch-json";
 
@@ -11,7 +15,7 @@ export type TranscribeProgress =
   | { phase: "audio" }
   | { phase: "transcribe"; current: 1; total: 1 };
 
-/** Server extracts audio (ffmpeg) + Gemini transcribe — one request. */
+/** Prefer client FFmpeg.wasm audio — server only transcribes (Gemini). */
 async function transcribeClip(
   clip: TimelineClip,
   playDuration: number,
@@ -26,6 +30,27 @@ async function transcribeClip(
   onProgress?.({ phase: "audio" });
   const { start } = resolveClipPlayRange(clip, playDuration);
 
+  const payload: Record<string, unknown> = {
+    trimStart: start,
+    clipDurationSec: playDuration,
+    ...body,
+  };
+
+  try {
+    const audio = await extractClipAudio(clip, playDuration);
+    if (audio?.data?.length) {
+      payload.audioBase64 = uint8ToBase64(audio.data);
+      payload.mimeType = audio.mimeType;
+    }
+  } catch {
+    // fall through — server may extract if SERVER_FFMPEG enabled
+  }
+
+  if (!payload.audioBase64) {
+    payload.videoUrl = clip.videoUrl;
+    payload.historyId = clip.historyId;
+  }
+
   onProgress?.({ phase: "transcribe", current: 1, total: 1 });
   const { res, data } = await fetchJson<{
     cues?: DialogueCue[];
@@ -35,13 +60,7 @@ async function transcribeClip(
   }>("/api/transcribe-subtitle", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      videoUrl: clip.videoUrl,
-      historyId: clip.historyId,
-      trimStart: start,
-      clipDurationSec: playDuration,
-      ...body,
-    }),
+    body: JSON.stringify(payload),
   });
 
   if (!res.ok) {
@@ -79,47 +98,48 @@ export async function autoTranscribeAll(
   if (result.error && !result.cues.length) {
     return { cues: [], text: "", error: result.error };
   }
-  return { cues: result.cues, text: result.text || cuesToScript(result.cues) };
+  return {
+    cues: result.cues,
+    text: result.text,
+    error: result.error,
+  };
 }
 
-/** Pull one character's speech from clip audio → timed Arabic cues. */
+/** Extract dialogue for one named character. */
 export async function autoTranscribeCharacter(
   clip: TimelineClip,
   characterName: string,
   durationHint = 0,
-  characterVoiceIndex?: number,
+  voiceIndex = 0,
   onProgress?: (p: TranscribeProgress) => void,
 ): Promise<{
   cues: DialogueCue[];
   text: string;
   error?: string;
-  usedFallback?: boolean;
 }> {
-  const name = characterName.trim();
-  if (!name) {
-    return { cues: [], text: "", error: "character_required" };
-  }
-
   const { playDuration } = resolveClipPlayRange(clip, durationHint);
   const result = await transcribeClip(
     clip,
     playDuration,
     {
       mode: "character",
-      characterName: name,
-      characterVoiceIndex,
+      characterName,
+      characterVoiceIndex: voiceIndex,
     },
     onProgress,
   );
-
   if (result.error && !result.cues.length) {
     return { cues: [], text: "", error: result.error };
   }
-
-  const merged = mergeCharacterCues(clip.dialogueCues ?? [], result.cues, name, playDuration);
+  const merged = mergeCharacterCues(
+    clip.dialogueCues ?? [],
+    result.cues,
+    characterName,
+    playDuration,
+  );
   return {
     cues: merged,
-    text: cuesToScript(merged),
-    usedFallback: result.usedFallback,
+    text: result.text || cuesToScript(result.cues),
+    error: result.error,
   };
 }
