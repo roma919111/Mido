@@ -1,5 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { IptvChannel } from "../lib/iptv-client";
+import {
+  buildRows,
+  filterByNav,
+  type IptvNav,
+} from "../lib/iptv-categories";
+import { getFavoriteIds } from "../lib/iptv-favorites";
 import {
   clearSavedCode,
   getSavedCode,
@@ -10,8 +16,10 @@ import {
 } from "../lib/iptv-client";
 import { clearCodeFromUrl, getCodeFromUrl } from "../lib/customer-link";
 import { normalizeDigits } from "../lib/normalize-digits";
+import { useTvRemote } from "../hooks/useTvRemote";
+import { IptvMediaRow } from "./IptvMediaRow";
 import { IptvPlayer } from "./IptvPlayer";
-import { OttQuickBar } from "./OttQuickBar";
+import { IptvSidebar } from "./IptvSidebar";
 
 export function IptvApp() {
   const [code, setCode] = useState(() => getSavedCode() ?? "");
@@ -23,6 +31,9 @@ export function IptvApp() {
   const [loading, setLoading] = useState(false);
   const [ready, setReady] = useState(false);
   const [autoSetup, setAutoSetup] = useState(false);
+  const [nav, setNav] = useState<IptvNav>("live");
+  const [favoriteIds, setFavoriteIds] = useState<string[]>(() => getFavoriteIds());
+  const mainRef = useRef<HTMLElement>(null);
 
   const activate = useCallback(async (activationCode: string, silent = false) => {
     const trimmed = normalizeDigits(activationCode, 6);
@@ -61,21 +72,21 @@ export function IptvApp() {
     if (saved) void activate(saved, true);
   }, [activate]);
 
-  const groups = useMemo(() => {
-    const map = new Map<string, IptvChannel[]>();
-    for (const ch of channels) {
-      const g = ch.group || "عام";
-      if (!map.has(g)) map.set(g, []);
-      map.get(g)!.push(ch);
-    }
-    return map;
-  }, [channels]);
-
-  const filtered = useMemo(() => {
+  const filteredChannels = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    if (!q) return channels;
-    return channels.filter((c) => c.name.toLowerCase().includes(q));
-  }, [channels, filter]);
+    const base = filterByNav(channels, nav, favoriteIds);
+    if (!q) return base;
+    return base.filter((c) => c.name.toLowerCase().includes(q));
+  }, [channels, nav, favoriteIds, filter]);
+
+  const rows = useMemo(() => {
+    if (filter.trim()) {
+      return [{ id: "search", title: `نتائج البحث (${filteredChannels.length})`, channels: filteredChannels }];
+    }
+    return buildRows(filteredChannels, nav);
+  }, [filteredChannels, nav, filter]);
+
+  useTvRemote(mainRef);
 
   function logout() {
     clearSavedCode();
@@ -84,6 +95,10 @@ export function IptvApp() {
     setCode("");
     setLabel(null);
     setActive(null);
+  }
+
+  function refreshFavorites() {
+    setFavoriteIds(getFavoriteIds());
   }
 
   if (active) {
@@ -96,7 +111,7 @@ export function IptvApp() {
         <div className="iptv-login">
           <div className="iptv-login__card">
             <div className="iptv-login__logo">MAX</div>
-            <h1>جاري تجهيز واجهتك…</h1>
+            <h1>جاري تجهيز MAX SHOW TV…</h1>
             <p className="iptv-login__lead">لحظات — القنوات والإعدادات تُحمّل تلقائياً</p>
             {error ? <p className="iptv-login__error">{error}</p> : null}
           </div>
@@ -108,7 +123,7 @@ export function IptvApp() {
       <div className="iptv-login">
         <div className="iptv-login__card">
           <div className="iptv-login__logo">MAX</div>
-          <h1>MAX IPTV</h1>
+          <h1>MAX SHOW TV</h1>
           <p className="iptv-login__lead">أدخل كود الاشتراك من المزود</p>
           <input
             className="iptv-login__input"
@@ -142,69 +157,41 @@ export function IptvApp() {
   }
 
   return (
-    <div className="iptv-app">
-      <header className="iptv-app__header">
-        <div>
-          <span className="iptv-app__brand">MAX IPTV</span>
-          {label ? <span className="iptv-app__label">{label}</span> : null}
-        </div>
-        <button type="button" className="iptv-app__logout" onClick={logout}>
-          خروج
-        </button>
-      </header>
+    <div className="max-show">
+      <IptvSidebar active={nav} onChange={setNav} onLogout={logout} label={label} />
 
-      <div className="iptv-app__search-wrap">
-        <input
-          className="iptv-app__search"
-          placeholder="بحث عن قناة…"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-        />
+      <div className="max-show__main">
+        <div className="max-show__pattern" aria-hidden="true" />
+
+        <header className="max-show__header">
+          <input
+            className="max-show__search"
+            placeholder="بحث…"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+          />
+          <span className="max-show__version">v{__APP_VERSION__}</span>
+        </header>
+
+        <main ref={mainRef} tabIndex={-1} className="max-show__content">
+          {rows.length ? (
+            rows.map((row) => (
+              <IptvMediaRow
+                key={row.id}
+                row={row}
+                onPlay={setActive}
+                onFavoriteChange={refreshFavorites}
+              />
+            ))
+          ) : (
+            <p className="max-show__empty">
+              {nav === "favorites"
+                ? "اضغط ♡ على أي بوستر لإضافته للمفضلة"
+                : "لا يوجد محتوى في هذا القسم — تحقق من قائمة M3U من المزود"}
+            </p>
+          )}
+        </main>
       </div>
-
-      <div className="iptv-app__ott">
-        <OttQuickBar />
-      </div>
-
-      <main className="iptv-app__main">
-        {filter ? (
-          <section>
-            <h2 className="iptv-app__group-title">نتائج البحث ({filtered.length})</h2>
-            <div className="iptv-channels">
-              {filtered.map((ch) => (
-                <button
-                  key={ch.id}
-                  type="button"
-                  className="iptv-channel"
-                  onClick={() => setActive(ch)}
-                >
-                  {ch.logo ? <img src={ch.logo} alt="" className="iptv-channel__logo" /> : null}
-                  <span>{ch.name}</span>
-                </button>
-              ))}
-            </div>
-          </section>
-        ) : (
-          [...groups.entries()].map(([group, list]) => (
-            <section key={group}>
-              <h2 className="iptv-app__group-title">{group}</h2>
-              <div className="iptv-channels">
-                {list.map((ch) => (
-                  <button
-                    key={ch.id}
-                    type="button"
-                    className="iptv-channel"
-                    onClick={() => setActive(ch)}
-                  >
-                    {ch.logo ? <img src={ch.logo} alt="" className="iptv-channel__logo" /> : null}
-                    <span>{ch.name}</span>
-                  </button>
-                ))}
-              </div>
-            </section>
-          ))
-        )}
-      </main>
     </div>
   );
 }

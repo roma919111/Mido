@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { CATALOG, ROWS } from "./data/catalog";
-import { getSession, logout } from "./lib/auth";
 import { enterAppShellMode, exitAppShellMode } from "./lib/app-shell";
 import { enterKioskMode, isKioskEnabled } from "./lib/kiosk-mode";
 import { getContinueWatching, getContinueEntry, getMyList } from "./lib/library";
@@ -36,9 +35,9 @@ import { PopcornSplash } from "./components/PopcornSplash";
 import { PosterCard } from "./components/PosterCard";
 import { SearchBar } from "./components/SearchBar";
 import { SmartSetup, shouldShowSmartSetup } from "./components/SmartSetup";
-import { MaxLoginPage } from "./components/MaxLoginPage";
 import { GoogleTvLauncher } from "./components/GoogleTvLauncher";
 import { InstallAppBanner } from "./components/InstallAppBanner";
+import { IptvApp } from "./components/IptvApp";
 import { Capacitor } from "@capacitor/core";
 import type { CatalogItem, ContinueEntry, LaunchState, PlatformId } from "./types";
 
@@ -442,18 +441,13 @@ function HomePage({ username, onLogout }: { username: string; onLogout: () => vo
   );
 }
 
+export { HomePage as CatalogHomePage };
+
 export function App() {
-  const [authed, setAuthed] = useState(false);
-  const [username, setUsername] = useState("");
   const [setupDone, setSetupDone] = useState(() => !shouldShowSmartSetup());
 
   useEffect(() => {
-    const session = getSession();
-    if (session) {
-      enterAppShellMode();
-      setUsername(session.username);
-      setAuthed(true);
-    }
+    enterAppShellMode();
   }, []);
 
   if (!setupDone) {
@@ -464,23 +458,9 @@ export function App() {
     );
   }
 
-  if (!authed) {
-    return (
-      <GoogleTvLauncher>
-        <MaxLoginPage
-          onSuccess={() => {
-            const session = getSession();
-            setUsername(session?.username ?? "");
-            setAuthed(true);
-          }}
-        />
-      </GoogleTvLauncher>
-    );
-  }
-
   return (
     <GoogleTvLauncher>
-      <HomePage username={username} onLogout={() => { exitAppShellMode(); logout(); setAuthed(false); }} />
+      <IptvApp />
     </GoogleTvLauncher>
   );
 }

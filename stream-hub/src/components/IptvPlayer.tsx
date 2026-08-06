@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import Hls from "hls.js";
+import { enterPlaybackMode, exitPlaybackMode } from "../lib/fullscreen";
 
 type IptvPlayerProps = {
   url: string;
@@ -9,6 +10,13 @@ type IptvPlayerProps = {
 
 export function IptvPlayer({ url, name, onBack }: IptvPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    enterPlaybackMode();
+    return () => {
+      void exitPlaybackMode();
+    };
+  }, []);
 
   useEffect(() => {
     const video = videoRef.current;

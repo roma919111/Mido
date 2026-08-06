@@ -8,7 +8,8 @@ export function useTvRemote(mainRef: RefObject<HTMLElement | null>) {
       if (!main) return;
 
       const target = e.target as HTMLElement | null;
-      const row = target?.closest(".content-row__track") as HTMLElement | null;
+      const row = (target?.closest(".content-row__track, .max-show__track") ??
+        null) as HTMLElement | null;
 
       switch (e.key) {
         case "ArrowDown":
