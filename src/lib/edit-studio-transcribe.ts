@@ -118,6 +118,7 @@ export async function autoTranscribeCharacter(
   cues: DialogueCue[];
   text: string;
   error?: string;
+  usedFallback?: boolean;
 }> {
   const { playDuration } = resolveClipPlayRange(clip, durationHint);
   const result = await transcribeClip(
@@ -143,5 +144,6 @@ export async function autoTranscribeCharacter(
     cues: merged,
     text: result.text || cuesToScript(result.cues),
     error: result.error,
+    usedFallback: result.usedFallback,
   };
 }
