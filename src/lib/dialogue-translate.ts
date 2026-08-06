@@ -1,5 +1,5 @@
 import { hasArabic, isMostlyArabic } from "@/lib/prompt-translate";
-import { GEMINI_AUDIO_MODEL_DEFAULT } from "@/lib/gemini-constants";
+import { resolveGeminiTextModel } from "@/lib/gemini-constants";
 import { getGeminiApiKey } from "@/lib/gemini-video";
 
 /** Translate dialogue/subtitle English → Modern Standard Arabic (server-side). */
@@ -21,10 +21,7 @@ export async function translateDialogueToArabic(
     };
   }
 
-  const model =
-    process.env.GEMINI_TEXT_MODEL?.trim() ||
-    process.env.GEMINI_AUDIO_MODEL?.trim() ||
-    GEMINI_AUDIO_MODEL_DEFAULT;
+  const model = resolveGeminiTextModel();
 
   const prompt = `Translate the following video dialogue/subtitle into natural Modern Standard Arabic suitable for on-screen captions.
 Output Arabic only. Keep names and brand terms readable. Return JSON only: {"text":"..."}.

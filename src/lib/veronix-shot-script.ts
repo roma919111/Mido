@@ -6,10 +6,7 @@
  * Labels never say «حالة الفاعل/المفعول به» — they start with the character name.
  */
 
-import {
-  countActionVerbs,
-  splitActionClauses,
-} from "@/lib/prompt-chain";
+import { resolveGeminiTextModel } from "@/lib/gemini-constants";
 import { hasArabic, isMostlyArabic } from "@/lib/prompt-translate";
 
 export type ShotRole = "action" | "subject_state" | "object_state";
@@ -336,10 +333,7 @@ export function planShotTriplesLocal(prompt: string): ActionTriple[] {
 async function geminiJson(prompt: string): Promise<Record<string, unknown> | null> {
   const key = envKey("GEMINI_API_KEY") || envKey("GOOGLE_AI_API_KEY");
   if (!key) return null;
-  const model =
-    envKey("GEMINI_TEXT_MODEL") ||
-    envKey("GEMINI_VISION_MODEL") ||
-    "gemini-flash-lite-latest";
+  const model = resolveGeminiTextModel();
   try {
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`,

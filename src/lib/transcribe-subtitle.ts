@@ -10,18 +10,14 @@ import {
 import type { DialogueCue } from "@/lib/edit-studio-timeline";
 import {
   GEMINI_AUDIO_MODEL_DEFAULT,
-  GEMINI_AUDIO_MODEL_FALLBACKS,
+  geminiAudioModelCandidates,
+  resolveGeminiTextModel,
 } from "@/lib/gemini-constants";
 import { getGeminiApiKey } from "@/lib/gemini-video";
 import { hasArabic, isMostlyArabic, isMostlyEnglish } from "@/lib/prompt-translate";
 
 function audioModels(): string[] {
-  const fromEnv = process.env.GEMINI_AUDIO_MODEL?.trim();
-  const defaults = [...GEMINI_AUDIO_MODEL_FALLBACKS];
-  if (fromEnv) {
-    return [fromEnv, ...defaults.filter((m) => m !== fromEnv)];
-  }
-  return defaults;
+  return geminiAudioModelCandidates();
 }
 
 function parseGeminiApiError(errText: string): string {
@@ -41,7 +37,8 @@ function isModelNotFoundError(errText: string): boolean {
     t.includes("not found") ||
     t.includes("not_found") ||
     t.includes("does not exist") ||
-    t.includes("is not supported")
+    t.includes("is not supported") ||
+    t.includes("no longer available")
   );
 }
 
@@ -240,10 +237,7 @@ async function translateCueLinesToArabic(lines: string[]): Promise<string[] | nu
   const key = getGeminiApiKey();
   if (!key) return null;
 
-  const model =
-    process.env.GEMINI_AUDIO_MODEL?.trim() ||
-    process.env.GEMINI_TEXT_MODEL?.trim() ||
-    GEMINI_AUDIO_MODEL_DEFAULT;
+  const model = resolveGeminiTextModel();
 
   const numbered = lines.map((line, i) => `${i + 1}. ${line}`).join("\n");
   const prompt = `Translate each numbered subtitle line into natural Modern Standard Arabic for on-screen captions.

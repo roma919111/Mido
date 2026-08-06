@@ -3,6 +3,8 @@
  * Arabic input → Arabic cinematic polish; English input → English polish.
  */
 
+import { resolveGeminiTextModel } from "@/lib/gemini-constants";
+
 function envKey(name: string): string | undefined {
   try {
     return process.env[name]?.trim() || undefined;
@@ -48,10 +50,7 @@ function openaiKey(): string | null {
 async function geminiJsonText(prompt: string): Promise<string | null> {
   const key = geminiKey();
   if (!key) return null;
-  const model =
-    envKey("GEMINI_TEXT_MODEL") ||
-    envKey("GEMINI_VISION_MODEL") ||
-    "gemini-flash-lite-latest";
+  const model = resolveGeminiTextModel();
   try {
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`,

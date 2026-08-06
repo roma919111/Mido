@@ -7,8 +7,7 @@
  * - optional Gemini beat inference when rules are unsure
  */
 
-import {
-  countActionVerbs,
+import { resolveGeminiVisionModel } from "@/lib/gemini-constants";
   injectEntitiesIntoAction,
   splitActionClauses,
   splitByActionVerbs,
@@ -110,7 +109,7 @@ function envKey(name: string): string | undefined {
 export async function inferBeatsWithGemini(text: string, arabic: boolean): Promise<string[] | null> {
   const key = envKey("GEMINI_API_KEY") || envKey("GOOGLE_AI_API_KEY");
   if (!key) return null;
-  const model = envKey("GEMINI_VISION_MODEL") || "gemini-flash-lite-latest";
+  const model = resolveGeminiVisionModel();
 
   const instruction = arabic
     ? `قسّم النص التالي إلى لقطات فيديو متتالية (beats). كل لقطة = فعل أساسي واحد واضح.

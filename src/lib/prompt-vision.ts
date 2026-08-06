@@ -7,6 +7,8 @@
  * or GEMINI_API_KEY (Google AI Studio).
  */
 
+import { resolveGeminiVisionModel } from "@/lib/gemini-constants";
+
 export type VisualEntity = {
   role: string;
   gender?: string;
@@ -233,8 +235,7 @@ async function analyzeWithGemini(
 ): Promise<VisionSceneBrief | null> {
   const key = geminiKey();
   if (!key) return null;
-  // Prefer lite/latest aliases — free-tier quota on gemini-2.0-flash is often exhausted.
-  const model = env("GEMINI_VISION_MODEL") || "gemini-flash-lite-latest";
+  const model = resolveGeminiVisionModel();
 
   const parts: Array<Record<string, unknown>> = [
     { text: `${VISION_INSTRUCTION}\nUser action hint: ${userHint || "(none)"}` },
