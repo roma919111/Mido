@@ -92,6 +92,7 @@ export async function autoTranscribeAll(
   cues: DialogueCue[];
   text: string;
   error?: string;
+  usedFallback?: boolean;
 }> {
   const { playDuration } = resolveClipPlayRange(clip, durationHint);
   const result = await transcribeClip(clip, playDuration, { mode: "all" }, onProgress);
@@ -102,6 +103,7 @@ export async function autoTranscribeAll(
     cues: result.cues,
     text: result.text,
     error: result.error,
+    usedFallback: result.usedFallback,
   };
 }
 
