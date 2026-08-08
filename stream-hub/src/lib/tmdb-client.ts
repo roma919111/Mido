@@ -31,7 +31,7 @@ function apiBase(): string {
   if (iptv?.startsWith("http")) {
     return iptv.replace(/\/iptv\/?$/, "/tmdb/poster");
   }
-  if (import.meta.env.DEV || iptv) return "/api/max/tmdb/poster";
+  if (import.meta.env.DEV || import.meta.env.VITE_DEMO_MODE === "true" || iptv) return "/api/max/tmdb/poster";
   return "";
 }
 

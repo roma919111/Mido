@@ -15,6 +15,8 @@ export type OpenPlatformResult = "app" | "store" | "browser" | "failed";
 export type OpenPlatformOptions = {
   url?: string;
   searchQuery?: string;
+  tmdbId?: number;
+  tmdbType?: "movie" | "tv";
 };
 
 function normalizeOpts(
@@ -28,6 +30,8 @@ function normalizeOpts(
       : {
           url: target.url?.trim() || undefined,
           searchQuery: target.searchQuery?.trim() || undefined,
+          tmdbId: target.tmdbId,
+          tmdbType: target.tmdbType,
         };
 
   if (!opts.url && !opts.searchQuery) {

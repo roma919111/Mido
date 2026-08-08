@@ -10,6 +10,10 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.net.URLDecoder;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -30,14 +34,27 @@ public class PlatformLaunchPlugin extends Plugin {
         String primaryPackage = call.getString("packageName");
         String fallbackPackage = call.getString("fallbackPackage");
 
-        if ((url == null || url.isEmpty()) && (searchQuery == null || searchQuery.isEmpty())) {
+        Integer tmdbId = call.getInt("tmdbId", 0);
+        String tmdbType = call.getString("tmdbType");
+
+        if ((url == null || url.isEmpty()) && (searchQuery == null || searchQuery.isEmpty()) && tmdbId <= 0) {
             call.reject("url or searchQuery is required");
             return;
         }
 
         String resolvedPlatform = platform != null ? platform : detectPlatform(url, primaryPackage);
 
-        if (tryLaunch(resolvedPlatform, url, searchQuery, primaryPackage)) {
+        String launchUrl = url;
+        if ((launchUrl == null || launchUrl.isEmpty() || isSearchUrl(launchUrl))
+            && "netflix".equals(resolvedPlatform)
+            && tmdbId > 0) {
+            String scraped = fetchNetflixUrlFromTmdb(tmdbId, tmdbType);
+            if (scraped != null) {
+                launchUrl = scraped;
+            }
+        }
+
+        if (tryLaunch(resolvedPlatform, launchUrl, searchQuery, primaryPackage)) {
             call.resolve();
             return;
         }
@@ -45,12 +62,12 @@ public class PlatformLaunchPlugin extends Plugin {
         if (fallbackPackage != null
             && !fallbackPackage.isEmpty()
             && !fallbackPackage.equals(primaryPackage)
-            && tryLaunch(resolvedPlatform, url, searchQuery, fallbackPackage)) {
+            && tryLaunch(resolvedPlatform, launchUrl, searchQuery, fallbackPackage)) {
             call.resolve();
             return;
         }
 
-        if (url != null && !url.isEmpty() && tryOpenView(url, null)) {
+        if (launchUrl != null && !launchUrl.isEmpty() && tryOpenView(launchUrl, null)) {
             call.resolve();
             return;
         }
@@ -212,6 +229,49 @@ public class PlatformLaunchPlugin extends Plugin {
         }
 
         return false;
+    }
+
+    private String fetchNetflixUrlFromTmdb(int tmdbId, String tmdbType) {
+        String segment = "tv".equalsIgnoreCase(tmdbType) ? "tv" : "movie";
+        HttpURLConnection connection = null;
+        try {
+            URL pageUrl = new URL("https://www.themoviedb.org/" + segment + "/" + tmdbId + "/watch");
+            connection = (HttpURLConnection) pageUrl.openConnection();
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(8000);
+            connection.setReadTimeout(8000);
+            connection.setRequestProperty(
+                "User-Agent",
+                "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36");
+            connection.setRequestProperty("Accept", "text/html");
+
+            if (connection.getResponseCode() != 200) return null;
+
+            StringBuilder html = new StringBuilder();
+            BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+            String line;
+            while ((line = reader.readLine()) != null) {
+                html.append(line);
+            }
+            reader.close();
+
+            Matcher encoded = Pattern.compile("netflix\\.com%2F(?:title|watch)%2F(\\d+)", Pattern.CASE_INSENSITIVE)
+                .matcher(html);
+            if (encoded.find()) {
+                return "https://www.netflix.com/watch/" + encoded.group(1);
+            }
+
+            Matcher plain = Pattern.compile("netflix\\.com/(?:title|watch)/(\\d+)", Pattern.CASE_INSENSITIVE)
+                .matcher(html);
+            if (plain.find()) {
+                return "https://www.netflix.com/watch/" + plain.group(1);
+            }
+        } catch (Exception ignored) {
+            /* fall through */
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+        return null;
     }
 
     private Context getLaunchContext() {

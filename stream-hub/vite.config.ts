@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
-export const APP_VERSION = "1.1.2";
+export const APP_VERSION = "1.1.3";
 
 const pagesBase = process.env.GITHUB_PAGES === "true" ? "/Mido/" : "/";
 
@@ -62,5 +62,11 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 4173,
     allowedHosts: true,
+    proxy: {
+      "/api/max": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+      },
+    },
   },
 });

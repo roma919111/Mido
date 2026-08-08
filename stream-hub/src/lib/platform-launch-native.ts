@@ -8,6 +8,8 @@ type PlatformLaunchPlugin = {
     url?: string;
     searchQuery?: string;
     platform?: string;
+    tmdbId?: number;
+    tmdbType?: "movie" | "tv";
     packageName?: string;
     fallbackPackage?: string;
   }): Promise<void>;
@@ -98,7 +100,12 @@ export async function openPlatformPlayStore(platform: PlatformId): Promise<boole
 
 export async function launchNativePlatformApp(
   platform: PlatformId,
-  target: string | { url?: string; searchQuery?: string },
+  target: string | {
+    url?: string;
+    searchQuery?: string;
+    tmdbId?: number;
+    tmdbType?: "movie" | "tv";
+  },
 ): Promise<boolean> {
   const options = typeof target === "string" ? { url: target } : target;
   const pkgs = getAndroidPackages(platform);
@@ -106,6 +113,8 @@ export async function launchNativePlatformApp(
     await PlatformLaunch.openPlatform({
       url: options.url,
       searchQuery: options.searchQuery,
+      tmdbId: options.tmdbId,
+      tmdbType: options.tmdbType,
       platform,
       packageName: pkgs.primary,
       fallbackPackage: pkgs.fallback,
