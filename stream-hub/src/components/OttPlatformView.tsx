@@ -7,7 +7,7 @@ import { enterPlaybackMode } from "../lib/fullscreen";
 import { isPlatformAppInstalled } from "../lib/platform-launch-native";
 import { openPlatformLocked } from "../lib/platform-open";
 import { PLATFORMS } from "../lib/platforms";
-import { fetchTmdbDiscover, platformSearchUrl, type TmdbDiscoverItem } from "../lib/tmdb-discover";
+import { fetchTmdbByCategory, platformSearchUrl, type TmdbDiscoverItem } from "../lib/tmdb-discover";
 import { IptvOttCatalogRow } from "./IptvOttCatalogRow";
 import { TmdbDiscoverRow } from "./TmdbDiscoverRow";
 
@@ -37,8 +37,8 @@ export function OttPlatformView({ platform }: OttPlatformViewProps) {
   }, [platform, busy]);
 
   useEffect(() => {
-    void fetchTmdbDiscover(platform, "movie").then(setMovies);
-    void fetchTmdbDiscover(platform, "tv").then(setSeries);
+    void fetchTmdbByCategory("latest-movies", platform).then(setMovies);
+    void fetchTmdbByCategory("latest-series", platform).then(setSeries);
   }, [platform]);
 
   function showMsg(text: string) {

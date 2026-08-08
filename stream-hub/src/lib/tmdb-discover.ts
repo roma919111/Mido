@@ -1,4 +1,5 @@
 import type { PlatformId } from "../types";
+import type { MovieCategoryId } from "./movie-categories";
 
 export type TmdbDiscoverItem = {
   tmdbId: number;
@@ -18,15 +19,15 @@ function apiBase(): string {
   return "";
 }
 
-export async function fetchTmdbDiscover(
-  platform: PlatformId,
-  type: "movie" | "tv",
+export async function fetchTmdbByCategory(
+  category: MovieCategoryId | "latest-movies" | "latest-series" | "live",
+  platform: PlatformId = "netflix",
 ): Promise<TmdbDiscoverItem[]> {
   const base = apiBase();
   if (!base) return [];
 
   try {
-    const params = new URLSearchParams({ platform, type });
+    const params = new URLSearchParams({ category, platform });
     const res = await fetch(`${base}/discover?${params}`);
     if (!res.ok) return [];
     const data = (await res.json()) as { results?: TmdbDiscoverItem[] };
@@ -36,7 +37,6 @@ export async function fetchTmdbDiscover(
   }
 }
 
-/** Build a searchable deeplink when we don't have an exact title URL. */
 export function platformSearchUrl(platform: PlatformId, title: string): string {
   const q = encodeURIComponent(title);
   switch (platform) {
@@ -47,4 +47,52 @@ export function platformSearchUrl(platform: PlatformId, title: string): string {
     case "tod":
       return `https://www.tod.tv/ar/search?q=${q}`;
   }
+}
+
+const FAV_KEY = "max.show.favorites";
+const RECENT_KEY = "max.show.recent";
+
+export function getFavoriteItems(): TmdbDiscoverItem[] {
+  try {
+    const raw = localStorage.getItem(FAV_KEY);
+    return raw ? (JSON.parse(raw) as TmdbDiscoverItem[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function getRecentItems(): TmdbDiscoverItem[] {
+  try {
+    const raw = localStorage.getItem(RECENT_KEY);
+    return raw ? (JSON.parse(raw) as TmdbDiscoverItem[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function toggleFavoriteItem(item: TmdbDiscoverItem): boolean {
+  const list = getFavoriteItems();
+  const idx = list.findIndex((x) => x.tmdbId === item.tmdbId && x.tmdbType === item.tmdbType);
+  if (idx >= 0) {
+    list.splice(idx, 1);
+    localStorage.setItem(FAV_KEY, JSON.stringify(list));
+    return false;
+  }
+  list.unshift(item);
+  localStorage.setItem(FAV_KEY, JSON.stringify(list.slice(0, 100)));
+  return true;
+}
+
+export function pushRecentItem(item: TmdbDiscoverItem): void {
+  const list = getRecentItems().filter(
+    (x) => !(x.tmdbId === item.tmdbId && x.tmdbType === item.tmdbType),
+  );
+  list.unshift(item);
+  localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 50)));
+}
+
+export function isFavoriteItem(item: TmdbDiscoverItem): boolean {
+  return getFavoriteItems().some(
+    (x) => x.tmdbId === item.tmdbId && x.tmdbType === item.tmdbType,
+  );
 }
