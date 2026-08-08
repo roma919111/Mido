@@ -11,6 +11,29 @@ import { PLATFORMS } from "./platforms";
 
 export type OpenPlatformResult = "app" | "store" | "browser" | "failed";
 
+/** Deeplink with locked MAX shell — kiosk stays, returns via ← MAX button. */
+export async function openPlatformLocked(
+  platform: PlatformId,
+  url?: string,
+): Promise<OpenPlatformResult> {
+  const meta = PLATFORMS[platform];
+  const targetUrl = url?.trim() || meta.homeUrl;
+  markPlatformOpened();
+
+  if (Capacitor.isNativePlatform()) {
+    const installed = await isPlatformAppInstalled(platform);
+    if (installed) {
+      const ok = await launchNativePlatformApp(platform, targetUrl);
+      if (ok) return "app";
+    }
+    const browserOk = await openPlatformWebView(targetUrl);
+    return browserOk ? "browser" : "failed";
+  }
+
+  const browserOk = await openPlatformWebView(targetUrl);
+  return browserOk ? "browser" : "failed";
+}
+
 /** One tap: app → Play Store → browser. No popcorn, no dialogs. */
 export async function openPlatformNow(
   platform: PlatformId,

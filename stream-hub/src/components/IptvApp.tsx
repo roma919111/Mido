@@ -10,14 +10,18 @@ import {
   clearSavedCode,
   getSavedCode,
   getSavedLabel,
+  getSavedExpiry,
   isDevMode,
   loadPlaylist,
   saveCode,
-  getSavedExpiry,
 } from "../lib/iptv-client";
+import { clearAllReturnFlags } from "../lib/app-navigation";
 import { clearCodeFromUrl, getCodeFromUrl } from "../lib/customer-link";
+import { enterAppShellMode } from "../lib/app-shell";
+import { enterKioskMode } from "../lib/kiosk-mode";
 import { normalizeDigits } from "../lib/normalize-digits";
 import { useTvRemote } from "../hooks/useTvRemote";
+import { ReturnHomeButton } from "./ReturnHomeButton";
 import { IptvMediaRow } from "./IptvMediaRow";
 import { IptvOttPanel } from "./IptvOttPanel";
 import { IptvPlayer } from "./IptvPlayer";
@@ -93,6 +97,16 @@ export function IptvApp() {
   }, [filteredChannels, nav, filter]);
 
   useTvRemote(mainRef);
+
+  useEffect(() => {
+    if (!ready) return;
+    enterAppShellMode();
+    void enterKioskMode();
+  }, [ready]);
+
+  function handleReturnHome() {
+    clearAllReturnFlags();
+  }
 
   function logout() {
     clearSavedCode();
@@ -205,6 +219,7 @@ export function IptvApp() {
           )}
         </main>
       </div>
+      <ReturnHomeButton onClick={handleReturnHome} />
     </div>
   );
 }

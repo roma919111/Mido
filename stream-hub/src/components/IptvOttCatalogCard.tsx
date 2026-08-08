@@ -1,4 +1,5 @@
 import type { CatalogItem, PlatformId } from "../types";
+import { useTmdbPoster } from "../hooks/useTmdbPoster";
 import { PLATFORMS } from "../lib/platforms";
 
 type IptvOttCatalogCardProps = {
@@ -10,6 +11,8 @@ type IptvOttCatalogCardProps = {
 
 export function IptvOttCatalogCard({ item, platform, onPlay, busy }: IptvOttCatalogCardProps) {
   const meta = PLATFORMS[platform];
+  const { posterUrl, rating } = useTmdbPoster(item);
+  const displayRating = rating ? rating.toFixed(1) : item.rating;
 
   return (
     <button
@@ -22,8 +25,15 @@ export function IptvOttCatalogCard({ item, platform, onPlay, busy }: IptvOttCata
         className="max-show__ott-poster"
         style={{ background: item.posterGradient, "--ott-color": meta.color } as React.CSSProperties}
       >
+        {posterUrl ? (
+          <img src={posterUrl} alt="" className="max-show__ott-poster-img" loading="lazy" />
+        ) : null}
         <span className="max-show__ott-poster-badge">{meta.name}</span>
-        {item.rating ? <span className="max-show__ott-poster-rating">{item.rating}</span> : null}
+        {displayRating ? (
+          <span className="max-show__ott-poster-rating">
+            {rating ? `★ ${displayRating}` : displayRating}
+          </span>
+        ) : null}
         <span className="max-show__ott-poster-play">▶</span>
       </div>
       <p className="max-show__ott-card-title">{item.title}</p>

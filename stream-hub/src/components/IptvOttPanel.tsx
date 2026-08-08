@@ -1,19 +1,20 @@
 import { useEffect, useState } from "react";
 import { Capacitor } from "@capacitor/core";
-import type { CatalogItem, PlatformId } from "../types";
-import { ottRowsForPlatform } from "../lib/ott-catalog";
-import { platformUrl } from "../lib/ott-catalog";
+import type { PlatformId } from "../types";
+import { enterKioskMode } from "../lib/kiosk-mode";
+import { enterPlaybackMode } from "../lib/fullscreen";
+import { ottRowsForPlatform, platformUrl } from "../lib/ott-catalog";
 import { isPlatformAppInstalled } from "../lib/platform-launch-native";
-import { openPlatformNow } from "../lib/platform-open";
+import { openPlatformLocked } from "../lib/platform-open";
 import { PLATFORMS } from "../lib/platforms";
 import { IptvOttCatalogRow } from "./IptvOttCatalogRow";
 
 const ORDER: PlatformId[] = ["netflix", "shahid", "tod"];
 
 const TAGLINES: Record<PlatformId, string> = {
-  netflix: "أفلام ومسلسلات عالمية — اضغط ▶ للتشغيل في Netflix",
-  shahid: "محتوى عربي — اضغط ▶ للتشغيل في شاهد",
-  tod: "رياضة وبث مباشر — اضغط ▶ للتشغيل في TOD",
+  netflix: "deeplink → Netflix · واجهة MAX مقفولة",
+  shahid: "deeplink → شاهد · واجهة MAX مقفولة",
+  tod: "deeplink → TOD · واجهة MAX مقفولة",
 };
 
 export function IptvOttPanel() {
@@ -38,23 +39,23 @@ export function IptvOttPanel() {
 
   function showMsg(text: string) {
     setMsg(text);
-    window.setTimeout(() => setMsg(null), 4000);
+    window.setTimeout(() => setMsg(null), 5000);
   }
 
-  async function openApp(platform: PlatformId) {
+  async function openLocked(platform: PlatformId, url?: string) {
     if (busyPlatform) return;
     setBusyPlatform(platform);
+    enterPlaybackMode();
+    await enterKioskMode();
     showMsg(`جاري فتح ${PLATFORMS[platform].name}…`);
-    await openPlatformNow(platform);
-    setBusyPlatform(null);
-  }
-
-  async function playTitle(item: CatalogItem, platform: PlatformId) {
-    const url = platformUrl(item, platform);
-    if (!url || busyPlatform) return;
-    setBusyPlatform(platform);
-    showMsg(`جاري فتح «${item.title}» على ${PLATFORMS[platform].name}…`);
-    await openPlatformNow(platform, url);
+    const result = await openPlatformLocked(platform, url);
+    if (result === "app") {
+      showMsg(`${PLATFORMS[platform].name} — التشغيل في التطبيق · ارجع ← MAX`);
+    } else if (result === "browser") {
+      showMsg(`${PLATFORMS[platform].name} — deeplink · ارجع ← MAX`);
+    } else {
+      showMsg(`تعذر الفتح — جرّب مرة أخرى`);
+    }
     setBusyPlatform(null);
   }
 
@@ -62,7 +63,7 @@ export function IptvOttPanel() {
     <div className="max-show__ott">
       <header className="max-show__ott-head">
         <h1>البرامج الرسمية</h1>
-        <p>بوسترات + روابط مباشرة — التشغيل في تطبيق Netflix / شاهد / TOD الرسمي</p>
+        <p>▶ deeplink للفيلم · واجهة MAX تبقى مقفولة · زر ← MAX للرجوع</p>
       </header>
 
       {msg ? <p className="max-show__ott-msg">{msg}</p> : null}
@@ -87,9 +88,9 @@ export function IptvOttPanel() {
                 className="max-show__ott-open-app"
                 style={{ "--ott-color": meta.color } as React.CSSProperties}
                 disabled={busyPlatform !== null}
-                onClick={() => void openApp(platform)}
+                onClick={() => void openLocked(platform)}
               >
-                {isBusy ? "…" : isInstalled ? `▶ فتح ${meta.name}` : `📲 ${meta.name}`}
+                {isBusy ? "…" : isInstalled ? `▶ ${meta.name}` : `📲 ${meta.name}`}
               </button>
             </div>
 
@@ -99,7 +100,10 @@ export function IptvOttPanel() {
                 title={row.title}
                 items={row.items}
                 platform={platform}
-                onPlay={(item, p) => void playTitle(item, p)}
+                onPlay={(item, p) => {
+                  const url = platformUrl(item, p);
+                  if (url) void openLocked(p, url);
+                }}
                 busy={busyPlatform !== null}
               />
             ))}
@@ -108,8 +112,8 @@ export function IptvOttPanel() {
       })}
 
       <p className="max-show__ott-note">
-        المحتوى يُشغَّل في التطبيق الرسمي — تحتاج اشتراك Netflix/شاهد/TOD من المنصة نفسها. MAX
-        يعرض قائمة المحتوى ويفتح الرابط المباشر.
+        IPTV (Live/Movies) يُشغَّل داخل MAX بالكامل. Netflix/شاهد/TOD: deeplink يفتح التطبيق
+        الرسمي — DRM يمنع التشغيل داخل MAX. بوسترات من TMDB.
       </p>
     </div>
   );

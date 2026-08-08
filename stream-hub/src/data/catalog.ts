@@ -14,6 +14,8 @@ export const CATALOG: CatalogItem[] = [
     category: "series",
     posterGradient: "linear-gradient(160deg, #166534 0%, #052e16 55%, #000 100%)",
     trailerYoutubeId: "HhesaQXLuRY",
+    tmdbId: 1396,
+    tmdbType: "tv",
     platforms: [{ platform: "netflix", url: "https://www.netflix.com/title/70143836" }],
   },
   {
@@ -28,6 +30,8 @@ export const CATALOG: CatalogItem[] = [
     category: "series",
     posterGradient: "linear-gradient(160deg, #991b1b 0%, #450a0a 55%, #000 100%)",
     trailerYoutubeId: "htqXL94-RZ4",
+    tmdbId: 71446,
+    tmdbType: "tv",
     platforms: [{ platform: "netflix", url: "https://www.netflix.com/title/80192098" }],
   },
   {
@@ -38,6 +42,8 @@ export const CATALOG: CatalogItem[] = [
     year: 2024,
     category: "series",
     posterGradient: "linear-gradient(160deg, #b45309 0%, #422006 55%, #000 100%)",
+    tmdbId: 216616,
+    tmdbType: "tv",
     platforms: [{ platform: "shahid", url: "https://shahid.mbc.net/ar/series/Al-Hashashin/988896" }],
   },
   {
@@ -51,6 +57,8 @@ export const CATALOG: CatalogItem[] = [
     category: "series",
     posterGradient: "linear-gradient(160deg, #dc2626 0%, #1e1b4b 55%, #000 100%)",
     trailerYoutubeId: "b9EkMc79ZSU",
+    tmdbId: 66732,
+    tmdbType: "tv",
     platforms: [{ platform: "netflix", url: "https://www.netflix.com/title/80057281" }],
   },
   {
@@ -76,6 +84,8 @@ export const CATALOG: CatalogItem[] = [
     category: "kids",
     posterGradient: "linear-gradient(160deg, #7c3aed 0%, #1e1b4b 55%, #000 100%)",
     trailerYoutubeId: "cqGfhVIAFYo",
+    tmdbId: 569094,
+    tmdbType: "movie",
     platforms: [
       { platform: "netflix", url: "https://www.netflix.com/title/81657227" },
     ],
@@ -101,6 +111,8 @@ export const CATALOG: CatalogItem[] = [
     year: 2022,
     category: "series",
     posterGradient: "linear-gradient(160deg, #374151 0%, #111827 55%, #000 100%)",
+    tmdbId: 119051,
+    tmdbType: "tv",
     platforms: [{ platform: "netflix", url: "https://www.netflix.com/title/81257204" }],
   },
   {
@@ -112,6 +124,8 @@ export const CATALOG: CatalogItem[] = [
     year: 2021,
     category: "series",
     posterGradient: "linear-gradient(160deg, #db2777 0%, #4c0519 55%, #000 100%)",
+    tmdbId: 93405,
+    tmdbType: "tv",
     platforms: [{ platform: "netflix", url: "https://www.netflix.com/title/81040344" }],
   },
   {
@@ -123,6 +137,8 @@ export const CATALOG: CatalogItem[] = [
     year: 2017,
     category: "series",
     posterGradient: "linear-gradient(160deg, #1f2937 0%, #030712 55%, #000 100%)",
+    tmdbId: 70523,
+    tmdbType: "tv",
     platforms: [{ platform: "netflix", url: "https://www.netflix.com/title/80100172" }],
   },
   {
@@ -134,6 +150,8 @@ export const CATALOG: CatalogItem[] = [
     year: 2016,
     category: "series",
     posterGradient: "linear-gradient(160deg, #854d0e 0%, #1c1917 55%, #000 100%)",
+    tmdbId: 65494,
+    tmdbType: "tv",
     platforms: [{ platform: "netflix", url: "https://www.netflix.com/title/80025678" }],
   },
   {
@@ -155,6 +173,8 @@ export const CATALOG: CatalogItem[] = [
     year: 2023,
     category: "movie",
     posterGradient: "linear-gradient(160deg, #ea580c 0%, #431407 55%, #000 100%)",
+    tmdbId: 545609,
+    tmdbType: "movie",
     platforms: [{ platform: "netflix", url: "https://www.netflix.com/title/81652327" }],
   },
   {
@@ -165,6 +185,8 @@ export const CATALOG: CatalogItem[] = [
     year: 2021,
     category: "kids",
     posterGradient: "linear-gradient(160deg, #f472b6 0%, #581c87 55%, #000 100%)",
+    tmdbId: 568124,
+    tmdbType: "movie",
     platforms: [{ platform: "netflix", url: "https://www.netflix.com/title/81008321" }],
   },
 ];

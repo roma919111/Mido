@@ -19,6 +19,9 @@ export type CatalogItem = {
   posterGradient: string;
   /** Optional YouTube trailer — plays inside the app (preview only). */
   trailerYoutubeId?: string;
+  /** TMDB id for real poster art */
+  tmdbId?: number;
+  tmdbType?: "movie" | "tv";
   platforms: PlatformLink[];
 };
 
