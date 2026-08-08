@@ -10,32 +10,47 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import java.net.URLDecoder;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @CapacitorPlugin(name = "PlatformLaunch")
 public class PlatformLaunchPlugin extends Plugin {
 
+    private static final String NETFLIX_PHONE = "com.netflix.mediaclient";
+    private static final String NETFLIX_TV = "com.netflix.ninja";
+    private static final String SHAHID = "net.mbc.shahid";
+    private static final String TOD = "com.beincom.tod";
+
     @PluginMethod
     public void openPlatform(PluginCall call) {
         String url = call.getString("url");
+        String searchQuery = call.getString("searchQuery");
+        String platform = call.getString("platform");
         String primaryPackage = call.getString("packageName");
         String fallbackPackage = call.getString("fallbackPackage");
 
-        if (url == null || url.isEmpty()) {
-            call.reject("url is required");
+        if ((url == null || url.isEmpty()) && (searchQuery == null || searchQuery.isEmpty())) {
+            call.reject("url or searchQuery is required");
             return;
         }
 
-        if (tryOpen(url, primaryPackage)) {
+        String resolvedPlatform = platform != null ? platform : detectPlatform(url, primaryPackage);
+
+        if (tryLaunch(resolvedPlatform, url, searchQuery, primaryPackage)) {
             call.resolve();
             return;
         }
 
-        if (fallbackPackage != null && !fallbackPackage.equals(primaryPackage) && tryOpen(url, fallbackPackage)) {
+        if (fallbackPackage != null
+            && !fallbackPackage.isEmpty()
+            && !fallbackPackage.equals(primaryPackage)
+            && tryLaunch(resolvedPlatform, url, searchQuery, fallbackPackage)) {
             call.resolve();
             return;
         }
 
-        if (tryOpen(url, null)) {
+        if (url != null && !url.isEmpty() && tryOpenView(url, null)) {
             call.resolve();
             return;
         }
@@ -81,6 +96,123 @@ public class PlatformLaunchPlugin extends Plugin {
         call.reject("Could not open Play Store");
     }
 
+    private String detectPlatform(String url, String packageName) {
+        if (packageName != null) {
+            if (NETFLIX_PHONE.equals(packageName) || NETFLIX_TV.equals(packageName)) return "netflix";
+            if (SHAHID.equals(packageName)) return "shahid";
+            if (TOD.equals(packageName)) return "tod";
+        }
+        if (url == null) return "netflix";
+        String lower = url.toLowerCase();
+        if (lower.contains("netflix.com") || lower.startsWith("nflx:")) return "netflix";
+        if (lower.contains("shahid.mbc.net")) return "shahid";
+        if (lower.contains("tod.tv")) return "tod";
+        return "netflix";
+    }
+
+    private boolean tryLaunch(String platform, String url, String searchQuery, String packageName) {
+        if (packageName == null || packageName.isEmpty()) return false;
+
+        String directUrl = normalizeDirectUrl(platform, url);
+        if (directUrl != null) {
+            if (tryOpenView(directUrl, packageName)) return true;
+            String nflx = toNflxScheme(directUrl);
+            if (nflx != null && tryOpenView(nflx, packageName)) return true;
+        }
+
+        String query = searchQuery;
+        if (query == null || query.isEmpty()) {
+            query = extractSearchQuery(url);
+        }
+        if (query != null && !query.isEmpty()) {
+            if (tryOpenSearch(platform, query, packageName)) return true;
+        }
+
+        if (url != null && !url.isEmpty() && isSearchUrl(url)) {
+            if (tryOpenView(url, packageName)) return true;
+        }
+
+        return false;
+    }
+
+    private String normalizeDirectUrl(String platform, String url) {
+        if (url == null || url.isEmpty()) return null;
+        if (isSearchUrl(url)) return null;
+
+        if ("netflix".equals(platform)) {
+            Matcher title = Pattern.compile("netflix\\.com/(?:title|watch)/(\\d+)", Pattern.CASE_INSENSITIVE)
+                .matcher(url);
+            if (title.find()) {
+                return "https://www.netflix.com/watch/" + title.group(1);
+            }
+        }
+
+        if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("nflx:")) {
+            return url;
+        }
+        return "https://" + url.replaceFirst("^/+", "");
+    }
+
+    private String toNflxScheme(String url) {
+        if (url == null) return null;
+        if (url.startsWith("nflx:")) return url;
+        if (url.startsWith("https://")) return "nflx://" + url.substring("https://".length());
+        if (url.startsWith("http://")) return "nflx://" + url.substring("http://".length());
+        return null;
+    }
+
+    private boolean isSearchUrl(String url) {
+        if (url == null) return false;
+        String lower = url.toLowerCase();
+        return lower.contains("/search") || lower.contains("?q=") || lower.contains("query=");
+    }
+
+    private String extractSearchQuery(String url) {
+        if (url == null || url.isEmpty()) return null;
+        try {
+            Uri uri = Uri.parse(url);
+            String q = uri.getQueryParameter("q");
+            if (q == null) q = uri.getQueryParameter("query");
+            if (q != null) return URLDecoder.decode(q, "UTF-8");
+        } catch (Exception ignored) {
+            /* fall through */
+        }
+        return null;
+    }
+
+    private boolean tryOpenSearch(String platform, String query, String packageName) {
+        if ("netflix".equals(platform)) {
+            if (NETFLIX_PHONE.equals(packageName) || NETFLIX_TV.equals(packageName)) {
+                try {
+                    Intent intent = new Intent("android.intent.action.SEARCH");
+                    intent.setClassName(packageName, packageName + ".ui.search.SearchActivity");
+                    intent.putExtra("query", query);
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    getLaunchContext().startActivity(intent);
+                    return true;
+                } catch (Exception ignored) {
+                    /* try VIEW fallback */
+                }
+            }
+            String nflxSearch = "nflx://www.netflix.com/search?query=" + Uri.encode(query);
+            if (tryOpenView(nflxSearch, packageName)) return true;
+            String webSearch = "https://www.netflix.com/search?q=" + Uri.encode(query);
+            return tryOpenView(webSearch, packageName);
+        }
+
+        if ("shahid".equals(platform)) {
+            String shahidSearch = "https://shahid.mbc.net/ar/search?q=" + Uri.encode(query);
+            return tryOpenView(shahidSearch, packageName);
+        }
+
+        if ("tod".equals(platform)) {
+            String todSearch = "https://www.tod.tv/ar/search?q=" + Uri.encode(query);
+            return tryOpenView(todSearch, packageName);
+        }
+
+        return false;
+    }
+
     private Context getLaunchContext() {
         if (getActivity() != null) {
             return getActivity();
@@ -113,7 +245,7 @@ public class PlatformLaunchPlugin extends Plugin {
         }
     }
 
-    private boolean tryOpen(String url, String packageName) {
+    private boolean tryOpenView(String url, String packageName) {
         try {
             Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
             if (packageName != null && !packageName.isEmpty()) {

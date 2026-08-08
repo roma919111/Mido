@@ -5,7 +5,9 @@ import { PLATFORMS } from "./platforms";
 
 type PlatformLaunchPlugin = {
   openPlatform(options: {
-    url: string;
+    url?: string;
+    searchQuery?: string;
+    platform?: string;
     packageName?: string;
     fallbackPackage?: string;
   }): Promise<void>;
@@ -94,11 +96,17 @@ export async function openPlatformPlayStore(platform: PlatformId): Promise<boole
   }
 }
 
-export async function launchNativePlatformApp(platform: PlatformId, url: string): Promise<boolean> {
+export async function launchNativePlatformApp(
+  platform: PlatformId,
+  target: string | { url?: string; searchQuery?: string },
+): Promise<boolean> {
+  const options = typeof target === "string" ? { url: target } : target;
   const pkgs = getAndroidPackages(platform);
   try {
     await PlatformLaunch.openPlatform({
-      url,
+      url: options.url,
+      searchQuery: options.searchQuery,
+      platform,
       packageName: pkgs.primary,
       fallbackPackage: pkgs.fallback,
     });
