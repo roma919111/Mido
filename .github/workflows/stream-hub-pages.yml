@@ -29,11 +29,18 @@ jobs:
           cache: npm
           cache-dependency-path: stream-hub/package-lock.json
 
-      - name: Install and build
+      - name: Install and build demo site
         working-directory: stream-hub
         env:
           GITHUB_PAGES: "true"
+          VITE_DEMO_MODE: "true"
+          TMDB_KEY: ${{ secrets.TMDB_API_KEY }}
         run: |
+          if [ -n "$TMDB_KEY" ]; then
+            export VITE_TMDB_API_KEY="$TMDB_KEY"
+          else
+            export VITE_TMDB_API_KEY="db5143fc00294cf9c33d5201d231c898"
+          fi
           npm ci
           npm run build
 

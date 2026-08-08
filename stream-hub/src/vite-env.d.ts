@@ -10,6 +10,7 @@ interface ImportMetaEnv {
   readonly VITE_ACTIVATION_API?: string;
   readonly VITE_IPTV_API?: string;
   readonly VITE_TMDB_API_KEY?: string;
+  readonly VITE_DEMO_MODE?: string;
   readonly VITE_PLAYER_PUBLIC_URL?: string;
 }
 

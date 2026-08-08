@@ -11,6 +11,7 @@ import {
 
 /** Allow catalog in browser — install gate is optional. */
 export function mustUseGoogleTvLauncher(): boolean {
+  if (import.meta.env.VITE_DEMO_MODE === "true") return false;
   if (import.meta.env.DEV) return false;
   return isBrowserTab() && !Capacitor.isNativePlatform();
 }

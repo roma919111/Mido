@@ -55,6 +55,12 @@ export function MaxShowApp() {
 
       <ReturnHomeButton onClick={handleReturnHome} />
 
+      {import.meta.env.VITE_DEMO_MODE === "true" ? (
+        <div className="mstv-demo-badge" role="status">
+          موقع تجريبي · TMDB + Netflix deeplink
+        </div>
+      ) : null}
+
       {toast ? (
         <div className="mstv-toast" role="status">
           {toast}

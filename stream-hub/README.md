@@ -6,11 +6,15 @@
 
 **لا WebView للتشغيل · لا تجاوز DRM · لا تضمين محتوى محمي.**
 
-## الرابط العام (GitHub Pages)
-
-بعد تفعيل Pages من [إعدادات الم repo](https://github.com/roma919111/Mido/settings/pages) → **Source: GitHub Actions**:
+## الرابط العام — موقع تجريبي (GitHub Pages)
 
 **https://roma919111.github.io/Mido/**
+
+- يعمل من **المتصفح** مباشرة — بدون APK
+- بوسترات TMDB + واجهة MAX SHOW TV
+- الضغط على بوستر → يفتح Netflix في المتصفح/التطبيق
+
+بعد تفعيل Pages من [إعدادات الم repo](https://github.com/roma919111/Mido/settings/pages) → **Source: GitHub Actions**
 
 - **Android:** افتح الرابط في **Chrome** → ⋮ → «تثبيت التطبيق»
 - **iPhone:** Safari → Share → Add to Home Screen
