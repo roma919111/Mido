@@ -10,8 +10,8 @@ export function MaxShowLiveView() {
   const { play } = useLockedPlay("netflix");
 
   useEffect(() => {
-    void fetchTmdbByCategory("latest-movies", "netflix").then(setMovies);
-    void fetchTmdbByCategory("latest-series", "netflix").then(setSeries);
+    void fetchTmdbByCategory("latest-movies").then(setMovies);
+    void fetchTmdbByCategory("latest-series").then(setSeries);
   }, []);
 
   return (

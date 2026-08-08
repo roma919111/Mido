@@ -8,7 +8,7 @@ export function MaxShowSeriesView() {
   const { play } = useLockedPlay("netflix");
 
   useEffect(() => {
-    void fetchTmdbByCategory("latest-series", "netflix").then(setSeries);
+    void fetchTmdbByCategory("latest-series").then(setSeries);
   }, []);
 
   return (

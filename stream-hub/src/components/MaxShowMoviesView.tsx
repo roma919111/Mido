@@ -33,8 +33,7 @@ export function MaxShowMoviesView() {
 
     setLoading(true);
     setLocalItems([]);
-    const platform = category === "netflix" ? "netflix" : "netflix";
-    void fetchTmdbByCategory(category, platform).then((data) => {
+    void fetchTmdbByCategory(category).then((data) => {
       setItems(data);
       setLoading(false);
     });

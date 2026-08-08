@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { maxApiCors } from "@/lib/max-api-cors";
+import { enrichDiscoverPlatforms } from "@/lib/tmdb-watch-providers";
+import type { WatchPlatform } from "@/lib/tmdb-watch-providers";
 
 export const runtime = "nodejs";
 
@@ -99,20 +101,39 @@ export async function GET(request: Request) {
         vote_average?: number;
         release_date?: string;
         first_air_date?: string;
+        original_language?: string;
       }[];
     };
 
-    const results = (data.results ?? [])
+    const rawItems = (data.results ?? [])
       .filter((r) => r.poster_path)
-      .slice(0, 40)
-      .map((r) => ({
-        tmdbId: r.id,
-        tmdbType: cfg.mediaType,
-        title: r.title ?? r.name ?? "—",
-        posterUrl: `${TMDB_IMAGE}${r.poster_path}`,
-        rating: r.vote_average ?? null,
-        year: (r.release_date ?? r.first_air_date ?? "").slice(0, 4) || null,
-      }));
+      .slice(0, 40);
+
+    const originalLanguages = new Map<string, string | null>();
+    for (const r of rawItems) {
+      originalLanguages.set(`${cfg.mediaType}:${r.id}`, r.original_language ?? null);
+    }
+
+    const baseItems = rawItems.map((r) => ({
+      tmdbId: r.id,
+      tmdbType: cfg.mediaType,
+      title: r.title ?? r.name ?? "—",
+      posterUrl: `${TMDB_IMAGE}${r.poster_path}`,
+      rating: r.vote_average ?? null,
+      year: (r.release_date ?? r.first_air_date ?? "").slice(0, 4) || null,
+    }));
+
+    const preferredPlatform: WatchPlatform | undefined =
+      cfg.provider === "netflix" || cfg.provider === "shahid" ? cfg.provider : undefined;
+
+    const results =
+      cfg.provider && WATCH_PROVIDERS[cfg.provider]
+        ? baseItems.map((item) => ({ ...item, platform: cfg.provider as WatchPlatform }))
+        : await enrichDiscoverPlatforms(apiKey, baseItems, {
+            region,
+            preferred: preferredPlatform ?? (platform as WatchPlatform),
+            originalLanguages,
+          });
 
     return NextResponse.json(
       { results, category, platform, mediaType: cfg.mediaType },

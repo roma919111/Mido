@@ -1,5 +1,6 @@
 import type { PlatformId } from "../types";
 import type { MovieCategoryId } from "./movie-categories";
+import { enrichDiscoverPlatforms } from "./tmdb-watch-providers";
 import type { TmdbDiscoverItem } from "./tmdb-discover";
 
 const TMDB_IMAGE = "https://image.tmdb.org/t/p/w500";
@@ -94,20 +95,37 @@ export async function fetchTmdbByCategoryDirect(
         vote_average?: number;
         release_date?: string;
         first_air_date?: string;
+        original_language?: string;
       }[];
     };
 
-    return (data.results ?? [])
+    const rawItems = (data.results ?? [])
       .filter((r) => r.poster_path)
-      .slice(0, 40)
-      .map((r) => ({
-        tmdbId: r.id,
-        tmdbType: cfg.mediaType,
-        title: r.title ?? r.name ?? "—",
-        posterUrl: `${TMDB_IMAGE}${r.poster_path}`,
-        rating: r.vote_average ?? null,
-        year: (r.release_date ?? r.first_air_date ?? "").slice(0, 4) || null,
-      }));
+      .slice(0, 40);
+
+    const originalLanguages = new Map<string, string | null>();
+    for (const r of rawItems) {
+      originalLanguages.set(`${cfg.mediaType}:${r.id}`, r.original_language ?? null);
+    }
+
+    const baseItems = rawItems.map((r) => ({
+      tmdbId: r.id,
+      tmdbType: cfg.mediaType,
+      title: r.title ?? r.name ?? "—",
+      posterUrl: `${TMDB_IMAGE}${r.poster_path}`,
+      rating: r.vote_average ?? null,
+      year: (r.release_date ?? r.first_air_date ?? "").slice(0, 4) || null,
+    }));
+
+    if (cfg.provider && WATCH_PROVIDERS[cfg.provider]) {
+      return baseItems.map((item) => ({ ...item, platform: cfg.provider as PlatformId }));
+    }
+
+    return enrichDiscoverPlatforms(apiKey, baseItems, {
+      region,
+      preferred: platform,
+      originalLanguages,
+    });
   } catch {
     return [];
   }

@@ -46,11 +46,17 @@ public class PlatformLaunchPlugin extends Plugin {
 
         String launchUrl = url;
         if ((launchUrl == null || launchUrl.isEmpty() || isSearchUrl(launchUrl))
-            && "netflix".equals(resolvedPlatform)
             && tmdbId > 0) {
-            String scraped = fetchNetflixUrlFromTmdb(tmdbId, tmdbType);
-            if (scraped != null) {
-                launchUrl = scraped;
+            if ("netflix".equals(resolvedPlatform)) {
+                String scraped = fetchNetflixUrlFromTmdb(tmdbId, tmdbType);
+                if (scraped != null) {
+                    launchUrl = scraped;
+                }
+            } else if ("shahid".equals(resolvedPlatform)) {
+                String scraped = fetchShahidUrlFromTmdb(tmdbId, tmdbType);
+                if (scraped != null) {
+                    launchUrl = scraped;
+                }
             }
         }
 
@@ -272,6 +278,64 @@ public class PlatformLaunchPlugin extends Plugin {
             if (connection != null) connection.disconnect();
         }
         return null;
+    }
+
+    private String fetchShahidUrlFromTmdb(int tmdbId, String tmdbType) {
+        String segment = "tv".equalsIgnoreCase(tmdbType) ? "tv" : "movie";
+        HttpURLConnection connection = null;
+        try {
+            URL pageUrl = new URL("https://www.themoviedb.org/" + segment + "/" + tmdbId + "/watch");
+            connection = (HttpURLConnection) pageUrl.openConnection();
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(8000);
+            connection.setReadTimeout(8000);
+            connection.setRequestProperty(
+                "User-Agent",
+                "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36");
+            connection.setRequestProperty("Accept", "text/html");
+
+            if (connection.getResponseCode() != 200) return null;
+
+            StringBuilder html = new StringBuilder();
+            BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+            String line;
+            while ((line = reader.readLine()) != null) {
+                html.append(line);
+            }
+            reader.close();
+
+            Matcher encoded = Pattern.compile("shahid\\.mbc\\.net%2F[^\"'\\\\s]+", Pattern.CASE_INSENSITIVE)
+                .matcher(html);
+            if (encoded.find()) {
+                String raw = URLDecoder.decode(encoded.group(), "UTF-8");
+                return normalizeShahidUrl(raw);
+            }
+
+            Matcher plain = Pattern.compile("shahid\\.mbc\\.net/[^\"'\\\\s]+", Pattern.CASE_INSENSITIVE)
+                .matcher(html);
+            if (plain.find()) {
+                return normalizeShahidUrl(plain.group());
+            }
+        } catch (Exception ignored) {
+            /* fall through */
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+        return null;
+    }
+
+    private String normalizeShahidUrl(String url) {
+        if (url == null || url.isEmpty()) return null;
+        String cleaned = url.split("[?\"']")[0];
+        if (!cleaned.startsWith("http")) {
+            cleaned = "https://" + cleaned;
+        }
+        try {
+            Uri uri = Uri.parse(cleaned);
+            return uri.getScheme() + "://" + uri.getHost() + uri.getPath();
+        } catch (Exception ignored) {
+            return cleaned;
+        }
     }
 
     private Context getLaunchContext() {

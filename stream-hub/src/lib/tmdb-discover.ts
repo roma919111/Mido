@@ -9,6 +9,7 @@ export type TmdbDiscoverItem = {
   posterUrl: string;
   rating: number | null;
   year: string | null;
+  platform?: PlatformId;
 };
 
 function apiBase(): string {

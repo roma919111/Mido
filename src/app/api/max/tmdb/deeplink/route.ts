@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { findPlatformDeepLink } from "@/data/max-platform-deeplinks";
 import { maxApiCors } from "@/lib/max-api-cors";
 import { normalizeNetflixWatchUrl, resolveNetflixUrlFromTmdb } from "@/lib/resolve-netflix-url";
+import { normalizeShahidUrl, resolveShahidUrlFromTmdb } from "@/lib/resolve-shahid-url";
 
 export const runtime = "nodejs";
 
@@ -30,7 +31,11 @@ export async function GET(request: Request) {
   const catalogUrl = findPlatformDeepLink(tmdbId, tmdbType, platform);
   if (catalogUrl) {
     const directUrl =
-      platform === "netflix" ? normalizeNetflixWatchUrl(catalogUrl) : catalogUrl;
+      platform === "netflix"
+        ? normalizeNetflixWatchUrl(catalogUrl)
+        : platform === "shahid"
+          ? normalizeShahidUrl(catalogUrl)
+          : catalogUrl;
     return NextResponse.json(
       { url: directUrl, direct: true, platform, tmdbId, tmdbType },
       { headers: { ...maxApiCors, "Cache-Control": "public, max-age=86400" } },
@@ -42,6 +47,16 @@ export async function GET(request: Request) {
     if (netflixUrl) {
       return NextResponse.json(
         { url: netflixUrl, direct: true, platform, tmdbId, tmdbType },
+        { headers: { ...maxApiCors, "Cache-Control": "public, max-age=86400" } },
+      );
+    }
+  }
+
+  if (platform === "shahid") {
+    const shahidUrl = await resolveShahidUrlFromTmdb(tmdbId, tmdbType);
+    if (shahidUrl) {
+      return NextResponse.json(
+        { url: normalizeShahidUrl(shahidUrl), direct: true, platform, tmdbId, tmdbType },
         { headers: { ...maxApiCors, "Cache-Control": "public, max-age=86400" } },
       );
     }
