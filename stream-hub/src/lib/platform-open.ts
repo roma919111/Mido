@@ -8,6 +8,7 @@ import {
   openPlatformPlayStore,
 } from "./platform-launch-native";
 import { PLATFORMS } from "./platforms";
+import { platformSearchUrl } from "./tmdb-discover";
 
 export type OpenPlatformResult = "app" | "store" | "browser" | "failed";
 
@@ -16,11 +17,10 @@ export type OpenPlatformOptions = {
   searchQuery?: string;
 };
 
-/** Deeplink with locked MAX shell — kiosk stays, returns via ← MAX button. */
-export async function openPlatformLocked(
+function normalizeOpts(
   platform: PlatformId,
-  target: string | OpenPlatformOptions = {},
-): Promise<OpenPlatformResult> {
+  target: string | OpenPlatformOptions,
+): OpenPlatformOptions {
   const meta = PLATFORMS[platform];
   const opts: OpenPlatformOptions =
     typeof target === "string"
@@ -33,29 +33,68 @@ export async function openPlatformLocked(
   if (!opts.url && !opts.searchQuery) {
     opts.url = meta.homeUrl;
   }
+  return opts;
+}
 
-  markPlatformOpened();
+/** Deeplink with locked MAX shell — kiosk stays, returns via ← MAX button. */
+export async function openPlatformLocked(
+  platform: PlatformId,
+  target: string | OpenPlatformOptions = {},
+): Promise<OpenPlatformResult> {
+  const opts = normalizeOpts(platform, target);
 
   if (Capacitor.isNativePlatform()) {
-    const installed = await isPlatformAppInstalled(platform);
-    if (installed) {
-      const ok = await launchNativePlatformApp(platform, opts);
-      if (ok) return "app";
+    // Launch first — avoids losing the Android tap gesture after async work.
+    const launched = await launchNativePlatformApp(platform, opts);
+    if (launched) {
+      markPlatformOpened();
+      return "app";
     }
 
-    const storeOk = await openPlatformPlayStore(platform);
-    if (storeOk) return "store";
+    const installed = await isPlatformAppInstalled(platform);
+    if (!installed) {
+      const storeOk = await openPlatformPlayStore(platform);
+      if (storeOk) {
+        markPlatformOpened();
+        return "store";
+      }
+    }
 
     if (opts.url) {
       const browserOk = await openPlatformWebView(opts.url);
-      return browserOk ? "browser" : "failed";
+      if (browserOk) {
+        markPlatformOpened();
+        return "browser";
+      }
     }
+
+    if (opts.searchQuery) {
+      const searchUrl = platformSearchUrl(platform, opts.searchQuery);
+      const browserOk = await openPlatformWebView(searchUrl);
+      if (browserOk) {
+        markPlatformOpened();
+        return "browser";
+      }
+    }
+
     return "failed";
   }
 
   if (opts.url) {
     const browserOk = await openPlatformWebView(opts.url);
-    return browserOk ? "browser" : "failed";
+    if (browserOk) {
+      markPlatformOpened();
+      return "browser";
+    }
+  }
+
+  if (opts.searchQuery) {
+    const searchUrl = platformSearchUrl(platform, opts.searchQuery);
+    const browserOk = await openPlatformWebView(searchUrl);
+    if (browserOk) {
+      markPlatformOpened();
+      return "browser";
+    }
   }
 
   return "failed";
@@ -66,37 +105,7 @@ export async function openPlatformNow(
   platform: PlatformId,
   target: string | OpenPlatformOptions = {},
 ): Promise<OpenPlatformResult> {
-  const meta = PLATFORMS[platform];
-  const opts: OpenPlatformOptions =
-    typeof target === "string"
-      ? { url: target.trim() || meta.homeUrl }
-      : {
-          url: target.url?.trim() || undefined,
-          searchQuery: target.searchQuery?.trim() || undefined,
-        };
-
-  if (!opts.url && !opts.searchQuery) {
-    opts.url = meta.homeUrl;
-  }
-
-  markPlatformOpened();
-
-  if (Capacitor.isNativePlatform()) {
-    const installed = await isPlatformAppInstalled(platform);
-    if (installed) {
-      const ok = await launchNativePlatformApp(platform, opts);
-      return ok ? "app" : "failed";
-    }
-    const storeOk = await openPlatformPlayStore(platform);
-    if (storeOk) return "store";
-  }
-
-  if (opts.url) {
-    const browserOk = await openPlatformWebView(opts.url);
-    return browserOk ? "browser" : "failed";
-  }
-
-  return "failed";
+  return openPlatformLocked(platform, target);
 }
 
 export async function openCatalogItem(

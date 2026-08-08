@@ -182,7 +182,7 @@ public class PlatformLaunchPlugin extends Plugin {
 
     private boolean tryOpenSearch(String platform, String query, String packageName) {
         if ("netflix".equals(platform)) {
-            if (NETFLIX_PHONE.equals(packageName) || NETFLIX_TV.equals(packageName)) {
+            if (NETFLIX_PHONE.equals(packageName)) {
                 try {
                     Intent intent = new Intent("android.intent.action.SEARCH");
                     intent.setClassName(packageName, packageName + ".ui.search.SearchActivity");
@@ -194,6 +194,7 @@ public class PlatformLaunchPlugin extends Plugin {
                     /* try VIEW fallback */
                 }
             }
+
             String nflxSearch = "nflx://www.netflix.com/search?query=" + Uri.encode(query);
             if (tryOpenView(nflxSearch, packageName)) return true;
             String webSearch = "https://www.netflix.com/search?q=" + Uri.encode(query);

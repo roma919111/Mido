@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { MainNavId } from "../lib/movie-categories";
 import { enterAppShellMode } from "../lib/app-shell";
-import { clearAllReturnFlags, wasPlatformOpened } from "../lib/app-navigation";
+import { clearAllReturnFlags } from "../lib/app-navigation";
 import { enterKioskMode } from "../lib/kiosk-mode";
 import { useTvRemote } from "../hooks/useTvRemote";
 import { MaxShowFavoritesView } from "./MaxShowFavoritesView";
@@ -13,6 +13,7 @@ import { ReturnHomeButton } from "./ReturnHomeButton";
 
 export function MaxShowApp() {
   const [nav, setNav] = useState<MainNavId>("live");
+  const [toast, setToast] = useState<string | null>(null);
   const mainRef = useRef<HTMLElement>(null);
 
   useTvRemote(mainRef);
@@ -20,6 +21,16 @@ export function MaxShowApp() {
   useEffect(() => {
     enterAppShellMode();
     void enterKioskMode();
+  }, []);
+
+  useEffect(() => {
+    function onPlayError(e: Event) {
+      const msg = (e as CustomEvent<string>).detail;
+      setToast(msg);
+      window.setTimeout(() => setToast(null), 4500);
+    }
+    window.addEventListener("max-play-error", onPlayError);
+    return () => window.removeEventListener("max-play-error", onPlayError);
   }, []);
 
   function handleReturnHome() {
@@ -42,7 +53,13 @@ export function MaxShowApp() {
         </main>
       </div>
 
-      {wasPlatformOpened() ? <ReturnHomeButton onClick={handleReturnHome} /> : null}
+      <ReturnHomeButton onClick={handleReturnHome} />
+
+      {toast ? (
+        <div className="mstv-toast" role="status">
+          {toast}
+        </div>
+      ) : null}
     </div>
   );
 }

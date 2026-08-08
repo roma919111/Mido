@@ -7,7 +7,7 @@ import { enterPlaybackMode } from "../lib/fullscreen";
 import { isPlatformAppInstalled } from "../lib/platform-launch-native";
 import { openPlatformLocked } from "../lib/platform-open";
 import { PLATFORMS } from "../lib/platforms";
-import { resolvePlatformDeepLink } from "../lib/platform-deeplink";
+import { resolvePlatformDeepLinkSync } from "../lib/platform-deeplink";
 import { fetchTmdbByCategory, type TmdbDiscoverItem } from "../lib/tmdb-discover";
 import { IptvOttCatalogRow } from "./IptvOttCatalogRow";
 import { TmdbDiscoverRow } from "./TmdbDiscoverRow";
@@ -72,11 +72,8 @@ export function OttPlatformView({ platform }: OttPlatformViewProps) {
   async function playDiscoverItem(item: TmdbDiscoverItem) {
     if (busy) return;
     setBusy(true);
-    enterPlaybackMode();
-    await enterKioskMode();
-    showMsg(`جاري فتح ${meta.name}…`);
 
-    const link = await resolvePlatformDeepLink(
+    const link = resolvePlatformDeepLinkSync(
       item.tmdbId,
       item.tmdbType,
       platform,
@@ -84,17 +81,18 @@ export function OttPlatformView({ platform }: OttPlatformViewProps) {
       item.year,
     );
 
+    showMsg(`جاري فتح ${meta.name}…`);
     const result = await openPlatformLocked(platform, {
       url: link.url ?? undefined,
-      searchQuery: link.direct ? undefined : link.searchQuery,
+      searchQuery: link.url ? undefined : link.searchQuery,
     });
 
     if (result === "app") {
       showMsg(`${meta.name} — التطبيق · ارجع ← MAX`);
-    } else if (result === "browser") {
+    } else if (result === "browser" || result === "store") {
       showMsg(`${meta.name} — deeplink · ارجع ← MAX`);
     } else {
-      showMsg("تعذر الفتح");
+      showMsg("تعذر الفتح — ثبّت التطبيق");
     }
     setBusy(false);
   }

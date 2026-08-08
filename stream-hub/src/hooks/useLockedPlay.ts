@@ -1,18 +1,18 @@
 import { useCallback } from "react";
 import type { PlatformId } from "../types";
-import { enterKioskMode } from "../lib/kiosk-mode";
-import { enterPlaybackMode } from "../lib/fullscreen";
 import { openPlatformLocked } from "../lib/platform-open";
-import { resolvePlatformDeepLink } from "../lib/platform-deeplink";
+import { resolvePlatformDeepLinkSync } from "../lib/platform-deeplink";
 import { pushRecentItem, type TmdbDiscoverItem } from "../lib/tmdb-discover";
 
+function reportPlayError(message: string): void {
+  window.dispatchEvent(new CustomEvent("max-play-error", { detail: message }));
+}
+
 export function useLockedPlay(defaultPlatform: PlatformId = "netflix") {
-  const play = useCallback(async (item: TmdbDiscoverItem, platform: PlatformId = defaultPlatform) => {
-    enterPlaybackMode();
-    await enterKioskMode();
+  const play = useCallback((item: TmdbDiscoverItem, platform: PlatformId = defaultPlatform) => {
     pushRecentItem(item);
 
-    const link = await resolvePlatformDeepLink(
+    const link = resolvePlatformDeepLinkSync(
       item.tmdbId,
       item.tmdbType,
       platform,
@@ -20,16 +20,22 @@ export function useLockedPlay(defaultPlatform: PlatformId = "netflix") {
       item.year,
     );
 
-    await openPlatformLocked(platform, {
+    void openPlatformLocked(platform, {
       url: link.url ?? undefined,
-      searchQuery: link.direct ? undefined : link.searchQuery,
+      searchQuery: link.url ? undefined : link.searchQuery,
+    }).then((result) => {
+      if (result === "failed") {
+        reportPlayError("تعذر فتح التطبيق — ثبّت Netflix أو جرّب مرة أخرى");
+      }
     });
   }, [defaultPlatform]);
 
-  const openApp = useCallback(async (platform: PlatformId = defaultPlatform) => {
-    enterPlaybackMode();
-    await enterKioskMode();
-    await openPlatformLocked(platform);
+  const openApp = useCallback((platform: PlatformId = defaultPlatform) => {
+    void openPlatformLocked(platform).then((result) => {
+      if (result === "failed") {
+        reportPlayError("تعذر فتح التطبيق");
+      }
+    });
   }, [defaultPlatform]);
 
   return { play, openApp };

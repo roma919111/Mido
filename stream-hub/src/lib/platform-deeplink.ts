@@ -21,10 +21,24 @@ export function findCatalogPlatformUrl(
   return null;
 }
 
-function buildSearchQuery(title: string, year: string | null): string {
+export function buildSearchQuery(title: string, year: string | null): string {
   const base = title.trim();
   if (year && !base.includes(year)) return `${base} ${year}`;
   return base;
+}
+
+/** Instant resolve — no network (keeps Android user-gesture for native launch). */
+export function resolvePlatformDeepLinkSync(
+  tmdbId: number,
+  tmdbType: "movie" | "tv",
+  platform: PlatformId,
+  title: string,
+  year: string | null,
+): ResolvedPlatformLink {
+  const local = findCatalogPlatformUrl(tmdbId, tmdbType, platform);
+  const searchQuery = buildSearchQuery(title, year);
+  if (local) return { url: local, searchQuery, direct: true };
+  return { url: null, searchQuery, direct: false };
 }
 
 function apiBase(): string {
