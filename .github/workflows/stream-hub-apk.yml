@@ -34,11 +34,9 @@ jobs:
 
       - name: Install and sync Capacitor
         env:
-          VITE_TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          TMDB_KEY: ${{ secrets.TMDB_API_KEY }}
         run: |
-          if [ -z "$VITE_TMDB_API_KEY" ]; then
-            echo "::warning::TMDB_API_KEY secret missing — posters will be empty in APK"
-          fi
+          export VITE_TMDB_API_KEY="${TMDB_KEY:-db5143fc00294cf9c33d5201d231c898}"
           npm ci
           npm run build:android
 
