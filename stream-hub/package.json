@@ -9,6 +9,8 @@
     "tunnel": "bash scripts/tunnel-mobile.sh",
     "build": "tsc --noEmit && vite build",
     "build:android": "npm run build && npx cap sync android",
+    "demo": "VITE_DEMO_MODE=true vite --host 0.0.0.0 --port 5173",
+    "demo:build": "VITE_DEMO_MODE=true vite build",
     "open:android": "npx cap open android",
     "preview": "vite preview --host 0.0.0.0 --port 4173"
   },
