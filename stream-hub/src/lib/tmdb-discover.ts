@@ -1,5 +1,6 @@
 import type { PlatformId } from "../types";
 import type { MovieCategoryId } from "./movie-categories";
+import { fetchTmdbByCategoryDirect, hasDirectTmdb } from "./tmdb-direct";
 
 export type TmdbDiscoverItem = {
   tmdbId: number;
@@ -23,6 +24,10 @@ export async function fetchTmdbByCategory(
   category: MovieCategoryId | "latest-movies" | "latest-series" | "live",
   platform: PlatformId = "netflix",
 ): Promise<TmdbDiscoverItem[]> {
+  if (hasDirectTmdb()) {
+    return fetchTmdbByCategoryDirect(category, platform);
+  }
+
   const base = apiBase();
   if (!base) return [];
 

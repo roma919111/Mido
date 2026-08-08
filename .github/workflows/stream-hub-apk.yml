@@ -33,7 +33,12 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install and sync Capacitor
+        env:
+          VITE_TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
         run: |
+          if [ -z "$VITE_TMDB_API_KEY" ]; then
+            echo "::warning::TMDB_API_KEY secret missing — posters will be empty in APK"
+          fi
           npm ci
           npm run build:android
 

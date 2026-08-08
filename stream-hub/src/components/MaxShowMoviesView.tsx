@@ -78,8 +78,8 @@ export function MaxShowMoviesView() {
           onPlay={(item) => void play(item)}
           empty={
             category === "favorite"
-              ? "No favorites yet"
-              : "No results — add TMDB_API_KEY on server"
+              ? "لا توجد مفضّلة بعد"
+              : "لا توجد نتائج — تحقق من اتصال الإنترنت"
           }
         />
       </div>
