@@ -1,16 +1,19 @@
 import { useEffect, useState } from "react";
 import { Capacitor } from "@capacitor/core";
-import type { PlatformId } from "../types";
+import type { CatalogItem, PlatformId } from "../types";
+import { ottRowsForPlatform } from "../lib/ott-catalog";
+import { platformUrl } from "../lib/ott-catalog";
 import { isPlatformAppInstalled } from "../lib/platform-launch-native";
 import { openPlatformNow } from "../lib/platform-open";
 import { PLATFORMS } from "../lib/platforms";
+import { IptvOttCatalogRow } from "./IptvOttCatalogRow";
 
 const ORDER: PlatformId[] = ["netflix", "shahid", "tod"];
 
 const TAGLINES: Record<PlatformId, string> = {
-  netflix: "أفلام ومسلسلات عالمية",
-  shahid: "محتوى عربي — MBC",
-  tod: "رياضة وبث مباشر",
+  netflix: "أفلام ومسلسلات عالمية — اضغط ▶ للتشغيل في Netflix",
+  shahid: "محتوى عربي — اضغط ▶ للتشغيل في شاهد",
+  tod: "رياضة وبث مباشر — اضغط ▶ للتشغيل في TOD",
 };
 
 export function IptvOttPanel() {
@@ -19,7 +22,7 @@ export function IptvOttPanel() {
     shahid: false,
     tod: false,
   });
-  const [busy, setBusy] = useState<PlatformId | null>(null);
+  const [busyPlatform, setBusyPlatform] = useState<PlatformId | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => {
@@ -31,65 +34,83 @@ export function IptvOttPanel() {
       }
       setInstalled(next);
     })();
-  }, [busy]);
+  }, [busyPlatform]);
 
-  async function open(platform: PlatformId) {
-    if (busy) return;
-    setBusy(platform);
-    setMsg(`جاري فتح ${PLATFORMS[platform].name}…`);
-    const result = await openPlatformNow(platform);
-    if (result === "app") {
-      setMsg(`${PLATFORMS[platform].name} — تم فتح التطبيق`);
-    } else if (result === "store") {
-      setMsg(`حمّل ${PLATFORMS[platform].name} من Play Store ثم سجّل دخولك`);
-    } else if (result === "browser") {
-      setMsg(`${PLATFORMS[platform].name} — في المتصفح · سجّل دخولك مرة واحدة`);
-    } else {
-      setMsg(`تعذر فتح ${PLATFORMS[platform].name} — جرّب مرة أخرى`);
-    }
-    setBusy(null);
+  function showMsg(text: string) {
+    setMsg(text);
     window.setTimeout(() => setMsg(null), 4000);
   }
 
+  async function openApp(platform: PlatformId) {
+    if (busyPlatform) return;
+    setBusyPlatform(platform);
+    showMsg(`جاري فتح ${PLATFORMS[platform].name}…`);
+    await openPlatformNow(platform);
+    setBusyPlatform(null);
+  }
+
+  async function playTitle(item: CatalogItem, platform: PlatformId) {
+    const url = platformUrl(item, platform);
+    if (!url || busyPlatform) return;
+    setBusyPlatform(platform);
+    showMsg(`جاري فتح «${item.title}» على ${PLATFORMS[platform].name}…`);
+    await openPlatformNow(platform, url);
+    setBusyPlatform(null);
+  }
+
   return (
-    <section className="max-show__ott">
+    <div className="max-show__ott">
       <header className="max-show__ott-head">
         <h1>البرامج الرسمية</h1>
-        <p>Netflix · شاهد · TOD — تفتح في تطبيقها الرسمي أو المتصفح</p>
+        <p>بوسترات + روابط مباشرة — التشغيل في تطبيق Netflix / شاهد / TOD الرسمي</p>
       </header>
 
       {msg ? <p className="max-show__ott-msg">{msg}</p> : null}
 
-      <div className="max-show__ott-grid">
-        {ORDER.map((platform) => {
-          const meta = PLATFORMS[platform];
-          const isInstalled = installed[platform];
-          const isBusy = busy === platform;
+      {ORDER.map((platform) => {
+        const meta = PLATFORMS[platform];
+        const rows = ottRowsForPlatform(platform);
+        const isInstalled = installed[platform];
+        const isBusy = busyPlatform === platform;
 
-          return (
-            <button
-              key={platform}
-              type="button"
-              className="max-show__ott-tile"
-              style={{ "--ott-color": meta.color } as React.CSSProperties}
-              disabled={busy !== null}
-              onClick={() => void open(platform)}
-            >
-              <span className="max-show__ott-logo">{meta.name.charAt(0)}</span>
-              <strong>{meta.name}</strong>
-              <span className="max-show__ott-tagline">{TAGLINES[platform]}</span>
-              <span className="max-show__ott-status">
-                {isBusy ? "…" : isInstalled ? "▶ فتح التطبيق" : "📲 تطبيق أو متصفح"}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+        if (!rows.length) return null;
+
+        return (
+          <section key={platform} className="max-show__ott-platform">
+            <div className="max-show__ott-platform-head">
+              <div>
+                <h2 style={{ color: meta.color }}>{meta.name}</h2>
+                <p>{TAGLINES[platform]}</p>
+              </div>
+              <button
+                type="button"
+                className="max-show__ott-open-app"
+                style={{ "--ott-color": meta.color } as React.CSSProperties}
+                disabled={busyPlatform !== null}
+                onClick={() => void openApp(platform)}
+              >
+                {isBusy ? "…" : isInstalled ? `▶ فتح ${meta.name}` : `📲 ${meta.name}`}
+              </button>
+            </div>
+
+            {rows.map((row) => (
+              <IptvOttCatalogRow
+                key={row.id}
+                title={row.title}
+                items={row.items}
+                platform={platform}
+                onPlay={(item, p) => void playTitle(item, p)}
+                busy={busyPlatform !== null}
+              />
+            ))}
+          </section>
+        );
+      })}
 
       <p className="max-show__ott-note">
-        MAX يربطك بالتطبيقات الرسمية فقط — لا يمكن تشغيل Netflix داخل MAX. سجّل دخولك مرة واحدة
-        في كل تطبيق.
+        المحتوى يُشغَّل في التطبيق الرسمي — تحتاج اشتراك Netflix/شاهد/TOD من المنصة نفسها. MAX
+        يعرض قائمة المحتوى ويفتح الرابط المباشر.
       </p>
-    </section>
+    </div>
   );
 }
