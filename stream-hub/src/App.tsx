@@ -37,7 +37,7 @@ import { SearchBar } from "./components/SearchBar";
 import { SmartSetup, shouldShowSmartSetup } from "./components/SmartSetup";
 import { GoogleTvLauncher } from "./components/GoogleTvLauncher";
 import { InstallAppBanner } from "./components/InstallAppBanner";
-import { IptvApp } from "./components/IptvApp";
+import { MaxShowApp } from "./components/MaxShowApp";
 import { Capacitor } from "@capacitor/core";
 import type { CatalogItem, ContinueEntry, LaunchState, PlatformId } from "./types";
 
@@ -460,7 +460,7 @@ export function App() {
 
   return (
     <GoogleTvLauncher>
-      <IptvApp />
+      <MaxShowApp />
     </GoogleTvLauncher>
   );
 }
