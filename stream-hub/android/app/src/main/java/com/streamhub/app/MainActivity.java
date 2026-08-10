@@ -11,6 +11,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(PlatformLaunchPlugin.class);
+        registerPlugin(HeadlessPlayerPlugin.class);
         super.onCreate(savedInstanceState);
         applyKioskWindow();
     }

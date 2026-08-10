@@ -26,6 +26,18 @@
 
         </activity>
 
+        <activity
+            android:name=".PlayerSurfaceActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:screenOrientation="landscape"
+            android:theme="@style/AppTheme.NoActionBarLaunch" />
+
+        <service
+            android:name=".PlaybackForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -40,6 +52,8 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
     <!-- Google TV / Android TV leanback (touchscreen optional) -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
