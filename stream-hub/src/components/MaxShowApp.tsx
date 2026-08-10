@@ -10,10 +10,15 @@ import { MaxShowMoviesView } from "./MaxShowMoviesView";
 import { MaxShowSeriesView } from "./MaxShowSeriesView";
 import { MaxShowSidebar } from "./MaxShowSidebar";
 import { ReturnHomeButton } from "./ReturnHomeButton";
+import { CustomVideoContainer } from "./CustomVideoContainer";
+import { OttHandoffOverlay } from "./OttHandoffOverlay";
+import type { InAppPlaybackSession, OttHandoffSession } from "../lib/playback-bridge";
 
 export function MaxShowApp() {
   const [nav, setNav] = useState<MainNavId>("live");
   const [toast, setToast] = useState<string | null>(null);
+  const [inAppPlayback, setInAppPlayback] = useState<InAppPlaybackSession | null>(null);
+  const [ottHandoff, setOttHandoff] = useState<OttHandoffSession | null>(null);
   const mainRef = useRef<HTMLElement>(null);
 
   useTvRemote(mainRef);
@@ -29,12 +34,37 @@ export function MaxShowApp() {
       setToast(msg);
       window.setTimeout(() => setToast(null), 4500);
     }
+    function onInApp(e: Event) {
+      setInAppPlayback((e as CustomEvent<InAppPlaybackSession>).detail);
+      setOttHandoff(null);
+    }
+    function onHandoff(e: Event) {
+      setOttHandoff((e as CustomEvent<OttHandoffSession>).detail);
+    }
     window.addEventListener("max-play-error", onPlayError);
-    return () => window.removeEventListener("max-play-error", onPlayError);
+    window.addEventListener("max-in-app-playback", onInApp);
+    window.addEventListener("max-ott-handoff", onHandoff);
+    return () => {
+      window.removeEventListener("max-play-error", onPlayError);
+      window.removeEventListener("max-in-app-playback", onInApp);
+      window.removeEventListener("max-ott-handoff", onHandoff);
+    };
   }, []);
 
   function handleReturnHome() {
     clearAllReturnFlags();
+    setOttHandoff(null);
+  }
+
+  if (inAppPlayback) {
+    return (
+      <CustomVideoContainer
+        title={inAppPlayback.title}
+        streamUrl={inAppPlayback.streamUrl}
+        posterUrl={inAppPlayback.posterUrl}
+        onClose={() => setInAppPlayback(null)}
+      />
+    );
   }
 
   return (
@@ -65,6 +95,14 @@ export function MaxShowApp() {
         <div className="mstv-toast" role="status">
           {toast}
         </div>
+      ) : null}
+
+      {ottHandoff ? (
+        <OttHandoffOverlay
+          platform={ottHandoff.platform}
+          title={ottHandoff.title}
+          onDismiss={() => setOttHandoff(null)}
+        />
       ) : null}
     </div>
   );
