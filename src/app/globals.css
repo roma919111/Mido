@@ -313,6 +313,56 @@ select option {
   margin-bottom: 20px;
 }
 
+.iptv-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.iptv-select-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.iptv-select {
+  min-width: min(100%, 320px);
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+}
+
+.iptv-count {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.iptv-load-more {
+  display: block;
+  width: 100%;
+  max-width: 320px;
+  margin: 20px auto 0;
+  padding: 12px 16px;
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  border-radius: 10px;
+  background: rgba(34, 211, 238, 0.1);
+  color: #22d3ee;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.iptv-load-more:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 .iptv-group-btn {
   padding: 8px 14px;
   border-radius: 999px;

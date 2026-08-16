@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
 import { fetchAndParseM3u } from "@/lib/m3u-parser";
 import { assertSafeIptvUrl } from "@/lib/iptv-ssrf";
+import {
+  createIptvSession,
+  listIptvCategories,
+  proxyChannelUrl,
+} from "@/lib/iptv-session-cache";
 import { getRequestPublicOrigin } from "@/lib/request-origin";
 import {
   buildM3uPlusUrl,
   fetchXtreamChannels,
   verifyXtreamLogin,
+  type XtreamChannel,
   type XtreamCredentials,
 } from "@/lib/xtream-url";
 
@@ -29,11 +35,26 @@ type PlaylistBody = {
   password?: string;
 };
 
-function proxyChannelUrl(origin: string, id: string, upstreamUrl: string): string {
-  return `${origin}/api/iptv/proxy?id=${encodeURIComponent(id)}&src=${Buffer.from(upstreamUrl, "utf8").toString("base64url")}`;
+async function loadRawChannels(creds: XtreamCredentials): Promise<{ channels: XtreamChannel[]; source: "api" | "m3u" }> {
+  try {
+    const apiChannels = await fetchXtreamChannels(creds);
+    return { channels: apiChannels, source: "api" };
+  } catch {
+    const m3uUrl = buildM3uPlusUrl(creds);
+    assertSafeIptvUrl(m3uUrl);
+    const parsed = await fetchAndParseM3u(m3uUrl);
+    const channels: XtreamChannel[] = parsed.slice(0, 8000).map((c) => ({
+      id: c.id,
+      name: c.name,
+      group: c.group ?? null,
+      logo: c.logo ?? null,
+      url: c.url,
+    }));
+    return { channels, source: "m3u" };
+  }
 }
 
-/** Login with Xtream host + username + password → channel list. */
+/** Login → session token + categories only (channels loaded in pages). */
 export async function POST(request: Request) {
   let body: PlaylistBody;
   try {
@@ -57,45 +78,25 @@ export async function POST(request: Request) {
   const origin = getRequestPublicOrigin(request);
 
   try {
-    await verifyXtreamLogin(creds).catch(() => {
-      /* Some providers omit player_api — continue */
-    });
+    await verifyXtreamLogin(creds).catch(() => undefined);
 
-    let channels: { id: string; name: string; group: string | null; logo: string | null; url: string }[] = [];
-    let source: "api" | "m3u" = "api";
-
-    try {
-      const apiChannels = await fetchXtreamChannels(creds);
-      channels = apiChannels.map((c) => ({
-        ...c,
-        url: proxyChannelUrl(origin, c.id, c.url),
-      }));
-    } catch {
-      source = "m3u";
-      const m3uUrl = buildM3uPlusUrl(creds);
-      assertSafeIptvUrl(m3uUrl);
-      const parsed = await fetchAndParseM3u(m3uUrl);
-      channels = parsed.slice(0, 8000).map((c) => ({
-        id: c.id,
-        name: c.name,
-        group: c.group ?? null,
-        logo: c.logo ?? null,
-        url: proxyChannelUrl(origin, c.id, c.url),
-      }));
-    }
-
+    const { channels, source } = await loadRawChannels(creds);
     if (!channels.length) {
       return NextResponse.json({ error: "Playlist is empty" }, { status: 502, headers: corsHeaders() });
     }
 
+    const sessionId = createIptvSession(channels, creds, origin);
+    const categories = listIptvCategories(channels);
+
     return NextResponse.json(
       {
+        sessionId,
         host,
         username,
         label: username,
         source,
         total: channels.length,
-        channels,
+        categories,
       },
       { headers: corsHeaders() },
     );
@@ -104,3 +105,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: msg }, { status: 502, headers: corsHeaders() });
   }
 }
+
+// Keep proxy URL helper exported for channels route
+export { proxyChannelUrl };

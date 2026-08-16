@@ -6,20 +6,36 @@ export type IptvChannel = {
   url: string;
 };
 
+export type IptvCategory = {
+  id: string;
+  name: string;
+  count: number;
+};
+
 export type IptvCredentials = {
   host: string;
   username: string;
   password: string;
 };
 
-export type IptvPlaylist = {
+export type IptvLoginResult = {
+  sessionId: string;
   host: string;
   username: string;
   label: string;
+  total: number;
+  categories: IptvCategory[];
+};
+
+export type IptvChannelPage = {
   channels: IptvChannel[];
+  total: number;
+  hasMore: boolean;
+  offset: number;
 };
 
 const STORAGE_KEY = "max.iptv.credentials";
+const SESSION_KEY = "max.iptv.session";
 
 export function getSavedCredentials(): IptvCredentials | null {
   if (typeof window === "undefined") return null;
@@ -37,9 +53,18 @@ export function saveCredentials(creds: IptvCredentials): void {
 
 export function clearCredentials(): void {
   localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(SESSION_KEY);
 }
 
-export async function loadPlaylist(creds: IptvCredentials): Promise<IptvPlaylist> {
+export function saveSessionId(sessionId: string): void {
+  localStorage.setItem(SESSION_KEY, sessionId);
+}
+
+export function getSavedSessionId(): string | null {
+  return localStorage.getItem(SESSION_KEY);
+}
+
+export async function loginIptv(creds: IptvCredentials): Promise<IptvLoginResult> {
   const res = await fetch("/api/iptv/playlist", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -47,11 +72,35 @@ export async function loadPlaylist(creds: IptvCredentials): Promise<IptvPlaylist
     cache: "no-store",
   });
 
-  const data = (await res.json()) as IptvPlaylist & { error?: string };
-  if (!res.ok) {
-    throw new Error(data.error ?? "Login failed");
-  }
+  const data = (await res.json()) as IptvLoginResult & { error?: string };
+  if (!res.ok) throw new Error(data.error ?? "Login failed");
 
   saveCredentials(creds);
+  saveSessionId(data.sessionId);
+  return data;
+}
+
+export async function fetchIptvChannels(params: {
+  sessionId: string;
+  categoryId?: string;
+  search?: string;
+  offset?: number;
+  limit?: number;
+}): Promise<IptvChannelPage> {
+  const q = new URLSearchParams({
+    session: params.sessionId,
+    offset: String(params.offset ?? 0),
+    limit: String(params.limit ?? 60),
+  });
+  if (params.categoryId && params.categoryId !== "all") {
+    q.set("category", params.categoryId);
+  }
+  if (params.search && params.search.trim().length >= 2) {
+    q.set("q", params.search.trim());
+  }
+
+  const res = await fetch(`/api/iptv/channels?${q}`, { cache: "no-store" });
+  const data = (await res.json()) as IptvChannelPage & { error?: string };
+  if (!res.ok) throw new Error(data.error ?? "Failed to load channels");
   return data;
 }
