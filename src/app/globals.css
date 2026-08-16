@@ -11,7 +11,7 @@
   --surface-elevated: #171b24;
   --font-display: var(--font-syne), ui-sans-serif, system-ui, sans-serif;
   --font-body: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
-  --bottom-nav-pad: calc(7.25rem + env(safe-area-inset-bottom));
+  --bottom-nav-pad: calc(4.75rem + env(safe-area-inset-bottom));
 }
 
 .pb-bottom-nav {
@@ -171,4 +171,243 @@ body {
 select option {
   background: #12151c;
   color: #f3f5f7;
+}
+
+/* ── MAX IPTV player ── */
+.iptv-shell {
+  min-height: 100dvh;
+  background: #070b18;
+  color: #f3f5f7;
+  padding: 24px;
+}
+
+.iptv-login {
+  max-width: 420px;
+  margin: 8vh auto 0;
+  padding: 28px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.iptv-login__title {
+  margin: 0 0 8px;
+  font-size: 1.6rem;
+  font-weight: 800;
+}
+
+.iptv-login__sub {
+  margin: 0 0 24px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.9rem;
+}
+
+.iptv-login__form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.iptv-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.iptv-field input {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-size: 0.95rem;
+}
+
+.iptv-login__btn {
+  margin-top: 8px;
+  padding: 14px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #22d3ee, #6366f1);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.iptv-login__btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.iptv-login__hint {
+  margin: 16px 0 0;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.iptv-error {
+  margin: 0;
+  color: #f87171;
+  font-size: 0.85rem;
+}
+
+.iptv-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.iptv-header__title {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.iptv-header__user {
+  margin: 4px 0 0;
+  color: #22d3ee;
+  font-size: 0.85rem;
+}
+
+.iptv-header__actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.iptv-search {
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.3);
+  color: #fff;
+  min-width: 180px;
+}
+
+.iptv-logout {
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+}
+
+.iptv-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.iptv-group-btn {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.75);
+  cursor: pointer;
+  font-size: 0.82rem;
+}
+
+.iptv-group-btn--active {
+  background: rgba(34, 211, 238, 0.15);
+  border-color: #22d3ee;
+  color: #22d3ee;
+}
+
+.iptv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.iptv-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  text-align: center;
+  color: inherit;
+}
+
+.iptv-card:hover {
+  border-color: rgba(34, 211, 238, 0.4);
+}
+
+.iptv-card__logo {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.iptv-card__logo--placeholder {
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.iptv-card__name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.iptv-card__group {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.iptv-empty {
+  text-align: center;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 40px;
+}
+
+.iptv-player {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: #000;
+  display: flex;
+  flex-direction: column;
+}
+
+.iptv-player__bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  background: rgba(0, 0, 0, 0.85);
+}
+
+.iptv-player__back {
+  border: none;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.iptv-player__title {
+  font-weight: 700;
+}
+
+.iptv-player__video {
+  flex: 1;
+  width: 100%;
+  background: #000;
 }
