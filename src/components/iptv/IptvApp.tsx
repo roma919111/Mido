@@ -19,6 +19,7 @@ export function IptvApp() {
   const [filter, setFilter] = useState("");
   const [group, setGroup] = useState<string | "all">("all");
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
   const [label, setLabel] = useState("");
@@ -26,11 +27,15 @@ export function IptvApp() {
   const login = useCallback(async (creds: IptvCredentials) => {
     setLoading(true);
     setError(null);
+    setInfo(null);
     try {
       const playlist = await loadPlaylist(creds);
       setChannels(playlist.channels);
       setLabel(playlist.label || creds.username);
       setLoggedIn(true);
+      if (playlist.channels.length > 5000) {
+        setInfo(`تم تحميل ${playlist.channels.length.toLocaleString("ar")} قناة — استخدم البحث للتصفية`);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "فشل تسجيل الدخول");
       setLoggedIn(false);
@@ -165,6 +170,8 @@ export function IptvApp() {
           </button>
         </div>
       </header>
+
+      {info ? <p className="iptv-info">{info}</p> : null}
 
       <div className="iptv-groups">
         {groups.map((g) => (

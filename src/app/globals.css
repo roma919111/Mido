@@ -253,6 +253,15 @@ select option {
   font-size: 0.85rem;
 }
 
+.iptv-info {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(34, 211, 238, 0.12);
+  color: #22d3ee;
+  font-size: 0.85rem;
+}
+
 .iptv-header {
   display: flex;
   flex-wrap: wrap;

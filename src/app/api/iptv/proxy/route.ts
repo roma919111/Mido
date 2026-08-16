@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { assertSafeIptvUrl } from "@/lib/iptv-ssrf";
+import { getRequestPublicOrigin } from "@/lib/request-origin";
 
 export const runtime = "nodejs";
 
@@ -16,9 +17,9 @@ export async function OPTIONS() {
 }
 
 function proxyUrl(request: Request, target: string): string {
-  const base = new URL(request.url);
+  const origin = getRequestPublicOrigin(request);
   const b64 = Buffer.from(target, "utf8").toString("base64url");
-  return `${base.origin}/api/iptv/proxy?src=${b64}`;
+  return `${origin}/api/iptv/proxy?src=${b64}`;
 }
 
 function isManifest(contentType: string, target: string): boolean {
