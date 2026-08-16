@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { IptvApp } from "@/components/iptv/IptvApp";
+import "@/styles/max-show-iptv.css";
 
 export const metadata: Metadata = {
-  title: "MAX IPTV — Host Login",
-  description: "IPTV player with Xtream host, username, and password",
+  title: "MAX SHOW TV — IPTV",
+  description: "MAX SHOW TV IPTV player",
 };
 
 export default function IptvPage() {

@@ -104,3 +104,18 @@ export async function fetchIptvChannels(params: {
   if (!res.ok) throw new Error(data.error ?? "Failed to load channels");
   return data;
 }
+
+export type IptvRow = {
+  id: string;
+  title: string;
+  channels: IptvChannel[];
+};
+
+export async function fetchIptvRows(sessionId: string): Promise<IptvRow[]> {
+  const res = await fetch(`/api/iptv/rows?session=${encodeURIComponent(sessionId)}`, {
+    cache: "no-store",
+  });
+  const data = (await res.json()) as { rows?: IptvRow[]; error?: string };
+  if (!res.ok) throw new Error(data.error ?? "Failed to load rows");
+  return data.rows ?? [];
+}

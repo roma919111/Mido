@@ -4,15 +4,25 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   clearCredentials,
   fetchIptvChannels,
+  fetchIptvRows,
   getSavedCredentials,
   loginIptv,
   type IptvCategory,
   type IptvChannel,
   type IptvCredentials,
+  type IptvRow,
 } from "@/lib/iptv-client";
+import { getFavoriteChannels, getRecentChannels, pushRecentChannel } from "@/lib/iptv-favorites";
+import { IptvCategorySidebar } from "./IptvCategorySidebar";
+import { IptvChannelGrid } from "./IptvChannelGrid";
+import { IptvChannelRow } from "./IptvChannelRow";
+import { IptvMaxSidebar } from "./IptvMaxSidebar";
 import { IptvPlayer } from "./IptvPlayer";
 
-const PAGE_SIZE = 60;
+type MainNav = "live" | "channels" | "favorites";
+type ChannelView = string | "favorite" | "recent";
+
+const PAGE_SIZE = 48;
 
 export function IptvApp() {
   const [host, setHost] = useState("");
@@ -20,43 +30,69 @@ export function IptvApp() {
   const [password, setPassword] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [categories, setCategories] = useState<IptvCategory[]>([]);
+  const [rows, setRows] = useState<IptvRow[]>([]);
   const [channels, setChannels] = useState<IptvChannel[]>([]);
   const [active, setActive] = useState<IptvChannel | null>(null);
-  const [filter, setFilter] = useState("");
-  const [debouncedFilter, setDebouncedFilter] = useState("");
-  const [category, setCategory] = useState<string>("all");
+  const [nav, setNav] = useState<MainNav>("live");
+  const [channelView, setChannelView] = useState<ChannelView>("");
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingGrid, setLoadingGrid] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
   const [label, setLabel] = useState("");
   const [total, setTotal] = useState(0);
-  const [catalogTotal, setCatalogTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const loadGen = useRef(0);
 
   useEffect(() => {
-    const t = window.setTimeout(() => setDebouncedFilter(filter), 350);
+    const t = window.setTimeout(() => setDebouncedSearch(search), 350);
     return () => window.clearTimeout(t);
-  }, [filter]);
+  }, [search]);
 
-  const loadPage = useCallback(
-    async (sid: string, cat: string, search: string, offset: number, append: boolean) => {
+  const loadGrid = useCallback(
+    async (sid: string, view: ChannelView, q: string, offset: number, append: boolean) => {
       const gen = ++loadGen.current;
-      if (offset === 0) setLoading(true);
+      if (offset === 0) setLoadingGrid(true);
       else setLoadingMore(true);
 
       try {
+        if (view === "favorite") {
+          const favs = getFavoriteChannels();
+          const filtered = q.trim().length >= 2
+            ? favs.filter((c) => c.name.toLowerCase().includes(q.trim().toLowerCase()))
+            : favs;
+          if (gen !== loadGen.current) return;
+          setChannels(filtered.slice(0, offset + PAGE_SIZE));
+          setTotal(filtered.length);
+          setHasMore(offset + PAGE_SIZE < filtered.length);
+          setError(null);
+          return;
+        }
+
+        if (view === "recent") {
+          const recent = getRecentChannels();
+          const filtered = q.trim().length >= 2
+            ? recent.filter((c) => c.name.toLowerCase().includes(q.trim().toLowerCase()))
+            : recent;
+          if (gen !== loadGen.current) return;
+          setChannels(filtered.slice(0, offset + PAGE_SIZE));
+          setTotal(filtered.length);
+          setHasMore(offset + PAGE_SIZE < filtered.length);
+          setError(null);
+          return;
+        }
+
         const page = await fetchIptvChannels({
           sessionId: sid,
-          categoryId: cat,
-          search,
+          categoryId: view || "all",
+          search: q,
           offset,
           limit: PAGE_SIZE,
         });
         if (gen !== loadGen.current) return;
-
         setChannels((prev) => (append ? [...prev, ...page.channels] : page.channels));
         setTotal(page.total);
         setHasMore(page.hasMore);
@@ -67,7 +103,7 @@ export function IptvApp() {
         if (!append) setChannels([]);
       } finally {
         if (gen === loadGen.current) {
-          setLoading(false);
+          setLoadingGrid(false);
           setLoadingMore(false);
         }
       }
@@ -75,30 +111,27 @@ export function IptvApp() {
     [],
   );
 
-  const login = useCallback(
-    async (creds: IptvCredentials) => {
-      setLoading(true);
-      setError(null);
-      setInfo(null);
-      setChannels([]);
-      try {
-        const result = await loginIptv(creds);
-        setSessionId(result.sessionId);
-        setCategories(result.categories);
-        setLabel(result.label || creds.username);
-        setLoggedIn(true);
-        setCategory("all");
-        setCatalogTotal(result.total);
-        setInfo(`${result.total.toLocaleString("ar")} قناة — اختر قسماً أو ابحث بالاسم`);
-        await loadPage(result.sessionId, "all", "", 0, false);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "فشل تسجيل الدخول");
-        setLoggedIn(false);
-        setLoading(false);
-      }
-    },
-    [loadPage],
-  );
+  const login = useCallback(async (creds: IptvCredentials) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await loginIptv(creds);
+      setSessionId(result.sessionId);
+      setCategories(result.categories);
+      setLabel(result.username);
+      setLoggedIn(true);
+      setNav("live");
+      setChannelView(result.categories[0]?.id ?? "");
+
+      const liveRows = await fetchIptvRows(result.sessionId);
+      setRows(liveRows);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "فشل تسجيل الدخول");
+      setLoggedIn(false);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     const saved = getSavedCredentials();
@@ -111,17 +144,20 @@ export function IptvApp() {
   }, [login]);
 
   useEffect(() => {
-    if (!sessionId || !loggedIn) return;
-    void loadPage(sessionId, category, debouncedFilter, 0, false);
-  }, [sessionId, category, debouncedFilter, loggedIn, loadPage]);
+    if (!sessionId || nav !== "channels") return;
+    void loadGrid(sessionId, channelView, debouncedSearch, 0, false);
+  }, [sessionId, nav, channelView, debouncedSearch, loadGrid]);
 
-  const categoryOptions = useMemo(() => {
-    return [{ id: "all", name: "الكل", count: catalogTotal }, ...categories];
-  }, [categories, catalogTotal]);
+  const gridTitle = useMemo(() => {
+    if (channelView === "favorite") return "FAVORITE";
+    if (channelView === "recent") return "RECENTLY VIEWED";
+    const cat = categories.find((c) => c.id === channelView);
+    return cat?.name ?? "CHANNELS";
+  }, [channelView, categories]);
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    void login({ host, username, password });
+  function handlePlay(ch: IptvChannel) {
+    pushRecentChannel(ch);
+    setActive(ch);
   }
 
   function handleLogout() {
@@ -129,7 +165,7 @@ export function IptvApp() {
     clearCredentials();
     setLoggedIn(false);
     setSessionId(null);
-    setCategories([]);
+    setRows([]);
     setChannels([]);
     setActive(null);
     setPassword("");
@@ -137,7 +173,7 @@ export function IptvApp() {
 
   function loadMore() {
     if (!sessionId || !hasMore || loadingMore) return;
-    void loadPage(sessionId, category, debouncedFilter, channels.length, true);
+    void loadGrid(sessionId, channelView, debouncedSearch, channels.length, true);
   }
 
   if (active) {
@@ -146,133 +182,128 @@ export function IptvApp() {
 
   if (!loggedIn) {
     return (
-      <div className="iptv-shell">
-        <div className="iptv-login">
-          <h1 className="iptv-login__title">MAX IPTV</h1>
-          <p className="iptv-login__sub">أدخل بيانات اشتراك Xtream (Host · Username · Password)</p>
-
-          <form className="iptv-login__form" onSubmit={handleSubmit}>
-            <label className="iptv-field">
-              <span>Host</span>
-              <input
-                type="text"
-                dir="ltr"
-                placeholder="http://example.com:8080"
-                value={host}
-                onChange={(e) => setHost(e.target.value)}
-                autoComplete="url"
-                required
-              />
-            </label>
-
-            <label className="iptv-field">
-              <span>Username</span>
-              <input
-                type="text"
-                dir="ltr"
-                placeholder="user123"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                autoComplete="username"
-                required
-              />
-            </label>
-
-            <label className="iptv-field">
-              <span>Password</span>
-              <input
-                type="password"
-                dir="ltr"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-                required
-              />
-            </label>
-
-            {error ? <p className="iptv-error">{error}</p> : null}
-
-            <button type="submit" className="iptv-login__btn" disabled={loading}>
-              {loading ? "جاري الاتصال…" : "تسجيل الدخول"}
-            </button>
-          </form>
+      <div className="mstv-app mstv-app--login">
+        <div className="mstv-app__stage">
+          <div className="mstv-app__dots mstv-app__dots--cyan" aria-hidden="true" />
+          <div className="mstv-app__dots mstv-app__dots--magenta" aria-hidden="true" />
+          <div className="iptv-login mstv-login-panel">
+            <div className="mstv-rail__logo mstv-login-panel__logo">
+              <div className="mstv-rail__logo-circle" aria-hidden="true">
+                <span>▶</span>
+              </div>
+              <div className="mstv-rail__brand">
+                <strong>MAX</strong>
+                <span>SHOW TV</span>
+              </div>
+            </div>
+            <p className="iptv-login__sub">Host · Username · Password</p>
+            <form className="iptv-login__form" onSubmit={(e) => { e.preventDefault(); void login({ host, username, password }); }}>
+              <label className="iptv-field">
+                <span>Host</span>
+                <input type="text" dir="ltr" placeholder="http://server.com:8080" value={host} onChange={(e) => setHost(e.target.value)} required />
+              </label>
+              <label className="iptv-field">
+                <span>Username</span>
+                <input type="text" dir="ltr" value={username} onChange={(e) => setUsername(e.target.value)} required />
+              </label>
+              <label className="iptv-field">
+                <span>Password</span>
+                <input type="password" dir="ltr" value={password} onChange={(e) => setPassword(e.target.value)} required />
+              </label>
+              {error ? <p className="iptv-error">{error}</p> : null}
+              <button type="submit" className="iptv-login__btn" disabled={loading}>
+                {loading ? "جاري الاتصال…" : "تسجيل الدخول"}
+              </button>
+            </form>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="iptv-shell">
-      <header className="iptv-header">
-        <div>
-          <h1 className="iptv-header__title">MAX IPTV</h1>
-          <p className="iptv-header__user">{label}</p>
-        </div>
-        <div className="iptv-header__actions">
-          <input
-            type="search"
-            className="iptv-search"
-            placeholder="بحث (حرفين+)…"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-          />
-          <button type="button" className="iptv-logout" onClick={handleLogout}>
-            خروج
-          </button>
-        </div>
-      </header>
+    <div className="mstv-app">
+      <IptvMaxSidebar
+        active={nav}
+        onChange={(id) => {
+          setNav(id);
+          if (id === "favorites") setChannelView("favorite");
+          if (id === "channels" && channelView === "favorite") {
+            setChannelView(categories[0]?.id ?? "");
+          }
+        }}
+      />
 
-      {info ? <p className="iptv-info">{info}</p> : null}
-      {error ? <p className="iptv-error">{error}</p> : null}
+      <div className="mstv-app__stage">
+        <div className="mstv-app__dots mstv-app__dots--cyan" aria-hidden="true" />
+        <div className="mstv-app__dots mstv-app__dots--magenta" aria-hidden="true" />
 
-      <div className="iptv-toolbar">
-        <label className="iptv-select-wrap">
-          <span>القسم</span>
-          <select
-            className="iptv-select"
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-          >
-            {categoryOptions.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name} ({c.count.toLocaleString("ar")})
-              </option>
-            ))}
-          </select>
-        </label>
-        <span className="iptv-count">
-          {loading ? "جاري التحميل…" : `${channels.length.toLocaleString("ar")} / ${total.toLocaleString("ar")}`}
-        </span>
-      </div>
-
-      {loading && !channels.length ? (
-        <p className="iptv-empty">جاري تحميل القنوات…</p>
-      ) : (
-        <>
-          <div className="iptv-grid">
-            {channels.map((ch) => (
-              <button key={ch.id} type="button" className="iptv-card" onClick={() => setActive(ch)}>
-                {ch.logo ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={ch.logo} alt="" className="iptv-card__logo" loading="lazy" decoding="async" />
-                ) : (
-                  <div className="iptv-card__logo iptv-card__logo--placeholder">TV</div>
-                )}
-                <span className="iptv-card__name">{ch.name}</span>
-              </button>
-            ))}
-          </div>
-
-          {hasMore ? (
-            <button type="button" className="iptv-load-more" onClick={loadMore} disabled={loadingMore}>
-              {loadingMore ? "جاري التحميل…" : "تحميل المزيد"}
-            </button>
+        <main className="mstv-app__main">
+          {nav === "live" ? (
+            <div className="mstv-browse">
+              {rows.map((row) => (
+                <IptvChannelRow key={row.id} title={row.title} items={row.channels} onPlay={handlePlay} />
+              ))}
+              {!rows.length && !loading ? <p className="mstv-empty">لا توجد قنوات</p> : null}
+            </div>
           ) : null}
 
-          {!channels.length && !loading ? <p className="iptv-empty">لا توجد نتائج</p> : null}
-        </>
-      )}
+          {nav === "favorites" ? (
+            <div className="mstv-movies-main mstv-movies-main--solo">
+              <header className="mstv-topbar">
+                <h1 className="mstv-topbar__title">FAVORITES</h1>
+              </header>
+              <IptvChannelGrid
+                items={getFavoriteChannels()}
+                onPlay={handlePlay}
+                empty="لا توجد مفضّلة — اضغط على قناة من Channels"
+              />
+            </div>
+          ) : null}
+
+          {nav === "channels" ? (
+            <div className="mstv-movies-layout">
+              <IptvCategorySidebar
+                categories={categories}
+                active={channelView}
+                search={search}
+                onSearch={setSearch}
+                onSelect={(id) => setChannelView(id)}
+                onFavorite={() => setChannelView("favorite")}
+                onRecent={() => setChannelView("recent")}
+                favoriteActive={channelView === "favorite"}
+                recentActive={channelView === "recent"}
+              />
+
+              <div className="mstv-movies-main">
+                <header className="mstv-topbar">
+                  <h1 className="mstv-topbar__title">{gridTitle}</h1>
+                  <button type="button" className="mstv-topbar__sort" onClick={handleLogout}>
+                    خروج · {label}
+                  </button>
+                </header>
+
+                {error ? <p className="iptv-error">{error}</p> : null}
+                {loadingGrid && !channels.length ? (
+                  <p className="mstv-empty">جاري التحميل…</p>
+                ) : (
+                  <>
+                    <IptvChannelGrid items={channels} onPlay={handlePlay} empty="لا توجد قنوات" />
+                    {hasMore ? (
+                      <button type="button" className="iptv-load-more" onClick={loadMore} disabled={loadingMore}>
+                        {loadingMore ? "…" : "تحميل المزيد"}
+                      </button>
+                    ) : null}
+                    <p className="iptv-count-bar">
+                      {channels.length.toLocaleString("ar")} / {total.toLocaleString("ar")}
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+          ) : null}
+        </main>
+      </div>
     </div>
   );
 }
