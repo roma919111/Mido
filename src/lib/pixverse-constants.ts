@@ -5,7 +5,7 @@ export const PIXVERSE_TASK_PREFIX = "pv:";
 /** Official PixVerse V6 API cap per request. */
 export const PIXVERSE_NATIVE_MAX_DURATION = 15;
 /**
- * Site experiment: chain two native clips (last-frame continue) up to 30s.
+ * Site experiment: chain two native 15s clips via PixVerse extend API up to 30s.
  * Set false to revert the UI/quote cap to 15s without deleting the chain code.
  */
 export const PIXVERSE_DURATION_EXTEND_ENABLED = true;
