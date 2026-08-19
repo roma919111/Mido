@@ -1,3 +1,7 @@
+import { VERONIX_MODEL_ID } from "@/lib/free-trial";
+import { SEEDANCE_MINI_MODEL_ID } from "@/lib/byteplus-constants";
+import { pixverseDurationMax } from "@/lib/pixverse-constants";
+
 export type ModelKind = "image" | "video";
 
 export type AudioParamKey = "generateAudio" | "generateSound";
@@ -76,14 +80,22 @@ export const VIDEO_FORM_FALLBACKS: Record<string, VideoFormFallback> = {
   },
   "kling-3-omni": {
     duration: { min: 3, max: 15, default: 5 },
-    resolutions: ["std", "pro", "4k"],
-    resolutionDefault: "std",
+    resolutions: ["720p", "1080p", "4k"],
+    resolutionDefault: "720p",
     audioSupported: true,
     audioDefault: true,
     audioParam: "generateSound",
   },
+  "flux-3-video": {
+    duration: { min: 5, max: 20, default: 5 },
+    resolutions: ["Draft", "HD", "FHD"],
+    resolutionDefault: "HD",
+    audioSupported: false,
+    audioDefault: true,
+    audioParam: null,
+  },
   pixverseV6: {
-    duration: { min: 1, max: 15, default: 5 },
+    duration: { min: 1, max: pixverseDurationMax(), default: 5 },
     resolutions: ["360p", "540p", "720p", "1080p"],
     resolutionDefault: "540p",
     audioSupported: true,
@@ -154,11 +166,14 @@ export function formOptionsForModel(model: CatalogModel | null | undefined): {
   const resolutions = Array.isArray(model.resolutions)
     ? model.resolutions
     : fallback.resolutions;
-  const isVeronix =
-    model.id === "seedance-2-mini" ||
+  const isSeedanceMini =
+    model.id === SEEDANCE_MINI_MODEL_ID ||
     model.mcpId === "byte-plus-seedance-2-mini";
+  const isVyronix = model.id === VERONIX_MODEL_ID;
+  const isPixverse =
+    model.id === "pixverse-v6" || model.mcpId === "pixverseV6";
   return {
-    duration: isVeronix
+    duration: isSeedanceMini
       ? {
           min: 4,
           max: 15,
@@ -166,14 +181,16 @@ export function formOptionsForModel(model: CatalogModel | null | undefined): {
         }
       : {
           min: model.durationMin ?? fallback.duration.min,
-          max: model.durationMax ?? fallback.duration.max,
+          max: isPixverse
+            ? pixverseDurationMax()
+            : model.durationMax ?? fallback.duration.max,
           default: model.durationDefault ?? fallback.duration.default,
         },
-    resolutions: isVeronix ? [...VIDEO_CLARITY_LADDER] : resolutions,
+    resolutions: isSeedanceMini ? [...VIDEO_CLARITY_LADDER] : resolutions,
     resolutionDefault:
       model.resolutionDefault ||
       fallback.resolutionDefault ||
-      (isVeronix ? "720p" : resolutions[0] || ""),
+      (isSeedanceMini ? "720p" : isVyronix ? "768P" : resolutions[0] || ""),
     audioSupported: model.audioSupported ?? fallback.audioSupported,
     audioDefault: model.audioDefault ?? fallback.audioDefault,
     audioParam:
@@ -197,6 +214,9 @@ export function resolutionLabel(value: string): string {
   if (v === "4k") return "4K";
   if (v === "768p" || v.includes("768")) return "768P";
   if (v === "2k" || v.includes("2k")) return "2K";
+  if (v === "draft" || v === "hd-draft") return "Draft";
+  if (v === "hd") return "HD";
+  if (v === "fhd" || v === "fullhd") return "FHD";
   return value;
 }
 
@@ -257,10 +277,14 @@ export const IMAGE_MODELS: CatalogModel[] = [
 function withFormFallback(model: CatalogModel): CatalogModel {
   const fallback = model.mcpId ? VIDEO_FORM_FALLBACKS[model.mcpId] : undefined;
   if (!fallback) return model;
+  const isPixverse =
+    model.id === "pixverse-v6" || model.mcpId === "pixverseV6";
   return {
     ...model,
     durationMin: model.durationMin ?? fallback.duration.min,
-    durationMax: model.durationMax ?? fallback.duration.max,
+    durationMax: isPixverse
+      ? pixverseDurationMax()
+      : model.durationMax ?? fallback.duration.max,
     durationDefault: model.durationDefault ?? fallback.duration.default,
     resolutions: Array.isArray(model.resolutions)
       ? model.resolutions
@@ -275,19 +299,54 @@ function withFormFallback(model: CatalogModel): CatalogModel {
 
 const VIDEO_MODELS_BASE: CatalogModel[] = [
   {
-    id: "seedance-2-mini",
+    id: VERONIX_MODEL_ID,
     name: "VYRONIX",
+    kind: "video",
+    mcpId: "minimax-h3",
+    modes: ["text2video", "image2video", "element2video"],
+    badge: "حصري",
+    tagline: "تم إنشاؤه بواسطة VYRONIX — أول فيديو مجاني (مقدمة + 4 ثوانٍ · 768P)",
+    resolutions: ["768P", "2K"],
+    resolutionDefault: "768P",
+    durationMin: 1,
+    durationMax: 15,
+    durationDefault: 5,
+    audioSupported: false,
+    audioDefault: false,
+    audioParam: null,
+    available: true,
+  },
+  {
+    id: SEEDANCE_MINI_MODEL_ID,
+    name: "Seedance 2 Mini",
     kind: "video",
     mcpId: "byte-plus-seedance-2-mini",
     modes: ["text2video", "image2video", "element2video"],
-    badge: "حصري",
-    tagline: "تم إنشاؤه بواسطة VYRONIX — أول فيديو مجاني (مقدمة + 4 ثوانٍ · 480p)",
+    badge: "Seedance",
+    tagline: "BytePlus Seedance 2 Mini — 480p / 720p · 4–15s",
     available: true,
   },
   { id: "seedance-2", name: "Seedance 2.0", kind: "video", mcpId: "byte-plus-seedance-2", modes: ["text2video", "image2video", "element2video"], badge: "Seedance", tagline: "صورة / فيديو / صوت مرجعي — 4–15s", available: true },
   { id: "seedance-2-fast", name: "Seedance 2.0 Fast", kind: "video", mcpId: "byte-plus-seedance-2-fast", modes: ["text2video", "image2video", "element2video"], available: true },
   { id: "gemini-omni-flash", name: "Gemini Omni Flash", kind: "video", mcpId: "gemini-omni-flash", modes: ["text2video", "image2video", "element2video"], available: true },
-  { id: "kling-3-omni", name: "Kling 3.0 Omni", kind: "video", mcpId: "kling-3-omni", modes: ["text2video", "image2video", "element2video"], available: true },
+  { id: "kling-3-omni", name: "Kling 3.0 Omni", kind: "video", mcpId: "kling-3-omni", modes: ["text2video", "image2video", "element2video"], resolutions: ["720p", "1080p", "4k"], resolutionDefault: "720p", durationMin: 3, durationMax: 15, durationDefault: 5, audioSupported: true, audioDefault: true, audioParam: "generateSound", tagline: "Kling Omni — 720p / 1080p / 4K · 3–15s", available: true },
+  {
+    id: "flux-3-video",
+    name: "FLUX 3",
+    kind: "video",
+    mcpId: "flux-3-video",
+    modes: ["text2video", "image2video"],
+    resolutions: ["Draft", "HD", "FHD"],
+    resolutionDefault: "HD",
+    durationMin: 5,
+    durationMax: 20,
+    durationDefault: 5,
+    audioSupported: false,
+    audioDefault: true,
+    audioParam: null,
+    tagline: "Black Forest Labs — Draft / HD / FHD · 5–20 ث · صوت مضمّن",
+    available: true,
+  },
   {
     id: "pixverse-v6",
     name: "PixVerse V6",
@@ -297,11 +356,15 @@ const VIDEO_MODELS_BASE: CatalogModel[] = [
     resolutions: ["360p", "540p", "720p", "1080p"],
     resolutionDefault: "540p",
     durationMin: 1,
-    durationMax: 15,
+    durationMax: pixverseDurationMax(),
     durationDefault: 5,
     audioSupported: true,
     audioDefault: false,
     audioParam: "generateAudio",
+    tagline:
+      pixverseDurationMax() > 15
+        ? "PixVerse V6 — حتى 15ث مباشرة · 16–30ث تمديد رسمي 15+15 (نفس الشخصيات) ثم الدمج"
+        : "PixVerse V6 — 360p / 540p / 720p / 1080p · 1–15s",
     available: true,
   },
   { id: "wan-2-7", name: "Wan 2.7", kind: "video", mcpId: "wan2-7", modes: ["text2video", "image2video", "element2video"], available: true },

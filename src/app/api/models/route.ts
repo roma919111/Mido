@@ -9,8 +9,9 @@ import {
 import { getLiveCatalog } from "@/lib/openart-catalog-sync";
 import { VERONIX_CREDIT_MULTIPLIER } from "@/lib/credit-quote";
 import { isBytePlusConfigured } from "@/lib/byteplus-ark";
-import { isSeedance2Configured, SEEDANCE_2_MODEL_ID } from "@/lib/byteplus-constants";
+import { isSeedance2Configured, SEEDANCE_2_MODEL_ID, SEEDANCE_MINI_MODEL_ID } from "@/lib/byteplus-constants";
 import { isPixVerseConfigured, PIXVERSE_MODEL_ID } from "@/lib/pixverse";
+import { pixverseDurationMax } from "@/lib/pixverse-constants";
 import {
   GEMINI_OMNI_FLASH_MODEL_ID,
   isGeminiVideoConfigured,
@@ -19,33 +20,66 @@ import {
   isMiniMaxVideoConfigured,
   MINIMAX_H3_MODEL_ID,
 } from "@/lib/minimax-video";
+import {
+  isKlingVideoConfigured,
+  KLING_OMNI_MODEL_ID,
+} from "@/lib/kling-video";
+import {
+  isFluxVideoConfigured,
+  FLUX_VIDEO_MODEL_ID,
+} from "@/lib/flux-video";
 import { VERONIX_IMAGE_MODEL_ID } from "@/lib/byteplus-image";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-/** Product: Veronix video + VYRONIX image (BytePlus Seedream under the hood). */
+/** Product: Vyronix (MiniMax branding) + Seedance Mini + other providers. */
 function productCatalog(video: CatalogModel[], image: CatalogModel[]) {
-  const veronixVideo =
-    video.find((m) => m.id === VERONIX_MODEL_ID) ||
-    VIDEO_MODELS.find((m) => m.id === VERONIX_MODEL_ID);
-  const videoOut: CatalogModel[] = veronixVideo
-    ? [
-        {
-          ...veronixVideo,
-          name: "VYRONIX",
-          available: true,
-          badge: "حصري",
-          tagline: isBytePlusConfigured()
-            ? "تم إنشاؤه بواسطة VYRONIX"
-            : veronixVideo.tagline,
-        },
-      ]
-    : VIDEO_MODELS.filter((m) => m.id === VERONIX_MODEL_ID).map((m) => ({
-        ...m,
+  const videoOut: CatalogModel[] = [];
+
+  if (isMiniMaxVideoConfigured()) {
+    const minimaxTemplate =
+      video.find((m) => m.id === MINIMAX_H3_MODEL_ID) ||
+      VIDEO_MODELS.find((m) => m.id === MINIMAX_H3_MODEL_ID);
+    const vyronixStatic = VIDEO_MODELS.find((m) => m.id === VERONIX_MODEL_ID);
+    if (minimaxTemplate || vyronixStatic) {
+      const mm = minimaxTemplate || vyronixStatic!;
+      videoOut.push({
+        ...mm,
+        ...(vyronixStatic || {}),
+        id: VERONIX_MODEL_ID,
         name: "VYRONIX",
+        mcpId: "minimax-h3",
+        modes: mm.modes ?? ["text2video", "image2video", "element2video"],
         available: true,
-      }));
+        badge: "حصري",
+        tagline: "تم إنشاؤه بواسطة VYRONIX — أول فيديو مجاني (مقدمة + 4 ثوانٍ · 768P)",
+        resolutions: mm.resolutions?.length ? mm.resolutions : ["768P", "2K"],
+        resolutionDefault: mm.resolutionDefault || "768P",
+        durationMin: mm.durationMin ?? 1,
+        durationMax: mm.durationMax ?? 15,
+        durationDefault: mm.durationDefault ?? 5,
+        audioSupported: false,
+        audioDefault: false,
+        audioParam: null,
+      });
+    }
+  }
+
+  if (isBytePlusConfigured()) {
+    const seedanceMini =
+      video.find((m) => m.id === SEEDANCE_MINI_MODEL_ID) ||
+      VIDEO_MODELS.find((m) => m.id === SEEDANCE_MINI_MODEL_ID);
+    if (seedanceMini) {
+      videoOut.push({
+        ...seedanceMini,
+        name: "Seedance 2 Mini",
+        available: true,
+        badge: "Seedance",
+        tagline: "BytePlus Seedance 2 Mini — 480p / 720p · 4–15s",
+      });
+    }
+  }
 
   if (isSeedance2Configured()) {
     const seedance2 =
@@ -57,7 +91,7 @@ function productCatalog(video: CatalogModel[], image: CatalogModel[]) {
         name: "Seedance 2.0",
         available: true,
         badge: "Seedance",
-        tagline: "BytePlus Seedance 2.0 — صورة / فيديو / صوت مرجعي (4–15s)",
+        tagline: "BytePlus Seedance 2.0 — 720p / 1080p / 4K · 4–15s",
       });
     }
   }
@@ -72,6 +106,13 @@ function productCatalog(video: CatalogModel[], image: CatalogModel[]) {
         name: "PixVerse V6",
         available: true,
         badge: "تجربة",
+        durationMin: 1,
+        durationMax: pixverseDurationMax(),
+        durationDefault: pixverse.durationDefault ?? 5,
+        tagline:
+          pixverseDurationMax() > 15
+            ? "PixVerse V6 — حتى 15ث مباشرة · 16–30ث تمديد رسمي 15+15 (نفس الشخصيات) ثم الدمج"
+            : pixverse.tagline,
       });
     }
   }
@@ -102,6 +143,36 @@ function productCatalog(video: CatalogModel[], image: CatalogModel[]) {
         available: true,
         badge: "MiniMax",
         tagline: "MiniMax H series — 768P / 2K (1–15s)",
+      });
+    }
+  }
+
+  if (isKlingVideoConfigured()) {
+    const kling =
+      video.find((m) => m.id === KLING_OMNI_MODEL_ID) ||
+      VIDEO_MODELS.find((m) => m.id === KLING_OMNI_MODEL_ID);
+    if (kling) {
+      videoOut.push({
+        ...kling,
+        name: "Kling 3.0 Omni",
+        available: true,
+        badge: "Kling",
+        tagline: "Kling Omni — 720p / 1080p / 4K · 3–15s",
+      });
+    }
+  }
+
+  if (isFluxVideoConfigured()) {
+    const flux =
+      video.find((m) => m.id === FLUX_VIDEO_MODEL_ID) ||
+      VIDEO_MODELS.find((m) => m.id === FLUX_VIDEO_MODEL_ID);
+    if (flux) {
+      videoOut.push({
+        ...flux,
+        name: "FLUX 3",
+        available: true,
+        badge: "BFL",
+        tagline: "Black Forest Labs — Draft / HD / FHD · 5–20 ث · صوت مضمّن",
       });
     }
   }
@@ -157,7 +228,10 @@ export async function GET(request: Request) {
       updatedAt: catalog.updatedAt,
       multiplier: VERONIX_CREDIT_MULTIPLIER,
       source: catalog.source,
-      provider: isBytePlusConfigured() ? "byteplus" : "unconfigured",
+      provider:
+        isMiniMaxVideoConfigured() || isBytePlusConfigured()
+          ? "configured"
+          : "unconfigured",
       imageStudioEnabled: true,
     });
   } catch (error) {
@@ -170,7 +244,10 @@ export async function GET(request: Request) {
       synced: false,
       syncedNow: false,
       multiplier: VERONIX_CREDIT_MULTIPLIER,
-      provider: isBytePlusConfigured() ? "byteplus" : "unconfigured",
+      provider:
+        isMiniMaxVideoConfigured() || isBytePlusConfigured()
+          ? "configured"
+          : "unconfigured",
       imageStudioEnabled: true,
       error: error instanceof Error ? error.message : "Catalog sync failed",
     });

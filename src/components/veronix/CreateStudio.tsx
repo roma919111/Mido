@@ -27,10 +27,17 @@ import {
   formOptionsForModel,
   IMAGE_MODELS,
   resolutionLabel,
-  VIDEO_CLARITY_LADDER,
   VIDEO_MODELS,
   type CatalogModel,
 } from "@/lib/model-catalog";
+import {
+  isSeedance2FamilyModel,
+  SEEDANCE_MINI_MODEL_ID,
+} from "@/lib/byteplus-constants";
+import {
+  normalizeMiniMaxH3Quality,
+  usesMiniMaxVideoBackend,
+} from "@/lib/minimax-pricing";
 import {
   FREE_VERONIX_DURATION_SECONDS,
   FREE_VERONIX_RESOLUTION,
@@ -61,8 +68,10 @@ import {
   formatStudioCountdownLabel,
 } from "@/lib/generate-eta";
 import { veronixRefImageSrc } from "@/lib/media-proxy";
-import { PIXVERSE_MODEL_ID } from "@/lib/pixverse-constants";
+import { PIXVERSE_MODEL_ID, PIXVERSE_NATIVE_MAX_DURATION, pixverseDurationMax } from "@/lib/pixverse-constants";
 import { normalizePixVerseQuality } from "@/lib/pixverse-pricing";
+import { FLUX_VIDEO_MODEL_ID } from "@/lib/flux-constants";
+import { normalizeFluxVideoQuality } from "@/lib/flux-pricing";
 import {
   clearEditDraft,
   clampEditDuration,
@@ -113,15 +122,20 @@ function generateWallMs(job: StudioJob): number {
   if (job.historyId?.startsWith("gm:") || job.historyId?.startsWith("mm:")) {
     return LONG_GENERATE_WALL_MS;
   }
+  if (job.historyId?.startsWith("pv:") && (job.targetSeconds || 0) > 15) {
+    return LONG_GENERATE_WALL_MS;
+  }
   return MAX_GENERATE_WALL_MS;
 }
 
 function studioMaxWallMs(jobs: StudioJob[]): number {
-  return jobs.some(
-    (j) => j.historyId?.startsWith("gm:") || j.historyId?.startsWith("mm:"),
-  )
-    ? LONG_GENERATE_WALL_MS
-    : MAX_GENERATE_WALL_MS;
+  if (jobs.some((j) => j.historyId?.startsWith("gm:") || j.historyId?.startsWith("mm:"))) {
+    return LONG_GENERATE_WALL_MS;
+  }
+  if (jobs.some((j) => j.historyId?.startsWith("pv:") && (j.targetSeconds || 0) > 15)) {
+    return LONG_GENERATE_WALL_MS;
+  }
+  return MAX_GENERATE_WALL_MS;
 }
 
 function mergeHydratedJobs(prev: StudioJob[], stored: StudioJob[]): StudioJob[] {
@@ -336,18 +350,17 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     media === "video" &&
     selectedModelId === PIXVERSE_MODEL_ID &&
     refVideos.length > 0;
+  const fluxVideoOn =
+    media === "video" && selectedModelId === FLUX_VIDEO_MODEL_ID;
   const videoAspectOptions =
-    selectedModelId === PIXVERSE_MODEL_ID
+    selectedModelId === PIXVERSE_MODEL_ID || selectedModelId === FLUX_VIDEO_MODEL_ID
       ? (["auto", ...VIDEO_ASPECTS] as const)
       : VIDEO_ASPECTS;
   const durationBounds = durationBoundsForModel(selectedModel);
   const formOptions = formOptionsForModel(selectedModel);
-  /** Paid Veronix: 480p / 720p only. */
-  const resolutionOptions =
-    selectedModelId === VERONIX_MODEL_ID && !freeSettingsLocked
-      ? [...VIDEO_CLARITY_LADDER]
-      : formOptions.resolutions;
-  /** Quote + API must use a tier this model actually supports (not stale Veronix 480p). */
+  const usesMiniMax = usesMiniMaxVideoBackend(selectedModelId);
+  const resolutionOptions = formOptions.resolutions;
+  /** Quote + API must use a tier this model actually supports. */
   const quotedVideoResolution = useMemo(() => {
     if (media !== "video") {
       return resolution || DEFAULT_IMAGE_RESOLUTION;
@@ -358,12 +371,20 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     if (selectedModelId === PIXVERSE_MODEL_ID) {
       return normalizePixVerseQuality(raw);
     }
+    if (selectedModelId === FLUX_VIDEO_MODEL_ID) {
+      const q = normalizeFluxVideoQuality(raw);
+      return q === "draft" ? "Draft" : q === "fhd" ? "FHD" : "HD";
+    }
+    if (usesMiniMax) {
+      return normalizeMiniMaxH3Quality(raw);
+    }
     return raw;
   }, [
     media,
     resolution,
     resolutionOptions,
     selectedModelId,
+    usesMiniMax,
     formOptions.resolutionDefault,
   ]);
   const localQuote = useMemo(
@@ -378,7 +399,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         duration: media === "video" ? duration : undefined,
         generateAudio: media === "video" ? generateAudio : undefined,
         hasVideoReferences:
-          selectedModelId === PIXVERSE_MODEL_ID && refVideos.length > 0,
+          (selectedModelId === PIXVERSE_MODEL_ID ||
+            selectedModelId === FLUX_VIDEO_MODEL_ID ||
+            isSeedance2FamilyModel(selectedModelId)) &&
+          refVideos.length > 0,
       }),
     [
       selectedModelId,
@@ -396,19 +420,24 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const requestCountPreview = freeTrial
     ? 1
     : Math.min(Math.max(1, Math.min(4, outputCount)), Math.max(slotsLeft, 1));
-  /** Paid Veronix: native 4–15s slider (1s steps). Free trial: locked 4s. */
+  /** Seedance Mini: native 4–15s slider. Vyronix/MiniMax: 1–15s from catalog. */
   const paidDurationMode = Boolean(
     media === "video" &&
-      selectedModelId === VERONIX_MODEL_ID &&
+      selectedModelId === SEEDANCE_MINI_MODEL_ID &&
       !freeTrial &&
       !freeSettingsLocked,
   );
   const sliderMin = paidDurationMode
     ? PAID_DURATION_MIN
     : durationBounds.min;
-  const sliderMax = paidDurationMode
-    ? PAID_DURATION_MAX
-    : durationBounds.max;
+  const sliderMax =
+    media === "video" &&
+    selectedModelId === PIXVERSE_MODEL_ID &&
+    !pixverseFusionOn
+      ? pixverseDurationMax()
+      : paidDurationMode
+        ? PAID_DURATION_MAX
+        : durationBounds.max;
 
   const applyVideoModelDefaults = (model: CatalogModel | null | undefined) => {
     if (restoreFromEditRef.current) return;
@@ -423,18 +452,17 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     if (freeLocked) {
       setDuration(FREE_VERONIX_DURATION_SECONDS);
       setResolution(FREE_VERONIX_RESOLUTION);
-      // Keep OpenArt audio for the free clip; stock intro also has sound.
-      setGenerateAudio(true);
+      setGenerateAudio(false);
       return;
     }
-    // Paid Veronix: default 5s. Slider goes 4 → 5 → … → 15.
+    // Paid Vyronix: default 5s. Slider follows MiniMax bounds (1–15s).
     setDuration(
       model.id === VERONIX_MODEL_ID
         ? DEFAULT_PAID_DURATION_SECONDS
         : options.duration.default || options.duration.max,
     );
     if (model.id === VERONIX_MODEL_ID) {
-      setResolution(options.resolutionDefault || "720p");
+      setResolution(options.resolutionDefault || "768P");
     } else if (options.resolutions.length) {
       const nextRes =
         options.resolutionDefault ||
@@ -565,6 +593,18 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     }
   }, [videoModels, imageModels, lockedMedia]);
 
+  // Deep link: /create/video?prompt=... or ?idea=...
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const sp = new URLSearchParams(window.location.search);
+    const promptParam = sp.get("prompt")?.trim() || sp.get("idea")?.trim();
+    if (!promptParam) return;
+    setPrompt(promptParam);
+    ["prompt", "idea"].forEach((k) => sp.delete(k));
+    const next = window.location.pathname + (sp.toString() ? `?${sp}` : "");
+    window.history.replaceState({}, "", next);
+  }, []);
+
   // Assets → Edit: re-select model once the live catalog finishes loading.
   useEffect(() => {
     if (!restoreFromEditRef.current) return;
@@ -650,9 +690,19 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                   a.status === "running"
                     ? (a.status as StudioJob["status"])
                     : j.status;
+                const hideUntilStitch =
+                  a.status === "running" &&
+                  (a.mode === "pixverse-verb-chain" ||
+                    a.mode === "pixverse-extend" ||
+                    (Number(a.targetSeconds || 0) > 15 &&
+                      Boolean(a.historyId?.startsWith("pv:"))));
                 return {
                   ...j,
-                  url: a.url || j.url,
+                  url: hideUntilStitch
+                    ? ""
+                    : a.status === "running"
+                      ? a.url || ""
+                      : a.url || j.url,
                   historyId: a.historyId || j.historyId,
                   assetId: a.id || j.assetId,
                   status,
@@ -689,6 +739,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 historyId: a.historyId,
                 status: "running",
                 startedAt: started,
+                assetId: a.id,
+                targetSeconds: inferTargetSecondsFromAsset(a),
               });
               return Date.now() - started < wallMs;
             });
@@ -774,7 +826,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             error:
               j.historyId?.startsWith("gm:") || j.historyId?.startsWith("mm:")
                 ? "انتهت مهلة التوليد (45 دقيقة) — تم إيقاف التوليد تلقائياً"
-                : "انتهت المهلة (10 دقائق) — تم إيقاف التوليد تلقائياً",
+                : j.historyId?.startsWith("pv:") && (j.targetSeconds || 0) > 15
+                  ? "انتهت مهلة المتابعة في الإنشاء — افتح الأصول؛ التوليد قد يكون ما زال جاريًا"
+                  : "انتهت المهلة (10 دقائق) — تم إيقاف التوليد تلقائياً",
           };
         });
         return changed ? next : prev;
@@ -886,13 +940,15 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     hasRunningJobs,
   ]);
 
-  // Drop legacy 1080p / 4K selections — Veronix only sells 480p / 720p.
+  // Keep resolution aligned with the active model tier ladder.
   useEffect(() => {
     if (media !== "video" || freeSettingsLocked) return;
     if (!resolutionOptions.length) return;
     if (!resolutionOptions.includes(resolution)) {
       setResolution(
-        formOptions.resolutionDefault || resolutionOptions[0] || "720p",
+        formOptions.resolutionDefault ||
+          resolutionOptions[0] ||
+          (usesMiniMaxVideoBackend(selectedModelId) ? "768P" : "720p"),
       );
     }
   }, [
@@ -901,6 +957,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     resolution,
     resolutionOptions,
     formOptions.resolutionDefault,
+    selectedModelId,
   ]);
 
   // Native 720p already meets the free upgrade target — never keep the checkbox on.
@@ -1616,9 +1673,15 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         if (!res.ok) return false;
         const st = String(data.status || "").toUpperCase();
         const url = data.urls?.[0];
-        if (url) {
+        if (data.note && st === "RUNNING") {
+          setStatus(data.note);
+        }
+        if (url && st === "COMPLETED") {
           await markCompleted(url, liveHistoryId);
           return true;
+        }
+        if (url && st === "RUNNING") {
+          return false;
         }
         if (st === "FAILED" || st === "CANCELLED") {
           const failMsg =
@@ -1656,6 +1719,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       clientId: clientId || "",
       url: "",
       mediaType,
+      assetId,
+      targetSeconds: countdownTargetSeconds,
     });
     const maxPollAttempts =
       mediaType === "video"
@@ -1671,13 +1736,17 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             error:
               liveHistoryId?.startsWith("gm:") || liveHistoryId?.startsWith("mm:")
                 ? "انتهت مهلة التوليد (45 دقيقة) — تم إيقاف التوليد تلقائياً"
-                : "انتهت المهلة (10 دقائق) — تم إيقاف التوليد تلقائياً",
+                : liveHistoryId?.startsWith("pv:") && countdownTargetSeconds > 15
+                  ? "انتهت مهلة المتابعة في الإنشاء — افتح الأصول؛ التوليد قد يكون ما زال جاريًا"
+                  : "انتهت المهلة (10 دقائق) — تم إيقاف التوليد تلقائياً",
           }),
         );
         setError(
           liveHistoryId?.startsWith("gm:") || liveHistoryId?.startsWith("mm:")
             ? "انتهت مهلة التوليد (45 دقيقة) — تم إيقاف التوليد تلقائياً"
-            : "انتهت المهلة (10 دقائق) — تم إيقاف التوليد تلقائياً",
+            : liveHistoryId?.startsWith("pv:") && countdownTargetSeconds > 15
+              ? "انتهت مهلة المتابعة في الإنشاء — افتح الأصول؛ التوليد قد يكون ما زال جاريًا"
+              : "انتهت المهلة (10 دقائق) — تم إيقاف التوليد تلقائياً",
         );
         setGenStartedAt(null);
         return;
@@ -1688,8 +1757,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         if (i % 2 === 0 && (await tryAssetReady())) return;
 
         const statusQs = new URLSearchParams();
+        if (assetId) statusQs.set("assetId", assetId);
         if (liveHistoryId) statusQs.set("historyId", liveHistoryId);
-        else if (assetId) statusQs.set("assetId", assetId);
         if (!liveHistoryId && !assetId) return;
         const { res, data } = await fetchJson<{
           status?: string;
@@ -1722,9 +1791,15 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         pollErrors = 0;
         const st = String(data.status || "").toUpperCase();
         const url = data.urls?.[0];
-        if (url) {
+        if (data.note && st === "RUNNING") {
+          setStatus(data.note);
+        }
+        if (url && st === "COMPLETED") {
           await markCompleted(url, liveHistoryId);
           return;
+        }
+        if (url && st === "RUNNING") {
+          continue;
         }
         if (st === "COMPLETED" && !url) {
           const failMsg =
@@ -1740,8 +1815,26 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           return;
         }
         if (st === "FAILED" || st === "CANCELLED") {
-          // BytePlus may fail an old historyId after privacy-retry; check DB asset first.
+          // A single PixVerse clip can fail while the 16–30s chain is still running.
           if (await tryAssetReady()) return;
+          if (assetId) {
+            try {
+              const peek = await fetchJson<{ status?: string; urls?: string[]; note?: string }>(
+                `/api/status?assetId=${encodeURIComponent(assetId)}`,
+              );
+              const peekSt = String(peek.data.status || "").toUpperCase();
+              if (peekSt === "RUNNING") {
+                if (peek.data.note) setStatus(peek.data.note);
+                continue;
+              }
+              if (peekSt === "COMPLETED" && peek.data.urls?.[0]) {
+                await markCompleted(peek.data.urls[0], liveHistoryId);
+                return;
+              }
+            } catch {
+              continue;
+            }
+          }
           const failMsg =
             data.creditsRefunded || data.note
               ? data.error?.includes("تم استرجاع")
@@ -1838,7 +1931,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       setShareNote(null);
       const result = await shareAsset(
         {
-          prompt: job.prompt || "Generated with Veronix.ai",
+          prompt: job.prompt || "Generated with Vyronix AI Studio",
           referralCode: user?.referralCode,
           locale,
         },
@@ -1864,22 +1957,25 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     referenceVideos?: VisualReference[];
     count?: number;
   }) {
-    const { res, data } = await fetchJson<{
-      error?: string;
-      needsAuth?: boolean;
-      needsPaywall?: boolean;
-      freeTrial?: boolean;
-      results?: Array<{
-        error?: string;
-        status?: string;
-        historyId?: string;
-        assetId?: string;
-        urls?: string[];
-        needsBrandOutro?: boolean;
-        creditsRefunded?: number;
-        note?: string;
-      }>;
-    }>("/api/create", {
+        const { res, data } = await fetchJson<{
+          error?: string;
+          needsAuth?: boolean;
+          needsPaywall?: boolean;
+          freeTrial?: boolean;
+          results?: Array<{
+            error?: string;
+            status?: string;
+            historyId?: string;
+            assetId?: string;
+            urls?: string[];
+            needsBrandOutro?: boolean;
+            creditsRefunded?: number;
+            note?: string;
+            tool?: string;
+            extend?: boolean;
+            targetSeconds?: number;
+          }>;
+        }>("/api/create", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({
@@ -1900,7 +1996,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         endFrame: input.endFrame ?? null,
         referenceImages: input.referenceImages ?? refs,
         referenceVideos:
-          selectedModelId === PIXVERSE_MODEL_ID ? refVideos : undefined,
+          selectedModelId === PIXVERSE_MODEL_ID ||
+          selectedModelId === FLUX_VIDEO_MODEL_ID
+            ? refVideos
+            : undefined,
         waitForResult: false,
         sequencePart: Boolean(input.sequencePart),
         count: Math.min(4, Math.max(1, Math.floor(input.count || 1))),
@@ -2062,7 +2161,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     setGenConfirmLoading(false);
     const sec = Math.min(
       sliderMax,
-      Math.max(sliderMin, script.totalSeconds || duration),
+      Math.max(sliderMin, duration),
     );
     setDuration(sec);
     setGenConfirmScript(null);
@@ -2276,12 +2375,18 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         const brand = Boolean(data.freeTrial || result.needsBrandOutro);
         const resultRunning =
           String(result.status || "").toLowerCase() === "running";
+        const waitingForExtend =
+          result.tool === "pixverse_video_extend" ||
+          result.tool === "pixverse_verb_chain" ||
+          Boolean(result.extend) ||
+          (selectedModelId === PIXVERSE_MODEL_ID &&
+            outputTargetSeconds > PIXVERSE_NATIVE_MAX_DURATION);
 
         if (assetId) {
           lockEtaStart(assetId, new Date(startedAt).toISOString());
         }
 
-        if (firstUrl) {
+        if (firstUrl && !waitingForExtend) {
           if (brand) {
             await applyBrandOutro({
               url: firstUrl,
@@ -2361,7 +2466,11 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
             }
           }
           completedCount += 1;
-        } else if (historyId || (assetId && (resultRunning || media === "image"))) {
+        } else if (
+          historyId ||
+          (assetId &&
+            (resultRunning || waitingForExtend || media === "image"))
+        ) {
           anyRunning = true;
           const runningPatch = {
             url: "",
@@ -2657,15 +2766,21 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         </div>
       )}
 
-      {media === "video" && selectedModelId === PIXVERSE_MODEL_ID && (
+      {media === "video" &&
+        (selectedModelId === PIXVERSE_MODEL_ID || fluxVideoOn) && (
         <div className="rounded-2xl border border-dashed border-[#7c5cff]/25 bg-[#141821] p-3 sm:p-4">
           <p className="mb-1 text-sm font-medium text-white/85">
             فيديو مرجعي{" "}
-            <span className="font-normal text-white/45">(Fusion · اختياري)</span>
+            <span className="font-normal text-white/45">
+              {selectedModelId === PIXVERSE_MODEL_ID
+                ? "(Fusion · اختياري)"
+                : "(استكمال FLUX · اختياري)"}
+            </span>
           </p>
           <p className="mb-2.5 text-[11px] leading-relaxed text-white/40">
-            حتى فيديوين · مجموع 15 ثانية كحد أقصى · المدة تُستمد تلقائياً من أطول
-            فيديو مرجعي (PixVerse Omni).
+            {selectedModelId === PIXVERSE_MODEL_ID
+              ? "حتى فيديوين · مجموع 15 ثانية كحد أقصى · المدة تُستمد تلقائياً من أطول فيديو مرجعي (PixVerse Omni)."
+              : "فيديو واحد يُستكمل من آخر إطاراته (FLUX v2v) — سعر أعلى من النص/الصورة. للصوت والحركة المتزامنة يكفي النص + صورة الشخصية."}
           </p>
           <div className="flex gap-2 overflow-x-auto pb-1">
             {refVideoPreviews.map((src, i) => (
@@ -2898,6 +3013,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               )}
               <span>{sliderMax}s</span>
             </div>
+            {selectedModelId === PIXVERSE_MODEL_ID &&
+            !pixverseFusionOn &&
+            duration > PIXVERSE_NATIVE_MAX_DURATION ? (
+              <p className="text-[11px] leading-snug text-[#b9a6ff]">
+                لـ 16–30 ثانية: مقطع 15 ثانية ثم تمديد رسمي من PixVerse (نفس الشخصيات والمكان)، ثم دمج
+                الفيديو النهائي فقط.
+              </p>
+            ) : null}
             {formOptions.audioSupported ? (
               <label className="mt-2 flex items-center gap-2 text-sm text-white/70">
                 <input
@@ -2907,7 +3030,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                   onChange={(e) => setGenerateAudio(e.target.checked)}
                 />
                 {t.create.audio}
-                {freeSettingsLocked ? (
+                {freeSettingsLocked && formOptions.audioSupported ? (
                   <span className="text-[10px] text-white/40">(مفعّل في التجربة المجانية)</span>
                 ) : null}
               </label>
@@ -2917,6 +3040,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
               </p>
             )}
             {!freeSettingsLocked &&
+            !usesMiniMax &&
             String(resolution).toLowerCase() !== "720p" ? (
               <label className="mt-2 flex items-center gap-2 text-sm text-white/70">
                 <input

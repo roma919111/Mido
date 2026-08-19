@@ -13,7 +13,7 @@ import {
   toBytePlusHistoryId,
   waitForBytePlusVideoTask,
 } from "@/lib/byteplus-ark";
-import { isSeedance2Configured, SEEDANCE_2_MODEL_ID } from "@/lib/byteplus-constants";
+import { isSeedance2Configured, isSeedance2FamilyModel, SEEDANCE_2_MODEL_ID, SEEDANCE_MINI_MODEL_ID } from "@/lib/byteplus-constants";
 import {
   createPixVerseVideoTask,
   createPixVerseFusionTask,
@@ -24,8 +24,19 @@ import {
   uploadPixVerseImage,
   uploadPixVerseVideo,
   waitForPixVerseVideoTask,
+  translatePixVerseError,
   type PixVerseFusionImageRef,
 } from "@/lib/pixverse";
+import {
+  ensurePixVerseExtendBackground,
+  needsPixVerseExtend,
+  splitPixVerseDuration,
+  startPixVerseClip,
+  PIXVERSE_EXTEND_MODE,
+  type PixVerseExtendJobMeta,
+} from "@/lib/pixverse-extend";
+import { pixverseDurationMax, PIXVERSE_NATIVE_MAX_DURATION } from "@/lib/pixverse-constants";
+import { isPixVerseModel } from "@/lib/pixverse-pricing";
 import {
   createGeminiVideoInteraction,
   finalizeGeminiVideoJob,
@@ -42,8 +53,31 @@ import {
   toMiniMaxHistoryId,
 } from "@/lib/minimax-video";
 import {
+  createKlingOmniVideoTask,
+  finalizeKlingVideoJob,
+  isKlingVideoConfigured,
+  KLING_OMNI_MODEL_ID,
+  toKlingHistoryId,
+} from "@/lib/kling-video";
+import {
+  clampKlingOmniDuration,
+  normalizeKlingOmniQuality,
+} from "@/lib/kling-pricing";
+import {
+  createFluxVideoTask,
+  finalizeFluxVideoJob,
+  isFluxVideoConfigured,
+  toFluxHistoryId,
+} from "@/lib/flux-video";
+import { FLUX_VIDEO_MODEL_ID } from "@/lib/flux-constants";
+import {
+  clampFluxVideoDuration,
+  normalizeFluxVideoQuality,
+} from "@/lib/flux-pricing";
+import {
   clampMiniMaxH3Duration,
   normalizeMiniMaxH3Quality,
+  usesMiniMaxVideoBackend,
 } from "@/lib/minimax-pricing";
 import {
   createBytePlusImage,
@@ -94,7 +128,7 @@ import { warmVideoPosterBackground } from "@/lib/poster-cache";
 import type { VisualReference } from "@/lib/types";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 800;
 
 /**
  * Persist character stills as stable `/generations/…` paths so Assets → Edit
@@ -218,12 +252,14 @@ export async function POST(request: Request) {
       !isBytePlusConfigured() &&
       !isPixVerseConfigured() &&
       !isGeminiVideoConfigured() &&
-      !isMiniMaxVideoConfigured()
+      !isMiniMaxVideoConfigured() &&
+      !isKlingVideoConfigured() &&
+      !isFluxVideoConfigured()
     ) {
       return NextResponse.json(
         {
           error:
-            "لا يوجد مزود فيديو مُعدّ على السيرفر (BytePlus / PixVerse / Gemini / MiniMax).",
+            "لا يوجد مزود فيديو مُعدّ على السيرفر (BytePlus / PixVerse / Gemini / MiniMax / Kling / FLUX).",
           provider: "video",
           needsOwnerSetup: true,
         },
@@ -422,11 +458,16 @@ export async function POST(request: Request) {
     const media = "video" as const;
     // Product: Veronix video — VYRONIX + optional PixVerse direct API.
     const allowedVideo: string[] = [];
-    if (isBytePlusConfigured()) allowedVideo.push(VERONIX_MODEL_ID);
+    if (isMiniMaxVideoConfigured()) {
+      allowedVideo.push(VERONIX_MODEL_ID);
+      allowedVideo.push(MINIMAX_H3_MODEL_ID);
+    }
+    if (isBytePlusConfigured()) allowedVideo.push(SEEDANCE_MINI_MODEL_ID);
     if (isSeedance2Configured()) allowedVideo.push(SEEDANCE_2_MODEL_ID);
     if (isPixVerseConfigured()) allowedVideo.push(PIXVERSE_MODEL_ID);
     if (isGeminiVideoConfigured()) allowedVideo.push(GEMINI_OMNI_FLASH_MODEL_ID);
-    if (isMiniMaxVideoConfigured()) allowedVideo.push(MINIMAX_H3_MODEL_ID);
+    if (isKlingVideoConfigured()) allowedVideo.push(KLING_OMNI_MODEL_ID);
+    if (isFluxVideoConfigured()) allowedVideo.push(FLUX_VIDEO_MODEL_ID);
     if (!allowedVideo.length) {
       return NextResponse.json(
         {
@@ -470,7 +511,9 @@ export async function POST(request: Request) {
               duration: body.duration,
               generateAudio: body.generateAudio,
               hasVideoReferences:
-                (modelId === PIXVERSE_MODEL_ID || modelId === SEEDANCE_2_MODEL_ID) &&
+                (modelId === PIXVERSE_MODEL_ID ||
+                  isSeedance2FamilyModel(modelId) ||
+                  modelId === FLUX_VIDEO_MODEL_ID) &&
                 Array.isArray(body.referenceVideos) &&
                 body.referenceVideos.some((r) => r?.url),
             },
@@ -556,18 +599,28 @@ export async function POST(request: Request) {
           ? normalizePixVerseQuality(
               body.resolution || catalog?.resolutionDefault || "720p",
             )
-          : quote.modelId === MINIMAX_H3_MODEL_ID
+          : usesMiniMaxVideoBackend(quote.modelId)
             ? normalizeMiniMaxH3Quality(
                 body.resolution || catalog?.resolutionDefault || "768p",
               )
-            : normalizeVideoResolution(
+            : quote.modelId === KLING_OMNI_MODEL_ID
+              ? normalizeKlingOmniQuality(
+                  body.resolution || catalog?.resolutionDefault || "720p",
+                )
+              : quote.modelId === FLUX_VIDEO_MODEL_ID
+                ? normalizeFluxVideoQuality(
+                    body.resolution || catalog?.resolutionDefault || "HD",
+                  )
+                : normalizeVideoResolution(
               body.resolution || catalog?.resolutionDefault || "720p",
             );
       const bounds = durationBoundsForModel(catalog);
       const requestedDuration = body.duration ?? bounds.max;
+      const isPixVerse = isPixVerseModel(quote.modelId, quote.mcpModel);
+      const durationCap = isPixVerse ? pixverseDurationMax() : bounds.max;
       const modelDuration = freeTrial
         ? FREE_VERONIX_MODEL_DURATION_SECONDS
-        : Math.min(bounds.max, Math.max(bounds.min, requestedDuration));
+        : Math.min(durationCap, Math.max(bounds.min, requestedDuration));
 
       const cleanPrompt = stripInternalPromptNotes(prompt);
       const savedRefs = sharedSavedRefs;
@@ -588,11 +641,16 @@ export async function POST(request: Request) {
         resolution: uiResolution,
         referenceImages: savedRefs,
         preferClarity,
-        generateAudio: freeTrial ? true : Boolean(body.generateAudio),
+        generateAudio:
+          freeTrial && usesMiniMaxVideoBackend(quote.modelId)
+            ? false
+            : freeTrial
+              ? true
+              : Boolean(body.generateAudio),
       });
 
       try {
-        if (quote.modelId === PIXVERSE_MODEL_ID) {
+        if (isPixVerse) {
           if (body.sequencePart) {
             throw new Error("PixVerse لا يدعم لقطات Multi-shot حالياً.");
           }
@@ -612,6 +670,78 @@ export async function POST(request: Request) {
           const charRefList = (
             Array.isArray(body.referenceImages) ? body.referenceImages : []
           ).filter((r): r is VisualReference => Boolean(r?.url));
+
+          if (
+            needsPixVerseExtend({
+              duration: modelDuration,
+              hasVideoReferences: videoRefList.length > 0,
+            })
+          ) {
+            const parts = splitPixVerseDuration(modelDuration);
+            const part1Sec = parts[0]!;
+            const part2Sec = parts[1] ?? PIXVERSE_NATIVE_MAX_DURATION;
+            if (parts.length < 2) {
+              throw new Error("PixVerse extend split failed");
+            }
+            console.info("[veronix] pixverse-extend start", {
+              assetId: asset.id,
+              requested: body.duration,
+              modelDuration,
+              partDurations: [part1Sec, part2Sec],
+            });
+            const startResolved = await ensurePlainRefUrl(body.startFrame);
+            const created = await startPixVerseClip({
+              prompt: cleanPrompt,
+              duration: part1Sec,
+              quality: pixQuality,
+              aspectRatio: body.aspectRatio,
+              generateAudio: Boolean(body.generateAudio),
+              startFrameUrl: startResolved || body.startFrame?.url,
+              characterRefs: charRefList,
+            });
+            const historyId = toPixVerseHistoryId(created.videoId);
+            const jobMeta: PixVerseExtendJobMeta = {
+              kind: "pixverse-extend",
+              prompt: cleanPrompt,
+              quality: pixQuality,
+              aspectRatio: body.aspectRatio,
+              generateAudio: Boolean(body.generateAudio),
+              durationSec: modelDuration,
+              partDurations: [part1Sec, part2Sec],
+              stage: "part1",
+              part1VideoId: created.videoId,
+              startFrameUrl: startResolved || body.startFrame?.url || null,
+            };
+            await updateAsset(asset.id, user.id, {
+              historyId,
+              url: "",
+              status: "running",
+              hidden: false,
+              referenceImages: savedRefs,
+              jobMeta,
+              mode: PIXVERSE_EXTEND_MODE,
+              targetSeconds: modelDuration,
+            });
+            after(() => {
+              ensurePixVerseExtendBackground(user.id, asset.id);
+            });
+            results.push({
+              assetId: asset.id,
+              modelId: quote.modelId,
+              historyId,
+              status: "running",
+              urls: [] as string[],
+              creditsUsed: quote.totalCredits,
+              freeTrial: false,
+              live: true,
+              provider: "pixverse",
+              tool: "pixverse_video_extend",
+              extend: true,
+              targetSeconds: modelDuration,
+              quote,
+            });
+            continue;
+          }
 
           const buildFusionImages = async (
             refs: VisualReference[],
@@ -637,7 +767,11 @@ export async function POST(request: Request) {
           if (videoRefList.length > 0) {
             const mediaIds: number[] = [];
             for (const vref of videoRefList) {
-              const resolved = await ensureBytePlusRefUrl(vref);
+              // Prefer original local /generations path — do not run image compressors on video.
+              const localUrl = vref.url?.trim() || "";
+              const resolved = localUrl.startsWith("/generations/")
+                ? localUrl
+                : (await ensurePlainRefUrl(vref)) || localUrl;
               mediaIds.push(await uploadPixVerseVideo(vref, resolved));
             }
 
@@ -829,7 +963,7 @@ export async function POST(request: Request) {
           continue;
         }
 
-        if (quote.modelId === MINIMAX_H3_MODEL_ID) {
+        if (usesMiniMaxVideoBackend(quote.modelId)) {
           if (body.sequencePart) {
             throw new Error("MiniMax H3 لا يدعم لقطات Multi-shot حالياً.");
           }
@@ -886,7 +1020,8 @@ export async function POST(request: Request) {
                 status: "completed",
                 urls: [fresh.url],
                 creditsUsed: quote.totalCredits,
-                freeTrial: false,
+                freeTrial,
+                needsBrandOutro: freeTrial && quote.modelId === VERONIX_MODEL_ID,
                 live: true,
                 provider: "minimax",
                 tool: "minimax_h3_video",
@@ -921,10 +1056,218 @@ export async function POST(request: Request) {
             status: "running",
             urls: [] as string[],
             creditsUsed: quote.totalCredits,
-            freeTrial: false,
+            freeTrial,
+            needsBrandOutro: freeTrial && quote.modelId === VERONIX_MODEL_ID,
             live: true,
             provider: "minimax",
             tool: "minimax_h3_video",
+            quote,
+          });
+          continue;
+        }
+
+        if (quote.modelId === KLING_OMNI_MODEL_ID) {
+          if (body.sequencePart) {
+            throw new Error("Kling 3.0 Omni لا يدعم لقطات Multi-shot حالياً.");
+          }
+
+          const klingDuration = clampKlingOmniDuration(modelDuration);
+          const klingQuality = normalizeKlingOmniQuality(
+            body.resolution || catalog?.resolutionDefault || "720p",
+          );
+          if (asset.resolution !== klingQuality) {
+            await updateAsset(asset.id, user.id, { resolution: klingQuality });
+          }
+
+          const refList = (
+            Array.isArray(body.referenceImages) ? body.referenceImages : []
+          ).filter((r): r is VisualReference => Boolean(r?.url));
+
+          const created = await createKlingOmniVideoTask({
+            prompt: cleanPrompt,
+            durationSec: klingDuration,
+            resolution: klingQuality,
+            aspectRatio: body.aspectRatio,
+            generateAudio: Boolean(body.generateAudio),
+            startFrame: body.startFrame,
+            endFrame: body.endFrame,
+            referenceImages: refList,
+          });
+
+          const historyId = toKlingHistoryId(created.taskId);
+          await updateAsset(asset.id, user.id, {
+            historyId,
+            url: "",
+            status: "running",
+            hidden: false,
+            referenceImages: savedRefs,
+            targetSeconds: klingDuration,
+          });
+
+          const runKlingJob = async () => {
+            await finalizeKlingVideoJob({
+              taskId: created.taskId,
+              historyId,
+              assetId: asset.id,
+              userId: user.id,
+            });
+          };
+
+          if (body.waitForResult === true) {
+            await runKlingJob();
+            const fresh = await findAssetById(user.id, asset.id);
+            if (fresh?.status === "completed" && fresh.url) {
+              results.push({
+                assetId: asset.id,
+                modelId: quote.modelId,
+                historyId,
+                status: "completed",
+                urls: [fresh.url],
+                creditsUsed: quote.totalCredits,
+                freeTrial: false,
+                live: true,
+                provider: "kling",
+                tool: "kling_3_omni_video",
+                quote,
+              });
+            } else {
+              results.push({
+                assetId: asset.id,
+                modelId: quote.modelId,
+                historyId,
+                status: "failed",
+                urls: [] as string[],
+                error: fresh?.error || "فشل توليد Kling 3.0 Omni",
+                creditsUsed: 0,
+                freeTrial: false,
+                provider: "kling",
+                tool: "kling_3_omni_video",
+                quote,
+              });
+            }
+            continue;
+          }
+
+          after(() => {
+            void runKlingJob();
+          });
+
+          results.push({
+            assetId: asset.id,
+            modelId: quote.modelId,
+            historyId,
+            status: "running",
+            urls: [] as string[],
+            creditsUsed: quote.totalCredits,
+            freeTrial: false,
+            live: true,
+            provider: "kling",
+            tool: "kling_3_omni_video",
+            quote,
+          });
+          continue;
+        }
+
+        if (quote.modelId === FLUX_VIDEO_MODEL_ID) {
+          if (body.sequencePart) {
+            throw new Error("FLUX 3 لا يدعم لقطات Multi-shot حالياً.");
+          }
+
+          const fluxDuration = clampFluxVideoDuration(modelDuration);
+          const fluxQuality = normalizeFluxVideoQuality(
+            body.resolution || catalog?.resolutionDefault || "HD",
+          );
+          if (asset.resolution !== fluxQuality) {
+            await updateAsset(asset.id, user.id, { resolution: fluxQuality });
+          }
+
+          const refList = (
+            Array.isArray(body.referenceImages) ? body.referenceImages : []
+          ).filter((r): r is VisualReference => Boolean(r?.url));
+          const videoList = (
+            Array.isArray(body.referenceVideos) ? body.referenceVideos : []
+          ).filter((r): r is VisualReference => Boolean(r?.url));
+
+          const created = await createFluxVideoTask({
+            prompt: cleanPrompt,
+            durationSec: fluxDuration,
+            resolution: fluxQuality,
+            aspectRatio: body.aspectRatio,
+            startFrame: body.startFrame,
+            endFrame: body.endFrame,
+            referenceImages: refList,
+            referenceVideos: videoList,
+          });
+
+          const historyId = toFluxHistoryId(created.taskId);
+          await updateAsset(asset.id, user.id, {
+            historyId,
+            url: "",
+            status: "running",
+            hidden: false,
+            referenceImages: savedRefs,
+            targetSeconds: fluxDuration,
+          });
+
+          const runFluxJob = async () => {
+            await finalizeFluxVideoJob({
+              taskId: created.taskId,
+              historyId,
+              assetId: asset.id,
+              userId: user.id,
+            });
+          };
+
+          if (body.waitForResult === true) {
+            await runFluxJob();
+            const fresh = await findAssetById(user.id, asset.id);
+            if (fresh?.status === "completed" && fresh.url) {
+              results.push({
+                assetId: asset.id,
+                modelId: quote.modelId,
+                historyId,
+                status: "completed",
+                urls: [fresh.url],
+                creditsUsed: quote.totalCredits,
+                freeTrial: false,
+                live: true,
+                provider: "bfl",
+                tool: "flux_3_video",
+                quote,
+              });
+            } else {
+              results.push({
+                assetId: asset.id,
+                modelId: quote.modelId,
+                historyId,
+                status: "failed",
+                urls: [] as string[],
+                error: fresh?.error || "فشل توليد FLUX 3",
+                creditsUsed: 0,
+                freeTrial: false,
+                provider: "bfl",
+                tool: "flux_3_video",
+                quote,
+              });
+            }
+            continue;
+          }
+
+          after(() => {
+            void runFluxJob();
+          });
+
+          results.push({
+            assetId: asset.id,
+            modelId: quote.modelId,
+            historyId,
+            status: "running",
+            urls: [] as string[],
+            creditsUsed: quote.totalCredits,
+            freeTrial: false,
+            live: true,
+            provider: "bfl",
+            tool: "flux_3_video",
             quote,
           });
           continue;
@@ -1131,6 +1474,10 @@ export async function POST(request: Request) {
             quote,
           });
           continue;
+        }
+
+        if (quote.modelId !== SEEDANCE_MINI_MODEL_ID) {
+          throw new Error(`الموديل ${quote.modelId} غير مدعوم على مزود BytePlus.`);
         }
 
         let startUrl = await ensureBytePlusRefUrl(body.startFrame);
@@ -1366,9 +1713,12 @@ export async function POST(request: Request) {
           quote,
         });
       } catch (err) {
-        const raw = err instanceof Error ? err.message : "Veronix generation failed";
-        const message = translateBytePlusError(raw);
-        console.error("[veronix] BytePlus generation failed (no OpenArt fallback):", raw);
+        const raw = err instanceof Error ? err.message : "generation failed";
+        const message = isPixVerse
+          ? translatePixVerseError(raw)
+          : translateBytePlusError(raw);
+        const provider = isPixVerse ? "pixverse" : "byteplus";
+        console.error(`[veronix] ${provider} generation failed:`, raw);
         if (freeTrial) {
           await updateAsset(asset.id, user.id, {
             status: "failed",
@@ -1381,7 +1731,7 @@ export async function POST(request: Request) {
             error: message,
             creditsUsed: 0,
             freeTrial,
-            provider: "byteplus",
+            provider,
           });
         } else {
           await updateAsset(asset.id, user.id, {
@@ -1400,7 +1750,7 @@ export async function POST(request: Request) {
             creditsRefunded: refund.refunded,
             note: "تم استرجاع الكريديت",
             freeTrial,
-            provider: "byteplus",
+            provider,
           });
         }
       }
