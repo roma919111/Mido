@@ -68,7 +68,12 @@ import {
   formatStudioCountdownLabel,
 } from "@/lib/generate-eta";
 import { veronixRefImageSrc } from "@/lib/media-proxy";
-import { PIXVERSE_MODEL_ID, PIXVERSE_NATIVE_MAX_DURATION, pixverseDurationMax } from "@/lib/pixverse-constants";
+import {
+  PIXVERSE_MODEL_ID,
+  PIXVERSE_NATIVE_MAX_DURATION,
+  pixverseDurationMax,
+  pixverseProductTagline,
+} from "@/lib/pixverse-constants";
 import { normalizePixVerseQuality } from "@/lib/pixverse-pricing";
 import { FLUX_VIDEO_MODEL_ID } from "@/lib/flux-constants";
 import { normalizeFluxVideoQuality } from "@/lib/flux-pricing";
@@ -2632,8 +2637,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         {selectedModel?.id === VERONIX_MODEL_ID ||
         selectedModel?.id === "vyronix-image" ? (
           <p className="mt-2 text-xs text-white/45">{t.create.createdBy}</p>
-        ) : selectedModel?.tagline ? (
-          <p className="mt-2 text-xs text-white/45">{selectedModel.tagline}</p>
+        ) : selectedModel?.tagline ||
+          selectedModel?.id === PIXVERSE_MODEL_ID ? (
+          <p className="mt-2 text-xs text-white/45">
+            {selectedModel!.id === PIXVERSE_MODEL_ID
+              ? pixverseProductTagline(selectedModel!.tagline)
+              : selectedModel!.tagline}
+          </p>
         ) : (
           <p className="mt-2 text-xs text-white/45">
             {locale === "en" ? "Pick one model only" : "اختيار موديل واحد فقط"}

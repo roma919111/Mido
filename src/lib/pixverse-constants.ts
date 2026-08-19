@@ -17,6 +17,16 @@ export function pixverseDurationMax(): number {
     : PIXVERSE_NATIVE_MAX_DURATION;
 }
 
+/** Customer-facing PixVerse V6 tagline (16–30s extend). */
+export const PIXVERSE_EXTEND_TAGLINE =
+  "PixVerse V6 — حتى 15ث مباشرة · 16–30ث تمديد رسمي 15+15 (نفس الشخصيات) ثم الدمج";
+
+export function pixverseProductTagline(fallback?: string | null): string {
+  return pixverseDurationMax() > 15
+    ? PIXVERSE_EXTEND_TAGLINE
+    : fallback || "PixVerse V6 — 360p / 540p / 720p / 1080p · 1–15s";
+}
+
 /** Your PixVerse pack: $10 = 2,000 provider credits. */
 export const PIXVERSE_PACK_USD = 10;
 export const PIXVERSE_PACK_CREDITS = 2_000;

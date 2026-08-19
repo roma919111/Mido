@@ -11,7 +11,10 @@ import { VERONIX_CREDIT_MULTIPLIER } from "@/lib/credit-quote";
 import { isBytePlusConfigured } from "@/lib/byteplus-ark";
 import { isSeedance2Configured, SEEDANCE_2_MODEL_ID, SEEDANCE_MINI_MODEL_ID } from "@/lib/byteplus-constants";
 import { isPixVerseConfigured, PIXVERSE_MODEL_ID } from "@/lib/pixverse";
-import { pixverseDurationMax } from "@/lib/pixverse-constants";
+import {
+  pixverseDurationMax,
+  pixverseProductTagline,
+} from "@/lib/pixverse-constants";
 import {
   GEMINI_OMNI_FLASH_MODEL_ID,
   isGeminiVideoConfigured,
@@ -109,10 +112,7 @@ function productCatalog(video: CatalogModel[], image: CatalogModel[]) {
         durationMin: 1,
         durationMax: pixverseDurationMax(),
         durationDefault: pixverse.durationDefault ?? 5,
-        tagline:
-          pixverseDurationMax() > 15
-            ? "PixVerse V6 — حتى 15ث مباشرة · 16–30ث تمديد رسمي 15+15 (نفس الشخصيات) ثم الدمج"
-            : pixverse.tagline,
+        tagline: pixverseProductTagline(pixverse.tagline),
       });
     }
   }

@@ -1,6 +1,9 @@
 import { VERONIX_MODEL_ID } from "@/lib/free-trial";
 import { SEEDANCE_MINI_MODEL_ID } from "@/lib/byteplus-constants";
-import { pixverseDurationMax } from "@/lib/pixverse-constants";
+import {
+  pixverseDurationMax,
+  pixverseProductTagline,
+} from "@/lib/pixverse-constants";
 
 export type ModelKind = "image" | "video";
 
@@ -361,10 +364,7 @@ const VIDEO_MODELS_BASE: CatalogModel[] = [
     audioSupported: true,
     audioDefault: false,
     audioParam: "generateAudio",
-    tagline:
-      pixverseDurationMax() > 15
-        ? "PixVerse V6 — حتى 15ث مباشرة · 16–30ث تمديد رسمي 15+15 (نفس الشخصيات) ثم الدمج"
-        : "PixVerse V6 — 360p / 540p / 720p / 1080p · 1–15s",
+    tagline: pixverseProductTagline(),
     available: true,
   },
   { id: "wan-2-7", name: "Wan 2.7", kind: "video", mcpId: "wan2-7", modes: ["text2video", "image2video", "element2video"], available: true },
