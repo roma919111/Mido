@@ -12,7 +12,7 @@ export function WhatsAppSupport() {
   const [href, setHref] = useState<string | null>(() => {
     const n = (process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "").replace(/\D/g, "");
     if (!n) return null;
-    return `https://wa.me/${n}?text=${encodeURIComponent("مرحباً، أحتاج دعم فني في Veronix.ai")}`;
+    return `https://wa.me/${n}?text=${encodeURIComponent("مرحباً، أحتاج دعم فني في Vyronix AI Studio")}`;
   });
 
   useEffect(() => {
@@ -26,7 +26,7 @@ export function WhatsAppSupport() {
         const n = String(data.whatsapp || "").replace(/\D/g, "");
         if (!n || cancelled) return;
         setHref(
-          `https://wa.me/${n}?text=${encodeURIComponent("مرحباً، أحتاج دعم فني في Veronix.ai")}`,
+          `https://wa.me/${n}?text=${encodeURIComponent("مرحباً، أحتاج دعم فني في Vyronix AI Studio")}`,
         );
       } catch {
         // hide until configured

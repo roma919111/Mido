@@ -1,5 +1,13 @@
 import Stripe from "stripe";
 import { getAppBaseUrl } from "@/lib/app-url";
+import {
+  MEDIA_PLAYER_ACTIVATE_PATH,
+  MEDIA_PLAYER_LANDING_PATH,
+  MEDIA_PLAYER_CURRENCY,
+  MEDIA_PLAYER_PRICE_SAR,
+  MEDIA_PLAYER_PRODUCT_NAME,
+  MEDIA_PLAYER_PRODUCT_NAME_AR,
+} from "@/lib/media-player-commerce";
 import { getPlan, getTopUp, type PlanId } from "@/lib/plans";
 import { loadStripeCredentials } from "@/lib/stripe-credentials";
 
@@ -157,6 +165,48 @@ export async function createTopUpCheckoutSession(input: {
       topUpId: pack.id,
       credits: String(pack.credits),
       kind: "topup",
+    },
+  });
+
+  if (!session.url) throw new Error("Stripe did not return a checkout URL");
+  return { url: session.url, sessionId: session.id };
+}
+
+export async function createMediaPlayerCheckoutSession(input: {
+  source?: string;
+}): Promise<{ url: string; sessionId: string }> {
+  const stripe = await getStripe();
+  const base = getAppBaseUrl();
+  const source = input.source?.trim().slice(0, 80) || "";
+
+  const session = await stripe.checkout.sessions.create({
+    mode: "subscription",
+    billing_address_collection: "auto",
+    line_items: [
+      {
+        quantity: 1,
+        price_data: {
+          currency: MEDIA_PLAYER_CURRENCY,
+          unit_amount: Math.round(MEDIA_PLAYER_PRICE_SAR * 100),
+          recurring: { interval: "year" },
+          product_data: {
+            name: MEDIA_PLAYER_PRODUCT_NAME,
+            description: `اشتراك سنوي 40 ريال سعودي — مشغّل ${MEDIA_PLAYER_PRODUCT_NAME_AR}`,
+          },
+        },
+      },
+    ],
+    success_url: `${base}${MEDIA_PLAYER_ACTIVATE_PATH}?paid=1&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${base}${MEDIA_PLAYER_LANDING_PATH}?canceled=1`,
+    metadata: {
+      kind: "media_player",
+      source,
+    },
+    subscription_data: {
+      metadata: {
+        kind: "media_player",
+        source,
+      },
     },
   });
 

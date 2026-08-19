@@ -18,6 +18,16 @@ import {
   parseMiniMaxHistoryId,
 } from "@/lib/minimax-video";
 import {
+  downloadKlingVideo,
+  getKlingVideoTask,
+  parseKlingHistoryId,
+} from "@/lib/kling-video";
+import {
+  downloadFluxVideo,
+  getFluxVideoTask,
+  parseFluxHistoryId,
+} from "@/lib/flux-video";
+import {
   extractVideoPart,
   getGeminiInteraction,
   mapGeminiInteractionStatus,
@@ -25,6 +35,8 @@ import {
   persistGeminiVideoFromInteraction,
 } from "@/lib/gemini-video";
 import { MINIMAX_HARD_FAIL_MS } from "@/lib/minimax-constants";
+import { KLING_HARD_FAIL_MS } from "@/lib/kling-constants";
+import { FLUX_HARD_FAIL_MS } from "@/lib/flux-constants";
 import { GEMINI_JOB_TIMEOUT_MS } from "@/lib/gemini-constants";
 import { recoverUserProviderAssets } from "@/lib/recover-provider-assets";
 import { getCurrentUser } from "@/lib/customer-auth";
@@ -50,6 +62,12 @@ import {
 import { refundFailedAssetCredits } from "@/lib/credit-refund";
 import { concatVideos } from "@/lib/video-stitch";
 import { tickUserMultiShotJobs, isMultiShotStillGenerating } from "@/lib/multi-shot-job";
+import {
+  ensurePixVerseExtendBackground,
+  isPixVerseExtendAsset,
+  tickPixVerseExtendJob,
+  tickUserPixVerseExtendJobs,
+} from "@/lib/pixverse-extend";
 import { estimateGenerateSeconds } from "@/lib/generate-eta";
 import { appendVyronixOutro } from "@/lib/veronix-outro";
 import { warmVideoPosterBackground } from "@/lib/poster-cache";
@@ -211,9 +229,21 @@ async function syncRunningAssets(userId: string, opts?: { includeRecover?: boole
   }
 
   const assets = await listAssetsForUser(userId, { includeHidden: true });
-  const running = assets.filter((a) => a.status === "running" && a.historyId).slice(0, 8);
+  const running = assets
+    .filter(
+      (a) =>
+        a.status === "running" &&
+        (a.historyId || isPixVerseExtendAsset(a)),
+    )
+    .slice(0, 8);
   for (const asset of running) {
     try {
+      if (isPixVerseExtendAsset(asset) && asset.status === "running") {
+        ensurePixVerseExtendBackground(userId, asset.id);
+        await tickPixVerseExtendJob(userId, asset);
+        continue;
+      }
+
       const mmId = parseMiniMaxHistoryId(asset.historyId || "");
       if (mmId) {
         const createdMs = Date.parse(asset.createdAt || "");
@@ -253,6 +283,88 @@ async function syncRunningAssets(userId: string, opts?: { includeRecover?: boole
             userId,
             assetId: asset.id,
             errorMessage: "انتهت مهلة MiniMax (90 دقيقة)",
+          });
+        }
+        continue;
+      }
+
+      const klId = parseKlingHistoryId(asset.historyId || "");
+      if (klId) {
+        const ageMs = assetAgeMs(asset.createdAt);
+
+        const task = await getKlingVideoTask(klId);
+        if (task.status === "COMPLETED" && task.remoteUrl) {
+          const localPath = await downloadKlingVideo(task.remoteUrl);
+          await updateAsset(asset.id, userId, {
+            url: localPath,
+            status: "completed",
+            error: undefined,
+            hidden: asset.mode === "sequence-part" ? true : false,
+          });
+          warmVideoPosterBackground({ url: localPath, historyId: asset.historyId });
+          continue;
+        }
+        if (task.status === "FAILED") {
+          const failMsg = task.error || "فشل توليد Kling 3.0 Omni";
+          await updateAsset(asset.id, userId, { status: "failed", error: failMsg });
+          await refundFailedAssetCredits({
+            userId,
+            assetId: asset.id,
+            errorMessage: failMsg,
+          });
+          continue;
+        }
+
+        if (ageMs > KLING_HARD_FAIL_MS) {
+          await updateAsset(asset.id, userId, {
+            status: "failed",
+            error: "انتهت مهلة Kling (60 دقيقة) — تم استرجاع الكريديت.",
+          });
+          await refundFailedAssetCredits({
+            userId,
+            assetId: asset.id,
+            errorMessage: "انتهت مهلة Kling (60 دقيقة)",
+          });
+        }
+        continue;
+      }
+
+      const flId = parseFluxHistoryId(asset.historyId || "");
+      if (flId) {
+        const ageMs = assetAgeMs(asset.createdAt);
+
+        const task = await getFluxVideoTask(flId);
+        if (task.status === "COMPLETED" && task.remoteUrl) {
+          const localPath = await downloadFluxVideo(task.remoteUrl);
+          await updateAsset(asset.id, userId, {
+            url: localPath,
+            status: "completed",
+            error: undefined,
+            hidden: asset.mode === "sequence-part" ? true : false,
+          });
+          warmVideoPosterBackground({ url: localPath, historyId: asset.historyId });
+          continue;
+        }
+        if (task.status === "FAILED") {
+          const failMsg = task.error || "فشل توليد FLUX 3";
+          await updateAsset(asset.id, userId, { status: "failed", error: failMsg });
+          await refundFailedAssetCredits({
+            userId,
+            assetId: asset.id,
+            errorMessage: failMsg,
+          });
+          continue;
+        }
+
+        if (ageMs > FLUX_HARD_FAIL_MS) {
+          await updateAsset(asset.id, userId, {
+            status: "failed",
+            error: "انتهت مهلة FLUX (60 دقيقة) — تم استرجاع الكريديت.",
+          });
+          await refundFailedAssetCredits({
+            userId,
+            assetId: asset.id,
+            errorMessage: "انتهت مهلة FLUX (60 دقيقة)",
           });
         }
         continue;
@@ -540,6 +652,7 @@ async function syncRunningAssets(userId: string, opts?: { includeRecover?: boole
   }
 
   for (const asset of assets.filter((a) => a.status === "running" && !a.historyId).slice(0, 4)) {
+    if (isPixVerseExtendAsset(asset)) continue;
     if (assetAgeMs(asset.createdAt) <= 10 * 60 * 1000) continue;
     const failMsg = "توقف التوليد — أعد المحاولة من الاستوديو";
     await updateAsset(asset.id, userId, { status: "failed", error: failMsg });
@@ -636,6 +749,7 @@ export async function GET(request: Request) {
     {
       const all = await listAssetsForUser(user.id, { includeHidden: true });
       await tickUserMultiShotJobs(user.id, all);
+      await tickUserPixVerseExtendJobs(user.id);
     }
     if (wantHeavy && syncIncludesStitch()) {
       await stitchPendingJobs(user.id);

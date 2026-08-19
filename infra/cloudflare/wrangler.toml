@@ -1,0 +1,14 @@
+name = "vyronix-player-origin-router"
+main = "player-origin-router.js"
+compatibility_date = "2026-08-16"
+workers_dev = false
+
+# Set real origins when deploying:
+#   npx wrangler deploy --config infra/cloudflare/wrangler.toml
+#   npx wrangler secret put STUDIO_ORIGIN
+#   npx wrangler secret put PLAYER_ORIGIN
+# Route in the Cloudflare dashboard: vyronix.app/*
+
+[vars]
+STUDIO_ORIGIN = "https://mido-production-5cd6.up.railway.app"
+PLAYER_ORIGIN = "https://maxmedia-production.up.railway.app"

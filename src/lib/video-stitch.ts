@@ -219,6 +219,46 @@ export async function cacheVideoLocally(
   }
 }
 
+export async function probeVideoDurationSeconds(
+  sourceUrl: string,
+): Promise<number | null> {
+  const work = await mkdtemp(path.join(tmpdir(), "vyronix-probe-"));
+  const videoPath = path.join(work, "in.mp4");
+  try {
+    await materializeVideo(sourceUrl, videoPath);
+    const out = await new Promise<string>((resolve, reject) => {
+      const child = spawn(
+        "ffprobe",
+        [
+          "-v",
+          "error",
+          "-show_entries",
+          "format=duration",
+          "-of",
+          "default=noprint_wrappers=1:nokey=1",
+          videoPath,
+        ],
+        { stdio: ["ignore", "pipe", "pipe"] },
+      );
+      let stdout = "";
+      child.stdout.on("data", (c: Buffer) => {
+        stdout += c.toString();
+      });
+      child.on("error", reject);
+      child.on("close", (code) => {
+        if (code === 0) resolve(stdout.trim());
+        else resolve("");
+      });
+    });
+    const n = Number.parseFloat(out);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  } finally {
+    await rm(work, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
 async function probeHasAudio(file: string): Promise<boolean> {
   const out = await new Promise<string>((resolve, reject) => {
     const child = spawn(
@@ -423,7 +463,11 @@ async function materializeVideo(sourceUrl: string, dest: string) {
  */
 export async function concatVideos(
   sourceUrls: string[],
-  options?: { maxSecondsPerClip?: number; clarity?: boolean },
+  options?: {
+    maxSecondsPerClip?: number;
+    maxTotalSeconds?: number;
+    clarity?: boolean;
+  },
 ): Promise<string> {
   if (sourceUrls.length < 1) throw new Error("No videos to concat");
   const maxSec =
@@ -508,9 +552,9 @@ export async function concatVideos(
             raw,
             ...trimArgs,
             "-vf",
-            vf,
+            `${vf},setpts=PTS-STARTPTS`,
             "-af",
-            "aformat=sample_rates=44100:channel_layouts=stereo",
+            "aformat=sample_rates=44100:channel_layouts=stereo,asetpts=PTS-STARTPTS",
             "-c:v",
             "libx264",
             "-preset",
@@ -523,21 +567,31 @@ export async function concatVideos(
             "44100",
             "-ac",
             "2",
+            "-movflags",
+            "+faststart",
             norm,
           ]);
         } else {
+          const silenceDur = maxSec > 0 ? String(maxSec) : "30";
           await run("ffmpeg", [
             "-y",
             "-i",
             raw,
-            ...trimArgs,
             "-f",
             "lavfi",
+            "-t",
+            silenceDur,
             "-i",
             "anullsrc=channel_layout=stereo:sample_rate=44100",
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
             "-vf",
-            vf,
-            "-shortest",
+            `${vf},setpts=PTS-STARTPTS`,
+            "-af",
+            "aformat=sample_rates=44100:channel_layouts=stereo,asetpts=PTS-STARTPTS",
+            ...(maxSec > 0 ? ["-t", String(maxSec)] : ["-shortest"]),
             "-c:v",
             "libx264",
             "-preset",
@@ -550,6 +604,8 @@ export async function concatVideos(
             "44100",
             "-ac",
             "2",
+            "-movflags",
+            "+faststart",
             norm,
           ]);
         }
@@ -564,14 +620,19 @@ export async function concatVideos(
         "-y",
         "-i",
         raw,
-        ...trimArgs,
         "-f",
         "lavfi",
+        "-t",
+        maxSec > 0 ? String(maxSec) : "30",
         "-i",
         "anullsrc=channel_layout=stereo:sample_rate=44100",
+        "-map",
+        "0:v:0",
+        "-map",
+        "1:a:0",
         "-vf",
-        `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p`,
-        "-shortest",
+        `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p,setpts=PTS-STARTPTS`,
+        ...(maxSec > 0 ? ["-t", String(maxSec)] : ["-shortest"]),
         "-c:v",
         "libx264",
         "-preset",
@@ -606,8 +667,14 @@ export async function concatVideos(
 
     const finalTmp = path.join(work, "final.mp4");
     const inputs = norms.flatMap((n) => ["-i", n]);
-    const labels = norms.map((_, i) => `[${i}:v][${i}:a]`).join("");
-    const filter = `${labels}concat=n=${norms.length}:v=1:a=1[v][a]`;
+    const reset = norms
+      .map(
+        (_, i) =>
+          `[${i}:v]setpts=PTS-STARTPTS[v${i}];[${i}:a]asetpts=PTS-STARTPTS[a${i}];`,
+      )
+      .join("");
+    const concatIn = norms.map((_, i) => `[v${i}][a${i}]`).join("");
+    const filter = `${reset}${concatIn}concat=n=${norms.length}:v=1:a=1[v][a]`;
 
     try {
       await run("ffmpeg", [
@@ -658,8 +725,36 @@ export async function concatVideos(
       ]);
     }
 
+    const maxTotal =
+      typeof options?.maxTotalSeconds === "number" && options.maxTotalSeconds > 0
+        ? options.maxTotalSeconds
+        : 0;
+    let output = finalTmp;
+    if (maxTotal > 0) {
+      const trimmed = path.join(work, "trim-total.mp4");
+      await run("ffmpeg", [
+        "-y",
+        "-i",
+        finalTmp,
+        "-t",
+        String(maxTotal),
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-movflags",
+        "+faststart",
+        trimmed,
+      ]);
+      output = trimmed;
+    }
+
     // Clarity already applied in per-clip normalize (eq/unsharp). Avoid a second pass.
-    await copyFile(finalTmp, outPublic);
+    await copyFile(output, outPublic);
     const st = await stat(outPublic);
     if (st.size < 2000) throw new Error("Concat output too small");
     return `/generations/${id}.mp4`;

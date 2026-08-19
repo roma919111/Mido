@@ -85,7 +85,14 @@ function looksLikeAuth(raw: string): boolean {
 
 function looksLikeQuota(raw: string): boolean {
   const t = raw.toLowerCase();
-  return t.includes("quota") || t.includes("insufficient") || t.includes("balance") || t.includes("billing");
+  return (
+    t.includes("quota") ||
+    t.includes("insufficient") ||
+    t.includes("balance") ||
+    t.includes("billing") ||
+    t.includes("accountoverdue") ||
+    t.includes("overdue balance")
+  );
 }
 
 export function translateGeminiError(input: unknown, fallback = "فشل توليد Gemini"): string {
@@ -141,10 +148,21 @@ export function translateBytePlusError(input: unknown, fallback = "فشل إنش
   }
 
   if (looksLikeAuth(text)) {
+    const lower = text.toLowerCase();
+    if (
+      lower.includes("api key format is incorrect") ||
+      lower.includes("authenticationerror")
+    ) {
+      return "مفتاح Seedance/Veronix على السيرفر غير صالح (صيغة المفتاح خاطئة). أنشئ ARK API Key من BytePlus → ModelArk → API Key Management ثم حدّث BYTEPLUS_API_KEY و BYTEPLUS_SEEDANCE_2_API_KEY على Railway.";
+    }
     return "مشكلة مصادقة أو صلاحيات مع Veronix. راجع إعدادات المفتاح لدى المسؤول.";
   }
 
   if (looksLikeQuota(text)) {
+    const lower = text.toLowerCase();
+    if (lower.includes("accountoverdue") || lower.includes("overdue balance")) {
+      return "حساب BytePlus (Seedance) عليه رصيد متأخر — سدّد الفاتورة من console.byteplus.com ثم أعد المحاولة.";
+    }
     return "رصيد أو حصة Veronix غير كافية. راجع الفوترة لدى المسؤول.";
   }
 

@@ -7,6 +7,15 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: { absolute: t.meta.titleDefault },
     description: t.meta.description,
+    keywords: [
+      "vyronix",
+      "veronix",
+      "kling ai",
+      "pixverse v6",
+      "ai video generator",
+      "text to video",
+      "free ai video",
+    ],
     alternates: {
       canonical: "https://vyronix.app/",
       languages: {
@@ -27,6 +36,12 @@ export default async function HomePage() {
   const { t, dir } = await getRequestDictionary();
   return (
     <>
+      <link
+        rel="preload"
+        as="image"
+        href="/promo/poster-lcp.jpg"
+        fetchPriority="high"
+      />
       {/* Server-rendered crawlable content for Google (complements the client studio UI). */}
       <section className="sr-only" aria-hidden={false} dir={dir}>
         <h1>{t.meta.homeH1}</h1>
@@ -41,6 +56,11 @@ export default async function HomePage() {
         <a href="/models">{t.models.title}</a>
         <a href="/create/video">{t.create.videoTitle}</a>
         <a href="/create/image">{t.create.imageTitle}</a>
+        <a href="/edit">{t.seoPages.editTitle}</a>
+        <a href="/ai-video-generator">{t.seoLandings.aiVideo}</a>
+        <a href="/ai-image-generator">{t.seoLandings.aiImage}</a>
+        <a href="/text-to-video">{t.seoLandings.textToVideo}</a>
+        <a href="/ai-video-editor">{t.seoLandings.aiEditor}</a>
         <a href="/about">{t.footer.about}</a>
         <a href="/faq">{t.footer.faq}</a>
         <a href="/contact">{t.footer.contact}</a>

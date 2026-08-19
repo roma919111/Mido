@@ -19,6 +19,8 @@ import { inferTargetSecondsFromAsset } from "@/lib/generate-eta";
 import { useRouter } from "next/navigation";
 import { GenerateClock } from "@/components/veronix/GenerateClock";
 import { useLocale } from "@/components/veronix/LocaleProvider";
+import { useCustomerUser } from "@/hooks/useCustomerUser";
+import { canUseEditStudio } from "@/lib/plans";
 
 function jobVisualEqual(a: StudioJob, b: StudioJob): boolean {
   return (
@@ -45,6 +47,7 @@ const ResultCard = memo(function ResultCard({
 }) {
   const router = useRouter();
   const { t } = useLocale();
+  const { user } = useCustomerUser();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [editing, setEditing] = useState(false);
   const [sendingStudio, setSendingStudio] = useState(false);
@@ -249,6 +252,10 @@ const ResultCard = memo(function ResultCard({
 
   const handleSendToStudio = () => {
     if (sendingStudio || waiting || !mediaUrl || job.mediaType !== "video") return;
+    if (!canUseEditStudio(user?.planId)) {
+      router.push("/pricing?feature=edit");
+      return;
+    }
     setSendingStudio(true);
     try {
       sendVideoToEditStudio(router, {

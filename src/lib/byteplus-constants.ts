@@ -1,8 +1,18 @@
 /** Catalog + Ark model ids for BytePlus Seedance variants. */
 
-import { VERONIX_MODEL_ID } from "@/lib/free-trial";
-
+export const SEEDANCE_MINI_MODEL_ID = "seedance-2-mini";
 export const SEEDANCE_2_MODEL_ID = "seedance-2";
+export const SEEDANCE_2_FAST_MODEL_ID = "seedance-2-fast";
+
+/** Seedance 2.0 full + Fast share the same BytePlus pricing ladder. */
+export function isSeedance2FamilyModel(modelId?: string | null): boolean {
+  const id = String(modelId || "").toLowerCase();
+  return (
+    id === SEEDANCE_2_MODEL_ID ||
+    id === SEEDANCE_2_FAST_MODEL_ID ||
+    id === "seedance-2"
+  );
+}
 
 export const SEEDANCE_MINI_ARK_MODEL = "dreamina-seedance-2-0-mini-260615";
 export const SEEDANCE_2_ARK_MODEL = "dreamina-seedance-2-0-260128";
@@ -15,7 +25,7 @@ export function getBytePlusArkModelId(catalogModelId?: string | null): string {
       SEEDANCE_2_ARK_MODEL
     );
   }
-  if (catalogModelId === VERONIX_MODEL_ID) {
+  if (catalogModelId === SEEDANCE_MINI_MODEL_ID) {
     return (
       process.env.BYTEPLUS_VIDEO_MODEL?.trim() ||
       process.env.ARK_VIDEO_MODEL?.trim() ||

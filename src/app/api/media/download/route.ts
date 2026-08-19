@@ -4,7 +4,10 @@ import { NextResponse } from "next/server";
 import { Readable } from "node:stream";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { isAllowedMediaHost } from "@/lib/media-proxy";
-import { resolveHistoryVideoUrl } from "@/lib/resolve-history-url";
+import {
+  resolveHistoryVideoUrl,
+  resolveLocalFileForHistory,
+} from "@/lib/resolve-history-url";
 import { resolveGenerationFile } from "@/lib/veronix-outro";
 
 export const runtime = "nodejs";
@@ -21,7 +24,10 @@ function safeFilename(name: string | null, mediaType: "image" | "video") {
   return cleaned;
 }
 
-async function resolveSource(request: Request): Promise<{
+async function resolveSource(
+  request: Request,
+  userId?: string,
+): Promise<{
   kind: "remote" | "local";
   url?: string;
   filePath?: string;
@@ -42,6 +48,12 @@ async function resolveSource(request: Request): Promise<{
 
   const historyId = searchParams.get("historyId")?.trim();
   if (historyId) {
+    const stitched = userId
+      ? await resolveLocalFileForHistory(userId, historyId)
+      : null;
+    if (stitched) {
+      return { kind: "local", filePath: stitched, mediaType, filename };
+    }
     const url = await resolveHistoryVideoUrl(historyId);
     if (!url) return null;
     return { kind: "remote", url, mediaType, filename };
@@ -73,7 +85,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const source = await resolveSource(request);
+    const source = await resolveSource(request, user.id);
     if (!source) {
       return NextResponse.json({ error: "Media not ready" }, { status: 404 });
     }

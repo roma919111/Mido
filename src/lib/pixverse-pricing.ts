@@ -10,7 +10,13 @@ import {
   normalizePricingQuality,
   type VideoQuality,
 } from "@/config/modelPricing";
-import { PIXVERSE_MODEL_ID } from "@/lib/pixverse-constants";
+import { VERONIX_PROFIT_MARKUP } from "@/lib/byteplus-pricing";
+import {
+  lookupPixverseApiCreditsPerSec,
+  pixverseDurationMax,
+  PIXVERSE_MODEL_ID,
+  PIXVERSE_USD_PER_API_CREDIT,
+} from "@/lib/pixverse-constants";
 
 export type PixVerseQuality = VideoQuality;
 
@@ -35,7 +41,7 @@ export function normalizePixVerseQuality(
 
 export function clampPixVerseDuration(duration?: number | null): number {
   const n = Math.round(Number(duration) || 5);
-  return Math.max(1, Math.min(15, Number.isFinite(n) ? n : 5));
+  return Math.max(1, Math.min(pixverseDurationMax(), Number.isFinite(n) ? n : 5));
 }
 
 export function pixVerseCreditsPerSecond(input: {
@@ -105,6 +111,14 @@ export function quotePixVerseVideoBreakdown(input: {
     videoCount: count,
   });
 
+  const apiPerSec = lookupPixverseApiCreditsPerSec({
+    quality,
+    generateAudio,
+    hasVideoReferences,
+  });
+  const apiCredits = apiPerSec * durationSec * count;
+  const costUsd = apiCredits * PIXVERSE_USD_PER_API_CREDIT;
+
   const clarityCredits = clarityPerSec * durationSec * count;
   const audioCredits = audioPerSec * durationSec * count;
   const videoRefCredits = videoRefPerSec * durationSec * count;
@@ -116,9 +130,9 @@ export function quotePixVerseVideoBreakdown(input: {
     clarityCredits,
     audioCredits,
     videoRefCredits,
-    apiCredits: clarityCredits + audioCredits + videoRefCredits,
+    apiCredits,
     walletCredits,
-    costUsd: walletCredits * CREDIT_USD,
+    costUsd,
     sellUsd: walletCredits * CREDIT_USD,
   };
 }
@@ -151,8 +165,8 @@ export function formatPixVersePricingNote(
       ? `صوت ${Math.round(breakdown.audioCredits)}`
       : null,
     breakdown.videoRefCredits > 0
-      ? `فيديو ${Math.round(breakdown.videoRefCredits)}`
+      ? `فيديو مرجعي ${Math.round(breakdown.videoRefCredits)}`
       : null,
   ].filter(Boolean);
-  return `PixVerse: ${parts.join(" + ")} = ${breakdown.walletCredits} كريدت (${breakdown.creditsPerSecond}/ث)`;
+  return `PixVerse V6: ${parts.join(" + ")} = ${breakdown.walletCredits} كريدت (${breakdown.creditsPerSecond}/ث · API ${breakdown.apiCredits} × $${PIXVERSE_USD_PER_API_CREDIT.toFixed(3)} × ${VERONIX_PROFIT_MARKUP})`;
 }

@@ -223,6 +223,7 @@ select option {
   background: rgba(0, 0, 0, 0.35);
   color: #fff;
   font-size: 0.95rem;
+  color-scheme: dark;
 }
 
 .iptv-login__btn {
@@ -448,7 +449,7 @@ select option {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 16px 20px;
+  padding: max(12px, env(safe-area-inset-top)) 16px 12px;
   background: rgba(0, 0, 0, 0.85);
 }
 
@@ -459,14 +460,269 @@ select option {
   padding: 10px 14px;
   border-radius: 8px;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .iptv-player__title {
   font-weight: 700;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.iptv-player__zap {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.iptv-player__zap button {
+  border: none;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.iptv-player__zap button:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .iptv-player__video {
   flex: 1;
   width: 100%;
   background: #000;
+}
+
+.iptv-player__status,
+.iptv-player__error {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.iptv-player__tap {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-size: 1.05rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.iptv-popcorn {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background:
+    radial-gradient(circle at 50% 30%, rgba(120, 40, 20, 0.45), transparent 55%),
+    #120806;
+  padding: 24px;
+  text-align: center;
+}
+
+.iptv-popcorn__bucket {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  display: grid;
+  place-items: center;
+}
+
+.iptv-popcorn__bucket-art {
+  font-size: 9rem;
+  line-height: 1;
+  filter: drop-shadow(0 18px 24px rgba(0, 0, 0, 0.45));
+}
+
+.iptv-popcorn__count {
+  position: absolute;
+  inset: 58% 0 auto;
+  font-size: 3.4rem;
+  font-weight: 800;
+  color: #fff8e8;
+  text-shadow: 0 2px 0 #7a2a12, 0 8px 18px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+.iptv-popcorn__kernel {
+  position: absolute;
+  font-size: 1.8rem;
+  animation: iptv-pop 1.6s ease-in-out infinite;
+}
+
+.iptv-popcorn__kernel--a {
+  top: 6px;
+  left: 18px;
+  animation-delay: 0s;
+}
+
+.iptv-popcorn__kernel--b {
+  top: 0;
+  right: 22px;
+  animation-delay: 0.4s;
+}
+
+.iptv-popcorn__kernel--c {
+  top: 28px;
+  right: 4px;
+  animation-delay: 0.8s;
+}
+
+.iptv-popcorn__line {
+  margin: 0;
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: #ffe7b0;
+  min-height: 2em;
+}
+
+.iptv-popcorn__hint {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.95rem;
+}
+
+@keyframes iptv-pop {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-8deg);
+  }
+  50% {
+    transform: translateY(-14px) rotate(10deg);
+  }
+}
+
+.maxvr-gate {
+  max-width: 460px;
+}
+
+.maxvr-gate__block {
+  margin-bottom: 14px;
+}
+
+.maxvr-gate__label {
+  display: block;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+  margin-bottom: 6px;
+}
+
+.maxvr-gate__row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.maxvr-gate__value {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.maxvr-gate__value--pin {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-align: center;
+}
+
+.maxvr-gate__input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  color: #fff;
+  box-sizing: border-box;
+}
+
+.maxvr-gate__input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.maxvr-gate__copy {
+  border: none;
+  background: rgba(0, 180, 255, 0.2);
+  color: #fff;
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  min-height: 44px;
+}
+
+@media (max-width: 640px) {
+  .maxvr-gate {
+    max-width: 100%;
+  }
+
+  .maxvr-gate__value--pin {
+    font-size: 22px;
+    letter-spacing: 0.12em;
+  }
+}
+
+.maxvr-gate__whatsapp {
+  display: block;
+  text-align: center;
+  margin: 16px 0 10px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: #25d366;
+  color: #04210f;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.maxvr-gate__hint,
+.maxvr-gate__waiting {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+  text-align: center;
+  line-height: 1.5;
+}
+
+.maxvr-gate__check {
+  margin-top: 8px;
+}
+
+.maxvr-gate__paid {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(34, 197, 94, 0.16);
+  border: 1px solid rgba(74, 222, 128, 0.35);
+  color: #bbf7d0;
+  font-size: 14px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.maxvr-admin-form .iptv-field span {
+  color: rgba(255, 255, 255, 0.7);
 }

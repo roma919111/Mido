@@ -49,6 +49,16 @@ function yieldFeatures(credits: number): string[] {
   return [`${toArabicIndic(images)} صورة`, `${toArabicIndic(videos)} فيديو`];
 }
 
+/** Perks shown only on Ultra (pro) in pricing — editing studio bundle. */
+const ULTRA_EDIT_STUDIO_FEATURES: string[] = [
+  "استوديو الإيديتينج — حصري للترا",
+  "قص الفيديو ودمج المقاطع على الخط الزمني",
+  "فلاتر سينمائية وتغيير نسبة العرض",
+  "استخراج الحوار والترجمة التلقائية",
+  "تصدير MP4 على جهازك (بدون رفع على السيرفر)",
+  "نقل المقاطع من الأصول إلى الاستوديو",
+];
+
 /**
  * Plan credits follow wallet standard: $1 = 1,000 credits (1 credit = $0.001).
  * Feature counts assume 4s · 480p video and images at +55% markup.
@@ -75,8 +85,8 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     name: "الترا",
     priceUsd: 15,
     monthlyCredits: creditsForUsd(15),
-    description: "أعلى باقة لصنّاع المحتوى بكثافة عالية — وضوح 480p و720p.",
-    features: yieldFeatures(creditsForUsd(15)),
+    description: "أعلى باقة لصنّاع المحتوى — كريدت أكثر + استوديو إيديتينج كامل.",
+    features: [...yieldFeatures(creditsForUsd(15)), ...ULTRA_EDIT_STUDIO_FEATURES],
     highlight: true,
   },
 ];
@@ -153,6 +163,11 @@ export function getPlanRank(id: string | null | undefined): number {
 }
 
 export function isHighestPlan(id: string | null | undefined): boolean {
+  return normalizePlanId(id) === "pro";
+}
+
+/** Editing studio (/edit) — Ultra (pro) subscribers only. */
+export function canUseEditStudio(id: string | null | undefined): boolean {
   return normalizePlanId(id) === "pro";
 }
 

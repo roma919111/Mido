@@ -1,8 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { Suspense } from "react";
 import { BrandLogo } from "@/components/BrandLogo";
 import { useLocale } from "@/components/veronix/LocaleProvider";
+import { ModelLogoGrid } from "@/components/veronix/ModelLogoGrid";
+import { SocialLinks } from "@/components/veronix/SocialLinks";
 
 export function SiteFooter() {
   const { t, dir } = useLocale();
@@ -13,6 +16,8 @@ export function SiteFooter() {
     { href: "/privacy", label: t.footer.privacy },
     { href: "/terms", label: t.footer.terms },
     { href: "/models", label: t.footer.models },
+    { href: "/ai-video-generator", label: t.seoLandings.aiVideo },
+    { href: "/ai-image-generator", label: t.seoLandings.aiImage },
     { href: "/invite", label: t.nav.invite },
     { href: "/pricing", label: t.footer.pricing },
   ];
@@ -36,6 +41,10 @@ export function SiteFooter() {
             >
               support@vyronix.app
             </a>
+            <SocialLinks className="mt-4" />
+            <Suspense fallback={<div className="mt-4 h-16" aria-hidden />}>
+              <ModelLogoGrid />
+            </Suspense>
           </div>
           <nav className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-white/55">
             {links.map((link) => (
@@ -50,7 +59,7 @@ export function SiteFooter() {
           </nav>
         </div>
         <p className="text-xs text-white/30">
-          © {new Date().getFullYear()} Veronix.ai · vyronix.app · {t.footer.rights}
+          © {new Date().getFullYear()} Vyronix AI Studio · vyronix.app · {t.footer.rights}
         </p>
       </div>
     </footer>

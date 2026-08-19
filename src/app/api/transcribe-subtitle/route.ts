@@ -4,6 +4,7 @@ import {
   extractClipAudioFromSource,
   resolveClipVideoSource,
 } from "@/lib/extract-clip-audio-server";
+import { canUseEditStudio } from "@/lib/plans";
 import { transcribeClipDialogue, type TranscribeMode } from "@/lib/transcribe-subtitle";
 import { serverFfmpegEnabled } from "@/lib/server-load-policy";
 
@@ -28,6 +29,9 @@ export async function POST(request: Request) {
     const user = await getCurrentUser();
     if (!user) {
       return NextResponse.json({ error: "Login required" }, { status: 401 });
+    }
+    if (!canUseEditStudio(user.planId)) {
+      return NextResponse.json({ error: "ultra_required" }, { status: 403 });
     }
 
     const body = (await request.json()) as Body;

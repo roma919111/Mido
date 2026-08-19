@@ -1,9 +1,12 @@
 import type { CatalogModel } from "@/lib/model-catalog";
 import { VIDEO_MODELS } from "@/lib/model-catalog";
 import { VERONIX_MODEL_ID } from "@/lib/free-trial";
+import { SEEDANCE_MINI_MODEL_ID } from "@/lib/byteplus-constants";
 import { PIXVERSE_MODEL_ID } from "@/lib/pixverse-constants";
 import { GEMINI_OMNI_FLASH_MODEL_ID } from "@/lib/gemini-constants";
 import { MINIMAX_H3_MODEL_ID } from "@/lib/minimax-constants";
+import { KLING_OMNI_MODEL_ID } from "@/lib/kling-constants";
+import { FLUX_VIDEO_MODEL_ID } from "@/lib/flux-constants";
 
 export type ModelProviderKey =
   | "vyronix"
@@ -25,16 +28,16 @@ export type ModelProviderKey =
   | "generic";
 
 const PROVIDER_LOGOS: Record<ModelProviderKey, string> = {
-  vyronix: "/models/vyronix.svg",
-  seedance: "/models/seedance.svg",
-  pixverse: "/models/pixverse.png",
-  minimax: "/icons/minimax.svg",
-  kling: "/models/kling.svg",
+  vyronix: "/models/vyronix-icon-128.png?v=7",
+  seedance: "/models/seedance.jpg?v=3",
+  pixverse: "/models/pixverse-icon-128.png?v=3",
+  minimax: "/models/minimax.jpg?v=1",
+  kling: "/models/kling.png",
   gemini: "/models/gemini.svg",
   grok: "/models/grok.svg",
   wan: "/models/wan.svg",
   openai: "/models/openai.svg",
-  flux: "/models/flux.svg",
+  flux: "/models/flux.png?v=2",
   sora: "/models/sora.svg",
   veo: "/models/veo.svg",
   luma: "/models/luma.svg",
@@ -51,12 +54,19 @@ export function modelProviderKey(
   const hay = `${model.id} ${model.mcpId || ""} ${model.name}`.toLowerCase();
 
   if (
+    model.id === VERONIX_MODEL_ID ||
     hay.includes("vyronix") ||
-    hay.includes("veronix") ||
-    model.id === "seedance-2-mini" ||
     model.id === "vyronix-image"
   ) {
     return "vyronix";
+  }
+  if (
+    model.id === SEEDANCE_MINI_MODEL_ID ||
+    hay.includes("seedance") ||
+    hay.includes("seedream") ||
+    hay.includes("byte-plus")
+  ) {
+    return "seedance";
   }
   if (hay.includes("pixverse")) return "pixverse";
   if (hay.includes("minimax")) return "minimax";
@@ -64,9 +74,6 @@ export function modelProviderKey(
   if (hay.includes("gemini") || hay.includes("nano-banana")) return "gemini";
   if (hay.includes("grok")) return "grok";
   if (hay.includes("wan")) return "wan";
-  if (hay.includes("seedance") || hay.includes("seedream") || hay.includes("byte-plus")) {
-    return "seedance";
-  }
   if (hay.includes("gpt") || hay.includes("sora") || hay.includes("openai")) return "openai";
   if (hay.includes("flux") || hay.includes("juggernaut") || hay.includes("sdxl")) return "flux";
   if (hay.includes("veo")) return "veo";
@@ -84,11 +91,20 @@ export function modelLogoSrc(
   return PROVIDER_LOGOS[modelProviderKey(model)];
 }
 
+/** Official Seedance mark — used beside model name / footer strip. */
+export const SEEDANCE_LOGO_SRC = PROVIDER_LOGOS.seedance;
+
+/** Official MiniMax mark — used beside model name / footer strip. */
+export const MINIMAX_LOGO_SRC = PROVIDER_LOGOS.minimax;
+
 const ASSET_MODEL_LABELS: Record<string, string> = {
   [VERONIX_MODEL_ID]: "VYRONIX",
+  [SEEDANCE_MINI_MODEL_ID]: "Seedance 2 Mini",
   [PIXVERSE_MODEL_ID]: "PixVerse V6",
   [GEMINI_OMNI_FLASH_MODEL_ID]: "Gemini Omni Flash",
   [MINIMAX_H3_MODEL_ID]: "MiniMax H3",
+  [KLING_OMNI_MODEL_ID]: "Kling 3.0 Omni",
+  [FLUX_VIDEO_MODEL_ID]: "FLUX 3",
   "vyronix-image": "VYRONIX",
 };
 
@@ -101,10 +117,12 @@ export function assetModelLabel(
   if (id && ASSET_MODEL_LABELS[id]) return ASSET_MODEL_LABELS[id];
 
   const hid = String(historyId || "").trim();
-  if (hid.startsWith("bp:")) return "VYRONIX";
+  if (hid.startsWith("bp:")) return "Seedance";
   if (hid.startsWith("pv:")) return "PixVerse V6";
   if (hid.startsWith("gm:")) return "Gemini Omni Flash";
   if (hid.startsWith("mm:")) return "MiniMax H3";
+  if (hid.startsWith("kl:")) return "Kling 3.0 Omni";
+  if (hid.startsWith("bfl:")) return "FLUX 3";
 
   if (id) {
     const fromCatalog = VIDEO_MODELS.find((m) => m.id === id)?.name;

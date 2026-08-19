@@ -1,19 +1,6 @@
 import { NextResponse } from "next/server";
-import { fetchAndParseM3u } from "@/lib/m3u-parser";
-import { assertSafeIptvUrl } from "@/lib/iptv-ssrf";
-import {
-  createIptvSession,
-  listIptvCategories,
-  proxyChannelUrl,
-} from "@/lib/iptv-session-cache";
-import { getRequestPublicOrigin } from "@/lib/request-origin";
-import {
-  buildM3uPlusUrl,
-  fetchXtreamChannels,
-  verifyXtreamLogin,
-  type XtreamChannel,
-  type XtreamCredentials,
-} from "@/lib/xtream-url";
+import { loginIptvServer } from "@/lib/iptv-login";
+import { getPlayerMediaOrigin } from "@/lib/request-origin";
 
 export const runtime = "nodejs";
 
@@ -35,26 +22,7 @@ type PlaylistBody = {
   password?: string;
 };
 
-async function loadRawChannels(creds: XtreamCredentials): Promise<{ channels: XtreamChannel[]; source: "api" | "m3u" }> {
-  try {
-    const apiChannels = await fetchXtreamChannels(creds);
-    return { channels: apiChannels, source: "api" };
-  } catch {
-    const m3uUrl = buildM3uPlusUrl(creds);
-    assertSafeIptvUrl(m3uUrl);
-    const parsed = await fetchAndParseM3u(m3uUrl);
-    const channels: XtreamChannel[] = parsed.slice(0, 8000).map((c) => ({
-      id: c.id,
-      name: c.name,
-      group: c.group ?? null,
-      logo: c.logo ?? null,
-      url: c.url,
-    }));
-    return { channels, source: "m3u" };
-  }
-}
-
-/** Login → session token + categories only (channels loaded in pages). */
+/** Login → session + live categories (movies/series load on demand). */
 export async function POST(request: Request) {
   let body: PlaylistBody;
   try {
@@ -74,37 +42,13 @@ export async function POST(request: Request) {
     );
   }
 
-  const creds: XtreamCredentials = { host, username, password };
-  const origin = getRequestPublicOrigin(request);
+  const origin = getPlayerMediaOrigin(request);
 
   try {
-    await verifyXtreamLogin(creds).catch(() => undefined);
-
-    const { channels, source } = await loadRawChannels(creds);
-    if (!channels.length) {
-      return NextResponse.json({ error: "Playlist is empty" }, { status: 502, headers: corsHeaders() });
-    }
-
-    const sessionId = createIptvSession(channels, creds, origin);
-    const categories = listIptvCategories(channels);
-
-    return NextResponse.json(
-      {
-        sessionId,
-        host,
-        username,
-        label: username,
-        source,
-        total: channels.length,
-        categories,
-      },
-      { headers: corsHeaders() },
-    );
+    const result = await loginIptvServer({ host, username, password }, origin);
+    return NextResponse.json(result, { headers: corsHeaders() });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Playlist error";
     return NextResponse.json({ error: msg }, { status: 502, headers: corsHeaders() });
   }
 }
-
-// Keep proxy URL helper exported for channels route
-export { proxyChannelUrl };

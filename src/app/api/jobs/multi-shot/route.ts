@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/customer-auth";
 import { findAssetById } from "@/lib/db";
 import {
   ensureMultiShotBackground,
+  isMultiShotJobMeta,
   startMultiShotJob,
   tickMultiShotJob,
   type MultiShotBeat,
@@ -69,7 +70,7 @@ export async function POST(request: Request) {
         updated = (await findAssetById(user.id, assetId)) || pending;
       }
 
-      const meta = updated.jobMeta;
+      const meta = isMultiShotJobMeta(updated.jobMeta) ? updated.jobMeta : null;
       return NextResponse.json({
         asset: updated,
         done: updated.status === "completed" || updated.status === "failed",

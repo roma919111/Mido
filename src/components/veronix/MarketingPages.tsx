@@ -1,6 +1,7 @@
 "use client";
 
 import { LegalShell } from "@/components/veronix/LegalShell";
+import { SocialLinks } from "@/components/veronix/SocialLinks";
 import { useLocale } from "@/components/veronix/LocaleProvider";
 
 export function AboutContent() {
@@ -8,7 +9,7 @@ export function AboutContent() {
   return (
     <LegalShell title={t.about.title}>
       <p>
-        <strong className="text-white">Veronix.ai</strong> {t.about.p1.replace(/^Veronix\.ai\s*/i, "")}
+        <strong className="text-white">Vyronix AI Studio</strong> {t.about.p1.replace(/^Vyronix AI Studio\s*/i, "")}
       </p>
       <p>{t.about.p2}</p>
       <h2 className="pt-2 text-base font-semibold text-white">
@@ -34,6 +35,7 @@ export function AboutContent() {
           https://vyronix.app
         </a>
       </p>
+      <SocialLinks className="pt-2" />
     </LegalShell>
   );
 }
@@ -69,6 +71,7 @@ export function ContactContent() {
           https://vyronix.app
         </a>
       </p>
+      <SocialLinks className="pt-4" />
     </LegalShell>
   );
 }

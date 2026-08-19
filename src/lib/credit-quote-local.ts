@@ -20,7 +20,6 @@ import {
   VERONIX_PROFIT_MARKUP,
   isVeronixImageModel,
   isVeronixVideoModel,
-  normalizeVideoResolution,
   quoteVeronixImageCredits,
 } from "@/lib/byteplus-pricing";
 import { calculateVideoCredits } from "@/config/modelPricing";
@@ -35,12 +34,25 @@ import {
   isMiniMaxH3Model,
   normalizeMiniMaxH3Quality,
   quoteMiniMaxH3VideoBreakdown,
+  usesMiniMaxVideoBackend,
 } from "@/lib/minimax-pricing";
 import {
   formatGeminiVideoPricingNote,
   isGeminiOmniFlashModel,
   quoteGeminiVideoBreakdown,
 } from "@/lib/gemini-pricing";
+import {
+  formatKlingOmniPricingNote,
+  isKlingOmniModel,
+  normalizeKlingOmniQuality,
+  quoteKlingOmniVideoBreakdown,
+} from "@/lib/kling-pricing";
+import {
+  formatFluxVideoPricingNote,
+  isFluxVideoModel,
+  normalizeFluxVideoQuality,
+  quoteFluxVideoBreakdown,
+} from "@/lib/flux-pricing";
 
 function fallbackEstimate(input: QuoteInput): number {
   if (input.media === "image") return 15;
@@ -132,15 +144,15 @@ function quoteBytePlusResult(
   available: boolean,
 ): QuoteResult | null {
   if (input.media === "video" && isVeronixVideoModel(input.modelId, mcpModel)) {
-    const resolution = normalizeVideoResolution(
+    const resolution =
       typeof params.resolution === "string"
         ? params.resolution
-        : input.resolution,
-    );
+        : input.resolution;
     const totalCredits = calculateVideoCredits({
       model: input.modelId,
       quality: resolution,
       hasAudio: input.generateAudio,
+      hasVideoReferences: Boolean(input.hasVideoReferences),
       durationInSeconds: input.duration ?? 5,
       videoCount: input.videoCount ?? 1,
     });
@@ -232,7 +244,7 @@ function quoteMiniMaxH3Result(
   params: Record<string, unknown>,
   available: boolean,
 ): QuoteResult | null {
-  if (input.media !== "video" || !isMiniMaxH3Model(input.modelId, mcpModel)) {
+  if (input.media !== "video" || !usesMiniMaxVideoBackend(input.modelId, mcpModel)) {
     return null;
   }
   const resolution = normalizeMiniMaxH3Quality(
@@ -264,6 +276,88 @@ function quoteMiniMaxH3Result(
       referenceVideoCredits: breakdown.referenceVideoCredits,
     },
     pricingNote: formatMiniMaxH3PricingNote(breakdown),
+    source: "estimate",
+  };
+}
+
+function quoteKlingOmniResult(
+  input: QuoteInput,
+  mcpModel: string,
+  mode: string,
+  params: Record<string, unknown>,
+  available: boolean,
+): QuoteResult | null {
+  if (input.media !== "video" || !isKlingOmniModel(input.modelId, mcpModel)) {
+    return null;
+  }
+  const resolution = normalizeKlingOmniQuality(
+    typeof params.resolution === "string"
+      ? params.resolution
+      : input.resolution,
+  );
+  const breakdown = quoteKlingOmniVideoBreakdown({
+    duration: input.duration,
+    resolution,
+    generateAudio: input.generateAudio,
+    videoCount: input.videoCount ?? 1,
+  });
+  return {
+    modelId: input.modelId,
+    mcpModel,
+    mode,
+    totalCredits: breakdown.walletCredits,
+    unitCredits: breakdown.walletCredits,
+    openArtCredits: breakdown.outputCredits,
+    multiplier: VERONIX_PROFIT_MARKUP,
+    available: available || true,
+    config: {
+      ...params,
+      resolution,
+      outputCredits: breakdown.outputCredits,
+    },
+    pricingNote: formatKlingOmniPricingNote(breakdown),
+    source: "estimate",
+  };
+}
+
+function quoteFluxVideoResult(
+  input: QuoteInput,
+  mcpModel: string,
+  mode: string,
+  params: Record<string, unknown>,
+  available: boolean,
+): QuoteResult | null {
+  if (input.media !== "video" || !isFluxVideoModel(input.modelId, mcpModel)) {
+    return null;
+  }
+  const resolution = normalizeFluxVideoQuality(
+    typeof params.resolution === "string"
+      ? params.resolution
+      : input.resolution,
+  );
+  const breakdown = quoteFluxVideoBreakdown({
+    duration: input.duration,
+    resolution,
+    hasVideoReferences: input.hasVideoReferences,
+    hasImages: (input.referenceImageCount ?? 0) > 0,
+    videoCount: input.videoCount ?? 1,
+  });
+  return {
+    modelId: input.modelId,
+    mcpModel,
+    mode,
+    totalCredits: breakdown.walletCredits,
+    unitCredits: breakdown.walletCredits,
+    openArtCredits: breakdown.outputCredits,
+    multiplier: VERONIX_PROFIT_MARKUP,
+    available: available || true,
+    config: {
+      ...params,
+      resolution,
+      outputCredits: breakdown.outputCredits,
+      fluxMode: breakdown.mode,
+    },
+    pricingNote: formatFluxVideoPricingNote(breakdown),
     source: "estimate",
   };
 }
@@ -318,6 +412,12 @@ export function quoteCreditsLocal(input: QuoteInput): QuoteResult {
 
   const miniMax = quoteMiniMaxH3Result(input, mcpModel, mode, params, available);
   if (miniMax) return miniMax;
+
+  const kling = quoteKlingOmniResult(input, mcpModel, mode, params, available);
+  if (kling) return kling;
+
+  const flux = quoteFluxVideoResult(input, mcpModel, mode, params, available);
+  if (flux) return flux;
 
   const gemini = quoteGeminiVideoResult(input, mcpModel, mode, params, available);
   if (gemini) return gemini;

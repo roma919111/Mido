@@ -4,7 +4,10 @@ import { Readable } from "node:stream";
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { isAllowedMediaHost } from "@/lib/media-proxy";
-import { resolveHistoryVideoUrl } from "@/lib/resolve-history-url";
+import {
+  resolveHistoryVideoUrl,
+  resolveLocalFileForHistory,
+} from "@/lib/resolve-history-url";
 import { resolveGenerationFile } from "@/lib/veronix-outro";
 
 export const runtime = "nodejs";
@@ -144,6 +147,16 @@ export async function GET(request: Request) {
       await access(filePath);
       await stat(filePath);
       return localFileResponse(filePath, request, mediaType);
+    }
+
+    const historyId = searchParams.get("historyId")?.trim();
+    if (historyId) {
+      const stitched = await resolveLocalFileForHistory(user.id, historyId);
+      if (stitched) {
+        await access(stitched);
+        await stat(stitched);
+        return localFileResponse(stitched, request, mediaType);
+      }
     }
 
     const source = await resolveRemoteUrl(request);

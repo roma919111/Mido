@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/customer-auth";
 import { quoteMultipleModels } from "@/lib/credit-quote";
 import {
   FREE_VERONIX_DURATION_SECONDS,
+  FREE_VERONIX_RESOLUTION,
   isFreeVeronixEligible,
   VERONIX_MODEL_ID,
 } from "@/lib/free-trial";
@@ -65,7 +66,7 @@ export async function POST(request: Request) {
       unitCredits: freeTrial ? 0 : q.unitCredits,
       freeTrial,
       pricingNote: freeTrial
-        ? `مجاني لأول مرة (مقدمة Veronix + ${FREE_VERONIX_DURATION_SECONDS} ثوانٍ · 480p مع صوت). السعر العادي بعد التجربة: ${q.totalCredits} كريدت.`
+        ? `مجاني لأول مرة (مقدمة Vyronix + ${FREE_VERONIX_DURATION_SECONDS} ثوانٍ · ${FREE_VERONIX_RESOLUTION}). السعر العادي بعد التجربة: ${q.totalCredits} كريدت.`
         : q.pricingNote,
     }));
     const totalCredits = quotes.reduce((sum, q) => sum + q.totalCredits, 0);

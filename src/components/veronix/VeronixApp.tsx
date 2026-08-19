@@ -1,12 +1,68 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { AppHeader } from "./AppHeader";
 import { BottomNav } from "./BottomNav";
-import { CreateStudio } from "./CreateStudio";
+import { HomeCommunityFeed } from "./HomeCommunityFeed";
 import { SiteFooter } from "./SiteFooter";
 import { useLocale } from "@/components/veronix/LocaleProvider";
 import { useCustomerUser } from "@/hooks/useCustomerUser";
+
+const CreateStudio = dynamic(
+  () => import("./CreateStudio").then((m) => ({ default: m.CreateStudio })),
+  {
+    loading: () => (
+      <div className="mx-auto max-w-3xl px-4 py-16 text-sm text-white/35">
+        …
+      </div>
+    ),
+  },
+);
+
+const HERO_POSTER = "/promo/poster-lcp.jpg";
+
+function HomeHeroVideo({ ariaLabel }: { ariaLabel: string }) {
+  const [playVideo, setPlayVideo] = useState(false);
+
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    // Mobile Lighthouse LCP is the poster — never let the 1.6MB reel become LCP.
+    if (window.matchMedia("(min-width: 640px)").matches) {
+      setPlayVideo(true);
+    }
+  }, []);
+
+  return (
+    <>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={HERO_POSTER}
+        alt=""
+        width={960}
+        height={640}
+        fetchPriority="high"
+        decoding="async"
+        className="absolute inset-0 h-full w-full object-cover"
+      />
+      {playVideo ? (
+        <video
+          className="absolute inset-0 h-full w-full object-cover"
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="none"
+          poster={HERO_POSTER}
+          aria-label={ariaLabel}
+        >
+          <source src="/promo/veronix-action.mp4" type="video/mp4" />
+        </video>
+      ) : null}
+    </>
+  );
+}
 
 export function VeronixApp() {
   const { t, dir } = useLocale();
@@ -28,18 +84,7 @@ export function VeronixApp() {
         <section className="relative w-full overflow-hidden border-b border-white/8">
           <div className="relative mx-auto w-full max-w-6xl">
             <div className="relative aspect-[16/9] w-full sm:aspect-[21/9] sm:max-h-[420px]">
-              <video
-                className="absolute inset-0 h-full w-full object-cover"
-                autoPlay
-                muted
-                loop
-                playsInline
-                preload="metadata"
-                poster="/promo/poster.jpg"
-                aria-label="Veronix.ai promotional action film"
-              >
-                <source src="/promo/veronix-action.mp4" type="video/mp4" />
-              </video>
+              <HomeHeroVideo ariaLabel="Vyronix AI Studio promotional action film" />
               <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(11,13,18,0.15)_0%,rgba(11,13,18,0.45)_50%,rgba(11,13,18,0.92)_100%)]" />
               <div
                 className="absolute inset-x-0 bottom-0 px-4 pb-4 sm:px-6 sm:pb-6"
@@ -77,6 +122,8 @@ export function VeronixApp() {
             </div>
           </div>
         </section>
+
+        <HomeCommunityFeed />
 
         <section id="create" className="scroll-mt-20">
           <div className="mx-auto max-w-3xl px-4 pt-5 sm:px-6" dir={dir}>

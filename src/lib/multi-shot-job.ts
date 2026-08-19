@@ -27,7 +27,7 @@ import {
   type AssetRecord,
 } from "@/lib/db";
 import { expandShotsToBudget, shotBudgetFromDuration } from "@/lib/expand-shots";
-import { VERONIX_MODEL_ID } from "@/lib/free-trial";
+import { SEEDANCE_MINI_MODEL_ID } from "@/lib/byteplus-constants";
 import { toSemiRealisticScenePrompt } from "@/lib/reference-sanitize";
 import { stylizeReferenceImage } from "@/lib/reference-sanitize";
 import { MAX_SHOTS, PRODUCT_PER_SHOT_SECONDS } from "@/lib/shot-plan";
@@ -110,7 +110,7 @@ export async function startMultiShotJob(input: {
     url: "",
     prompt: `${input.prompt.trim()}\n\n(جارٍ توليد ودمج ${shots.length} لقطات… ${targetSeconds}ث)`,
     mode: "sequence-pending",
-    model: VERONIX_MODEL_ID,
+    model: SEEDANCE_MINI_MODEL_ID,
     creditsUsed: 0,
     status: "running",
     hidden: false,
@@ -251,7 +251,7 @@ async function tickMultiShotJobUnlocked(
 
   const quote = await quoteOpenArtCredits(
     {
-      modelId: VERONIX_MODEL_ID,
+      modelId: SEEDANCE_MINI_MODEL_ID,
       media: "video",
       mode: meta.startFrameUrl || meta.bridgeFrameUrl ? "image2video" : "text2video",
       duration: meta.perShotSeconds,
@@ -291,7 +291,7 @@ async function tickMultiShotJobUnlocked(
     url: "",
     prompt: shot.prompt,
     mode: "sequence-part",
-    model: VERONIX_MODEL_ID,
+    model: SEEDANCE_MINI_MODEL_ID,
     creditsUsed: quote.totalCredits,
     status: "running",
     hidden: true,

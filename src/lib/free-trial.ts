@@ -1,6 +1,7 @@
 /** First-time free Veronix video: stock intro (as-is) + 4s model clip. */
 
-export const VERONIX_MODEL_ID = "seedance-2-mini";
+/** Branded Vyronix video — MiniMax H3 backend. */
+export const VERONIX_MODEL_ID = "vyronix";
 
 /**
  * Locked duration sent to OpenArt / shown in free-trial controls.
@@ -14,8 +15,8 @@ export const FREE_VERONIX_MODEL_DURATION_SECONDS = 4;
 /** Official owner stock intro (do not edit the asset — concat as-is). */
 export const FREE_VERONIX_STOCK_PATH = "public/promo/vyronix-outro-stock.mp4";
 
-/** Locked free-trial resolution. */
-export const FREE_VERONIX_RESOLUTION = "480p";
+/** Locked free-trial resolution (MiniMax 768P tier). */
+export const FREE_VERONIX_RESOLUTION = "768p";
 
 /**
  * Free Veronix trial — once per account, only when the wallet is empty.
@@ -46,6 +47,6 @@ export function isFreeVeronixEligible(
   const res = String(input.resolution || FREE_VERONIX_RESOLUTION)
     .trim()
     .toLowerCase();
-  if (res && res !== FREE_VERONIX_RESOLUTION) return false;
+  if (res && res !== FREE_VERONIX_RESOLUTION && res !== "768p") return false;
   return true;
 }

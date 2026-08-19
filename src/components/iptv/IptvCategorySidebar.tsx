@@ -1,6 +1,7 @@
 import type { IptvCategory } from "@/lib/iptv-client";
 
 type IptvCategorySidebarProps = {
+  heading: string;
   categories: IptvCategory[];
   active: string;
   search: string;
@@ -13,6 +14,7 @@ type IptvCategorySidebarProps = {
 };
 
 export function IptvCategorySidebar({
+  heading,
   categories,
   active,
   search,
@@ -25,7 +27,7 @@ export function IptvCategorySidebar({
 }: IptvCategorySidebarProps) {
   return (
     <aside className="mstv-cat-sidebar">
-      <h2 className="mstv-cat-sidebar__heading">CHANNELS</h2>
+      <h2 className="mstv-cat-sidebar__heading">{heading}</h2>
 
       <label className="mstv-cat-sidebar__search">
         <span className="mstv-cat-sidebar__search-icon" aria-hidden="true">
@@ -73,7 +75,8 @@ export function IptvCategorySidebar({
                 📺
               </span>
               <span>
-                {cat.name} ({cat.count.toLocaleString("en")})
+                {cat.name}
+                {cat.count > 0 ? ` (${cat.count.toLocaleString("en")})` : ""}
               </span>
             </button>
           </li>

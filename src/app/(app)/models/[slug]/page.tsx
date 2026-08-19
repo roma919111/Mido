@@ -8,9 +8,11 @@ import {
   modelPageUrl,
   modelSeoDescription,
   modelSeoTitle,
+  modelSearchKeywords,
   modelSoftwareJsonLd,
 } from "@/lib/model-seo";
 import { breadcrumbJsonLd, SEO_KEYWORDS } from "@/lib/seo";
+import { BRAND_NAME } from "@/lib/brand";
 
 type PageProps = { params: Promise<{ slug: string }> };
 
@@ -24,9 +26,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { locale } = await getRequestDictionary();
   if (!model) return { title: "Model not found" };
   return {
-    title: modelSeoTitle(model, locale),
+    title: { absolute: modelSeoTitle(model, locale) },
     description: modelSeoDescription(model, locale),
-    keywords: [...SEO_KEYWORDS, model.name, model.id],
+    keywords: [...SEO_KEYWORDS, ...modelSearchKeywords(model)],
     alternates: { canonical: modelPageUrl(model) },
     openGraph: {
       title: modelSeoTitle(model, locale),
@@ -45,7 +47,7 @@ export default async function Page({ params }: PageProps) {
   const jsonLd = [
     modelSoftwareJsonLd(model),
     breadcrumbJsonLd([
-      { name: "Veronix.ai", path: "/" },
+      { name: BRAND_NAME, path: "/" },
       { name: t.footer.models, path: "/models" },
       { name: model.name, path: `/models/${slug}` },
     ]),

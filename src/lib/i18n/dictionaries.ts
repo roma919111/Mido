@@ -36,6 +36,7 @@ export type Dictionary = {
   nav: {
     home: string;
     inspire: string;
+    directors: string;
     editing: string;
     create: string;
     tools: string;
@@ -49,12 +50,50 @@ export type Dictionary = {
     invite: string;
   };
   header: {
+    mainNav: string;
     upgrade: string;
     login: string;
     signup: string;
     logout: string;
     admin: string;
     account: string;
+  };
+  settings: {
+    eyebrow: string;
+    title: string;
+    subtitle: string;
+    profileTab: string;
+    billingTab: string;
+    avatarTitle: string;
+    avatarHint: string;
+    changeAvatar: string;
+    avatarSaved: string;
+    avatarError: string;
+    nameTitle: string;
+    nameHint: string;
+    namePlaceholder: string;
+    saveName: string;
+    nameSaved: string;
+    nameError: string;
+    planTitle: string;
+    paidPlan: string;
+    freePlan: string;
+    creditsBalance: string;
+    monthlyCredits: string;
+    renewsOn: string;
+    endsOn: string;
+    status: string;
+    manageTitle: string;
+    manageHint: string;
+    changePlan: string;
+    stripePortal: string;
+    cancelSubscription: string;
+    cancelConfirm: string;
+    cancelDone: string;
+    cancelError: string;
+    portalError: string;
+    billingLoading: string;
+    loginRequired: string;
   };
   home: {
     brandEyebrow: string;
@@ -66,6 +105,26 @@ export type Dictionary = {
     studioEyebrow: string;
     studioTitle: string;
     studioSub: string;
+    feedEyebrow: string;
+    feedTitle: string;
+    feedSub: string;
+    feedLoading: string;
+  };
+  storage: {
+    eyebrow: string;
+    title: string;
+    titleCritical: string;
+    body: string;
+    videosAvailable: string;
+    connectDrive: string;
+    uploadToDrive: string;
+    deleteMyself: string;
+    later: string;
+    driveHint: string;
+    uploading: string;
+    uploadDone: string;
+    uploadFailed: string;
+    needDrive: string;
   };
   footer: {
     blurb: string;
@@ -78,6 +137,10 @@ export type Dictionary = {
     models: string;
     rights: string;
     backHome: string;
+    followUs: string;
+    socialTiktok: string;
+    socialYoutube: string;
+    socialInstagram: string;
   };
   auth: {
     loginTitle: string;
@@ -119,6 +182,19 @@ export type Dictionary = {
     title: string;
     items: Array<{ q: string; a: string }>;
   };
+  seoPages: {
+    pricingDescription: string;
+    faqDescription: string;
+    toolsDescription: string;
+    editTitle: string;
+    editDescription: string;
+  };
+  seoLandings: {
+    aiVideo: string;
+    aiImage: string;
+    textToVideo: string;
+    aiEditor: string;
+  };
   contact: {
     title: string;
     p1: string;
@@ -144,6 +220,22 @@ export type Dictionary = {
     charactersHint: string;
     characterName: string;
     characterNamePlaceholder: string;
+    characterIdentityTitle: string;
+    characterIdentityNote: string;
+    characterStepUpload: string;
+    characterStepName: string;
+    characterStepPrompt: string;
+    characterStepSameSettings: string;
+    characterStepFromGeneration: string;
+    characterFromGenerationLoaded: string;
+    characterIdentityLinked: string;
+    characterIdentityUnlinked: string;
+    sceneSequenceTitle: string;
+    resetSequence: string;
+    resetSequenceHint: string;
+    resetSequenceIdle: string;
+    resetSequenceActive: string;
+    resetSequenceDone: string;
     enhance: string;
     enhancing: string;
     generate: string;
@@ -186,7 +278,10 @@ export type Dictionary = {
     play: string;
     pause: string;
     edit: string;
+    continueCharacter: string;
+    continueCharacterHint: string;
     sendToStudio: string;
+    sentToStudio: string;
     selectedCount: string;
     clearSelection: string;
     delete: string;
@@ -228,6 +323,49 @@ export type Dictionary = {
     detailSoon: string;
     detailCta: string;
   };
+  inspire: {
+    eyebrow: string;
+    title: string;
+    subtitle: string;
+    tabList: string;
+    tabTrending: string;
+    tabMovies: string;
+    tabSeries: string;
+    tabAll: string;
+    allGenres: string;
+    searchPlaceholder: string;
+    refresh: string;
+    movie: string;
+    series: string;
+    trendingBadge: string;
+    usePrompt: string;
+    empty: string;
+    loading: string;
+    error: string;
+    promptLabel: string;
+    createCta: string;
+    copyPrompt: string;
+    copied: string;
+    close: string;
+    tmdbNote: string;
+    genres: Record<
+      "action" | "drama" | "sci-fi" | "horror" | "comedy" | "romance" | "thriller" | "fantasy" | "animation" | "crime",
+      string
+    >;
+  };
+  directors: {
+    eyebrow: string;
+    title: string;
+    subtitle: string;
+    searchPlaceholder: string;
+    usePrompt: string;
+    empty: string;
+    promptLabel: string;
+    createCta: string;
+    copyPrompt: string;
+    copied: string;
+    close: string;
+  };
   invite: {
     eyebrow: string;
     title: string;
@@ -263,8 +401,12 @@ export type Dictionary = {
     filterBw: string;
     export: string;
     exporting: string;
+    exportServerProcessing: string;
     exportDone: string;
+    exportDoneNewTab: string;
     exportFailed: string;
+    exportAudioFailed: string;
+    exportMemoryFailed: string;
     clear: string;
     noVideo: string;
     noVideoHint: string;
@@ -276,6 +418,17 @@ export type Dictionary = {
     deleteClip: string;
     mergeExport: string;
     exportActiveClip: string;
+    exportQuality: string;
+    exportQualityStandard: string;
+    exportQualityHigh: string;
+    exportQualityStandardHint: string;
+    exportQualityHighHint: string;
+    publishToHome: string;
+    publishing: string;
+    publishDone: string;
+    publishFailed: string;
+    publishedToHome: string;
+    viewOnHome: string;
     clearAll: string;
     transition: string;
     transitionNone: string;
@@ -344,6 +497,10 @@ export type Dictionary = {
     subtitlePreviewSample: string;
     lookAndFeel: string;
     previewBadge: string;
+    ultraRequiredTitle: string;
+    ultraRequiredBody: string;
+    ultraRequiredLogin: string;
+    upgradeToUltra: string;
   };
   lang: {
     ar: string;
@@ -354,19 +511,19 @@ export type Dictionary = {
 
 export const ar: Dictionary = {
   meta: {
-    titleDefault: "Veronix.ai — استوديو الصور والفيديو بالذكاء الاصطناعي",
-    titleTemplate: "%s · Veronix.ai",
+    titleDefault: "Vyronix — مولّد فيديو وصور AI مجاني | Kling · PixVerse",
+    titleTemplate: "%s · Vyronix",
     description:
-      "أنشئ صورًا وفيديوهات بالذكاء الاصطناعي على Veronix.ai. أول فيديو مجاني، محفظة كريدت، باقات شهرية، ودفع آمن عبر Stripe على vyronix.app.",
-    ogTitle: "Veronix.ai — استوديو الصور والفيديو",
+      "أنشئ فيديوهات وصور AI مجانًا — Kling · PixVerse · MiniMax · Flux. أول فيديو Vyronix مجاني · 480p/720p · vyronix.app.",
+    ogTitle: "Vyronix — مولّد فيديو AI مجاني",
     ogDescription:
-      "منصة لتوليد الصور والفيديو بالذكاء الاصطناعي — تجربة مجانية + باقات على vyronix.app",
-    twitterDescription: "استوديو AI للصور والفيديو — أول فيديو مجاني على vyronix.app",
-    homeH1: "Veronix.ai — استوديو الصور والفيديو بالذكاء الاصطناعي",
+      "Vyronix AI Studio — Kling · PixVerse · MiniMax · توليد فيديو وصور AI، أول فيديو مجاني، استوديو تحرير · vyronix.app",
+    twitterDescription: "Vyronix — أول فيديو AI مجاني · Kling · PixVerse · vyronix.app",
+    homeH1: "Vyronix AI Studio — استوديو الصور والفيديو بالذكاء الاصطناعي",
     homeSeoP:
-      "Veronix.ai منصة رسمية على vyronix.app لتوليد الصور والفيديو بالذكاء الاصطناعي. سجّل حسابك، جرّب أول فيديو مجانًا، واختر الباقة المناسبة.",
+      "Vyronix AI Studio منصة رسمية على vyronix.app لتوليد الصور والفيديو بالذكاء الاصطناعي. سجّل حسابك، جرّب أول فيديو مجانًا، واختر الباقة المناسبة.",
     homeBullets: [
-      "أول فيديو Veronix مجاني مرة واحدة",
+      "أول فيديو Vyronix مجاني مرة واحدة",
       "موديلات: VYRONIX · PixVerse · MiniMax H3 · Gemini · Kling · Seedance",
       "توليد صور وفيديو 480p / 720p",
       "محفظة كريدت وباقات شهرية",
@@ -376,6 +533,7 @@ export const ar: Dictionary = {
   nav: {
     home: "الرئيسية",
     inspire: "إلهام",
+    directors: "المخرجون",
     editing: "Vyronix Editing",
     create: "إنشاء",
     tools: "أدوات",
@@ -389,16 +547,55 @@ export const ar: Dictionary = {
     invite: "ادعُ أصدقاء",
   },
   header: {
+    mainNav: "التنقل الرئيسي",
     upgrade: "ترقية",
     login: "دخول",
     signup: "حساب",
     logout: "خروج",
-    admin: "Admin",
+    admin: "لوحة التحكم",
     account: "حسابي",
   },
+  settings: {
+    eyebrow: "الحساب",
+    title: "إعدادات الحساب",
+    subtitle: "عدّل اسمك وصورتك، واطّلع على اشتراكك أو ألغِه.",
+    profileTab: "الملف الشخصي",
+    billingTab: "الفوترة",
+    avatarTitle: "صورة الحساب",
+    avatarHint: "ارفع صورة JPG أو PNG (حتى 2 ميجابايت).",
+    changeAvatar: "تغيير الصورة",
+    avatarSaved: "تم تحديث الصورة.",
+    avatarError: "تعذّر رفع الصورة — حاول مرة أخرى.",
+    nameTitle: "الاسم",
+    nameHint: "يظهر هذا الاسم في حسابك.",
+    namePlaceholder: "اسمك",
+    saveName: "حفظ الاسم",
+    nameSaved: "تم حفظ الاسم.",
+    nameError: "تعذّر حفظ الاسم.",
+    planTitle: "باقتك الحالية",
+    paidPlan: "مدفوعة",
+    freePlan: "أساسية",
+    creditsBalance: "رصيد الكريدت",
+    monthlyCredits: "كريدت شهري",
+    renewsOn: "يتجدد في",
+    endsOn: "ينتهي في",
+    status: "الحالة",
+    manageTitle: "إدارة الاشتراك",
+    manageHint: "غيّر الباقة، افتح بوابة Stripe للفواتير، أو ألغِ الاشتراك.",
+    changePlan: "تغيير الباقة",
+    stripePortal: "فواتير Stripe",
+    cancelSubscription: "إلغاء الاشتراك",
+    cancelConfirm:
+      "هل تريد إلغاء الاشتراك والرجوع للباقة الأساسية؟ سيتوقف الاستقطاع الشهري.",
+    cancelDone: "تم إيقاف الاشتراك والرجوع للباقة الأساسية.",
+    cancelError: "تعذّر إلغاء الاشتراك.",
+    portalError: "تعذّر فتح بوابة الفوترة.",
+    billingLoading: "جاري تحميل تفاصيل الاشتراك…",
+    loginRequired: "سجّل الدخول لإدارة حسابك.",
+  },
   home: {
-    brandEyebrow: "Veronix.ai",
-    brandTitle: "Veronix",
+    brandEyebrow: "Vyronix AI Studio",
+    brandTitle: "Vyronix",
     heroLine: "حوّل فكرتك إلى فيديو وصورة بالذكاء الاصطناعي خلال دقائق.",
     freeTrial: "أول فيديو مجاني مرة واحدة — سجّل وابدأ الآن",
     ctaCreate: "ابدأ الإنشاء",
@@ -406,11 +603,32 @@ export const ar: Dictionary = {
     studioEyebrow: "إنشاء",
     studioTitle: "استوديو الصور والفيديو",
     studioSub: "اختر صورة أو فيديو، ثم الموديل، واكتب وصفك.",
+    feedEyebrow: "من المجتمع",
+    feedTitle: "إبداعات من الاستوديو",
+    feedSub: "مقاطع منشورة من صنّاع Vyronix بعد الإيديتينج",
+    feedLoading: "جاري تحميل المقاطع…",
+  },
+  storage: {
+    eyebrow: "المساحة",
+    title: "مساحة التخزين تقترب من الامتلاء",
+    titleCritical: "مساحة التخزين ممتلئة تقريباً",
+    body: "ارفع فيديوهاتك إلى Google Drive في مساحتك الخاصة، أو احذف ما لا تحتاجه من أصولك — الحذف يحرّر المساحة فعلياً الآن.",
+    videosAvailable: "لديك {n} فيديو محلي يمكن نسخه أو حذفه",
+    connectDrive: "ربط Google Drive والرفع",
+    uploadToDrive: "رفع الأقدم إلى Drive ومسحه من هنا",
+    deleteMyself: "مسح فيديوهاتي بنفسي",
+    later: "لاحقاً",
+    driveHint:
+      "الرفع يذهب إلى حسابك في Google Drive ثم يُحذف من سيرفر Vyronix لتفريغ المساحة. يمكنك إيقاف العملية في أي وقت.",
+    uploading: "جاري الرفع إلى Google Drive…",
+    uploadDone: "تم رفع {n} فيديو · فشل {f}",
+    uploadFailed: "تعذّر الرفع إلى Drive",
+    needDrive: "اربط Google Drive أولاً",
   },
   footer: {
     blurb:
-      "منصة Veronix.ai لتوليد الصور والفيديو بالذكاء الاصطناعي — حسابات زبائن، محفظة كريدت، ودفع آمن عبر Stripe.",
-    about: "عن Veronix",
+      "منصة Vyronix AI Studio لتوليد الصور والفيديو بالذكاء الاصطناعي — حسابات زبائن، محفظة كريدت، ودفع آمن عبر Stripe.",
+    about: "عن Vyronix",
     faq: "الأسئلة الشائعة",
     contact: "تواصل معنا",
     privacy: "الخصوصية",
@@ -419,12 +637,16 @@ export const ar: Dictionary = {
     models: "الموديلات",
     rights: "جميع الحقوق محفوظة.",
     backHome: "العودة للرئيسية",
+    followUs: "تابعنا",
+    socialTiktok: "TikTok",
+    socialYoutube: "YouTube",
+    socialInstagram: "Instagram",
   },
   auth: {
     loginTitle: "تسجيل الدخول",
     signupTitle: "إنشاء حساب",
     loginSub: "ادخل لحسابك لمتابعة التوليد وإدارة الكريدت.",
-    signupSub: "أنشئ حسابك وابدأ بأول فيديو مجاني على Veronix.",
+    signupSub: "أنشئ حسابك وابدأ بأول فيديو مجاني على Vyronix AI Studio.",
     email: "البريد الإلكتروني",
     password: "كلمة المرور",
     name: "الاسم",
@@ -445,18 +667,18 @@ export const ar: Dictionary = {
     upgradeTo: "الترقية إلى",
     switchTo: "التحويل إلى",
     addCredits: "أضف الكريدت الآن",
-    freeTrialNote: "أول فيديو Veronix مجاني مرة واحدة للحسابات بدون رصيد.",
+    freeTrialNote: "أول فيديو Vyronix مجاني مرة واحدة للحسابات بدون رصيد.",
     stripeMissing: "الدفع غير مفعّل مؤقتًا — تواصل مع الدعم.",
   },
   about: {
-    title: "عن Veronix.ai",
-    p1: "Veronix.ai استوديو لتوليد الصور والفيديو بالذكاء الاصطناعي على الدومين الرسمي https://vyronix.app.",
+    title: "عن Vyronix AI Studio",
+    p1: "Vyronix AI Studio استوديو لتوليد الصور والفيديو بالذكاء الاصطناعي على الدومين الرسمي https://vyronix.app.",
     p2: "نقدّم حسابات زبائن، محفظة كريدت، باقات شهرية، وتجربة إنشاء مباشرة من المتصفح — مع دفع آمن عبر Stripe وتسجيل اختياري عبر Google.",
     featuresTitle: "ما يميزنا",
     features: [
       "واجهة عربية وإنجليزية لإنشاء الصور والفيديو.",
       "تسعير بالكريدت شفاف قبل التوليد.",
-      "تجربة مجانية محدودة لأول فيديو Veronix وفق الشروط المعروضة.",
+      "تجربة مجانية محدودة لأول فيديو Vyronix وفق الشروط المعروضة.",
       "استضافة إنتاج دائمة على بنية تحتية سحابية مع نطاق مخصص.",
     ],
     contactTitle: "التواصل الرسمي",
@@ -466,7 +688,7 @@ export const ar: Dictionary = {
     items: [
       {
         q: "هل يوجد فيديو مجاني؟",
-        a: "نعم — أول فيديو Veronix مجاني مرة واحدة للحسابات بدون رصيد، وفق الشروط المعروضة في الاستوديو.",
+        a: "نعم — أول فيديو Vyronix مجاني مرة واحدة للحسابات بدون رصيد، وفق الشروط المعروضة في الاستوديو.",
       },
       {
         q: "ما وضوح الفيديو المتاح؟",
@@ -481,6 +703,23 @@ export const ar: Dictionary = {
         a: "نعم — واجهة الموقع باللغتين، ويمكنك كتابة وصف المشهد بالعربية أو الإنجليزية.",
       },
     ],
+  },
+  seoPages: {
+    pricingDescription:
+      "باقات Vyronix AI Studio الشهرية وشحن الكريدت — أول فيديو AI مجاني، موديلات VYRONIX وPixVerse وKling، دفع آمن عبر Stripe على vyronix.app.",
+    faqDescription:
+      "أسئلة شائعة عن Vyronix AI Studio: التجربة المجانية، الكريدت، الموديلات، الدفع، والوضوح 480p/720p على vyronix.app.",
+    toolsDescription:
+      "أدوات Vyronix AI Studio — إنشاء فيديو وصور بالذكاء الاصطناعي، مكتبة الأصول، استوديو التحرير، والموديلات على vyronix.app.",
+    editTitle: "محرر فيديو AI — قص · دمج · ترجمة",
+    editDescription:
+      "حرّر ودمّج فيديوهات AI — قص، فلاتر، ترجمة تلقائية، تصدير 1080p. Kling · PixVerse · Vyronix · vyronix.app/edit",
+  },
+  seoLandings: {
+    aiVideo: "مولّد فيديو AI",
+    aiImage: "مولّد صور AI",
+    textToVideo: "تحويل النص إلى فيديو",
+    aiEditor: "محرر فيديو AI",
   },
   contact: {
     title: "تواصل معنا",
@@ -500,7 +739,7 @@ export const ar: Dictionary = {
   terms: {
     title: "شروط الاستخدام",
     body: [
-      "باستخدامك Veronix.ai فإنك توافق على الاستخدام المشروع للمحتوى الذي تنشئه.",
+      "باستخدامك Vyronix AI Studio فإنك توافق على الاستخدام المشروع للمحتوى الذي تنشئه.",
       "الكريدت والباقات تُحتسب وفق التسعير الظاهر قبل التوليد.",
       "التجربة المجانية محدودة مرة واحدة لكل حساب وفق الشروط المعروضة.",
       "يحق لنا إيقاف الحسابات التي تنتهك السياسات أو تسيء استخدام المنصة.",
@@ -518,6 +757,26 @@ export const ar: Dictionary = {
       "سمِّ كل شخصية ثم اذكر اسمها في الوصف مباشرة — مثل «محمد ذهب إلى الحديقة» بدون @.",
     characterName: "اسم الشخصية",
     characterNamePlaceholder: "مثال: محمد",
+    characterIdentityTitle: "ثبات الشخصية والملامح",
+    characterIdentityNote:
+      "هذا يثبت الشكل — لا علاقة له بـ «تصفير التسلسل». استخدم نفس الصورة في كل مشهد.",
+    characterStepUpload: "ارفع صورة واضحة للوجه (شخص واحد لكل صورة)",
+    characterStepName: "سمِّ الشخصية تحت الصورة (مثال: ليلى)",
+    characterStepPrompt: "اذكر الاسم في الوصف قبل Generate",
+    characterStepSameSettings: "نفس الموديل والجودة في كل مشهد للمسلسل",
+    characterStepFromGeneration:
+      "بدون صورة؟ من «أصولي» → «متابعة الشخصية» على أول فيديو ناجح",
+    characterFromGenerationLoaded:
+      "تم تحميل وجه من فيديو سابق — اذكر الاسم في الوصف ثم Generate",
+    characterIdentityLinked: "مربوط — الملامح من الصورة المرجعية",
+    characterIdentityUnlinked: "ارفع صورة + اسم + اذكر الاسم في الوصف",
+    sceneSequenceTitle: "تسلسل القصة (بعد تحسين)",
+    resetSequence: "تصفير التسلسل",
+    resetSequenceHint:
+      "يقطع استمرارية المشهد السابق (من واقف، آخر فعل…). للحلقة الجديدة — لا يثبت الوجه ولا يمسح الصورة المرجعية.",
+    resetSequenceIdle: "لا يوجد تسلسل بعد — اضغط «تحسين» إن أردت ربط المشاهد المتتابعة",
+    resetSequenceActive: "تسلسل نشط — المشهد التالي يرث آخر تحسين",
+    resetSequenceDone: "تم تصفير تسلسل القصة — المشهد التالي مستقل (الصور المرجعية كما هي)",
     enhance: "تحسين الوصف",
     enhancing: "جاري التحسين…",
     generate: "Generate",
@@ -541,7 +800,7 @@ export const ar: Dictionary = {
     comingSoon: "قريبًا",
     createdBy: "تم إنشاؤه بواسطة VYRONIX",
     freeTrialBanner:
-      "أول فيديو على Veronix مجاني مرة واحدة — مقدمة Veronix + 4 ثوانٍ · 480p.",
+      "أول فيديو على Vyronix مجاني مرة واحدة — مقدمة Vyronix + 4 ثوانٍ · 768P.",
     outputCount: "عدد الفيديوهات",
     native720Note: "720p أصلي — لا حاجة لترقية وضوح إضافية",
     clarityUpgrade: "ترقية وضوح 480→720",
@@ -561,7 +820,11 @@ export const ar: Dictionary = {
     play: "تشغيل",
     pause: "إيقاف",
     edit: "تعديل",
+    continueCharacter: "متابعة الشخصية",
+    continueCharacterHint:
+      "يلتقط إطاراً من هذا الفيديو ويفتح الإنشاء — للمسلسل بدون رفع صورة يدوياً",
     sendToStudio: "نقل إلى الاستديو",
+    sentToStudio: "تم النقل",
     selectedCount: "تم تحديد {n} فيديو",
     clearSelection: "إلغاء التحديد",
     delete: "حذف",
@@ -585,9 +848,9 @@ export const ar: Dictionary = {
   },
   models: {
     eyebrow: "الموديلات",
-    title: "موديلات الصور والفيديو بالذكاء الاصطناعي",
+    title: "موديلات AI — Kling · PixVerse · Flux · Vyronix",
     subtitle:
-      "اختر من VYRONIX وPixVerse وMiniMax H3 وGemini Omni Flash وKling وSeedance وعشرات الموديلات الأخرى على Veronix.ai — صور وفيديو من نص أو صورة مرجعية.",
+      "Kling 2.5 · PixVerse V6 · Flux · Reve · Wan · MiniMax — صور وفيديو AI من نص أو صورة. أول فيديو مجاني · vyronix.app/models",
     videoTitle: "موديلات الفيديو",
     videoSub: "Text-to-video و image-to-video مع دعم الشخصيات والإطارات.",
     imageTitle: "موديلات الصور",
@@ -601,9 +864,62 @@ export const ar: Dictionary = {
     detailAbout: "عن الموديل",
     detailVideoBody: "أنشئ فيديوهات احترافية بالذكاء الاصطناعي باستخدام",
     detailImageBody: "أنشئ صورًا بالذكاء الاصطناعي باستخدام",
-    detailAvailable: " — متاح الآن على Veronix.ai.",
-    detailSoon: " — قريبًا على Veronix.ai.",
+    detailAvailable: " — متاح الآن على Vyronix AI Studio.",
+    detailSoon: " — قريبًا على Vyronix AI Studio.",
     detailCta: "ابدأ الإنشاء",
+  },
+  inspire: {
+    eyebrow: "إلهام",
+    title: "أفلام ومسلسلات ترند",
+    subtitle:
+      "تصفّح الأعمال الرائجة، اختر ما يلهمك، وابدأ إنشاء فيديو بأسلوب سينمائي جاهز.",
+    tabList: "تصنيف المحتوى",
+    tabTrending: "ترند",
+    tabMovies: "أفلام",
+    tabSeries: "مسلسلات",
+    tabAll: "الكل",
+    allGenres: "كل الأنواع",
+    searchPlaceholder: "ابحث عن فيلم أو مسلسل…",
+    refresh: "تحديث",
+    movie: "فيلم",
+    series: "مسلسل",
+    trendingBadge: "ترند",
+    usePrompt: "استخدم الفكرة",
+    empty: "لا توجد نتائج — جرّب تصنيفًا أو بحثًا مختلفًا.",
+    loading: "جاري التحميل…",
+    error: "تعذّر تحميل الإلهام — حاول مرة أخرى.",
+    promptLabel: "وصف جاهز للإنشاء",
+    createCta: "إنشاء فيديو",
+    copyPrompt: "نسخ الوصف",
+    copied: "تم النسخ",
+    close: "إغلاق",
+    tmdbNote: "صور الأعمال من Wikipedia وTMDB — للإلهام الإبداعي فقط.",
+    genres: {
+      action: "أكشن",
+      drama: "دراما",
+      "sci-fi": "خيال علمي",
+      horror: "رعب",
+      comedy: "كوميديا",
+      romance: "رومانس",
+      thriller: "إثارة",
+      fantasy: "فانتازيا",
+      animation: "رسوم متحركة",
+      crime: "جريمة",
+    },
+  },
+  directors: {
+    eyebrow: "Directors",
+    title: "أساليب المخرجين",
+    subtitle:
+      "اختر أسلوبًا بصريًا لمخرج مشهور وابدأ إنشاء فيديو بprompt سينمائي جاهز.",
+    searchPlaceholder: "ابحث عن مخرج…",
+    usePrompt: "استخدم الأسلوب",
+    empty: "لا توجد نتائج — جرّب بحثًا مختلفًا.",
+    promptLabel: "وصف جاهز للإنشاء",
+    createCta: "إنشاء فيديو",
+    copyPrompt: "نسخ الوصف",
+    copied: "تم النسخ",
+    close: "إغلاق",
   },
   invite: {
     eyebrow: "نمو",
@@ -641,8 +957,14 @@ export const ar: Dictionary = {
     filterBw: "أبيض وأسود",
     export: "تصدير / تحميل",
     exporting: "جاري التصدير",
+    exportServerProcessing: "جاري التصدير 1080p على السيرفر…",
     exportDone: "تم التحميل بنجاح",
+    exportDoneNewTab: "افتح التبويب الجديد للمعاينة والتحميل",
     exportFailed: "فشل التصدير — جرّب فيديو أقصر أو متصفحًا آخر",
+    exportAudioFailed:
+      "تعذّر دمج الصوت — جرّب «عادي 720p»، أو صدّر بدون انتقالات، أو حمّل من الأصول مباشرة.",
+    exportMemoryFailed:
+      "نفاد ذاكرة المتصفح أثناء 1080p — جرّب «عادي 720p» أو مقطعًا أقصر.",
     clear: "مسح الفيديو",
     noVideo: "لا يوجد فيديو في الاستديو",
     noVideoHint: "من «أصولي» أو نتائج التوليد، اضغط «نقل إلى الاستديو» لتحميل مقطع هنا.",
@@ -654,6 +976,17 @@ export const ar: Dictionary = {
     deleteClip: "حذف",
     mergeExport: "دمج الفيديو",
     exportActiveClip: "تصدير المقطع النشط",
+    exportQuality: "جودة التحميل",
+    exportQualityStandard: "عادي · 720p",
+    exportQualityHigh: "عالي · 1080p",
+    exportQualityStandardHint: "720p — تصدير أسرع، مناسب للمعاينة السريعة.",
+    exportQualityHighHint: "1080p — أوضح للنشر على TikTok وReels وYouTube (يستغرق وقتاً أطول).",
+    publishToHome: "نشر على الهوم",
+    publishing: "جاري النشر…",
+    publishDone: "تم النشر على الصفحة الرئيسية",
+    publishFailed: "تعذّر النشر — حاول مرة أخرى",
+    publishedToHome: "منشور على الهوم",
+    viewOnHome: "عرض على الهوم",
     clearAll: "مسح الكل",
     transition: "انتقال",
     transitionNone: "بدون",
@@ -722,6 +1055,11 @@ export const ar: Dictionary = {
     subtitlePreviewSample: "معاينة الترجمة على الفيديو",
     lookAndFeel: "المظهر — نسبة العرض والفلاتر",
     previewBadge: "معاينة",
+    ultraRequiredTitle: "استوديو الإيديتينج — باقة الترا",
+    ultraRequiredBody:
+      "قصّ الفيديو، الدمج، الفلاتر، والترجمة التلقائية متاحة فقط لمشتركي باقة الترا. رقِّ اشتراكك للوصول الكامل.",
+    ultraRequiredLogin: "سجّل الدخول أولاً ثم رقِّ إلى باقة الترا.",
+    upgradeToUltra: "الترقية إلى باقة الترا",
   },
   lang: {
     ar: "العربية",
@@ -732,19 +1070,19 @@ export const ar: Dictionary = {
 
 export const en: Dictionary = {
   meta: {
-    titleDefault: "Veronix.ai — AI Image & Video Studio",
-    titleTemplate: "%s · Veronix.ai",
+    titleDefault: "Vyronix — Free AI Video & Image Generator | Kling · PixVerse",
+    titleTemplate: "%s · Vyronix",
     description:
-      "Create AI images and videos on Veronix.ai. Free first video, credit wallet, monthly plans, and secure Stripe checkout on vyronix.app.",
-    ogTitle: "Veronix.ai — AI Image & Video Studio",
+      "Create free AI videos and images — Kling · PixVerse · MiniMax · Flux. Free first Vyronix video · 480p/720p · vyronix.app.",
+    ogTitle: "Vyronix — Free AI Video Generator",
     ogDescription:
-      "Generate AI images and videos — free starter trial + paid plans on vyronix.app",
-    twitterDescription: "AI image & video studio — free first video on vyronix.app",
-    homeH1: "Veronix.ai — AI Image & Video Studio",
+      "Vyronix AI Studio — Kling · PixVerse · MiniMax · AI video & image generation, free first video, edit studio · vyronix.app",
+    twitterDescription: "Vyronix — free first AI video · Kling · PixVerse · vyronix.app",
+    homeH1: "Vyronix AI Studio — AI Image & Video Studio",
     homeSeoP:
-      "Veronix.ai is the official studio on vyronix.app for AI image and video generation. Sign up, try your first free video, and pick a plan that fits.",
+      "Vyronix AI Studio is the official studio on vyronix.app for AI image and video generation. Sign up, try your first free video, and pick a plan that fits.",
     homeBullets: [
-      "One free Veronix video per new empty wallet",
+      "One free Vyronix video per new empty wallet",
       "Models: VYRONIX · PixVerse · MiniMax H3 · Gemini · Kling · Seedance",
       "Image & video at 480p / 720p",
       "Credit wallet and monthly plans",
@@ -754,6 +1092,7 @@ export const en: Dictionary = {
   nav: {
     home: "Home",
     inspire: "Inspire",
+    directors: "Directors",
     editing: "Vyronix Editing",
     create: "Create",
     tools: "Tools",
@@ -767,6 +1106,7 @@ export const en: Dictionary = {
     invite: "Invite",
   },
   header: {
+    mainNav: "Main navigation",
     upgrade: "Upgrade",
     login: "Log in",
     signup: "Sign up",
@@ -774,9 +1114,47 @@ export const en: Dictionary = {
     admin: "Admin",
     account: "Account",
   },
+  settings: {
+    eyebrow: "Account",
+    title: "Account settings",
+    subtitle: "Update your name and photo, view or cancel your subscription.",
+    profileTab: "Profile",
+    billingTab: "Billing",
+    avatarTitle: "Profile photo",
+    avatarHint: "Upload JPG or PNG (max 2 MB).",
+    changeAvatar: "Change photo",
+    avatarSaved: "Photo updated.",
+    avatarError: "Could not upload photo — try again.",
+    nameTitle: "Display name",
+    nameHint: "This name appears on your account.",
+    namePlaceholder: "Your name",
+    saveName: "Save name",
+    nameSaved: "Name saved.",
+    nameError: "Could not save name.",
+    planTitle: "Current plan",
+    paidPlan: "Paid",
+    freePlan: "Free",
+    creditsBalance: "Credit balance",
+    monthlyCredits: "Monthly credits",
+    renewsOn: "Renews on",
+    endsOn: "Ends on",
+    status: "Status",
+    manageTitle: "Manage subscription",
+    manageHint: "Change plan, open Stripe billing portal, or cancel.",
+    changePlan: "Change plan",
+    stripePortal: "Stripe billing",
+    cancelSubscription: "Cancel subscription",
+    cancelConfirm:
+      "Cancel your subscription and switch to the free plan? Monthly billing will stop.",
+    cancelDone: "Subscription canceled — you are on the free plan.",
+    cancelError: "Could not cancel subscription.",
+    portalError: "Could not open billing portal.",
+    billingLoading: "Loading subscription details…",
+    loginRequired: "Log in to manage your account.",
+  },
   home: {
-    brandEyebrow: "Veronix.ai",
-    brandTitle: "Veronix",
+    brandEyebrow: "Vyronix AI Studio",
+    brandTitle: "Vyronix",
     heroLine: "Turn your idea into AI video and images in minutes.",
     freeTrial: "First video free once — sign up and start now",
     ctaCreate: "Start creating",
@@ -784,10 +1162,31 @@ export const en: Dictionary = {
     studioEyebrow: "Create",
     studioTitle: "Image & video studio",
     studioSub: "Pick image or video, choose a model, then write your prompt.",
+    feedEyebrow: "Community",
+    feedTitle: "Studio creations",
+    feedSub: "Videos published by Vyronix creators after editing",
+    feedLoading: "Loading feed…",
+  },
+  storage: {
+    eyebrow: "Storage",
+    title: "Storage is almost full",
+    titleCritical: "Storage is critically full",
+    body: "Back up your videos to your own Google Drive, or delete what you no longer need — deletes now free disk space for real.",
+    videosAvailable: "You have {n} local videos you can move or delete",
+    connectDrive: "Connect Google Drive & upload",
+    uploadToDrive: "Upload oldest to Drive & remove here",
+    deleteMyself: "Delete my videos myself",
+    later: "Later",
+    driveHint:
+      "Files go to your Google Drive account, then are removed from Vyronix to free space. You can stop anytime.",
+    uploading: "Uploading to Google Drive…",
+    uploadDone: "Uploaded {n} · failed {f}",
+    uploadFailed: "Could not upload to Drive",
+    needDrive: "Connect Google Drive first",
   },
   footer: {
     blurb:
-      "Veronix.ai generates AI images and videos — customer accounts, credit wallet, and secure Stripe payments.",
+      "Vyronix AI Studio generates AI images and videos — customer accounts, credit wallet, and secure Stripe payments.",
     about: "About",
     faq: "FAQ",
     contact: "Contact",
@@ -797,12 +1196,16 @@ export const en: Dictionary = {
     models: "Models",
     rights: "All rights reserved.",
     backHome: "Back to home",
+    followUs: "Follow us",
+    socialTiktok: "TikTok",
+    socialYoutube: "YouTube",
+    socialInstagram: "Instagram",
   },
   auth: {
     loginTitle: "Log in",
     signupTitle: "Create account",
     loginSub: "Sign in to keep generating and manage your credits.",
-    signupSub: "Create your account and start with a free Veronix video.",
+    signupSub: "Create your account and start with a free Vyronix video.",
     email: "Email",
     password: "Password",
     name: "Name",
@@ -823,18 +1226,18 @@ export const en: Dictionary = {
     upgradeTo: "Upgrade to",
     switchTo: "Switch to",
     addCredits: "Add credits now",
-    freeTrialNote: "First Veronix video is free once for empty wallets.",
+    freeTrialNote: "First Vyronix video is free once for empty wallets.",
     stripeMissing: "Checkout is temporarily unavailable — contact support.",
   },
   about: {
-    title: "About Veronix.ai",
-    p1: "Veronix.ai is an AI image and video studio on the official domain https://vyronix.app.",
+    title: "About Vyronix AI Studio",
+    p1: "Vyronix AI Studio is an AI image and video studio on the official domain https://vyronix.app.",
     p2: "We offer customer accounts, a credit wallet, monthly plans, and in-browser creation — with secure Stripe payments and optional Google sign-in.",
     featuresTitle: "What we offer",
     features: [
       "Arabic and English UI for images and video.",
       "Transparent credit pricing before you generate.",
-      "Limited free first Veronix video under the shown terms.",
+      "Limited free first Vyronix video under the shown terms.",
       "Production hosting on cloud infrastructure with a custom domain.",
     ],
     contactTitle: "Official contact",
@@ -844,7 +1247,7 @@ export const en: Dictionary = {
     items: [
       {
         q: "Is there a free video?",
-        a: "Yes — one free Veronix video for empty wallets, under the terms shown in the studio.",
+        a: "Yes — one free Vyronix video for empty wallets, under the terms shown in the studio.",
       },
       {
         q: "What video resolutions are available?",
@@ -859,6 +1262,23 @@ export const en: Dictionary = {
         a: "Yes — the site UI is bilingual, and you can write prompts in Arabic or English.",
       },
     ],
+  },
+  seoPages: {
+    pricingDescription:
+      "Vyronix AI Studio pricing — monthly plans and credit top-ups, free first AI video, VYRONIX · PixVerse · Kling models, secure Stripe checkout on vyronix.app.",
+    faqDescription:
+      "Vyronix AI Studio FAQ — free trial, credits, AI models, billing, and 480p/720p video on vyronix.app.",
+    toolsDescription:
+      "Vyronix AI Studio tools — AI video & image creation, asset library, edit studio, and model shortcuts on vyronix.app.",
+    editTitle: "AI Video Editor — Trim · Merge · Subtitles",
+    editDescription:
+      "Edit and merge AI videos — trim, filters, auto subtitles, 1080p export. Kling · PixVerse · Vyronix · vyronix.app/edit",
+  },
+  seoLandings: {
+    aiVideo: "AI Video Generator",
+    aiImage: "AI Image Generator",
+    textToVideo: "Text to Video",
+    aiEditor: "AI Video Editor",
   },
   contact: {
     title: "Contact us",
@@ -878,7 +1298,7 @@ export const en: Dictionary = {
   terms: {
     title: "Terms of use",
     body: [
-      "By using Veronix.ai you agree to create and use content lawfully.",
+      "By using Vyronix AI Studio you agree to create and use content lawfully.",
       "Credits and plans are billed according to the price shown before generation.",
       "The free trial is limited to once per account under the shown terms.",
       "We may suspend accounts that violate policies or abuse the platform.",
@@ -895,7 +1315,27 @@ export const en: Dictionary = {
     charactersHint:
       "Name each character, then mention the name in your prompt — e.g. “Sara walked to the park” (no @ needed).",
     characterName: "Character name",
-    characterNamePlaceholder: "e.g. Sara",
+    characterNamePlaceholder: "e.g. Layla",
+    characterIdentityTitle: "Character identity",
+    characterIdentityNote:
+      "This locks appearance — unrelated to “Reset sequence”. Reuse the same photo every shot.",
+    characterStepUpload: "Upload a clear face photo (one person per image)",
+    characterStepName: "Name the character under the photo (e.g. Layla)",
+    characterStepPrompt: "Mention the name in your prompt before Generate",
+    characterStepSameSettings: "Same model & quality across every episode shot",
+    characterStepFromGeneration:
+      "No photo? In Assets → “Continue character” on your first good video",
+    characterFromGenerationLoaded:
+      "Face loaded from a prior video — mention the name in your prompt, then Generate",
+    characterIdentityLinked: "Linked — face comes from the reference photo",
+    characterIdentityUnlinked: "Upload + name + mention the name in your prompt",
+    sceneSequenceTitle: "Story sequence (after Enhance)",
+    resetSequence: "Reset sequence",
+    resetSequenceHint:
+      "Breaks scene continuity (poses, last action…). For a new episode — does not lock or clear reference photos.",
+    resetSequenceIdle: "No sequence yet — use Enhance first to chain consecutive scenes",
+    resetSequenceActive: "Sequence active — next scene inherits the last Enhance",
+    resetSequenceDone: "Story sequence cleared — next scene is independent (refs unchanged)",
     enhance: "Enhance prompt",
     enhancing: "Enhancing…",
     generate: "Generate",
@@ -919,7 +1359,7 @@ export const en: Dictionary = {
     comingSoon: "Coming soon",
     createdBy: "Created by VYRONIX",
     freeTrialBanner:
-      "Your first Veronix video is free once — Veronix intro + 4s · 480p.",
+      "Your first Vyronix video is free once — Vyronix intro + 4s · 768P.",
     outputCount: "Video count",
     native720Note: "Native 720p — no extra clarity upgrade needed",
     clarityUpgrade: "Clarity upgrade 480→720",
@@ -939,7 +1379,11 @@ export const en: Dictionary = {
     play: "Play",
     pause: "Pause",
     edit: "Edit",
+    continueCharacter: "Continue character",
+    continueCharacterHint:
+      "Captures a frame from this video and opens Create — for series without manual photo upload",
     sendToStudio: "Send to studio",
+    sentToStudio: "Sent to studio",
     selectedCount: "{n} videos selected",
     clearSelection: "Clear selection",
     delete: "Delete",
@@ -963,9 +1407,9 @@ export const en: Dictionary = {
   },
   models: {
     eyebrow: "Models",
-    title: "AI Image & Video Models",
+    title: "AI Models — Kling · PixVerse · Flux · Vyronix",
     subtitle:
-      "Choose from VYRONIX, PixVerse, MiniMax H3, Gemini Omni Flash, Kling, Seedance, and dozens more on Veronix.ai — images and video from text or reference frames.",
+      "Kling 2.5 · PixVerse V6 · Flux · Reve · Wan · MiniMax — AI images and video from text or reference. Free first video · vyronix.app/models",
     videoTitle: "Video models",
     videoSub: "Text-to-video and image-to-video with characters and frame control.",
     imageTitle: "Image models",
@@ -979,9 +1423,62 @@ export const en: Dictionary = {
     detailAbout: "About this model",
     detailVideoBody: "Create professional AI videos with",
     detailImageBody: "Create AI images with",
-    detailAvailable: " — available now on Veronix.ai.",
-    detailSoon: " — coming soon on Veronix.ai.",
+    detailAvailable: " — available now on Vyronix AI Studio.",
+    detailSoon: " — coming soon on Vyronix AI Studio.",
     detailCta: "Start creating",
+  },
+  inspire: {
+    eyebrow: "Inspire",
+    title: "Trending movies & series",
+    subtitle:
+      "Browse what's hot, pick a title that inspires you, and jump into Create with a cinematic prompt.",
+    tabList: "Content categories",
+    tabTrending: "Trending",
+    tabMovies: "Movies",
+    tabSeries: "Series",
+    tabAll: "All",
+    allGenres: "All genres",
+    searchPlaceholder: "Search a movie or series…",
+    refresh: "Refresh",
+    movie: "Movie",
+    series: "Series",
+    trendingBadge: "Trending",
+    usePrompt: "Use this idea",
+    empty: "No results — try another category or search.",
+    loading: "Loading…",
+    error: "Could not load inspire feed — try again.",
+    promptLabel: "Ready-to-use prompt",
+    createCta: "Create video",
+    copyPrompt: "Copy prompt",
+    copied: "Copied",
+    close: "Close",
+    tmdbNote: "Title art from Wikipedia & TMDB — for creative inspiration only.",
+    genres: {
+      action: "Action",
+      drama: "Drama",
+      "sci-fi": "Sci-Fi",
+      horror: "Horror",
+      comedy: "Comedy",
+      romance: "Romance",
+      thriller: "Thriller",
+      fantasy: "Fantasy",
+      animation: "Animation",
+      crime: "Crime",
+    },
+  },
+  directors: {
+    eyebrow: "Directors",
+    title: "Director visual styles",
+    subtitle:
+      "Pick a famous director's look and jump into Create with a cinematic prompt ready to go.",
+    searchPlaceholder: "Search a director…",
+    usePrompt: "Use this style",
+    empty: "No results — try a different search.",
+    promptLabel: "Ready-to-use prompt",
+    createCta: "Create video",
+    copyPrompt: "Copy prompt",
+    copied: "Copied",
+    close: "Close",
   },
   invite: {
     eyebrow: "Growth",
@@ -1019,8 +1516,14 @@ export const en: Dictionary = {
     filterBw: "B&W",
     export: "Export / download",
     exporting: "Exporting",
+    exportServerProcessing: "Exporting 1080p on server…",
     exportDone: "Download started",
+    exportDoneNewTab: "Open the new tab to preview and download",
     exportFailed: "Export failed — try a shorter clip or another browser",
+    exportAudioFailed:
+      "Could not merge audio — try Standard 720p, export without transitions, or download from Assets.",
+    exportMemoryFailed:
+      "Browser ran out of memory during 1080p — try Standard 720p or a shorter clip.",
     clear: "Clear video",
     noVideo: "No video loaded in the studio",
     noVideoHint: "From Assets or generation results, tap “Send to studio” to load a clip here.",
@@ -1032,6 +1535,17 @@ export const en: Dictionary = {
     deleteClip: "Delete",
     mergeExport: "Merge & export",
     exportActiveClip: "Export active clip",
+    exportQuality: "Download quality",
+    exportQualityStandard: "Standard · 720p",
+    exportQualityHigh: "High · 1080p",
+    exportQualityStandardHint: "720p — faster export, good for quick previews.",
+    exportQualityHighHint: "1080p — sharper for TikTok, Reels, and YouTube (takes longer).",
+    publishToHome: "Publish to home",
+    publishing: "Publishing…",
+    publishDone: "Published on the home page",
+    publishFailed: "Could not publish — try again",
+    publishedToHome: "Published on home",
+    viewOnHome: "View on home",
     clearAll: "Clear all",
     transition: "Transition",
     transitionNone: "None",
@@ -1100,6 +1614,11 @@ export const en: Dictionary = {
     subtitlePreviewSample: "Subtitle preview on video",
     lookAndFeel: "Look — aspect ratio & filters",
     previewBadge: "Preview",
+    ultraRequiredTitle: "Editing studio — Ultra plan",
+    ultraRequiredBody:
+      "Trim, merge, filters, and auto subtitles are available on the Ultra plan only. Upgrade to unlock full editing.",
+    ultraRequiredLogin: "Sign in first, then upgrade to Ultra.",
+    upgradeToUltra: "Upgrade to Ultra",
   },
   lang: {
     ar: "العربية",

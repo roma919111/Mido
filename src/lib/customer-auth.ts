@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import type { NextResponse } from "next/server";
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import {
@@ -27,8 +28,11 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
   return bcrypt.compare(password, hash);
 }
 
-export async function createSessionCookie(userId: string): Promise<string> {
-  const token = await new SignJWT({ sub: userId })
+export async function createSessionCookie(userId: string, email?: string): Promise<string> {
+  const claims: { sub: string; email?: string } = { sub: userId };
+  const normalized = email?.trim().toLowerCase();
+  if (normalized) claims.email = normalized;
+  const token = await new SignJWT(claims)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("30d")
@@ -36,20 +40,50 @@ export async function createSessionCookie(userId: string): Promise<string> {
   return token;
 }
 
-export async function setSessionCookie(userId: string): Promise<void> {
-  const token = await createSessionCookie(userId);
-  const jar = await cookies();
+export function sessionCookieOptions(): {
+  httpOnly: true;
+  sameSite: "lax";
+  secure: boolean;
+  path: "/";
+  maxAge: number;
+} {
   const httpsPublic =
     (process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_APP_BASE_URL || "").startsWith(
       "https://",
     );
-  jar.set(COOKIE_NAME, token, {
+  return {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production" || httpsPublic,
     path: "/",
     maxAge: 60 * 60 * 24 * 30,
-  });
+  };
+}
+
+async function resolveSessionEmail(userId: string, email?: string): Promise<string | undefined> {
+  const claimEmail = email?.trim().toLowerCase();
+  if (claimEmail) return claimEmail;
+  const existing = await findUserById(userId);
+  return existing?.email?.trim().toLowerCase() || undefined;
+}
+
+export async function setSessionCookie(userId: string, email?: string): Promise<void> {
+  const claimEmail = await resolveSessionEmail(userId, email);
+  const token = await createSessionCookie(userId, claimEmail);
+  const jar = await cookies();
+  jar.set(COOKIE_NAME, token, sessionCookieOptions());
+}
+
+/** Attach the session cookie to a redirect response (Google OAuth). */
+export async function attachSessionCookie(
+  response: NextResponse,
+  userId: string,
+  email?: string,
+): Promise<NextResponse> {
+  const claimEmail = await resolveSessionEmail(userId, email);
+  const token = await createSessionCookie(userId, claimEmail);
+  response.cookies.set(COOKIE_NAME, token, sessionCookieOptions());
+  return response;
 }
 
 export async function clearSessionCookie(): Promise<void> {
@@ -57,16 +91,30 @@ export async function clearSessionCookie(): Promise<void> {
   jar.delete(COOKIE_NAME);
 }
 
-export async function getSessionUserId(): Promise<string | null> {
+async function readSessionPayload(): Promise<{ sub?: string; email?: string } | null> {
   const jar = await cookies();
   const token = jar.get(COOKIE_NAME)?.value;
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, getSecret());
-    return typeof payload.sub === "string" ? payload.sub : null;
+    return {
+      sub: typeof payload.sub === "string" ? payload.sub : undefined,
+      email: typeof payload.email === "string" ? payload.email : undefined,
+    };
   } catch {
     return null;
   }
+}
+
+export async function getSessionUserId(): Promise<string | null> {
+  const payload = await readSessionPayload();
+  return payload?.sub ?? null;
+}
+
+export async function getSessionEmail(): Promise<string | null> {
+  const payload = await readSessionPayload();
+  const email = payload?.email?.trim().toLowerCase();
+  return email || null;
 }
 
 export async function getCurrentUser(): Promise<UserRecord | null> {
@@ -97,7 +145,7 @@ export async function registerUser(input: {
   await applyReferralOnSignup(user.id, input.referralCode);
 
   const fresh = await findUserById(user.id);
-  await setSessionCookie(user.id);
+  await setSessionCookie(user.id, (fresh || user).email);
   return publicUser(fresh || user);
 }
 
@@ -115,7 +163,7 @@ export async function loginUser(input: { email: string; password: string }) {
   }
   const ok = await verifyPassword(input.password, user.passwordHash);
   if (!ok) throw new Error("Invalid email or password");
-  await setSessionCookie(user.id);
+  await setSessionCookie(user.id, user.email);
   return publicUser(user);
 }
 

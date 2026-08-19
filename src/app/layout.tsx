@@ -1,9 +1,13 @@
 import type { Metadata } from "next";
 import { Outfit, Syne } from "next/font/google";
 import { LocaleProvider } from "@/components/veronix/LocaleProvider";
+import { EditStudioExportHost } from "@/components/veronix/EditStudioExportHost";
+import { StoragePressureHost } from "@/components/veronix/StoragePressureHost";
 import { AnalyticsScripts } from "@/components/veronix/AnalyticsScripts";
+import { AnalyticsCapture } from "@/components/veronix/AnalyticsCapture";
 import { ReferralCapture } from "@/components/veronix/ReferralCapture";
 import { getRequestDictionary, localeDir } from "@/lib/i18n";
+import { BRAND_DOMAIN, BRAND_EMAIL, BRAND_NAME, VYRONIX_SOCIAL_SAME_AS } from "@/lib/brand";
 import { modelsItemListJsonLd, SEO_KEYWORDS } from "@/lib/seo";
 import { Suspense } from "react";
 import "./globals.css";
@@ -12,42 +16,44 @@ const syne = Syne({
   variable: "--font-syne",
   subsets: ["latin"],
   weight: ["500", "600", "700", "800"],
+  display: "swap",
 });
 
 const outfit = Outfit({
   variable: "--font-outfit",
   subsets: ["latin"],
   weight: ["300", "400", "500", "600", "700"],
+  display: "swap",
 });
 
 export async function generateMetadata(): Promise<Metadata> {
   const { locale, t } = await getRequestDictionary();
   return {
-    metadataBase: new URL("https://vyronix.app"),
+    metadataBase: new URL(BRAND_DOMAIN),
     title: {
       default: t.meta.titleDefault,
       template: t.meta.titleTemplate,
     },
     description: t.meta.description,
-    applicationName: "Veronix.ai",
+    applicationName: BRAND_NAME,
     keywords: SEO_KEYWORDS,
-    authors: [{ name: "Veronix.ai", url: "https://vyronix.app" }],
-    creator: "Veronix.ai",
-    publisher: "Veronix.ai",
+    authors: [{ name: BRAND_NAME, url: BRAND_DOMAIN }],
+    creator: BRAND_NAME,
+    publisher: BRAND_NAME,
     alternates: {
-      canonical: "https://vyronix.app",
+      canonical: BRAND_DOMAIN,
       languages: {
-        ar: "https://vyronix.app",
-        en: "https://vyronix.app",
-        "x-default": "https://vyronix.app",
+        ar: BRAND_DOMAIN,
+        en: BRAND_DOMAIN,
+        "x-default": BRAND_DOMAIN,
       },
     },
     openGraph: {
       type: "website",
       locale: locale === "en" ? "en_US" : "ar_SA",
       alternateLocale: locale === "en" ? ["ar_SA"] : ["en_US"],
-      url: "https://vyronix.app",
-      siteName: "Veronix.ai",
+      url: BRAND_DOMAIN,
+      siteName: BRAND_NAME,
       title: t.meta.ogTitle,
       description: t.meta.ogDescription,
       images: [
@@ -55,19 +61,28 @@ export async function generateMetadata(): Promise<Metadata> {
           url: "/promo/poster.jpg",
           width: 1920,
           height: 1080,
-          alt: "Veronix.ai",
+          alt: BRAND_NAME,
         },
       ],
     },
     twitter: {
       card: "summary_large_image",
-      title: "Veronix.ai",
+      title: BRAND_NAME,
       description: t.meta.twitterDescription,
       images: ["/promo/poster.jpg"],
     },
     robots: {
       index: true,
       follow: true,
+    },
+    icons: {
+      icon: [
+        { url: "/favicon-48.png?v=7", sizes: "48x48", type: "image/png" },
+        { url: "/models/vyronix-icon-128.png?v=7", sizes: "128x128", type: "image/png" },
+        { url: "/models/vyronix-icon-512.png?v=7", sizes: "512x512", type: "image/png" },
+      ],
+      shortcut: [{ url: "/favicon-48.png?v=7", type: "image/png" }],
+      apple: [{ url: "/models/vyronix-icon-512.png?v=7", sizes: "180x180", type: "image/png" }],
     },
   };
 }
@@ -84,15 +99,16 @@ export default async function RootLayout({
     {
       "@context": "https://schema.org",
       "@type": "Organization",
-      name: "Veronix.ai",
-      url: "https://vyronix.app",
-      logo: "https://vyronix.app/promo/poster.jpg",
-      email: "support@vyronix.app",
-      sameAs: ["https://vyronix.app"],
+      name: BRAND_NAME,
+      alternateName: ["Vyronix", "Veronix", "vyronix.app"],
+      url: BRAND_DOMAIN,
+      logo: `${BRAND_DOMAIN}/promo/poster.jpg`,
+      email: BRAND_EMAIL,
+      sameAs: VYRONIX_SOCIAL_SAME_AS,
       contactPoint: [
         {
           "@type": "ContactPoint",
-          email: "support@vyronix.app",
+          email: BRAND_EMAIL,
           contactType: "customer support",
           availableLanguage: ["Arabic", "English"],
         },
@@ -101,23 +117,24 @@ export default async function RootLayout({
     {
       "@context": "https://schema.org",
       "@type": "WebSite",
-      name: "Veronix.ai",
-      url: "https://vyronix.app",
+      name: BRAND_NAME,
+      alternateName: ["Vyronix", "Veronix"],
+      url: BRAND_DOMAIN,
       inLanguage: ["ar", "en"],
-      publisher: { "@type": "Organization", name: "Veronix.ai" },
+      publisher: { "@type": "Organization", name: BRAND_NAME },
       potentialAction: {
         "@type": "SearchAction",
-        target: "https://vyronix.app/?q={search_term_string}",
+        target: `${BRAND_DOMAIN}/?q={search_term_string}`,
         "query-input": "required name=search_term_string",
       },
     },
     {
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
-      name: "Veronix.ai",
+      name: BRAND_NAME,
       applicationCategory: "MultimediaApplication",
       operatingSystem: "Web",
-      url: "https://vyronix.app",
+      url: BRAND_DOMAIN,
       inLanguage: ["ar", "en"],
       offers: {
         "@type": "Offer",
@@ -125,8 +142,8 @@ export default async function RootLayout({
         priceCurrency: "USD",
         description:
           locale === "en"
-            ? "Free Veronix starter trial; paid plans via Stripe"
-            : "تجربة Veronix مجانية للبداية؛ باقات مدفوعة عبر Stripe",
+            ? "Free Vyronix starter trial; paid plans via Stripe"
+            : "تجربة Vyronix مجانية للبداية؛ باقات مدفوعة عبر Stripe",
       },
       description: t.meta.description,
     },
@@ -148,6 +165,11 @@ export default async function RootLayout({
         <LocaleProvider initialLocale={locale}>
           <Suspense fallback={null}>
             <ReferralCapture />
+            <AnalyticsCapture />
+          </Suspense>
+          <EditStudioExportHost />
+          <Suspense fallback={null}>
+            <StoragePressureHost />
           </Suspense>
           {children}
         </LocaleProvider>

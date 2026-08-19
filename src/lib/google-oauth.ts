@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import { getAppBaseUrl } from "@/lib/app-url";
 import { loadGoogleCredentials } from "@/lib/google-credentials";
+import { safeAuthNextPath } from "@/lib/auth-next";
 
 const GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN = "https://oauth2.googleapis.com/token";
@@ -53,41 +54,59 @@ export async function readRememberedGoogleRedirectUri(
   return getGoogleRedirectUri(fallbackRequest);
 }
 
-export function createOAuthState(nextPath: string, referralCode?: string | null): string {
+export function createOAuthState(
+  nextPath: string,
+  referralCode?: string | null,
+  intent?: "login" | "drive",
+): string {
   const nonce = randomBytes(16).toString("hex");
   const ref = referralCode?.trim().toLowerCase() || undefined;
   return Buffer.from(
-    JSON.stringify({ n: nonce, next: nextPath || "/", t: Date.now(), ref }),
+    JSON.stringify({
+      n: nonce,
+      next: nextPath || "/",
+      t: Date.now(),
+      ref,
+      intent: intent || "login",
+    }),
   ).toString("base64url");
 }
 
-export function parseOAuthState(state: string | null): { next: string; ref?: string } {
-  if (!state) return { next: "/" };
+export function parseOAuthState(
+  state: string | null,
+): { next: string; ref?: string; intent: "login" | "drive" } {
+  if (!state) return { next: "/", intent: "login" };
   try {
     const raw = Buffer.from(state, "base64url").toString("utf8");
-    const parsed = JSON.parse(raw) as { next?: string; ref?: string };
-    const next = parsed.next && parsed.next.startsWith("/") ? parsed.next : "/";
+    const parsed = JSON.parse(raw) as { next?: string; ref?: string; intent?: string };
+    const next = safeAuthNextPath(parsed.next);
     const ref = parsed.ref?.trim().toLowerCase() || undefined;
-    return { next, ref };
+    const intent = parsed.intent === "drive" ? "drive" : "login";
+    return { next, ref, intent };
   } catch {
-    return { next: "/" };
+    return { next: "/", intent: "login" };
   }
 }
 
 export async function buildGoogleAuthUrl(
   state: string,
   request?: Request,
+  opts?: { drive?: boolean },
 ): Promise<string> {
   const { clientId } = await requireCreds();
   const redirectUri = getGoogleRedirectUri(request);
   await rememberGoogleRedirectUri(redirectUri);
+  const scope = opts?.drive
+    ? "openid email profile https://www.googleapis.com/auth/drive.file"
+    : "openid email profile";
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: "code",
-    scope: "openid email profile",
-    access_type: "online",
-    prompt: "select_account",
+    scope,
+    access_type: opts?.drive ? "offline" : "online",
+    prompt: opts?.drive ? "consent" : "select_account",
+    include_granted_scopes: "true",
     state,
   });
   return `${GOOGLE_AUTH}?${params.toString()}`;

@@ -75,6 +75,44 @@ function nameMentionIndex(prompt: string, name: string): number {
   return best;
 }
 
+/** Names mentioned in the customer prompt (Arabic + English aliases). */
+export function extractPromptCharacterNames(prompt: string): string[] {
+  const text = (prompt || "").trim();
+  if (!text) return [];
+  const found = new Map<string, number>();
+
+  for (const ar of Object.keys(ARABIC_NAME_ALIASES)) {
+    const at = nameMentionIndex(text, ar);
+    if (at >= 0) found.set(ar, at);
+  }
+
+  const namedEn =
+    /\bnamed\s+([A-Za-z\u0600-\u06FF][A-Za-z\u0600-\u06FF\s'-]{0,22})/gi;
+  let m: RegExpExecArray | null;
+  while ((m = namedEn.exec(text))) {
+    const raw = normalizeCharacterName(m[1] || "");
+    if (raw.length >= 2) found.set(raw, m.index);
+  }
+
+  const capWord =
+    /\b([A-Z][a-z\u0600-\u06FF]{2,20})\b/g;
+  while ((m = capWord.exec(text))) {
+    const raw = m[1] || "";
+    const lower = raw.toLowerCase();
+    for (const [ar, aliases] of Object.entries(ARABIC_NAME_ALIASES)) {
+      if (aliases.includes(lower) || ar === raw) {
+        found.set(raw, m.index);
+        break;
+      }
+    }
+  }
+
+  return [...found.entries()]
+    .sort((a, b) => a[1] - b[1])
+    .map(([name]) => name)
+    .slice(0, 6);
+}
+
 export function matchNamedCharacters(
   prompt: string,
   refs: VisualReference[],

@@ -25,14 +25,35 @@ export const VIDEO_RES_DIMS = {
   "720p": { width: 1280, height: 720 },
 } as const;
 
-export type VeronixVideoResolution = keyof typeof VIDEO_RES_DIMS;
+/** Seedance 2.0 supports higher output sizes via BytePlus Ark. */
+export const SEEDANCE_2_RES_DIMS = {
+  ...VIDEO_RES_DIMS,
+  "1080p": { width: 1920, height: 1080 },
+  "4k": { width: 3840, height: 2160 },
+} as const;
 
-/** Only 480p / 720p — 1080p and 4K are clamped to 720p. */
+export type VeronixVideoResolution = keyof typeof VIDEO_RES_DIMS;
+export type Seedance2VideoResolution = keyof typeof SEEDANCE_2_RES_DIMS;
+
+/** Mini / VYRONIX — only 480p / 720p. */
 export function normalizeVideoResolution(
   resolution?: string | null,
 ): VeronixVideoResolution {
   const r = String(resolution || "720p").trim().toLowerCase();
   if (r.includes("480") || r === "std") return "480p";
+  return "720p";
+}
+
+/** Seedance 2.0 — full clarity ladder from Ark. */
+export function normalizeSeedance2Resolution(
+  resolution?: string | null,
+): Seedance2VideoResolution {
+  const r = String(resolution || "720p").trim().toLowerCase();
+  if (r.includes("480") || r === "std") return "480p";
+  if (r === "4k" || r.includes("2160")) return "4k";
+  if (r === "1080p" || r.includes("1080") || r === "1k" || r === "pro") {
+    return "1080p";
+  }
   return "720p";
 }
 
@@ -51,6 +72,18 @@ export function estimateBytePlusTokens(
   const duration = clampVideoDurationSeconds(durationSec);
   const count = Math.max(1, Math.round(videoCount) || 1);
   return ((width * height * BYTEPLUS_FPS * duration) / 1024) * count;
+}
+
+/** Seedance 2.0 token estimate — higher resolutions + ~2× model factor. */
+export function estimateSeedance2Tokens(
+  durationSec: number,
+  resolution?: string | null,
+  videoCount = 1,
+): number {
+  const { width, height } = SEEDANCE_2_RES_DIMS[normalizeSeedance2Resolution(resolution)];
+  const duration = clampVideoDurationSeconds(durationSec);
+  const count = Math.max(1, Math.round(videoCount) || 1);
+  return (((width * height * BYTEPLUS_FPS * duration) / 1024) * count) * 2;
 }
 
 export function bytePlusCostUsd(tokens: number): number {
@@ -93,9 +126,10 @@ export function quoteVeronixImageCredits(imageCount = 1): number {
 export function isVeronixVideoModel(modelId?: string | null, mcpModel?: string | null): boolean {
   const id = String(modelId || "").toLowerCase();
   const mcp = String(mcpModel || "").toLowerCase();
+  if (id === "vyronix") return false;
   return (
-    id === "veronix" ||
     id === "seedance-2-mini" ||
+    id === "veronix" ||
     mcp.includes("seedance") ||
     mcp.includes("byte-plus-seedance")
   );

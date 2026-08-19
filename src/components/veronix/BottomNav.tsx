@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -20,7 +20,6 @@ import {
 import { fetchJson } from "@/lib/fetch-json";
 import { veronixPosterSrc } from "@/lib/media-proxy";
 import { useLocale } from "@/components/veronix/LocaleProvider";
-import { BottomNavModelStrip } from "@/components/veronix/BottomNavModelStrip";
 
 function prefetchAssets() {
   if (typeof window === "undefined") return;
@@ -85,12 +84,7 @@ export function BottomNav() {
 
   return (
     <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-[120] border-t border-white/10 bg-[#0b0d12]/96 pb-[env(safe-area-inset-bottom)] backdrop-blur-md">
-      <div className="pointer-events-auto">
-        <Suspense fallback={<div className="h-10 border-b border-white/8 bg-[#0b0d12]/98" aria-hidden />}>
-          <BottomNavModelStrip />
-        </Suspense>
-      </div>
-      <div className="pointer-events-auto mx-auto grid h-[4.35rem] max-w-lg grid-cols-5 items-center px-1.5">
+      <div className="pointer-events-auto mx-auto grid h-[4.35rem] max-w-lg grid-cols-5 items-center px-0.5">
         {items.map((item) => {
           const Icon = item.icon;
           const active = item.center
@@ -217,7 +211,7 @@ export function BottomNav() {
                   prefetchAssets();
                 }
               }}
-              className={`flex flex-col items-center justify-center gap-1 py-1 text-[10px] font-medium ${
+              className={`flex flex-col items-center justify-center gap-0.5 py-1 text-[9px] font-medium ${
                 active ? "text-white" : "text-white/45"
               }`}
             >

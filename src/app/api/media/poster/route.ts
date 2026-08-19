@@ -4,7 +4,10 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { isAllowedMediaHost } from "@/lib/media-proxy";
-import { resolveHistoryVideoUrl } from "@/lib/resolve-history-url";
+import {
+  resolveHistoryVideoUrl,
+  resolveLocalFileForHistory,
+} from "@/lib/resolve-history-url";
 import { resolveGenerationFile } from "@/lib/veronix-outro";
 import { extractFirstFrameJpeg } from "@/lib/video-stitch";
 
@@ -58,7 +61,12 @@ export async function GET(request: Request) {
 
   try {
     const { searchParams } = new URL(request.url);
+    const historyIdEarly = searchParams.get("historyId")?.trim();
+    const stitched = historyIdEarly
+      ? await resolveLocalFileForHistory(user.id, historyIdEarly)
+      : null;
     const keySrc =
+      (stitched ? `local-file:${stitched}` : "") ||
       searchParams.get("local") ||
       searchParams.get("historyId") ||
       searchParams.get("u") ||
@@ -84,7 +92,9 @@ export async function GET(request: Request) {
       // generate below
     }
 
-    const source = await resolveVideoSource(request);
+    const source = stitched
+      ? `file://${stitched}`
+      : await resolveVideoSource(request);
     if (!source) {
       const historyId = searchParams.get("historyId")?.trim();
       if (historyId) {

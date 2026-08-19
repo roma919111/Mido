@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { fulfillCheckoutSession } from "@/lib/billing-fulfillment";
+import { checkoutAnalyticsFromSession } from "@/lib/checkout-analytics";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { publicUser } from "@/lib/db";
 import { getStripe, isStripeConfigured } from "@/lib/stripe";
@@ -64,10 +65,12 @@ export async function POST(request: Request) {
     });
 
     const user = await getCurrentUser();
+    const analytics = checkoutAnalyticsFromSession(session);
     return NextResponse.json({
       ok: true,
       ...result,
       user: user ? publicUser(user) : null,
+      analytics,
     });
   } catch (error) {
     return NextResponse.json(

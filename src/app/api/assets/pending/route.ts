@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/customer-auth";
 import { createAsset, updateAsset } from "@/lib/db";
-import { VERONIX_MODEL_ID } from "@/lib/free-trial";
+import { SEEDANCE_MINI_MODEL_ID } from "@/lib/byteplus-constants";
 
 export const runtime = "nodejs";
 
@@ -69,7 +69,7 @@ export async function POST(request: Request) {
         ? `${prompt}\n\n(جارٍ توليد ودمج ${shotCount} لقطات…)`
         : prompt,
       mode: "sequence-pending",
-      model: VERONIX_MODEL_ID,
+      model: SEEDANCE_MINI_MODEL_ID,
       creditsUsed: 0,
       status: "running",
       hidden: false,

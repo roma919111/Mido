@@ -1,12 +1,13 @@
+import { resolveUserForCheckoutSession } from "@/lib/checkout-user";
 import {
   adjustCredits,
   claimCheckoutSession,
   hasProcessedCheckoutSession,
   updateUser,
 } from "@/lib/db";
+import { recordMediaPlayerOrder } from "@/lib/media-player-orders";
 import { getPlan, getTopUp, isPaidPlan, type PlanId } from "@/lib/plans";
 import { cancelStripeSubscription } from "@/lib/stripe";
-import { resolveUserForCheckoutSession } from "@/lib/checkout-user";
 
 type CheckoutSessionLike = {
   id?: string;
@@ -42,11 +43,25 @@ export async function fulfillCheckoutSession(
     return { applied: false, reason: "not_paid" };
   }
 
+  const kind = session.metadata?.kind;
+  if (kind === "media_player") {
+    const email =
+      session.customer_details?.email || session.customer_email || session.metadata?.email || "";
+    await recordMediaPlayerOrder({
+      email: email || "unknown",
+      stripeSessionId: sessionId,
+      stripeCustomerId: typeof session.customer === "string" ? session.customer : undefined,
+      stripeSubscriptionId: typeof session.subscription === "string" ? session.subscription : undefined,
+      source: session.metadata?.source,
+    });
+    const claimed = await claimCheckoutSession(sessionId);
+    if (!claimed) return { applied: false, reason: "already_processed" };
+    return { applied: true, reason: "media_player" };
+  }
+
   const user = await resolveUserForCheckoutSession(session);
   if (!user) return { applied: false, reason: "user_not_found" };
   const userId = user.id;
-
-  const kind = session.metadata?.kind;
   let credits = 0;
   let planId: PlanId | undefined;
 

@@ -3,15 +3,16 @@ import Link from "next/link";
 import { BrandLogo } from "@/components/BrandLogo";
 import { BottomNav } from "@/components/veronix/BottomNav";
 import { getRequestDictionary } from "@/lib/i18n";
-import { SEO_KEYWORDS } from "@/lib/seo";
+import { pageOpenGraph, SEO_KEYWORDS } from "@/lib/seo";
 
 export async function generateMetadata(): Promise<Metadata> {
   const { t } = await getRequestDictionary();
   return {
     title: t.nav.tools,
-    description: `Veronix.ai ${t.nav.tools} — create AI video and images, manage credits, and open your asset library.`,
+    description: t.seoPages.toolsDescription,
     keywords: SEO_KEYWORDS,
     alternates: { canonical: "https://vyronix.app/tools" },
+    openGraph: pageOpenGraph("/tools", t.nav.tools, t.seoPages.toolsDescription),
   };
 }
 
@@ -27,8 +28,8 @@ export default async function ToolsPage() {
         <h1 className="font-display text-3xl font-extrabold">{t.nav.tools}</h1>
         <p className="mt-3 text-white/50">
           {dir === "rtl"
-            ? "اختصارات سريعة لمنشئي Veronix."
-            : "Quick actions for Veronix creators."}
+            ? "اختصارات سريعة لمنشئي Vyronix AI Studio."
+            : "Quick actions for Vyronix AI Studio creators."}
         </p>
         <div className="mt-6 grid gap-3">
           <Link href="/create/video" className="rounded-2xl border border-white/10 bg-[#141821] px-4 py-4">
@@ -36,6 +37,12 @@ export default async function ToolsPage() {
           </Link>
           <Link href="/create/image" className="rounded-2xl border border-white/10 bg-[#141821] px-4 py-4">
             {dir === "rtl" ? "إنشاء صورة بالذكاء الاصطناعي" : "Create AI image"}
+          </Link>
+          <Link href="/edit" className="rounded-2xl border border-white/10 bg-[#141821] px-4 py-4">
+            {dir === "rtl" ? "استوديو التحرير" : "Edit studio"}
+          </Link>
+          <Link href="/inspire" className="rounded-2xl border border-white/10 bg-[#141821] px-4 py-4">
+            {t.nav.inspire}
           </Link>
           <Link href="/invite" className="rounded-2xl border border-white/10 bg-[#141821] px-4 py-4">
             {dir === "rtl" ? "ادعُ أصدقاء واكسب كريدت" : "Invite friends & earn credits"}

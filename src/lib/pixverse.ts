@@ -382,7 +382,8 @@ export async function createPixVerseFusionTask(
 
   if (omniVideo) {
     json.reference_mode = "omni";
-    json.video_references = videoIds.map((media_id) => ({ media_id }));
+    // PixVerse V6 docs require `video_media_id` (not `media_id`).
+    json.video_references = videoIds.map((id) => ({ video_media_id: id }));
   }
   if (imageRefs.length) {
     json.image_references = imageRefs;
@@ -462,6 +463,49 @@ export async function createPixVerseVideoTask(
   return { videoId };
 }
 
+export type PixVerseExtendInput = {
+  sourceVideoId: number;
+  prompt: string;
+  duration: number;
+  quality: string;
+  generateAudio?: boolean;
+};
+
+/** Official V6 continue: `/openapi/v2/video/extend/generate`. */
+export async function createPixVerseExtendTask(
+  input: PixVerseExtendInput,
+): Promise<{ videoId: number }> {
+  const model = getPixVerseApiModel();
+  const duration = Math.min(15, Math.max(1, Math.round(input.duration)));
+  const quality = normalizePixVerseQuality(input.quality);
+  const prompt = input.prompt.trim().slice(0, 5000);
+  if (!prompt) throw new Error("prompt is required");
+  if (!Number.isFinite(input.sourceVideoId) || input.sourceVideoId <= 0) {
+    throw new Error("PixVerse extend requires source_video_id");
+  }
+
+  const resp = await pixverseRequest<{ video_id?: number }>(
+    "/openapi/v2/video/extend/generate",
+    {
+      method: "POST",
+      json: {
+        source_video_id: input.sourceVideoId,
+        model,
+        prompt,
+        quality,
+        duration,
+        generate_audio_switch: Boolean(input.generateAudio),
+        seed: 0,
+      },
+    },
+  );
+  const videoId = Number(resp.video_id);
+  if (!Number.isFinite(videoId) || videoId <= 0) {
+    throw new Error("PixVerse extend did not return video_id");
+  }
+  return { videoId };
+}
+
 export type PixVerseVideoResult = {
   status: number;
   url?: string;
@@ -498,6 +542,44 @@ export function pixVerseFailureMessage(status: number): string {
     return "فشل توليد PixVerse. حاول مرة أخرى.";
   }
   return `PixVerse status ${status}`;
+}
+
+/** Map a PixVerse API / network error into Arabic — never BytePlus/Veronix copy. */
+export function translatePixVerseError(
+  input: unknown,
+  fallback = "فشل توليد PixVerse",
+): string {
+  const raw =
+    typeof input === "string"
+      ? input
+      : input instanceof Error
+        ? input.message
+        : "";
+  const text = raw.replace(/\s+/g, " ").trim();
+  if (!text) return fallback;
+  const lower = text.toLowerCase();
+  if (
+    lower.includes("insufficient") ||
+    lower.includes("balance") ||
+    lower.includes("quota") ||
+    lower.includes("top up") ||
+    lower.includes("credit")
+  ) {
+    return "رصيد باقة PixVerse على السيرفر غير كافٍ. أعد شحن حساب PixVerse لدى المسؤول ثم حاول مجدداً. تم إرجاع الكريديت.";
+  }
+  if (lower.includes("rate limit") || lower.includes("too many") || lower.includes("429")) {
+    return "تم تجاوز حد طلبات PixVerse مؤقتاً. انتظر قليلاً ثم أعد المحاولة.";
+  }
+  if (
+    lower.includes("not compliant") ||
+    lower.includes("replace it") ||
+    lower.includes("moderation") ||
+    lower.includes("uploaded image")
+  ) {
+    return "رفض PixVerse لقطة أو إطاراً بسبب السياسات. سنُكمل باللقطات الناجحة إن وُجدت.";
+  }
+  const snippet = text.slice(0, 180);
+  return `فشل PixVerse: ${snippet}`;
 }
 
 export async function waitForPixVerseVideoTask(

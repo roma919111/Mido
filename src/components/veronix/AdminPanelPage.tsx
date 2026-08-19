@@ -2,20 +2,26 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Ban,
   Check,
   Coins,
   Lock,
+  MonitorPlay,
   RefreshCw,
   Search,
   Shield,
+  Sparkles,
   Unlock,
   Users,
 } from "lucide-react";
 import { AppHeader, type CustomerUser } from "./AppHeader";
 import { BottomNav } from "./BottomNav";
 import { fetchJson } from "@/lib/fetch-json";
+import { AdminModelEconomicsTable } from "./AdminModelEconomicsTable";
+import { loginHref } from "@/lib/auth-next";
+import { IptvDeviceAdminPanel } from "@/components/iptv/IptvDeviceAdminPanel";
 
 type AdminUser = {
   id: string;
@@ -53,7 +59,22 @@ const PLAN_LABEL: Record<string, string> = {
   pro: "الترا",
 };
 
+type AdminTab = "ai" | "player";
+
+function readAdminTab(tabParam: string | null, hash = ""): AdminTab {
+  const hashId = hash.replace(/^#/, "");
+  if (tabParam === "player" || tabParam === "devices" || tabParam === "operator") return "player";
+  if (hashId === "player" || hashId === "devices") return "player";
+  return "ai";
+}
+
 export function AdminPanelPage() {
+  const router = useRouter();
+  const params = useSearchParams();
+  const tabParam = params.get("tab");
+  const [hash, setHash] = useState("");
+  const tab = readAdminTab(tabParam, hash);
+  const [playerMounted, setPlayerMounted] = useState(tab === "player");
   const [me, setMe] = useState<CustomerUser | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -65,11 +86,50 @@ export function AdminPanelPage() {
   const [creditAmount, setCreditAmount] = useState("10000");
   const [lockReason, setLockReason] = useState("مخالفة شروط الاستخدام");
   const [note, setNote] = useState("");
+  const [byteplusAuth, setByteplusAuth] = useState<{
+    ok: boolean;
+    vyronix?: { ok: boolean; errorMessage?: string; keyHint?: string };
+    seedance2?: { ok: boolean; errorMessage?: string; keyHint?: string };
+  } | null>(null);
+
+  const loadByteplusProbe = useCallback(async () => {
+    const { res, data } = await fetchJson<{
+      ok?: boolean;
+      probes?: {
+        vyronix?: { ok: boolean; errorMessage?: string; keyHint?: string };
+        seedance2?: { ok: boolean; errorMessage?: string; keyHint?: string };
+      };
+    }>("/api/admin/byteplus-probe", { credentials: "include" });
+    if (res.ok) {
+      setByteplusAuth({
+        ok: Boolean(data.ok),
+        vyronix: data.probes?.vyronix,
+        seedance2: data.probes?.seedance2,
+      });
+    }
+  }, []);
 
   const selected = useMemo(
     () => users.find((u) => u.id === selectedId) || null,
     [users, selectedId],
   );
+
+  useEffect(() => {
+    const current = window.location.hash.replace(/^#/, "");
+    setHash(window.location.hash);
+    if ((current === "player" || current === "devices") && tabParam !== "player") {
+      router.replace("/admin?tab=player");
+    }
+  }, [router, tabParam]);
+
+  useEffect(() => {
+    if (tab === "player") setPlayerMounted(true);
+  }, [tab]);
+
+  function setTab(next: AdminTab) {
+    setHash("");
+    router.replace(next === "player" ? "/admin?tab=player" : "/admin");
+  }
 
   const load = useCallback(async (search = q) => {
     setError(null);
@@ -105,6 +165,7 @@ export function AdminPanelPage() {
         }
         setStats(panel.stats || null);
         setUsers(panel.users || []);
+        void loadByteplusProbe();
       } catch {
         setError("تعذر تحميل لوحة التحكم");
       }
@@ -161,7 +222,7 @@ export function AdminPanelPage() {
           <Shield className="mx-auto h-10 w-10 text-rose-300" />
           <h1 className="mt-4 font-display text-2xl font-bold">لوحة المالك</h1>
           <p className="mt-3 text-sm text-white/55">{error}</p>
-          <Link href="/login" className="mt-6 inline-flex rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-black">
+          <Link href={loginHref("/admin")} className="mt-6 inline-flex rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-black">
             تسجيل الدخول
           </Link>
         </main>
@@ -175,24 +236,79 @@ export function AdminPanelPage() {
       <main className="mx-auto max-w-6xl px-4 pb-bottom-nav pt-6 sm:px-6" dir="rtl">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#22f0ff]/90">
+            <p className="inline-flex items-center gap-2 text-xs font-semibold tracking-[0.16em] text-[#22f0ff]/90">
               <Shield className="h-3.5 w-3.5" />
-              Owner Console
+              لوحة المالك
             </p>
             <h1 className="mt-2 font-display text-3xl font-extrabold">لوحة التحكم</h1>
             <p className="mt-1 text-sm text-white/45">
-              إدارة المشتركين · الكريدت · القفل · الباقات · التجربة المجانية
+              {tab === "player"
+                ? "اشتراكات الأجهزة · MAC ورقم الجهاز · الاستضافة · الانتهاء"
+                : "إدارة المشتركين · الكريدت · القفل · الباقات · التجربة المجانية"}
             </p>
           </div>
           <button
             type="button"
-            onClick={() => void load(q)}
+            onClick={() => {
+              void load(q);
+              void loadByteplusProbe();
+            }}
             className="inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2 text-sm text-white/80"
           >
             <RefreshCw className="h-4 w-4" />
             تحديث
           </button>
         </div>
+
+        <div
+          className="mt-6 flex flex-col gap-2 rounded-2xl border border-white/10 bg-[#141821] p-1 sm:flex-row"
+          role="tablist"
+          aria-label="أقسام لوحة التحكم"
+        >
+          {(
+            [
+              ["ai", "قسم الذكاء الاصطناعي والكريدت", Sparkles],
+              ["player", "قسم اشتراكات المشغّل", MonitorPlay],
+            ] as const
+          ).map(([id, label, Icon]) => {
+            const active = tab === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                aria-controls={id === "player" ? "player" : "ai"}
+                onClick={() => setTab(id)}
+                className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
+                  active ? "bg-white text-black" : "text-white/60 hover:text-white"
+                }`}
+              >
+                <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                <span className="text-center leading-snug">{label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div hidden={tab !== "ai"} id="ai">
+        {byteplusAuth && !byteplusAuth.ok ? (
+          <div className="mt-6 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+            <p className="font-semibold">⚠️ Seedance / Veronix — مفتاح API غير صالح</p>
+            <p className="mt-1 text-rose-100/85">
+              VYRONIX: {byteplusAuth.vyronix?.ok ? "✅" : `❌ ${byteplusAuth.vyronix?.errorMessage || "فشل"}`}
+              {byteplusAuth.vyronix?.keyHint ? ` · ${byteplusAuth.vyronix.keyHint}` : ""}
+            </p>
+            <p className="mt-1 text-rose-100/85">
+              Seedance 2.0: {byteplusAuth.seedance2?.ok ? "✅" : `❌ ${byteplusAuth.seedance2?.errorMessage || "فشل"}`}
+              {byteplusAuth.seedance2?.keyHint ? ` · ${byteplusAuth.seedance2.keyHint}` : ""}
+            </p>
+            <p className="mt-2 text-xs text-rose-100/70">
+              أنشئ ARK API Key من console.byteplus.com → ModelArk → API Key Management، ثم حدّث
+              BYTEPLUS_API_KEY على Railway.
+            </p>
+          </div>
+        ) : null}
 
         {stats && (
           <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -492,6 +608,15 @@ export function AdminPanelPage() {
             )}
           </section>
         </div>
+
+        <AdminModelEconomicsTable />
+        </div>
+
+        {(tab === "player" || playerMounted) && (
+          <section hidden={tab !== "player"} id="player" className="mt-6">
+            <IptvDeviceAdminPanel />
+          </section>
+        )}
       </main>
       <BottomNav />
     </div>

@@ -18,6 +18,7 @@ import {
   usdToCredits,
 } from "@/config/modelPricing";
 import { VERONIX_PROFIT_MARKUP } from "@/lib/byteplus-pricing";
+import { VERONIX_MODEL_ID } from "@/lib/free-trial";
 import {
   MINIMAX_H3_EXTRA_IMAGE_USD,
   MINIMAX_H3_FREE_REFERENCE_IMAGES,
@@ -46,10 +47,19 @@ export function isMiniMaxH3Model(
   const mcp = String(mcpModel || "").toLowerCase();
   return (
     id === MINIMAX_H3_MODEL_ID ||
-    id.includes("minimax") ||
-    mcp.includes("minimax-h3") ||
-    mcp.includes("minimax")
+    id.includes("minimax-h3") ||
+    mcp.includes("minimax-h3")
   );
+}
+
+/** VYRONIX branded video uses the MiniMax H3 backend. */
+export function usesMiniMaxVideoBackend(
+  modelId?: string | null,
+  mcpModel?: string | null,
+): boolean {
+  const id = String(modelId || "").toLowerCase();
+  if (id === VERONIX_MODEL_ID) return true;
+  return isMiniMaxH3Model(modelId, mcpModel);
 }
 
 export function normalizeMiniMaxH3Quality(

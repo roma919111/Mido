@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
   type RefObject,
 } from "react";
 import { flushSync } from "react-dom";
@@ -39,7 +40,7 @@ import {
   lockEtaStart,
 } from "@/lib/generate-eta";
 import { writeEditDraft } from "@/lib/edit-draft";
-import { sendVideoToEditStudio, sendVideosToEditStudio } from "@/lib/send-to-edit-studio";
+import { sendVideoToEditStudio, sendVideosToEditStudio, appendVideosToEditStudio } from "@/lib/send-to-edit-studio";
 import { assetToClipInput } from "@/lib/edit-studio-timeline";
 import { assetModelLabel } from "@/lib/model-logos";
 import { shareAsset } from "@/lib/share-asset";
@@ -63,6 +64,7 @@ import {
   type CachedAssetItem,
 } from "@/lib/assets-cache";
 import { displayBytePlusAssetError } from "@/lib/byteplus-errors";
+import { canUseEditStudio } from "@/lib/plans";
 import type { VisualReference } from "@/lib/types";
 import { GenerateClock } from "@/components/veronix/GenerateClock";
 
@@ -76,16 +78,6 @@ const VIEW_MODE_KEY = "vyronix-assets-video-view";
 const GRID_ZOOM_KEY = "vyronix-assets-grid-zoom";
 const GRID_ZOOM_MIN = 1;
 const GRID_ZOOM_MAX = 4;
-
-function readStoredViewMode(): VideoViewMode {
-  if (typeof window === "undefined") return "browse";
-  try {
-    const v = sessionStorage.getItem(VIEW_MODE_KEY);
-    return v === "grid" ? "grid" : "browse";
-  } catch {
-    return "browse";
-  }
-}
 
 function readStoredGridZoom(): number {
   if (typeof window === "undefined") return 2;
@@ -219,6 +211,381 @@ function isRecoverableAsset(item: AssetItem): boolean {
   return isRecoverableProviderAsset(item);
 }
 
+function useVideoAssetActions({
+  item,
+  videoRef,
+  mediaUrl,
+  poster,
+  posterFailed,
+  captureFromVideo,
+  onDeleted,
+  referralCode,
+  editStudioAllowed,
+  onEditStudioBlocked,
+  stayOnPageAfterStudio,
+}: {
+  item: AssetItem;
+  videoRef: RefObject<HTMLVideoElement | null>;
+  mediaUrl: string | null;
+  poster: string | null;
+  posterFailed: boolean;
+  captureFromVideo: boolean;
+  onDeleted: (id: string) => void;
+  referralCode?: string | null;
+  editStudioAllowed: boolean;
+  onEditStudioBlocked?: () => void;
+  stayOnPageAfterStudio?: boolean;
+}) {
+  const router = useRouter();
+  const { t, dir } = useLocale();
+  const [editing, setEditing] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const [shareNote, setShareNote] = useState<string | null>(null);
+  const [studioNote, setStudioNote] = useState<string | null>(null);
+  const [sendingStudio, setSendingStudio] = useState(false);
+
+  const prompt = cleanAssetPrompt(item.prompt);
+  const title = assetPromptTitle(item.prompt);
+
+  const handleEdit = async () => {
+    if (editing) return;
+    setEditing(true);
+    try {
+      const savedRefs = Array.isArray(item.referenceImages)
+        ? item.referenceImages.filter((r) => r?.url).slice(0, 4)
+        : [];
+
+      let characters = savedRefs.length
+        ? await hydrateReferenceImages(savedRefs)
+        : [];
+
+      if (!characters.length && savedRefs.length) {
+        characters = savedRefs.map((r, i) => ({
+          type: "image" as const,
+          id: r.id || `edit-ref-${item.id}-${i}`,
+          url: r.url,
+          label: r.label || "",
+        }));
+      }
+
+      if (!characters.length) {
+        const el = videoRef.current;
+        let frameUrl: string | null = null;
+        if (el && captureFromVideo) {
+          try {
+            if (el.readyState < 2) {
+              await new Promise<void>((resolve) => {
+                const done = () => resolve();
+                el.addEventListener("loadeddata", done, { once: true });
+                window.setTimeout(done, 2500);
+              });
+            }
+            try {
+              el.currentTime = Math.min(0.15, (el.duration || 1) * 0.02);
+              await new Promise<void>((resolve) => {
+                const done = () => resolve();
+                el.addEventListener("seeked", done, { once: true });
+                window.setTimeout(done, 800);
+              });
+            } catch {
+              // keep current frame
+            }
+            const captured = await captureVideoFrame(el);
+            frameUrl = captured?.url || null;
+          } catch {
+            frameUrl = null;
+          }
+        }
+        if (!frameUrl && poster && !posterFailed) {
+          frameUrl = poster;
+        }
+        if (frameUrl) {
+          const hydrated = await hydrateRefImageUrl(frameUrl);
+          if (hydrated) {
+            characters = [
+              {
+                type: "image",
+                id: `edit-char-${item.id}`,
+                url: hydrated,
+                label: "من المشهد",
+              },
+            ];
+          }
+        }
+      }
+
+      const editDuration = inferTargetSecondsFromAsset(item);
+      const liveVideoSec =
+        videoRef.current &&
+        Number.isFinite(videoRef.current.duration) &&
+        videoRef.current.duration >= 4
+          ? Math.min(15, Math.max(4, Math.round(videoRef.current.duration)))
+          : null;
+      const durationSec = item.targetSeconds || liveVideoSec || editDuration;
+
+      writeEditDraft({
+        prompt: prompt || item.prompt || "",
+        media: "video",
+        startFrame: null,
+        referenceImages: characters,
+        sourceAssetId: item.id,
+        modelId: item.model,
+        duration: durationSec,
+        resolution: item.resolution,
+        aspectRatio: item.aspectRatio,
+        preferClarity: item.preferClarity,
+      });
+      const qs = new URLSearchParams({ edit: "1" });
+      qs.set("duration", String(durationSec));
+      if (item.model) qs.set("model", item.model);
+      if (item.resolution) qs.set("resolution", item.resolution);
+      if (item.aspectRatio) qs.set("aspect", item.aspectRatio);
+      if (item.preferClarity) qs.set("clarity", "1");
+      router.push(`/create/video?${qs.toString()}`);
+    } finally {
+      setEditing(false);
+    }
+  };
+
+  const handleSendToStudio = () => {
+    if (!editStudioAllowed) {
+      onEditStudioBlocked?.();
+      return;
+    }
+    if (sendingStudio || !mediaUrl || item.status !== "completed") return;
+    setSendingStudio(true);
+    try {
+      sendVideoToEditStudio(
+        router,
+        {
+          videoUrl: mediaUrl,
+          posterUrl: poster || undefined,
+          assetId: item.id,
+          historyId: item.historyId,
+          prompt: prompt || item.prompt,
+          durationSec: inferTargetSecondsFromAsset(item),
+          aspectRatio: item.aspectRatio,
+        },
+        { navigate: !stayOnPageAfterStudio },
+      );
+      if (stayOnPageAfterStudio) {
+        setStudioNote(t.assets.sentToStudio);
+        window.setTimeout(() => setStudioNote(null), 2800);
+      }
+    } finally {
+      setSendingStudio(false);
+    }
+  };
+
+  const handleDownload = async () => {
+    if (downloading || item.status !== "completed") return;
+    const path = veronixDownloadPath({
+      historyId: item.historyId,
+      url: item.url,
+      mediaType: "video",
+    });
+    if (!path) return;
+    setDownloading(true);
+    try {
+      const res = await fetch(path, { credentials: "same-origin" });
+      if (!res.ok) throw new Error("download failed");
+      const blob = await res.blob();
+      if (!blob.size) throw new Error("empty");
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = `veronix-${Date.now()}.mp4`;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 2_000);
+    } catch {
+      window.location.assign(path);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (deleting) return;
+    const ok = window.confirm(
+      dir === "rtl" ? "حذف هذا الفيديو من Assets؟" : "Delete this video from Assets?",
+    );
+    if (!ok) return;
+    setDeleting(true);
+    try {
+      const { res, data } = await fetchJson<{ error?: string }>("/api/assets", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: item.id }),
+      });
+      if (!res.ok) throw new Error(data.error || "delete failed");
+      onDeleted(item.id);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "delete failed");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleShare = async () => {
+    if (sharing || item.status !== "completed") return;
+    setSharing(true);
+    setShareNote(null);
+    const result = await shareAsset(
+      { prompt, referralCode, locale: dir === "rtl" ? "ar" : "en" },
+      "native",
+    );
+    setShareNote(result.ok ? t.create.resultShare : t.invite.shareFailed);
+    setSharing(false);
+  };
+
+  return {
+    prompt,
+    title,
+    editing,
+    downloading,
+    deleting,
+    sharing,
+    shareNote,
+    studioNote,
+    sendingStudio,
+    handleEdit,
+    handleSendToStudio,
+    handleDownload,
+    handleDelete,
+    handleShare,
+  };
+}
+
+function GridVideoActionsRail({
+  item,
+  actions,
+  muted,
+  onToggleMute,
+  editStudioAllowed,
+  onEditStudioBlocked,
+}: {
+  item: AssetItem;
+  actions: ReturnType<typeof useVideoAssetActions>;
+  muted: boolean;
+  onToggleMute: () => void;
+  editStudioAllowed: boolean;
+  onEditStudioBlocked?: () => void;
+}) {
+  const { t } = useLocale();
+
+  const railBtn = (
+    icon: ReactNode,
+    label: string,
+    onClick: () => void,
+    disabled?: boolean,
+    tone?: "default" | "danger" | "studio" | "accent",
+  ) => {
+    const toneClass =
+      tone === "danger"
+        ? "text-rose-200 hover:bg-rose-500/20 disabled:text-rose-200/40"
+        : tone === "studio"
+          ? "text-[#d4c4ff] hover:bg-[#7c5cff]/20 disabled:text-[#d4c4ff]/40"
+          : tone === "accent"
+            ? "text-[#22f0ff] hover:bg-[#22f0ff]/15 disabled:text-[#22f0ff]/40"
+            : "text-white/85 hover:bg-white/10 disabled:text-white/35";
+    return (
+      <button
+        type="button"
+        disabled={disabled}
+        aria-label={label}
+        title={label}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick();
+        }}
+        className={`flex flex-1 min-h-0 w-full max-h-9 items-center justify-center rounded-md transition disabled:cursor-not-allowed ${toneClass}`}
+      >
+        {icon}
+      </button>
+    );
+  };
+
+  const iconSize = "h-3.5 w-3.5";
+
+  return (
+    <div className="flex w-8 shrink-0 flex-col justify-between gap-0.5 border-s border-white/10 bg-[#0a0e14]/95 py-1 sm:w-9">
+      {railBtn(
+        actions.editing ? (
+          <Loader2 className={`${iconSize} animate-spin`} />
+        ) : (
+          <Pencil className={iconSize} />
+        ),
+        t.assets.edit,
+        () => void actions.handleEdit(),
+        actions.editing || item.status === "running",
+      )}
+      {railBtn(
+        actions.sendingStudio ? (
+          <Loader2 className={`${iconSize} animate-spin`} />
+        ) : (
+          <Scissors className={iconSize} />
+        ),
+        t.assets.sendToStudio,
+        () => {
+          if (!editStudioAllowed) {
+            onEditStudioBlocked?.();
+            return;
+          }
+          actions.handleSendToStudio();
+        },
+        actions.sendingStudio ||
+          item.status === "running" ||
+          item.status !== "completed",
+        "studio",
+      )}
+      {railBtn(
+        actions.deleting ? (
+          <Loader2 className={`${iconSize} animate-spin`} />
+        ) : (
+          <Trash2 className={iconSize} />
+        ),
+        t.assets.delete,
+        () => void actions.handleDelete(),
+        actions.deleting,
+        "danger",
+      )}
+      {railBtn(
+        actions.sharing ? (
+          <Loader2 className={`${iconSize} animate-spin`} />
+        ) : (
+          <Share2 className={iconSize} />
+        ),
+        t.create.resultShare,
+        () => void actions.handleShare(),
+        actions.sharing || item.status !== "completed",
+        "accent",
+      )}
+      {railBtn(
+        actions.downloading ? (
+          <Loader2 className={`${iconSize} animate-spin`} />
+        ) : (
+          <Download className={iconSize} />
+        ),
+        t.assets.download,
+        () => void actions.handleDownload(),
+        actions.downloading ||
+          item.status !== "completed" ||
+          !(item.url || item.historyId),
+      )}
+      {railBtn(
+        muted ? <VolumeX className={iconSize} /> : <Volume2 className={iconSize} />,
+        muted ? t.assets.unmute : t.assets.mute,
+        onToggleMute,
+      )}
+    </div>
+  );
+}
+
 function FeedVideoSlide({
   item,
   active,
@@ -230,6 +597,10 @@ function FeedVideoSlide({
   referralCode,
   selected,
   onToggleSelect,
+  editStudioAllowed,
+  onEditStudioBlocked,
+  layout = "feed",
+  autoPlay = false,
 }: {
   item: AssetItem;
   active: boolean;
@@ -242,23 +613,26 @@ function FeedVideoSlide({
   referralCode?: string | null;
   selected?: boolean;
   onToggleSelect?: () => void;
+  editStudioAllowed: boolean;
+  onEditStudioBlocked?: () => void;
+  layout?: "feed" | "overlay";
+  autoPlay?: boolean;
 }) {
-  const router = useRouter();
   const { t, dir } = useLocale();
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [downloading, setDownloading] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const [posterFailed, setPosterFailed] = useState(false);
   const [promptMenuOpen, setPromptMenuOpen] = useState(false);
   const promptMenuRef = useRef<HTMLDivElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [recovering, setRecovering] = useState(false);
-  const [sharing, setSharing] = useState(false);
-  const [shareNote, setShareNote] = useState<string | null>(null);
-  const [sendingStudio, setSendingStudio] = useState(false);
   /** Only attach video src after Play — neighbors stay on poster (CDN bytes). */
   const [armed, setArmed] = useState(false);
+  const autoPlayedRef = useRef(false);
+
+  const heightClass =
+    layout === "overlay"
+      ? "h-[calc(100dvh-env(safe-area-inset-bottom))]"
+      : "h-[calc(100dvh-5.25rem-env(safe-area-inset-bottom))]";
 
   const mediaUrl = useMemo(
     () =>
@@ -289,11 +663,37 @@ function FeedVideoSlide({
     item.status !== "failed" &&
     item.status !== "running";
 
+  const {
+    editing,
+    downloading,
+    deleting,
+    sharing,
+    shareNote,
+    sendingStudio,
+    handleEdit,
+    handleSendToStudio,
+    handleDownload,
+    handleDelete,
+    handleShare,
+  } = useVideoAssetActions({
+    item,
+    videoRef,
+    mediaUrl,
+    poster,
+    posterFailed,
+    captureFromVideo: active && armed,
+    onDeleted,
+    referralCode,
+    editStudioAllowed,
+    onEditStudioBlocked,
+  });
+
   useEffect(() => {
     setPromptMenuOpen(false);
     setPosterFailed(false);
     setPlaying(false);
     setArmed(false);
+    autoPlayedRef.current = false;
   }, [item.id]);
 
   useEffect(() => {
@@ -375,180 +775,15 @@ function FeedVideoSlide({
     setPlaying(false);
   };
 
-  const handleEdit = async () => {
-    if (editing) return;
-    setEditing(true);
-    try {
-      // Always restore uploaded character stills first — never steal a video frame
-      // when the asset already has referenceImages (frame = result scene, not faces).
-      const savedRefs = Array.isArray(item.referenceImages)
-        ? item.referenceImages.filter((r) => r?.url).slice(0, 4)
-        : [];
-
-      let characters = savedRefs.length
-        ? await hydrateReferenceImages(savedRefs)
-        : [];
-
-      // If hydrate failed but we still have paths, keep the original URLs
-      // (CreateStudio displays /generations via the stream proxy).
-      if (!characters.length && savedRefs.length) {
-        characters = savedRefs.map((r, i) => ({
-          type: "image" as const,
-          id: r.id || `edit-ref-${item.id}-${i}`,
-          url: r.url,
-          label: r.label || "",
-        }));
-      }
-
-      // Only older assets without saved refs: capture a still as a character slot.
-      if (!characters.length) {
-        const el = videoRef.current;
-        let frameUrl: string | null = null;
-        if (el && active) {
-          try {
-            if (el.readyState < 2) {
-              await new Promise<void>((resolve) => {
-                const done = () => resolve();
-                el.addEventListener("loadeddata", done, { once: true });
-                window.setTimeout(done, 2500);
-              });
-            }
-            try {
-              el.currentTime = Math.min(0.15, (el.duration || 1) * 0.02);
-              await new Promise<void>((resolve) => {
-                const done = () => resolve();
-                el.addEventListener("seeked", done, { once: true });
-                window.setTimeout(done, 800);
-              });
-            } catch {
-              // keep current frame
-            }
-            const captured = await captureVideoFrame(el);
-            frameUrl = captured?.url || null;
-          } catch {
-            frameUrl = null;
-          }
-        }
-        if (!frameUrl && poster && !posterFailed) {
-          frameUrl = poster;
-        }
-        if (frameUrl) {
-          const hydrated = await hydrateRefImageUrl(frameUrl);
-          if (hydrated) {
-            characters = [
-              {
-                type: "image",
-                id: `edit-char-${item.id}`,
-                url: hydrated,
-                label: "من المشهد",
-              },
-            ];
-          }
-        }
-      }
-
-      const editDuration = inferTargetSecondsFromAsset(item);
-      const liveVideoSec =
-        videoRef.current &&
-        Number.isFinite(videoRef.current.duration) &&
-        videoRef.current.duration >= 4
-          ? Math.min(15, Math.max(4, Math.round(videoRef.current.duration)))
-          : null;
-      const durationSec = item.targetSeconds || liveVideoSec || editDuration;
-
-      writeEditDraft({
-        prompt: prompt || item.prompt || "",
-        media: "video",
-        startFrame: null,
-        referenceImages: characters,
-        sourceAssetId: item.id,
-        modelId: item.model,
-        duration: durationSec,
-        resolution: item.resolution,
-        aspectRatio: item.aspectRatio,
-        preferClarity: item.preferClarity,
-      });
-      const qs = new URLSearchParams({ edit: "1" });
-      qs.set("duration", String(durationSec));
-      if (item.model) qs.set("model", item.model);
-      if (item.resolution) qs.set("resolution", item.resolution);
-      if (item.aspectRatio) qs.set("aspect", item.aspectRatio);
-      if (item.preferClarity) qs.set("clarity", "1");
-      router.push(`/create/video?${qs.toString()}`);
-    } finally {
-      setEditing(false);
-    }
-  };
-
-  const handleSendToStudio = () => {
-    if (sendingStudio || !mediaUrl || item.status !== "completed") return;
-    setSendingStudio(true);
-    try {
-      sendVideoToEditStudio(router, {
-        videoUrl: mediaUrl,
-        posterUrl: poster || undefined,
-        assetId: item.id,
-        historyId: item.historyId,
-        prompt: prompt || item.prompt,
-        durationSec: inferTargetSecondsFromAsset(item),
-        aspectRatio: item.aspectRatio,
-      });
-    } finally {
-      setSendingStudio(false);
-    }
-  };
-
-  const handleDownload = async () => {
-    if (downloading || item.status !== "completed") return;
-    const path = veronixDownloadPath({
-      historyId: item.historyId,
-      url: item.url,
-      mediaType: "video",
-    });
-    if (!path) return;
-    setDownloading(true);
-    try {
-      const res = await fetch(path, { credentials: "same-origin" });
-      if (!res.ok) throw new Error("download failed");
-      const blob = await res.blob();
-      if (!blob.size) throw new Error("empty");
-      const objectUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = objectUrl;
-      a.download = `veronix-${Date.now()}.mp4`;
-      a.rel = "noopener";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 2_000);
-    } catch {
-      window.location.assign(path);
-    } finally {
-      setDownloading(false);
-    }
-  };
-
-  const handleDelete = async () => {
-    if (deleting) return;
-    const ok = window.confirm(
-      dir === "rtl" ? "حذف هذا الفيديو من Assets؟" : "Delete this video from Assets?",
-    );
-    if (!ok) return;
-    setDeleting(true);
-    try {
-      const { res, data } = await fetchJson<{ error?: string }>("/api/assets", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: item.id }),
-      });
-      if (!res.ok) throw new Error(data.error || "delete failed");
-      onDeleted(item.id);
-    } catch (err) {
-      window.alert(err instanceof Error ? err.message : "delete failed");
-    } finally {
-      setDeleting(false);
-    }
-  };
+  useEffect(() => {
+    if (!autoPlay || !active || !canPlay || autoPlayedRef.current) return;
+    autoPlayedRef.current = true;
+    const timer = window.setTimeout(() => {
+      handlePlayClick();
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once per item when overlay opens
+  }, [autoPlay, active, canPlay, item.id]);
 
   const canSelect =
     Boolean(mediaUrl) && item.status === "completed";
@@ -556,7 +791,7 @@ function FeedVideoSlide({
   return (
     <section
       data-asset-id={item.id}
-      className={`relative h-[calc(100dvh-5.25rem-env(safe-area-inset-bottom))] w-full snap-start snap-always overflow-hidden bg-black ${
+      className={`relative w-full snap-start snap-always overflow-hidden bg-black ${heightClass} ${
         selected ? "ring-2 ring-inset ring-[#22f0ff]" : ""
       }`}
     >
@@ -785,18 +1020,7 @@ function FeedVideoSlide({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              void (async () => {
-                setSharing(true);
-                setShareNote(null);
-                const result = await shareAsset(
-                  { prompt, referralCode, locale: dir === "rtl" ? "ar" : "en" },
-                  "native",
-                );
-                setShareNote(
-                  result.ok ? t.create.resultShare : t.invite.shareFailed,
-                );
-                setSharing(false);
-              })();
+              void handleShare();
             }}
             disabled={sharing || item.status !== "completed"}
             className="flex h-11 w-11 items-center justify-center rounded-full bg-[#22f0ff]/15 text-[#22f0ff] ring-1 ring-[#22f0ff]/30 backdrop-blur-md disabled:opacity-40"
@@ -919,18 +1143,36 @@ function FeedVideoSlide({
 
 function GridVideoTile({
   item,
-  onOpen,
+  isActive,
+  onActivate,
+  onDeactivate,
+  muted,
+  onToggleMute,
+  onDeleted,
+  referralCode,
   selected,
   onToggleSelect,
+  editStudioAllowed,
+  onEditStudioBlocked,
 }: {
   item: AssetItem;
-  onOpen: (id: string) => void;
+  isActive: boolean;
+  onActivate: () => void;
+  onDeactivate: () => void;
+  muted: boolean;
+  onToggleMute: () => void;
+  onDeleted: (id: string) => void;
+  referralCode?: string | null;
   selected?: boolean;
   onToggleSelect?: () => void;
+  editStudioAllowed: boolean;
+  onEditStudioBlocked?: () => void;
 }) {
-  const { dir } = useLocale();
+  const { t, dir } = useLocale();
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const [posterFailed, setPosterFailed] = useState(false);
-  // Prefer historyId for PixVerse/BytePlus posters in Assets grid tiles.
+  const [armed, setArmed] = useState(false);
+  const [playing, setPlaying] = useState(false);
   const poster = veronixPosterSrc({
     historyId: item.historyId,
     url: item.url,
@@ -940,8 +1182,23 @@ function GridVideoTile({
     url: item.url,
     mediaType: "video",
   });
-  const title = assetPromptTitle(item.prompt) || "فيديو";
+  const actions = useVideoAssetActions({
+    item,
+    videoRef,
+    mediaUrl,
+    poster,
+    posterFailed,
+    captureFromVideo: isActive && armed,
+    onDeleted,
+    referralCode,
+    editStudioAllowed,
+    onEditStudioBlocked,
+    stayOnPageAfterStudio: true,
+  });
+  const title = actions.title || "فيديو";
   const running = item.status === "running" || item.status === "pending";
+  const canPlay =
+    Boolean(mediaUrl) && item.status !== "failed" && item.status !== "running";
   const canSelect = Boolean(mediaUrl) && item.status === "completed";
   const ratio = String(item.aspectRatio || "16:9").trim();
   const portrait =
@@ -949,7 +1206,45 @@ function GridVideoTile({
 
   useEffect(() => {
     setPosterFailed(false);
+    setArmed(false);
+    setPlaying(false);
   }, [item.id, item.url, poster]);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    el.muted = muted;
+  }, [muted]);
+
+  useEffect(() => {
+    if (isActive) return;
+    const el = videoRef.current;
+    if (el) {
+      el.pause();
+    }
+    setPlaying(false);
+  }, [isActive]);
+
+  const handlePlayClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!canPlay || !mediaUrl || running) return;
+    onActivate();
+    if (!armed) {
+      flushSync(() => setArmed(true));
+    }
+    const el = videoRef.current;
+    if (!el) return;
+    void el
+      .play()
+      .then(() => setPlaying(true))
+      .catch(() => {
+        const onReady = () => {
+          el.removeEventListener("canplay", onReady);
+          void el.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+        };
+        el.addEventListener("canplay", onReady, { once: true });
+      });
+  };
 
   return (
     <div className="relative">
@@ -960,7 +1255,7 @@ function GridVideoTile({
             e.stopPropagation();
             onToggleSelect();
           }}
-          className={`absolute start-1.5 top-1.5 z-10 flex h-8 w-8 items-center justify-center rounded-lg border backdrop-blur-sm ${
+          className={`absolute start-1.5 top-1.5 z-30 flex h-8 w-8 items-center justify-center rounded-lg border backdrop-blur-sm ${
             selected
               ? "border-[#22f0ff] bg-[#22f0ff]/25 text-[#22f0ff]"
               : "border-white/25 bg-black/50 text-white/80"
@@ -974,61 +1269,98 @@ function GridVideoTile({
           )}
         </button>
       ) : null}
-      <button
-        type="button"
-        onClick={() => onOpen(item.id)}
-        className={`group relative w-full overflow-hidden rounded-lg bg-[#10141c] text-right ring-1 transition hover:ring-white/25 ${
+      <div
+        className={`group flex w-full items-stretch overflow-hidden rounded-lg bg-[#10141c] text-right ring-1 transition hover:ring-white/25 ${
           selected ? "ring-2 ring-[#22f0ff]" : "ring-white/10"
         }`}
         dir={dir}
       >
-      <div
-        className={`relative bg-black/50 ${
-          portrait ? "aspect-[3/4]" : "aspect-video"
-        }`}
-      >
-        {poster && !posterFailed ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={poster}
-            alt=""
-            className="h-full w-full object-cover"
-            loading="lazy"
-            onError={() => setPosterFailed(true)}
-          />
-        ) : mediaUrl && !running ? (
-          <video
-            src={mediaUrl}
-            muted
-            playsInline
-            preload="metadata"
-            className="h-full w-full object-cover"
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center text-white/30">
-            <Play className="h-8 w-8" />
-          </div>
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
-        {running ? (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/45">
-            <Loader2 className="h-6 w-6 animate-spin text-[#22f0ff]" />
-          </div>
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center opacity-80 transition group-hover:opacity-100">
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20 ring-1 ring-white/30 backdrop-blur-md">
-              <Play className="h-3.5 w-3.5 fill-white text-white" />
-            </span>
-          </div>
-        )}
-        <div className="absolute inset-x-0 bottom-0 p-1.5">
-          <p className="line-clamp-1 text-[10px] font-semibold leading-snug text-white sm:line-clamp-2 sm:text-[11px]">
-            {title}
-          </p>
-          <VideoMetaNotes item={item} className="mt-1" />
+        <div
+          className={`relative min-w-0 flex-1 bg-black/50 ${
+            portrait ? "aspect-[3/4]" : "aspect-video"
+          }`}
+        >
+          {!playing && poster && !posterFailed && !armed ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={poster}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover"
+              loading="lazy"
+              onError={() => setPosterFailed(true)}
+            />
+          ) : null}
+          {armed && mediaUrl ? (
+            <video
+              ref={videoRef}
+              src={mediaUrl}
+              poster={!posterFailed && poster ? poster : undefined}
+              playsInline
+              controls={playing}
+              muted={muted}
+              preload={isActive ? "auto" : "metadata"}
+              className="absolute inset-0 z-10 h-full w-full object-cover"
+              onPlaying={() => setPlaying(true)}
+              onPause={() => {
+                setPlaying(false);
+                if (isActive) onDeactivate();
+              }}
+              onEnded={() => {
+                setPlaying(false);
+                onDeactivate();
+              }}
+            />
+          ) : null}
+          {!armed && !mediaUrl && !running ? (
+            <div className="flex h-full min-h-[4rem] items-center justify-center text-white/30">
+              <Play className="h-8 w-8" />
+            </div>
+          ) : null}
+          {!playing ? (
+            <div className="pointer-events-none absolute inset-0 z-20 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
+          ) : null}
+          {running ? (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/45">
+              <Loader2 className="h-6 w-6 animate-spin text-[#22f0ff]" />
+            </div>
+          ) : !playing ? (
+            <button
+              type="button"
+              onClick={handlePlayClick}
+              disabled={!canPlay}
+              className="absolute inset-0 z-20 flex items-center justify-center opacity-80 transition group-hover:opacity-100 disabled:opacity-40"
+              aria-label={t.assets.play}
+            >
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20 ring-1 ring-white/30 backdrop-blur-md">
+                <Play className="h-3.5 w-3.5 fill-white text-white" />
+              </span>
+            </button>
+          ) : null}
+          {actions.studioNote ? (
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-40 bg-[linear-gradient(135deg,#22f0ff,#7c5cff)] px-2 py-1 text-center text-[10px] font-bold text-[#0b0d12] sm:text-[11px]">
+              {actions.studioNote}
+            </div>
+          ) : null}
+          {!playing ? (
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-1.5">
+              <p className="line-clamp-1 text-[10px] font-semibold leading-snug text-white sm:line-clamp-2 sm:text-[11px]">
+                {title}
+              </p>
+              <VideoMetaNotes item={item} className="mt-1" />
+            </div>
+          ) : null}
         </div>
+        {!playing ? (
+          <GridVideoActionsRail
+            item={item}
+            actions={actions}
+            muted={muted}
+            onToggleMute={onToggleMute}
+            editStudioAllowed={editStudioAllowed}
+            onEditStudioBlocked={onEditStudioBlocked}
+          />
+        ) : null}
       </div>
-    </button>
     </div>
   );
 }
@@ -1197,21 +1529,23 @@ export function AssetsPage() {
   const [assets, setAssets] = useState<AssetItem[]>(() => readAssetsCache() || []);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<"video" | "image">("video");
-  const [viewMode, setViewMode] = useState<VideoViewMode>("browse");
-  const [gridZoom, setGridZoom] = useState(2);
-  const [focusAssetId, setFocusAssetId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<VideoViewMode>("grid");
+  const [gridZoom, setGridZoom] = useState(() => readStoredGridZoom());
+  const [gridPlayingId, setGridPlayingId] = useState<string | null>(null);
   const [muted, setMuted] = useState(true);
   const [loading, setLoading] = useState(() => !readAssetsCache()?.length);
   const [recoverNote, setRecoverNote] = useState<string | null>(null);
+  const [gridStudioNote, setGridStudioNote] = useState<string | null>(null);
   const [selectedVideoIds, setSelectedVideoIds] = useState<Set<string>>(
     () => new Set(),
   );
   const feedRef = useRef<HTMLDivElement | null>(null);
   const syncPollRef = useRef(0);
 
+  /** Always land on Grid when opening Assets — avoids Browse→Grid flash. */
   useEffect(() => {
-    setViewMode(readStoredViewMode());
-    setGridZoom(readStoredGridZoom());
+    setViewMode("grid");
+    setGridPlayingId(null);
   }, []);
 
   const setVideoViewMode = useCallback((mode: VideoViewMode) => {
@@ -1364,29 +1698,6 @@ export function AssetsPage() {
     viewMode === "browse" ? videos.length : 0,
   );
 
-  useEffect(() => {
-    if (viewMode !== "browse" || !focusAssetId) return;
-    const id = focusAssetId;
-    const frame = window.requestAnimationFrame(() => {
-      const root = feedRef.current;
-      if (!root) return;
-      const el = root.querySelector<HTMLElement>(
-        `[data-asset-id="${CSS.escape(id)}"]`,
-      );
-      el?.scrollIntoView({ block: "start" });
-      setFocusAssetId(null);
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [viewMode, focusAssetId, videos.length]);
-
-  const openVideoInBrowse = useCallback(
-    (id: string) => {
-      setFocusAssetId(id);
-      setVideoViewMode("browse");
-    },
-    [setVideoViewMode],
-  );
-
   const toggleVideoSelection = useCallback((id: string) => {
     setSelectedVideoIds((prev) => {
       const next = new Set(prev);
@@ -1420,19 +1731,39 @@ export function AssetsPage() {
     [videos],
   );
 
+  const selectionCount = selectedVideoIds.size;
+  const editStudioAllowed = canUseEditStudio(user?.planId);
+  const promptEditStudioUpgrade = useCallback(() => {
+    router.push("/pricing?feature=edit");
+  }, [router]);
+
   const sendSelectedVideosToStudio = useCallback(() => {
+    if (!editStudioAllowed) {
+      promptEditStudioUpgrade();
+      return;
+    }
     const inputs = buildClipInputsFromSelection(selectedVideoIds);
     if (!inputs.length) return;
+    if (viewMode === "grid") {
+      if (appendVideosToEditStudio(inputs)) {
+        setGridStudioNote(t.assets.sentToStudio);
+        window.setTimeout(() => setGridStudioNote(null), 2800);
+      }
+      clearVideoSelection();
+      return;
+    }
     sendVideosToEditStudio(router, inputs);
     clearVideoSelection();
   }, [
+    editStudioAllowed,
+    promptEditStudioUpgrade,
     buildClipInputsFromSelection,
     selectedVideoIds,
+    viewMode,
     router,
     clearVideoSelection,
+    t.assets.sentToStudio,
   ]);
-
-  const selectionCount = selectedVideoIds.size;
 
   if (filter === "video") {
     return (
@@ -1599,6 +1930,8 @@ export function AssetsPage() {
                   referralCode={user?.referralCode}
                   selected={selectedVideoIds.has(item.id)}
                   onToggleSelect={() => toggleVideoSelection(item.id)}
+                  editStudioAllowed={editStudioAllowed}
+                  onEditStudioBlocked={promptEditStudioUpgrade}
                 />
               );
             })}
@@ -1607,6 +1940,16 @@ export function AssetsPage() {
 
         {!error && videos.length > 0 && viewMode === "grid" && (
           <div className="h-[calc(100dvh-5.25rem-env(safe-area-inset-bottom))] overflow-y-auto overscroll-y-contain px-1.5 pb-4 pt-28 sm:px-3 sm:pt-32">
+            {gridStudioNote ? (
+              <div
+                className="pointer-events-none sticky top-0 z-50 mx-auto mb-2 max-w-sm"
+                dir={dir}
+              >
+                <p className="rounded-xl bg-[linear-gradient(135deg,#22f0ff,#7c5cff)] px-4 py-2.5 text-center text-sm font-bold text-[#0b0d12] shadow-xl">
+                  {gridStudioNote}
+                </p>
+              </div>
+            ) : null}
             <div
               className="mx-auto grid max-w-6xl gap-1 sm:gap-1.5"
               style={{
@@ -1617,9 +1960,27 @@ export function AssetsPage() {
                 <GridVideoTile
                   key={item.id}
                   item={item}
-                  onOpen={openVideoInBrowse}
+                  isActive={gridPlayingId === item.id}
+                  onActivate={() => setGridPlayingId(item.id)}
+                  onDeactivate={() =>
+                    setGridPlayingId((current) =>
+                      current === item.id ? null : current,
+                    )
+                  }
+                  muted={muted}
+                  onToggleMute={() => setMuted((m) => !m)}
+                  onDeleted={(id) => {
+                    setAssets((prev) => {
+                      const next = prev.filter((a) => a.id !== id);
+                      writeAssetsCache(next);
+                      return next;
+                    });
+                  }}
+                  referralCode={user?.referralCode}
                   selected={selectedVideoIds.has(item.id)}
                   onToggleSelect={() => toggleVideoSelection(item.id)}
+                  editStudioAllowed={editStudioAllowed}
+                  onEditStudioBlocked={promptEditStudioUpgrade}
                 />
               ))}
             </div>

@@ -1,6 +1,6 @@
 /** Client-safe admin identity helpers (no node imports). */
 
-export const ADMIN_EMAIL = "ees1986@hotmail.com";
+export const ADMIN_EMAIL = "losmercadooss@gmail.com";
 
 export function isAdminEmail(email: string | null | undefined): boolean {
   return String(email || "").trim().toLowerCase() === ADMIN_EMAIL;

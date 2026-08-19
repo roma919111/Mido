@@ -172,6 +172,102 @@ function authHeaders(catalogModelId?: string | null): HeadersInit {
   };
 }
 
+export type BytePlusAuthProbe = {
+  ok: boolean;
+  configured: boolean;
+  model: string;
+  catalogModelId?: string;
+  httpStatus?: number;
+  errorCode?: string;
+  errorMessage?: string;
+  keyHint?: string;
+};
+
+function maskApiKeyHint(key?: string | null): string | undefined {
+  const k = String(key || "").trim();
+  if (!k) return undefined;
+  if (k.length <= 12) return `len=${k.length}`;
+  return `${k.slice(0, 6)}…${k.slice(-4)} (len=${k.length})`;
+}
+
+/** Lightweight auth probe — does not create a billable video task. */
+export async function probeBytePlusVideoAuth(
+  catalogModelId?: string | null,
+): Promise<BytePlusAuthProbe> {
+  const key = getBytePlusApiKey(catalogModelId);
+  const model = getBytePlusArkModelId(catalogModelId);
+  const keyHint = maskApiKeyHint(key);
+  if (!key) {
+    return {
+      ok: false,
+      configured: false,
+      model,
+      catalogModelId: catalogModelId || undefined,
+      errorMessage: "BYTEPLUS_API_KEY is not configured",
+      keyHint,
+    };
+  }
+
+  try {
+    const res = await fetch(`${getBytePlusBaseUrl()}/contents/generations/tasks`, {
+      method: "POST",
+      headers: authHeaders(catalogModelId),
+      body: JSON.stringify({
+        model,
+        content: [{ type: "text", text: "vyronix auth probe" }],
+        duration: 4,
+        ratio: "16:9",
+        resolution: "480p",
+      }),
+    });
+    const data = await parseJson(res);
+    const errObj = data.error as { code?: string; message?: string } | undefined;
+    if (res.ok && !errObj?.code) {
+      return {
+        ok: true,
+        configured: true,
+        model,
+        catalogModelId: catalogModelId || undefined,
+        httpStatus: res.status,
+        keyHint,
+      };
+    }
+    return {
+      ok: false,
+      configured: true,
+      model,
+      catalogModelId: catalogModelId || undefined,
+      httpStatus: res.status,
+      errorCode: errObj?.code,
+      errorMessage: errObj?.message || String(data.message || res.statusText),
+      keyHint,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      configured: true,
+      model,
+      catalogModelId: catalogModelId || undefined,
+      errorMessage: error instanceof Error ? error.message : "probe failed",
+      keyHint,
+    };
+  }
+}
+
+export async function probeAllBytePlusVideoAuth(): Promise<{
+  vyronix: BytePlusAuthProbe;
+  seedance2: BytePlusAuthProbe;
+}> {
+  const { SEEDANCE_MINI_MODEL_ID, SEEDANCE_2_MODEL_ID } = await import(
+    "@/lib/byteplus-constants"
+  );
+  const [vyronix, seedance2] = await Promise.all([
+    probeBytePlusVideoAuth(SEEDANCE_MINI_MODEL_ID),
+    probeBytePlusVideoAuth(SEEDANCE_2_MODEL_ID),
+  ]);
+  return { vyronix, seedance2 };
+}
+
 async function parseJson(res: Response): Promise<Record<string, unknown>> {
   const text = await res.text();
   try {

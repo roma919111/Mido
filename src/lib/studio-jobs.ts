@@ -335,7 +335,9 @@ export function pruneGhostRunningJobs(
     const wallMs =
       j.historyId?.startsWith("gm:") || j.historyId?.startsWith("mm:")
         ? 45 * 60 * 1000
-        : maxWallMs;
+        : j.historyId?.startsWith("pv:") && (j.targetSeconds || 0) > 15
+          ? 45 * 60 * 1000
+          : maxWallMs;
 
     if (started > 0 && now - started >= wallMs) {
       changed = true;
@@ -343,8 +345,10 @@ export function pruneGhostRunningJobs(
         ...j,
         status: "failed",
         error:
-          j.historyId?.startsWith("gm:") || j.historyId?.startsWith("mm:")
-            ? "انتهت مهلة التوليد (45 دقيقة) — افتح Assets أو أعد التوليد"
+          j.historyId?.startsWith("gm:") ||
+          j.historyId?.startsWith("mm:") ||
+          (j.historyId?.startsWith("pv:") && (j.targetSeconds || 0) > 15)
+            ? "انتهت مهلة المتابعة في الإنشاء — افتح الأصول؛ التوليد قد يكون ما زال جاريًا"
             : "انتهت المهلة (10 دقائق) — أعد التوليد",
       });
       continue;
@@ -360,10 +364,11 @@ export function pruneGhostRunningJobs(
       continue;
     }
 
-    // Gemini / MiniMax can take many minutes — don't fail on short BytePlus ETA.
+    // Long PixVerse chains / Gemini / MiniMax outlive a single-clip ETA.
     if (
       !j.historyId?.startsWith("gm:") &&
       !j.historyId?.startsWith("mm:") &&
+      !(j.historyId?.startsWith("pv:") && (j.targetSeconds || 0) > 15) &&
       started > 0
     ) {
       const target = j.targetSeconds || (j.mediaType === "image" ? 4 : 5);

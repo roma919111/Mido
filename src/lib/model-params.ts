@@ -27,8 +27,15 @@ export function mapResolutionForMcpModel(
 
   if (mcpModel.includes("kling")) {
     if (r.includes("4k") || r === "2160p") return "4k";
-    if (r.includes("1080") || r === "1k" || r === "pro") return "pro";
-    return "std";
+    if (r.includes("1080") || r === "1k" || r === "pro") return "1080p";
+    if (r.includes("720") || r === "std") return "720p";
+    return "720p";
+  }
+
+  if (mcpModel.includes("flux-3")) {
+    if (r.includes("draft")) return "Draft";
+    if (r === "fhd" || r.includes("1080") || r === "2k" || r === "pro") return "FHD";
+    return "HD";
   }
 
   if (mcpModel.toLowerCase().includes("pixverse")) {

@@ -113,7 +113,7 @@ export async function POST(request: Request) {
         const bpId = parseBytePlusHistoryId(asset.historyId || "");
         if (bpId && (asset.status === "running" || !asset.url)) {
           try {
-            const task = await getBytePlusVideoTask(bpId);
+            const task = await getBytePlusVideoTask(bpId, asset.model || undefined);
             const status = mapBytePlusStatus(task.status);
             const url = task.content?.video_url || "";
             if (url) {

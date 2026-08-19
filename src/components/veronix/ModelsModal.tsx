@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Search, X } from "lucide-react";
 import type { CatalogModel } from "@/lib/model-catalog";
 import { ModelLogo } from "@/components/veronix/ModelLogo";
+import { SEEDANCE_LOGO_SRC } from "@/lib/model-logos";
 
 interface ModelsModalProps {
   open: boolean;
@@ -141,9 +142,33 @@ export function ModelsModal({
                           />
                         </div>
                         <p className="mt-1 text-[11px] text-white/40">
-                          {model.tagline
-                            ? `${model.tagline}${model.badge ? ` · ${model.badge}` : ""}`
-                            : `${model.available ? "متاح" : "قريبًا"}${model.badge ? ` · ${model.badge}` : ""}`}
+                          {model.tagline ? (
+                            <>
+                              {model.tagline}
+                              {model.badge === "Seedance" ? (
+                                <>
+                                  {" · "}
+                                  <span className="inline-flex items-center gap-1 align-middle">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={SEEDANCE_LOGO_SRC}
+                                      alt=""
+                                      width={14}
+                                      height={14}
+                                      className="inline-block h-3.5 w-3.5 object-contain"
+                                    />
+                                    Seedance
+                                  </span>
+                                </>
+                              ) : model.badge ? (
+                                ` · ${model.badge}`
+                              ) : (
+                                ""
+                              )}
+                            </>
+                          ) : (
+                            `${model.available ? "متاح" : "قريبًا"}${model.badge === "Seedance" ? "" : model.badge ? ` · ${model.badge}` : ""}`
+                          )}
                         </p>
                       </div>
                     </div>

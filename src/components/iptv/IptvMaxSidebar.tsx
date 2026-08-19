@@ -1,26 +1,24 @@
+import { IptvBrandMark } from "./IptvBrandMark";
+
+export type IptvMainNav = "home" | "live" | "movies" | "series" | "favorites";
+
 type IptvMaxSidebarProps = {
-  active: "live" | "channels" | "favorites";
-  onChange: (nav: "live" | "channels" | "favorites") => void;
+  active: IptvMainNav;
+  onChange: (nav: IptvMainNav) => void;
 };
 
-const NAV = [
-  { id: "live" as const, label: "Live", icon: "📺" },
-  { id: "channels" as const, label: "Channels", icon: "🎬" },
-  { id: "favorites" as const, label: "Favorites", icon: "❤️" },
+const NAV: Array<{ id: IptvMainNav; label: string; icon: string }> = [
+  { id: "home", label: "الرئيسية", icon: "🏠" },
+  { id: "live", label: "مباشر", icon: "📺" },
+  { id: "movies", label: "أفلام", icon: "🎬" },
+  { id: "series", label: "مسلسلات", icon: "🎞️" },
+  { id: "favorites", label: "مفضلة", icon: "❤️" },
 ];
 
 export function IptvMaxSidebar({ active, onChange }: IptvMaxSidebarProps) {
   return (
     <aside className="mstv-rail">
-      <div className="mstv-rail__logo">
-        <div className="mstv-rail__logo-circle" aria-hidden="true">
-          <span>▶</span>
-        </div>
-        <div className="mstv-rail__brand">
-          <strong>MAX</strong>
-          <span>SHOW TV</span>
-        </div>
-      </div>
+      <IptvBrandMark />
 
       <nav className="mstv-rail__nav" aria-label="Main">
         {NAV.map((item) => (

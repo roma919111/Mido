@@ -1,5 +1,12 @@
 import { getAppBaseUrl } from "@/lib/app-url";
 
+/** Europe player replica — catalog/session on studio, video bytes via this origin. */
+export function getPlayerMediaOrigin(request: Request): string {
+  const configured = process.env.PLAYER_ORIGIN?.trim().replace(/\/$/, "");
+  if (configured && /^https?:\/\//i.test(configured)) return configured;
+  return getRequestPublicOrigin(request);
+}
+
 /** Public origin for URLs returned to the browser (Railway/Vercel safe). */
 export function getRequestPublicOrigin(request: Request): string {
   const forwardedHost = request.headers.get("x-forwarded-host");

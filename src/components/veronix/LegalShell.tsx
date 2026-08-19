@@ -20,7 +20,7 @@ export function LegalShell({
       <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 studio-backdrop" />
       <header className="border-b border-white/8 bg-[rgba(11,13,18,0.9)]">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-4 sm:px-6">
-          <Link href="/" aria-label="Veronix home">
+          <Link href="/" aria-label="Vyronix AI Studio home">
             <BrandLogo size="sm" />
           </Link>
           <div className="flex items-center gap-3">

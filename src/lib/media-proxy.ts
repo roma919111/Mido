@@ -86,8 +86,21 @@ function buildMediaApiPath(
         : "/api/media/stream";
 
   const historyId = input.historyId?.trim();
-  // Provider tasks: resolve via historyId (fresh CDN URL). Stale `url` in the DB
-  // often 404s on PixVerse/BytePlus for stream + poster extraction.
+  const existing = input.url?.trim();
+  // Stitched verb-chain files live under `.data/generations`. Prefer them over
+  // pv:/bp: historyId — those ids often point at the LAST clip only, so the
+  // player would play 4s while the UI still shows 16s/30s.
+  if (existing?.startsWith("/generations/")) {
+    const qs = new URLSearchParams({
+      local: existing,
+      type: mediaType,
+      filename,
+    });
+    return `${endpoint}?${qs.toString()}`;
+  }
+
+  // Remote provider tasks: resolve via historyId (fresh CDN URL). Stale `url`
+  // in the DB often 404s on PixVerse/BytePlus for stream + poster extraction.
   if (
     historyId &&
     (historyId.startsWith("pv:") || historyId.startsWith("bp:")) &&
@@ -95,17 +108,6 @@ function buildMediaApiPath(
   ) {
     const qs = new URLSearchParams({
       historyId,
-      type: mediaType,
-      filename,
-    });
-    return `${endpoint}?${qs.toString()}`;
-  }
-
-  const existing = input.url?.trim();
-  // Branded files live under `.data/generations` — always proxy (never raw /generations).
-  if (existing?.startsWith("/generations/")) {
-    const qs = new URLSearchParams({
-      local: existing,
       type: mediaType,
       filename,
     });

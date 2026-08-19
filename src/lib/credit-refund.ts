@@ -68,3 +68,23 @@ export async function refundFailedAssetCredits(input: {
 
   return { refunded: amount, errorMessage: nextError };
 }
+
+/**
+ * Keep credits for the seconds that actually landed; refund the rest.
+ * Does not mark the asset failed.
+ */
+export async function settlePartialGenerationCredits(input: {
+  userId: string;
+  assetId: string;
+  keepCredits: number;
+}): Promise<{ refunded: number; kept: number }> {
+  const asset = await findAssetById(input.userId, input.assetId);
+  if (!asset) return { refunded: 0, kept: 0 };
+  const charged = Math.max(0, Math.floor(Number(asset.creditsUsed) || 0));
+  const keep = Math.max(0, Math.min(charged, Math.floor(input.keepCredits)));
+  const refund = charged - keep;
+  if (refund <= 0) return { refunded: 0, kept: charged };
+  await adjustCredits(input.userId, refund);
+  await updateAsset(asset.id, input.userId, { creditsUsed: keep });
+  return { refunded: refund, kept: keep };
+}

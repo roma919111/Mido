@@ -68,8 +68,10 @@ export interface AssetRecord {
   aspectRatio?: string;
   /** Resolution tier (480p / 720p for video). */
   resolution?: string;
-  /** Server-side multi-shot job plan / progress */
-  jobMeta?: import("@/lib/multi-shot-job").MultiShotJobMeta;
+  /** Server-side multi-shot / PixVerse extend job plan / progress */
+  jobMeta?:
+    | import("@/lib/multi-shot-job").MultiShotJobMeta
+    | import("@/lib/pixverse-extend").PixVerseExtendJobMeta;
   /**
    * Character / reference stills used for this generation.
    * Restored by Assets → Edit so the customer can tweak without re-uploading.
@@ -82,6 +84,8 @@ export interface AssetRecord {
   createdAt: string;
   /** When the provider URL first landed (wall clock, ISO). */
   completedAt?: string;
+  /** Visible on home feed when set (ISO timestamp). */
+  publishedAt?: string;
 }
 
 export interface DbShape {
@@ -443,6 +447,8 @@ export async function createAsset(
         typeof input.generateAudio === "boolean"
           ? input.generateAudio
           : undefined,
+      completedAt: input.completedAt,
+      publishedAt: input.publishedAt,
       createdAt: new Date().toISOString(),
     };
     db.assets.unshift(asset);
@@ -542,6 +548,40 @@ export async function findAssetById(
   );
 }
 
+export async function findAssetByIdGlobal(assetId: string): Promise<AssetRecord | null> {
+  const db = await ensureDb();
+  return db.assets.find((a) => a.id === assetId) || null;
+}
+
+export async function listPublishedAssets(limit = 24): Promise<AssetRecord[]> {
+  const db = await ensureDb();
+  return db.assets
+    .filter(
+      (a) =>
+        Boolean(a.publishedAt) &&
+        a.status === "completed" &&
+        !a.deletedAt &&
+        a.hidden !== true &&
+        a.mediaType === "video",
+    )
+    .sort(
+      (a, b) =>
+        new Date(b.publishedAt || 0).getTime() - new Date(a.publishedAt || 0).getTime(),
+    )
+    .slice(0, Math.max(1, Math.min(limit, 48)));
+}
+
+/** Set/clear home-feed visibility for an owned asset. */
+export async function setAssetPublished(
+  userId: string,
+  assetId: string,
+  published: boolean,
+): Promise<AssetRecord | null> {
+  return updateAsset(assetId, userId, {
+    publishedAt: published ? new Date().toISOString() : undefined,
+  });
+}
+
 /** All running multi-shot job cards for a user (no limit). */
 export async function listRunningMultiShotJobs(
   userId: string,
@@ -571,23 +611,43 @@ export async function listAssetsForUser(
   });
 }
 
-/** Soft-delete an asset permanently for the owning user (survives login/recovery). */
+/** Soft-delete an asset permanently for the owning user (survives login/recovery).
+ * Also removes the local generation file from disk when safe.
+ */
 export async function deleteAssetForUser(
   userId: string,
   assetId: string,
 ): Promise<boolean> {
-  return withDbLock(async () => {
+  let localUrl: string | undefined;
+  const ok = await withDbLock(async () => {
     const db = await ensureDb();
     const i = db.assets.findIndex((a) => a.id === assetId && a.userId === userId);
     if (i < 0) return false;
+    const prev = db.assets[i]!;
+    localUrl = prev.url?.startsWith("/generations/") ? prev.url : undefined;
+    // Only unlink if no other non-deleted asset still points at the same file.
+    if (localUrl) {
+      const shared = db.assets.some(
+        (a, idx) =>
+          idx !== i &&
+          !a.deletedAt &&
+          a.url === localUrl,
+      );
+      if (shared) localUrl = undefined;
+    }
     db.assets[i] = {
-      ...db.assets[i]!,
+      ...prev,
       hidden: true,
       deletedAt: new Date().toISOString(),
     };
     await saveDb(db);
     return true;
   });
+  if (ok && localUrl) {
+    const { unlinkGenerationUrl } = await import("@/lib/local-media-cleanup");
+    await unlinkGenerationUrl(localUrl);
+  }
+  return ok;
 }
 
 /** Ops: soft-delete every asset for a user (including hidden / intermediate parts). */
@@ -797,6 +857,7 @@ export function publicUser(user: UserRecord) {
     id: user.id,
     email: user.email,
     name: user.name,
+    avatarUrl: user.avatarUrl || null,
     credits: user.credits,
     planId: user.planId,
     freeVeronixUsed: Boolean(user.freeVeronixUsed),

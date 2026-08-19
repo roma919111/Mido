@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { BrandLogo } from "@/components/BrandLogo";
 import { LanguageSwitcher } from "@/components/veronix/LanguageSwitcher";
 import { useLocale } from "@/components/veronix/LocaleProvider";
@@ -13,7 +13,8 @@ import {
   persistReferralCodeClient,
   readReferralCodeClient,
 } from "@/lib/referral-shared";
-import { trackAnalyticsEvent } from "@/components/veronix/AnalyticsScripts";
+import { trackSignUp } from "@/components/veronix/AnalyticsScripts";
+import { postAuthDestination, safeAuthNextPath } from "@/lib/auth-next";
 
 interface AuthFormProps {
   mode: "login" | "signup";
@@ -22,10 +23,9 @@ interface AuthFormProps {
 }
 
 export function AuthForm({ mode, embedded = false }: AuthFormProps) {
-  const router = useRouter();
   const params = useSearchParams();
   const { t, dir } = useLocale();
-  const next = params.get("next") || "/";
+  const next = safeAuthNextPath(params.get("next"));
   const paywall = params.get("paywall");
   const urlError = params.get("error");
   const refParam = params.get("ref");
@@ -73,24 +73,31 @@ export function AuthForm({ mode, embedded = false }: AuthFormProps) {
           ? "/api/auth/customer/login"
           : "/api/auth/customer/signup";
       const referralCode = readReferralCodeClient();
-      const { res, data } = await fetchJson<{ error?: string }>(path, {
+      const { res, data } = await fetchJson<{ error?: string; user?: CustomerUser }>(path, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, name, referralCode }),
       });
       if (!res.ok) throw new Error(data.error || "Auth failed");
-      if (mode === "signup") trackAnalyticsEvent("sign_up", { method: "email" });
+      if (mode === "signup") trackSignUp("email");
+      let sessionUser = data.user || null;
       try {
         const me = await fetchJson<{ user: CustomerUser | null }>(
           "/api/auth/customer/me",
+          { credentials: "include" },
         );
-        if (me.data.user) writeCustomerSnapshot(me.data.user);
+        if (me.data.user) {
+          sessionUser = me.data.user;
+          writeCustomerSnapshot(me.data.user);
+        }
       } catch {
-        // best-effort — next page will refresh session
+        if (sessionUser) writeCustomerSnapshot(sessionUser);
       }
-      if (paywall) router.push("/pricing?paywall=1");
-      else router.push(next);
-      router.refresh();
+      const dest = paywall
+        ? "/pricing?paywall=1"
+        : postAuthDestination(next, sessionUser?.email || email);
+      window.location.assign(dest);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Auth failed");
     } finally {

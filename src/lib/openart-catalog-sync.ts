@@ -14,6 +14,7 @@ import {
 import { saveCostCache } from "@/lib/openart-cost-cache";
 import type { CostCacheItem } from "@/lib/openart-cost-defaults";
 import { VERONIX_MODEL_ID } from "@/lib/free-trial";
+import { SEEDANCE_MINI_MODEL_ID } from "@/lib/byteplus-constants";
 
 const DATA_DIR = path.join(process.cwd(), ".data");
 const CATALOG_FILE = path.join(DATA_DIR, "openart-catalog.json");
@@ -38,7 +39,7 @@ export type SyncedCatalogFile = {
 
 /** Stable Veronix catalog ids for known OpenArt MCP model ids. */
 const MCP_TO_CATALOG_ID: Record<string, string> = {
-  "byte-plus-seedance-2-mini": VERONIX_MODEL_ID,
+  "byte-plus-seedance-2-mini": SEEDANCE_MINI_MODEL_ID,
   "byte-plus-seedance-2": "seedance-2",
   "byte-plus-seedance-2-fast": "seedance-2-fast",
   "byte-plus-seedream-4-5": "seedream-4-5",
@@ -48,6 +49,7 @@ const MCP_TO_CATALOG_ID: Record<string, string> = {
   pixverseV6: "pixverse-v6",
   "gemini-omni-flash": "gemini-omni-flash",
   "kling-3-omni": "kling-3-omni",
+  "flux-3-video": "flux-3-video",
   "nano-banana-2-lite": "nano-banana-2-lite",
   "nano-banana-2": "nano-banana-2",
   "nano-banana-pro": "nano-banana-pro",
@@ -60,7 +62,7 @@ function catalogIdFor(mcpId: string, kind: ModelKind): string {
 }
 
 function displayNameFor(mcpId: string, fallback: string, kind: ModelKind): string {
-  if (mcpId === "byte-plus-seedance-2-mini") return "Veronix";
+  if (mcpId === "byte-plus-seedance-2-mini") return "Seedance 2 Mini";
   if (mcpId === "kling-3-omni" && kind === "image") return "Kling 3.0 Omni";
   if (mcpId === "kling-3-omni") return "Kling 3.0 Omni";
   return fallback;
@@ -100,7 +102,7 @@ function buildCatalogFromOpenArt(models: OpenArtModelRow[]): SyncedCatalogFile {
     }
 
     if (videoModes.length) {
-      const isVeronix = mcpId === "byte-plus-seedance-2-mini";
+      const isSeedanceMini = mcpId === "byte-plus-seedance-2-mini";
       const fallback = VIDEO_FORM_FALLBACKS[mcpId];
       video.push({
         id: catalogIdFor(mcpId, "video"),
@@ -109,9 +111,9 @@ function buildCatalogFromOpenArt(models: OpenArtModelRow[]): SyncedCatalogFile {
         mcpId,
         modes: videoModes,
         available: true,
-        badge: isVeronix ? "حصري" : undefined,
-        tagline: isVeronix
-          ? "موديل فيديو حصري — أول فيديو مجاني (مقدمة Veronix + 4 ثوانٍ · 480p)"
+        badge: isSeedanceMini ? "Seedance" : undefined,
+        tagline: isSeedanceMini
+          ? "BytePlus Seedance 2 Mini — 480p / 720p · 4–15s"
           : row.description?.slice(0, 120),
         durationMin: fallback?.duration.min,
         durationMax: fallback?.duration.max,
@@ -125,10 +127,12 @@ function buildCatalogFromOpenArt(models: OpenArtModelRow[]): SyncedCatalogFile {
     }
   }
 
-  // Veronix / Seedance Mini first in video list.
+  // Vyronix + Seedance Mini first in video list.
   video.sort((a, b) => {
     if (a.id === VERONIX_MODEL_ID) return -1;
     if (b.id === VERONIX_MODEL_ID) return 1;
+    if (a.id === SEEDANCE_MINI_MODEL_ID) return -1;
+    if (b.id === SEEDANCE_MINI_MODEL_ID) return 1;
     return a.name.localeCompare(b.name);
   });
 
@@ -301,16 +305,18 @@ async function enrichVideoFormOptions(catalog: SyncedCatalogFile): Promise<void>
       model.audioDefault = options.audioDefault;
       model.audioParam = options.audioParam;
 
-      // Veronix Create UI: always offer 4–15s and 480p/720p only.
-      if (
-        model.id === VERONIX_MODEL_ID ||
-        model.mcpId === "byte-plus-seedance-2-mini"
-      ) {
+      // Seedance Mini Create UI: always offer 4–15s and 480p/720p only.
+      if (model.id === SEEDANCE_MINI_MODEL_ID || model.mcpId === "byte-plus-seedance-2-mini") {
         model.durationMin = 4;
         model.durationMax = 15;
         model.durationDefault = model.durationDefault ?? 5;
         model.resolutions = [...VIDEO_CLARITY_LADDER];
         model.resolutionDefault = model.resolutionDefault || "720p";
+      }
+      if (model.id === "pixverse-v6" || model.mcpId === "pixverseV6") {
+        model.durationMin = 1;
+        model.durationMax = VIDEO_FORM_FALLBACKS.pixverseV6.duration.max;
+        model.durationDefault = model.durationDefault ?? 5;
       }
     } catch {
       // keep fallback options

@@ -61,6 +61,13 @@ export function ModelPricingTable() {
                     <th className="px-5 py-3 font-medium">Quality</th>
                     {model.modelId === MINIMAX_H3_MODEL_ID ? (
                       <th className="px-5 py-3 font-medium">Credits/sec</th>
+                    ) : model.modelId === PIXVERSE_MODEL_ID ? (
+                      <>
+                        <th className="px-5 py-3 font-medium">بدون صوت</th>
+                        <th className="px-5 py-3 font-medium">مع صوت</th>
+                        <th className="px-5 py-3 font-medium">مرجع فيديو</th>
+                        <th className="px-5 py-3 font-medium">مرجع + صوت</th>
+                      </>
                     ) : (
                       <>
                         <th className="px-5 py-3 font-medium">No audio</th>
@@ -79,6 +86,7 @@ export function ModelPricingTable() {
                   ).map((quality) => {
                     const tier = model.creditsPerSecond[quality];
                     if (!tier) return null;
+                    const fusion = model.videoReferenceCreditsPerSecond?.[quality];
                     const example = calculateVideoCredits({
                       model: model.modelId,
                       quality,
@@ -94,6 +102,21 @@ export function ModelPricingTable() {
                           <td className="px-5 py-3 tabular-nums text-[#22f0ff]" dir="ltr">
                             {tier.noAudio}/sec
                           </td>
+                        ) : model.modelId === PIXVERSE_MODEL_ID ? (
+                          <>
+                            <td className="px-5 py-3 tabular-nums text-[#22f0ff]" dir="ltr">
+                              {tier.noAudio}/ث
+                            </td>
+                            <td className="px-5 py-3 tabular-nums text-[#22f0ff]" dir="ltr">
+                              {tier.withAudio}/ث
+                            </td>
+                            <td className="px-5 py-3 tabular-nums text-[#f0c14a]" dir="ltr">
+                              {fusion?.noAudio ?? "—"}/ث
+                            </td>
+                            <td className="px-5 py-3 tabular-nums text-[#f0c14a]" dir="ltr">
+                              {fusion?.withAudio ?? "—"}/ث
+                            </td>
+                          </>
                         ) : (
                           <>
                             <td className="px-5 py-3 tabular-nums text-[#22f0ff]" dir="ltr">
@@ -119,7 +142,11 @@ export function ModelPricingTable() {
                 markup) · reference video billed at output rate per second.
               </p>
             ) : null}
-            {model.videoReferenceExtraPerSecond ? (
+            {model.videoReferenceCreditsPerSecond ? (
+              <p className="border-t border-white/8 px-5 py-3 text-xs text-white/40">
+                Fusion / فيديو مرجعي: جدول PixVerse الرسمي (~ضعف السعر) × $10/2000 نقطة × هامش 55%.
+              </p>
+            ) : model.videoReferenceExtraPerSecond ? (
               <p className="border-t border-white/8 px-5 py-3 text-xs text-white/40">
                 Fusion (video reference): extra surcharge per second by quality — see
                 studio estimate when reference videos are attached.

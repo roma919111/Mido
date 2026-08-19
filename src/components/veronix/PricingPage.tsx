@@ -12,6 +12,7 @@ import {
   canTopUp,
   canUpgradeToPlan,
   getPlan,
+  getTopUp,
   isFreePlan,
   isHighestPlan,
   isPaidPlan,
@@ -24,6 +25,8 @@ import { fetchJson } from "@/lib/fetch-json";
 import { useLocale } from "@/components/veronix/LocaleProvider";
 import { useCustomerUser } from "@/hooks/useCustomerUser";
 import { ModelPricingTable } from "@/components/veronix/ModelPricingTable";
+import { trackBeginCheckout, trackPurchase } from "@/components/veronix/AnalyticsScripts";
+import type { CheckoutAnalytics } from "@/lib/checkout-analytics";
 
 export function PricingPage() {
   const router = useRouter();
@@ -62,12 +65,27 @@ export function PricingPage() {
           applied?: boolean;
           reason?: string;
           error?: string;
+          analytics?: CheckoutAnalytics | null;
         }>("/api/billing/confirm", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sessionId }),
         });
         if (res.ok && confirm.user) {
+          if (confirm.analytics) {
+            trackPurchase({
+              transactionId: confirm.analytics.transactionId,
+              value: confirm.analytics.value,
+              currency: confirm.analytics.currency,
+              items: [
+                {
+                  itemId: confirm.analytics.itemId,
+                  itemName: confirm.analytics.itemName,
+                  price: confirm.analytics.value,
+                },
+              ],
+            });
+          }
           setUser(confirm.user);
           setMessage(
             confirm.applied
@@ -83,6 +101,9 @@ export function PricingPage() {
       if (params.get("success")) setMessage("تم الدفع بنجاح — سيظهر الرصيد خلال لحظات.");
       if (params.get("canceled")) setMessage("تم إلغاء عملية الدفع.");
       if (params.get("paywall")) setMessage("اشترك أو أضف كريدت قبل التوليد.");
+      if (params.get("feature") === "edit") {
+        setMessage("استوديو الإيديتينج متاح مع باقة الترا فقط — رقِّ اشتراكك أدناه.");
+      }
     })();
   }, [params]);
 
@@ -116,6 +137,23 @@ export function PricingPage() {
         throw new Error(data.error || "فشل الدفع");
       }
       if (data.url) {
+        if (body.planId) {
+          const plan = getPlan(body.planId);
+          if (plan && plan.priceUsd > 0) {
+            trackBeginCheckout({
+              value: plan.priceUsd,
+              items: [{ itemId: plan.id, itemName: plan.name, price: plan.priceUsd }],
+            });
+          }
+        } else if (body.topUpId) {
+          const pack = getTopUp(body.topUpId);
+          if (pack) {
+            trackBeginCheckout({
+              value: pack.priceUsd,
+              items: [{ itemId: pack.id, itemName: pack.name, price: pack.priceUsd }],
+            });
+          }
+        }
         // Real Stripe Checkout only — credits apply after paid webhook/confirm.
         window.location.href = data.url;
         return;

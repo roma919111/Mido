@@ -102,7 +102,7 @@ export function resolveGenerationFile(localPath: string): string | null {
   const name = path.basename(localPath);
   if (!name || name !== localPath.replace(/^\/generations\//, "")) return null;
   // Videos + uploaded character / reference stills.
-  if (!/^[\w.-]+\.(mp4|png|jpe?g|webp|gif)$/i.test(name)) return null;
+  if (!/^[\w.-]+\.(mp4|webm|mov|png|jpe?g|webp|gif)$/i.test(name)) return null;
   return path.join(GENERATIONS_DIR, name);
 }
 

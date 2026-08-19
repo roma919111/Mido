@@ -28,13 +28,25 @@ import {
 } from "@/lib/minimax-video";
 import { MINIMAX_HARD_FAIL_MS } from "@/lib/minimax-constants";
 import { getCurrentUser } from "@/lib/customer-auth";
-import { findAssetByHistoryId, findAssetById, updateAsset } from "@/lib/db";
+import {
+  findAssetByHistoryId,
+  findAssetById,
+  updateAsset,
+} from "@/lib/db";
 import { ensureClarityUrl, shouldApplyClarityGrade } from "@/lib/ensure-clarity";
 import { refundFailedAssetCredits } from "@/lib/credit-refund";
 import { translateBytePlusError } from "@/lib/byteplus-errors";
 import { warmVideoPosterBackground } from "@/lib/poster-cache";
+import {
+  ensurePixVerseExtendBackground,
+  findPixVerseChainAsset,
+  isPixVerseExtendAsset,
+  pixverseChainPollNote,
+  tickPixVerseExtendJob,
+} from "@/lib/pixverse-extend";
 
 export const runtime = "nodejs";
+export const maxDuration = 120;
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -53,6 +65,30 @@ export async function GET(request: Request) {
     const asset = await findAssetById(user.id, assetId);
     if (!asset) {
       return NextResponse.json({ error: "Asset not found" }, { status: 404 });
+    }
+
+    if (isPixVerseExtendAsset(asset) && asset.status === "running") {
+      ensurePixVerseExtendBackground(user.id, asset.id);
+      const updated = (await tickPixVerseExtendJob(user.id, asset)) || asset;
+      const status =
+        updated.status === "completed"
+          ? "COMPLETED"
+          : updated.status === "failed"
+            ? "FAILED"
+            : "RUNNING";
+      return NextResponse.json({
+        assetId,
+        status,
+        urls: updated.url ? [updated.url] : [],
+        live: true,
+        provider: "pixverse",
+        pollAfterSeconds: status === "RUNNING" ? 4 : undefined,
+        error: status === "FAILED" ? updated.error : undefined,
+        note:
+          status === "RUNNING"
+            ? pixverseChainPollNote(updated.jobMeta)
+            : undefined,
+      });
     }
 
     // Late failures (async image jobs): refund if still charged.
@@ -189,33 +225,121 @@ export async function GET(request: Request) {
     }
   }
 
-  const pixverseId = parsePixVerseHistoryId(historyId);
+      const pixverseId = parsePixVerseHistoryId(historyId);
   if (pixverseId) {
     try {
+      const user = await getCurrentUser().catch(() => null);
+      const byAsset =
+        user && assetId ? await findAssetById(user.id, assetId) : null;
+      const byHistory = user
+        ? await findPixVerseChainAsset(user.id, historyId)
+        : null;
+      const extendAsset = byAsset || byHistory;
+
+      if (user && extendAsset && isPixVerseExtendAsset(extendAsset)) {
+        if (extendAsset.status === "running") {
+          ensurePixVerseExtendBackground(user.id, extendAsset.id);
+          const updated =
+            (await tickPixVerseExtendJob(user.id, extendAsset)) || extendAsset;
+          if (updated.status === "completed" && updated.url) {
+            return NextResponse.json({
+              historyId: updated.historyId || historyId,
+              status: "COMPLETED",
+              urls: [updated.url],
+              live: true,
+              provider: "pixverse",
+            });
+          }
+          if (updated.status === "failed") {
+            return NextResponse.json({
+              historyId: updated.historyId || historyId,
+              status: "FAILED",
+              urls: [] as string[],
+              live: true,
+              provider: "pixverse",
+              error: updated.error || "فشل تمديد PixVerse",
+            });
+          }
+          return NextResponse.json({
+            historyId: updated.historyId || historyId,
+            status: "RUNNING",
+            urls: [] as string[],
+            live: true,
+            provider: "pixverse",
+            pollAfterSeconds: 4,
+            note: pixverseChainPollNote(updated.jobMeta),
+          });
+        }
+        if (extendAsset.status === "failed") {
+          return NextResponse.json({
+            historyId: extendAsset.historyId || historyId,
+            status: "FAILED",
+            urls: [] as string[],
+            live: true,
+            provider: "pixverse",
+            error: extendAsset.error || "فشل تمديد PixVerse",
+          });
+        }
+        if (extendAsset.status === "completed" && extendAsset.url) {
+          return NextResponse.json({
+            historyId: extendAsset.historyId || historyId,
+            status: "COMPLETED",
+            urls: [extendAsset.url],
+            live: true,
+            provider: "pixverse",
+          });
+        }
+        return NextResponse.json({
+          historyId: extendAsset.historyId || historyId,
+          status: "RUNNING",
+          urls: [] as string[],
+          live: true,
+          provider: "pixverse",
+          pollAfterSeconds: 4,
+          note: pixverseChainPollNote(extendAsset.jobMeta),
+        });
+      }
+
       const task = await getPixVerseVideoTask(pixverseId);
       const status = mapPixVerseStatus(task.status);
       const urls = task.url ? [task.url] : [];
       const failureError = pixVerseFailureMessage(task.status);
 
-      const user = await getCurrentUser().catch(() => null);
       let creditsRefunded = false;
 
       if (user && (urls[0] || status === "FAILED")) {
-        const byHistory = await findAssetByHistoryId(user.id, historyId);
-        const targetId = assetId || byHistory?.id;
-        if (targetId) {
-          if (urls[0]) {
-            await updateAsset(targetId, user.id, {
+        const doneId = assetId || byHistory?.id || extendAsset?.id;
+        const doneAsset =
+          user && doneId ? await findAssetById(user.id, doneId) : byHistory;
+        if (doneAsset && isPixVerseExtendAsset(doneAsset)) {
+          return NextResponse.json({
+            historyId,
+            status: doneAsset.status === "failed" ? "FAILED" : "RUNNING",
+            urls: [] as string[],
+            live: true,
+            provider: "pixverse",
+            pollAfterSeconds: 4,
+            note: pixverseChainPollNote(doneAsset.jobMeta),
+            error:
+              doneAsset.status === "failed"
+                ? doneAsset.error || "فشل تمديد PixVerse"
+                : undefined,
+          });
+        }
+        if (doneId) {
+          const alreadyLocal = doneAsset?.url?.startsWith("/generations/");
+          if (urls[0] && !alreadyLocal) {
+            await updateAsset(doneId, user.id, {
               historyId,
               url: urls[0],
               status: "completed",
               error: undefined,
             }).catch(() => null);
             warmVideoPosterBackground({ url: urls[0], historyId });
-          } else if (status === "FAILED") {
+          } else if (status === "FAILED" && !alreadyLocal) {
             const refund = await refundFailedAssetCredits({
               userId: user.id,
-              assetId: targetId,
+              assetId: doneId,
               errorMessage: failureError,
             });
             creditsRefunded = true;

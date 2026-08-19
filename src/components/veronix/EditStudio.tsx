@@ -12,6 +12,7 @@ import {
   ChevronRight,
   Clapperboard,
   Download,
+  Home,
   Loader2,
   Lock,
   Mic,
@@ -22,6 +23,7 @@ import {
   Trash2,
   Blend,
 } from "lucide-react";
+import Link from "next/link";
 import { useLocale } from "@/components/veronix/LocaleProvider";
 import { autoTranscribeAll, autoTranscribeCharacter, type TranscribeProgress } from "@/lib/edit-studio-transcribe";
 import {
@@ -40,10 +42,26 @@ import {
 } from "@/lib/edit-studio-subtitles";
 import type { EditStudioAspect, EditStudioFilter } from "@/lib/edit-studio-draft";
 import {
-  downloadBlob,
-  exportSingleClip,
-  mergeTimelineClips,
-} from "@/lib/edit-studio-ffmpeg";
+  isEditStudioExportActive,
+  runEditStudioExport,
+  subscribeEditStudioExport,
+} from "@/lib/edit-studio-export-job";
+import {
+  readStoredExportQuality,
+  storeExportQuality,
+  type EditStudioExportQuality,
+} from "@/lib/edit-studio-export-quality";
+import { openExportDeliveryTab } from "@/lib/edit-studio-ffmpeg";
+import { publishEditExportToHome } from "@/lib/edit-studio-publish";
+import {
+  clipPlayDuration,
+  clipSequenceDuration,
+  clipTransitionOverlap,
+  clipTrimEnd,
+  globalTimeForClipPosition,
+  locateClipAtGlobalTime,
+  totalTimelineDuration,
+} from "@/lib/edit-studio-sequence";
 import {
   clearEditStudioTimeline,
   moveTimelineClip,
@@ -84,15 +102,6 @@ function formatTime(sec: number) {
   const m = Math.floor(s / 60);
   const r = Math.floor(s % 60);
   return `${m}:${String(r).padStart(2, "0")}`;
-}
-
-function clipTrimEnd(clip: TimelineClip, dur: number) {
-  return clip.trimEnd > 0 ? clip.trimEnd : dur;
-}
-
-function clipPlayDuration(clip: TimelineClip, dur: number) {
-  const end = clipTrimEnd(clip, dur);
-  return Math.max(0.1, end - Math.max(0, clip.trimStart));
 }
 
 type SubtitleStylePreview = Partial<{
@@ -305,6 +314,7 @@ export function EditStudio() {
   const playSequenceRef = useRef(false);
   const pendingAutoPlayRef = useRef(false);
   const pendingSeekRef = useRef<number | null>(null);
+  const advancingRef = useRef(false);
   const timelineRef = useRef<EditStudioTimeline>({ clips: [], activeClipId: null });
   const [timeline, setTimeline] = useState<EditStudioTimeline>({
     clips: [],
@@ -314,8 +324,14 @@ export function EditStudio() {
   const [duration, setDuration] = useState(0);
   const [current, setCurrent] = useState(0);
   const [exporting, setExporting] = useState(false);
-  const [exportPct, setExportPct] = useState(0);
   const [exportNote, setExportNote] = useState<string | null>(null);
+  const [exportDownloadUrl, setExportDownloadUrl] = useState<string | null>(null);
+  const [exportDownloadName, setExportDownloadName] = useState<string | null>(null);
+  const [exportPromptMeta, setExportPromptMeta] = useState<string | null>(null);
+  const [exportAspectMeta, setExportAspectMeta] = useState<string | null>(null);
+  const [publishBusy, setPublishBusy] = useState(false);
+  const [publishNote, setPublishNote] = useState<string | null>(null);
+  const [publishedToHome, setPublishedToHome] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [clipDurations, setClipDurations] = useState<Record<string, number>>({});
   const [extractingDialogue, setExtractingDialogue] = useState(false);
@@ -326,10 +342,40 @@ export function EditStudio() {
   const [previewFilter, setPreviewFilter] = useState<EditStudioFilter | null>(null);
   const [previewAspect, setPreviewAspect] = useState<EditStudioAspect | null>(null);
   const [previewSubtitle, setPreviewSubtitle] = useState<SubtitleStylePreview | null>(null);
+  const [exportQuality, setExportQuality] = useState<EditStudioExportQuality>("standard");
 
   useEffect(() => {
     setTimeline(readEditStudioTimeline());
+    setExportQuality(readStoredExportQuality());
   }, []);
+
+  useEffect(() => {
+    return subscribeEditStudioExport((job) => {
+      setExporting(job.active);
+      setExportDownloadUrl(job.downloadUrl);
+      setExportDownloadName(job.downloadFilename);
+      setExportPromptMeta(job.exportPrompt);
+      setExportAspectMeta(job.exportAspect);
+      if (job.phase === "done") {
+        setExportNote(job.message);
+        setError(null);
+        setPublishNote(null);
+      }
+      if (job.active) {
+        setPublishedToHome(false);
+        setPublishNote(null);
+      }
+      if (job.phase === "error") {
+        setError(job.error || t.editStudio.exportFailed);
+        setExportDownloadUrl(null);
+        setExportDownloadName(null);
+      }
+      if (job.phase === "idle" && !job.downloadUrl) {
+        setExportDownloadUrl(null);
+        setExportDownloadName(null);
+      }
+    });
+  }, [t.editStudio.exportFailed]);
 
   useEffect(() => {
     timelineRef.current = timeline;
@@ -367,15 +413,21 @@ export function EditStudio() {
   };
 
   const advanceToNextClip = useCallback(() => {
+    if (advancingRef.current) return false;
+    advancingRef.current = true;
     const { clips, activeClipId } = timelineRef.current;
     const idx = clips.findIndex((c) => c.id === activeClipId);
     if (idx < 0 || idx >= clips.length - 1) {
       playSequenceRef.current = false;
       setPlaying(false);
+      advancingRef.current = false;
       return false;
     }
     pendingAutoPlayRef.current = true;
     setTimeline(setActiveTimelineClip(clips[idx + 1]!.id));
+    window.setTimeout(() => {
+      advancingRef.current = false;
+    }, 200);
     return true;
   }, []);
 
@@ -444,31 +496,19 @@ export function EditStudio() {
   );
 
   const totalSequenceDuration = useMemo(
-    () =>
-      timeline.clips.reduce(
-        (sum, clip) => sum + clipPlayDuration(clip, clipDuration(clip)),
-        0,
-      ),
+    () => totalTimelineDuration(timeline.clips, clipDuration),
     [timeline.clips, clipDurations, clipDuration, duration],
   );
 
   const globalPlaybackTime = useMemo(() => {
     if (!activeClip || activeClipIndex < 0) return 0;
-    let elapsed = 0;
-    for (let i = 0; i < activeClipIndex; i += 1) {
-      elapsed += clipPlayDuration(timeline.clips[i]!, clipDuration(timeline.clips[i]!));
-    }
-    const trimStart = activeClip.trimStart;
-    elapsed += Math.max(0, current - trimStart);
-    return Math.min(elapsed, totalSequenceDuration);
-  }, [
-    activeClip,
-    activeClipIndex,
-    current,
-    timeline.clips,
-    clipDuration,
-    totalSequenceDuration,
-  ]);
+    return globalTimeForClipPosition(
+      timeline.clips,
+      clipDuration,
+      activeClipIndex,
+      current,
+    );
+  }, [activeClip, activeClipIndex, current, timeline.clips, clipDuration]);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -488,7 +528,11 @@ export function EditStudio() {
           el.pause();
           setPlaying(false);
           playSequenceRef.current = false;
-          el.currentTime = trimStart;
+          try {
+            el.currentTime = trimStart;
+          } catch {
+            // ignore
+          }
         }
       }
     };
@@ -503,7 +547,14 @@ export function EditStudio() {
     const startAutoPlay = () => {
       if (!pendingAutoPlayRef.current) return;
       pendingAutoPlayRef.current = false;
-      el.currentTime = activeClip.trimStart;
+      try {
+        el.currentTime = pendingSeekRef.current ?? activeClip.trimStart;
+        pendingSeekRef.current = null;
+        setCurrent(el.currentTime);
+      } catch {
+        el.currentTime = activeClip.trimStart;
+        setCurrent(activeClip.trimStart);
+      }
       void el
         .play()
         .then(() => setPlaying(true))
@@ -531,8 +582,7 @@ export function EditStudio() {
       return;
     }
 
-    if (!playSequenceRef.current) {
-      setPlaying(false);
+    if (!playSequenceRef.current && !playing) {
       el.pause();
       try {
         el.currentTime = activeClip.trimStart;
@@ -541,7 +591,14 @@ export function EditStudio() {
         setCurrent(0);
       }
     }
-  }, [activeClip?.id, activeClip?.videoUrl, activeClip?.trimStart]);
+  }, [activeClip?.id, activeClip?.videoUrl, activeClip?.trimStart, playing]);
+
+  const pausePlaybackForExport = useCallback(() => {
+    playSequenceRef.current = false;
+    pendingAutoPlayRef.current = false;
+    videoRef.current?.pause();
+    setPlaying(false);
+  }, []);
 
   const togglePlay = () => {
     const el = videoRef.current;
@@ -555,14 +612,14 @@ export function EditStudio() {
       return;
     }
 
-    const first = timeline.clips[0]!;
-    // Play full timeline only when the first clip is active; otherwise preview this clip alone.
-    playSequenceRef.current =
-      timeline.clips.length > 1 && activeClip.id === first.id;
+    playSequenceRef.current = timeline.clips.length > 1;
     pendingAutoPlayRef.current = false;
-
-    el.currentTime = activeClip.trimStart;
-    setCurrent(activeClip.trimStart);
+    try {
+      el.currentTime = activeClip.trimStart;
+      setCurrent(activeClip.trimStart);
+    } catch {
+      setCurrent(0);
+    }
     void el
       .play()
       .then(() => setPlaying(true))
@@ -590,21 +647,22 @@ export function EditStudio() {
       if (!clips.length) return;
       playSequenceRef.current = false;
       pendingAutoPlayRef.current = false;
-      let remaining = clamp(target, 0, totalSequenceDuration);
-      for (let i = 0; i < clips.length; i += 1) {
-        const clip = clips[i]!;
-        const dur = clipPlayDuration(clip, clipDuration(clip));
-        if (remaining <= dur || i === clips.length - 1) {
-          const seekTime = clip.trimStart + remaining;
-          if (clip.id !== timelineRef.current.activeClipId) {
-            pendingSeekRef.current = seekTime;
-            setTimeline(setActiveTimelineClip(clip.id));
-          } else {
-            seekTo(seekTime);
-          }
-          break;
-        }
-        remaining -= dur;
+
+      const located = locateClipAtGlobalTime(
+        clips,
+        clipDuration,
+        clamp(target, 0, totalSequenceDuration),
+      );
+      const clip = clips[located.clipIndex]!;
+      const seekTime = located.inTransition
+        ? clipTrimEnd(clip, clipDuration(clip)) - clipTransitionOverlap(clip)
+        : located.localTime;
+
+      if (clip.id !== timelineRef.current.activeClipId) {
+        pendingSeekRef.current = seekTime;
+        setTimeline(setActiveTimelineClip(clip.id));
+      } else {
+        seekTo(seekTime);
       }
     },
     [clipDuration, totalSequenceDuration],
@@ -781,13 +839,13 @@ export function EditStudio() {
 
   const extractActiveAllSpeech = useCallback(async () => {
     if (!activeClip || extractingDialogue || extractingAll) return;
-    setExtractingDialogue(true);
+    setExtractingAll(true);
     setExtractNote(null);
     try {
       const ok = await extractAllSpeech(activeClip);
       if (ok) setExtractNote(t.editStudio.extractAllSpeechDone);
     } finally {
-      setExtractingDialogue(false);
+      setExtractingAll(false);
       setExtractProgress(null);
     }
   }, [
@@ -1001,41 +1059,94 @@ export function EditStudio() {
     [t.editStudio],
   );
 
-  const handleMergeExport = async () => {
-    if (!timeline.clips.length || exporting) return;
-    setExporting(true);
-    setExportPct(0);
-    setExportNote(null);
-    setError(null);
+  const exportLabels = useMemo(
+    () => ({
+      loadingClips:
+        dir === "rtl" ? "جاري تحميل المقاطع…" : "Loading clips…",
+      exporting: t.editStudio.exporting,
+      serverExporting: t.editStudio.exportServerProcessing,
+      done: t.editStudio.exportDone,
+      doneTab: t.editStudio.exportDoneNewTab,
+      failed: t.editStudio.exportFailed,
+      audioFailed: t.editStudio.exportAudioFailed,
+      memoryFailed: t.editStudio.exportMemoryFailed,
+      backgroundHint:
+        dir === "rtl"
+          ? "يمكنك مغادرة الصفحة — التصدير يستمر"
+          : "You can leave — export continues",
+    }),
+    [dir, t.editStudio],
+  );
+
+  const exportMeta = useMemo(() => {
+    const clip = activeClip || timeline.clips[0];
+    const prompt =
+      clip?.prompt?.trim() ||
+      clip?.dialogueText?.trim() ||
+      timeline.clips.map((c) => c.prompt?.trim()).find(Boolean) ||
+      "";
+    const aspect = clip?.exportAspect || "16:9";
+    return { prompt, aspect };
+  }, [activeClip, timeline.clips]);
+
+  const handlePublishToHome = async () => {
+    if (!exportDownloadUrl || publishBusy || publishedToHome) return;
+    setPublishBusy(true);
+    setPublishNote(null);
     try {
-      const blob =
-        timeline.clips.length === 1
-          ? await exportSingleClip(timeline.clips[0]!, setExportPct)
-          : await mergeTimelineClips(timeline.clips, setExportPct);
-      downloadBlob(blob, `veronix-merge-${Date.now()}.mp4`);
-      setExportNote(t.editStudio.exportDone);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t.editStudio.exportFailed);
+      const res = await fetch(exportDownloadUrl);
+      const blob = await res.blob();
+      const result = await publishEditExportToHome({
+        blob,
+        filename: exportDownloadName || "vyronix-export.mp4",
+        prompt: exportPromptMeta || exportMeta.prompt || undefined,
+        aspectRatio: exportAspectMeta || exportMeta.aspect,
+      });
+      if (result.ok) {
+        setPublishedToHome(true);
+        setPublishNote(t.editStudio.publishDone);
+      } else {
+        setPublishNote(result.error || t.editStudio.publishFailed);
+      }
+    } catch {
+      setPublishNote(t.editStudio.publishFailed);
     } finally {
-      setExporting(false);
+      setPublishBusy(false);
     }
   };
 
-  const handleExportActive = async () => {
-    if (!activeClip || exporting) return;
-    setExporting(true);
-    setExportPct(0);
+  const handleMergeExport = () => {
+    if (!timeline.clips.length || isEditStudioExportActive()) return;
+    pausePlaybackForExport();
     setExportNote(null);
     setError(null);
-    try {
-      const blob = await exportSingleClip(activeClip, setExportPct);
-      downloadBlob(blob, `veronix-clip-${Date.now()}.mp4`);
-      setExportNote(t.editStudio.exportDone);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t.editStudio.exportFailed);
-    } finally {
-      setExporting(false);
-    }
+    runEditStudioExport({
+      clips: timeline.clips,
+      filename: `veronix-merge-${Date.now()}.mp4`,
+      merge: true,
+      labels: exportLabels,
+      deliveryTab: openExportDeliveryTab(),
+      quality: exportQuality,
+      exportPrompt: exportMeta.prompt,
+      exportAspect: exportMeta.aspect,
+    });
+  };
+
+  const handleExportActive = () => {
+    if (!activeClip || isEditStudioExportActive()) return;
+    pausePlaybackForExport();
+    setExportNote(null);
+    setError(null);
+    runEditStudioExport({
+      clips: [activeClip],
+      filename: `veronix-clip-${Date.now()}.mp4`,
+      merge: false,
+      labels: exportLabels,
+      deliveryTab: openExportDeliveryTab(),
+      quality: exportQuality,
+      exportPrompt: exportMeta.prompt,
+      exportAspect: exportMeta.aspect,
+    });
   };
 
   const clearAll = () => {
@@ -1254,7 +1365,10 @@ export function EditStudio() {
                 preload="metadata"
                 onLoadedMetadata={onMetadata}
                 onPlay={() => setPlaying(true)}
-                onPause={() => setPlaying(false)}
+                onPause={() => {
+                  if (pendingAutoPlayRef.current) return;
+                  setPlaying(false);
+                }}
               />
               {displayPreviewText && subtitlePreview ? (
                 <div className={subtitlePreview.wrap} dir="rtl">
@@ -1757,6 +1871,46 @@ export function EditStudio() {
       ) : null}
 
       <div className="flex flex-col gap-2">
+        <div className="rounded-2xl border border-white/10 bg-[#141821] p-3">
+          <p className="text-xs font-semibold text-white/55">{t.editStudio.exportQuality}</p>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              disabled={exporting}
+              onClick={() => {
+                setExportQuality("standard");
+                storeExportQuality("standard");
+              }}
+              className={`flex-1 rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
+                exportQuality === "standard"
+                  ? "bg-white text-black"
+                  : "border border-white/15 text-white/70 hover:text-white"
+              }`}
+            >
+              {t.editStudio.exportQualityStandard}
+            </button>
+            <button
+              type="button"
+              disabled={exporting}
+              onClick={() => {
+                setExportQuality("high");
+                storeExportQuality("high");
+              }}
+              className={`flex-1 rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
+                exportQuality === "high"
+                  ? "bg-[linear-gradient(135deg,#22f0ff,#7c5cff)] text-[#0b0d12]"
+                  : "border border-white/15 text-white/70 hover:text-white"
+              }`}
+            >
+              {t.editStudio.exportQualityHigh}
+            </button>
+          </div>
+          <p className="mt-2 text-[10px] leading-relaxed text-white/35">
+            {exportQuality === "high"
+              ? t.editStudio.exportQualityHighHint
+              : t.editStudio.exportQualityStandardHint}
+          </p>
+        </div>
         <button
           type="button"
           disabled={exporting || timeline.clips.length === 0}
@@ -1769,7 +1923,7 @@ export function EditStudio() {
             <Clapperboard className="h-5 w-5" />
           )}
           {exporting
-            ? `${t.editStudio.exporting} ${exportPct}%`
+            ? t.editStudio.exporting
             : timeline.clips.length > 1
               ? t.editStudio.mergeExport
               : t.editStudio.export}
@@ -1798,6 +1952,44 @@ export function EditStudio() {
 
       {exportNote ? (
         <p className="text-center text-sm text-emerald-300/90">{exportNote}</p>
+      ) : null}
+      {exportDownloadUrl ? (
+        <div className="flex flex-col items-center gap-2">
+          <div className="flex flex-wrap justify-center gap-2">
+            <a
+              href={exportDownloadUrl}
+              download={exportDownloadName || "vyronix-export.mp4"}
+              className="inline-flex items-center gap-2 rounded-full bg-emerald-500/15 px-4 py-2 text-sm font-bold text-emerald-200 ring-1 ring-emerald-400/30"
+            >
+              <Download className="h-4 w-4" aria-hidden />
+              {dir === "rtl" ? "تحميل MP4" : "Download MP4"}
+            </a>
+            <button
+              type="button"
+              disabled={publishBusy || publishedToHome}
+              onClick={() => void handlePublishToHome()}
+              className="inline-flex items-center gap-2 rounded-full bg-[linear-gradient(135deg,#7c5cff,#22f0ff)] px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+            >
+              {publishBusy ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : (
+                <Home className="h-4 w-4" aria-hidden />
+              )}
+              {publishedToHome ? t.editStudio.publishedToHome : t.editStudio.publishToHome}
+            </button>
+          </div>
+          {publishedToHome ? (
+            <Link
+              href="/"
+              className="text-xs font-semibold text-[#22f0ff]/90 underline-offset-2 hover:underline"
+            >
+              {t.editStudio.viewOnHome}
+            </Link>
+          ) : null}
+          {publishNote ? (
+            <p className="text-center text-xs text-emerald-300/90">{publishNote}</p>
+          ) : null}
+        </div>
       ) : null}
       {error ? (
         <p className="text-center text-sm text-rose-300/90">{error}</p>

@@ -11,8 +11,18 @@ import {
   tryRecoverMiniMaxAsset,
 } from "@/lib/minimax-video";
 import {
+  parseKlingHistoryId,
+  tryRecoverKlingAsset,
+} from "@/lib/kling-video";
+import {
+  parseFluxHistoryId,
+  tryRecoverFluxAsset,
+} from "@/lib/flux-video";
+import {
   MINIMAX_HARD_FAIL_MS,
 } from "@/lib/minimax-constants";
+import { KLING_HARD_FAIL_MS } from "@/lib/kling-constants";
+import { FLUX_HARD_FAIL_MS } from "@/lib/flux-constants";
 import { GEMINI_JOB_TIMEOUT_MS } from "@/lib/gemini-constants";
 import { refundFailedAssetCredits } from "@/lib/credit-refund";
 import { listAssetsForUser, updateAsset } from "@/lib/db";
@@ -73,6 +83,68 @@ export async function recoverUserProviderAssets(
           report.failed += 1;
         } else if (assetAgeMs(asset.createdAt) > MINIMAX_HARD_FAIL_MS) {
           const failMsg = "انتهت مهلة MiniMax (90 دقيقة) — تم استرجاع الكريديت.";
+          await updateAsset(asset.id, userId, { status: "failed", error: failMsg });
+          await refundFailedAssetCredits({
+            userId,
+            assetId: asset.id,
+            errorMessage: failMsg,
+          });
+          report.failed += 1;
+        } else if (asset.status === "running") {
+          report.stillPending += 1;
+        } else {
+          report.failed += 1;
+        }
+        continue;
+      }
+
+      const klId = parseKlingHistoryId(asset.historyId || "");
+      if (klId) {
+        const result = await tryRecoverKlingAsset({
+          userId,
+          assetId: asset.id,
+          historyId: asset.historyId!,
+          hidden: false,
+          mode: asset.mode,
+        });
+        if (result === "completed") {
+          report.recovered += 1;
+          report.assetIds.push(asset.id);
+        } else if (result === "failed") {
+          report.failed += 1;
+        } else if (assetAgeMs(asset.createdAt) > KLING_HARD_FAIL_MS) {
+          const failMsg = "انتهت مهلة Kling (60 دقيقة) — تم استرجاع الكريديت.";
+          await updateAsset(asset.id, userId, { status: "failed", error: failMsg });
+          await refundFailedAssetCredits({
+            userId,
+            assetId: asset.id,
+            errorMessage: failMsg,
+          });
+          report.failed += 1;
+        } else if (asset.status === "running") {
+          report.stillPending += 1;
+        } else {
+          report.failed += 1;
+        }
+        continue;
+      }
+
+      const flId = parseFluxHistoryId(asset.historyId || "");
+      if (flId) {
+        const result = await tryRecoverFluxAsset({
+          userId,
+          assetId: asset.id,
+          historyId: asset.historyId!,
+          hidden: false,
+          mode: asset.mode,
+        });
+        if (result === "completed") {
+          report.recovered += 1;
+          report.assetIds.push(asset.id);
+        } else if (result === "failed") {
+          report.failed += 1;
+        } else if (assetAgeMs(asset.createdAt) > FLUX_HARD_FAIL_MS) {
+          const failMsg = "انتهت مهلة FLUX (60 دقيقة) — تم استرجاع الكريديت.";
           await updateAsset(asset.id, userId, { status: "failed", error: failMsg });
           await refundFailedAssetCredits({
             userId,
@@ -151,7 +223,9 @@ export async function recoverUserProviderAssets(
       asset.url &&
       asset.mode !== "sequence-part" &&
       (parseMiniMaxHistoryId(asset.historyId || "") ||
-        parseGeminiHistoryId(asset.historyId || ""))
+        parseGeminiHistoryId(asset.historyId || "") ||
+        parseKlingHistoryId(asset.historyId || "") ||
+        parseFluxHistoryId(asset.historyId || ""))
     ) {
       await updateAsset(asset.id, userId, { hidden: false, error: undefined });
       if (!report.assetIds.includes(asset.id)) {
