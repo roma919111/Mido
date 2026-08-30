@@ -6,6 +6,7 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { useLocale } from "@/components/veronix/LocaleProvider";
 import { ModelLogoGrid } from "@/components/veronix/ModelLogoGrid";
 import { SocialLinks } from "@/components/veronix/SocialLinks";
+import { DEPLOY_BUILD } from "@/lib/deploy-version";
 
 export function SiteFooter() {
   const { t, dir } = useLocale();
@@ -60,6 +61,9 @@ export function SiteFooter() {
         </div>
         <p className="text-xs text-white/30">
           © {new Date().getFullYear()} Vyronix AI Studio · vyronix.app · {t.footer.rights}
+          <span className="mx-1.5 text-white/20" aria-hidden>
+            · {DEPLOY_BUILD}
+          </span>
         </p>
       </div>
     </footer>
