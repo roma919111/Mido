@@ -2116,20 +2116,33 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     setShareNote(null);
     if (!validateGenerateReady()) return;
 
+    const original = prompt.trim();
+
     // Images: generate immediately with the customer's original prompt.
     if (media !== "video") {
-      void runGenerateWithPrompt(prompt.trim());
+      void runGenerateWithPrompt(original);
       return;
     }
 
-    const original = prompt.trim();
+    // Vyronix / MiniMax H3: send the customer prompt verbatim (model-owner spec).
+    if (usesMiniMax) {
+      void runGenerateWithPrompt(original);
+      return;
+    }
+
     setGenConfirmOriginal(original);
+
+    const characterNames = {
+      subject: normalizeCharacterName(refNames[0] || ""),
+      object: normalizeCharacterName(refNames[1] || ""),
+    };
 
     // Instant local script — never block Generate on LLM / enhance network.
     const localScript = buildVeronixShotScript({
       originalPrompt: original,
       minSeconds: sliderMin,
       maxSeconds: sliderMax,
+      characterNames,
     });
     setGenConfirmScript(localScript);
     setGenConfirmOpen(true);
@@ -2154,6 +2167,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           enhancedPrompt: original,
           minSeconds: sliderMin,
           maxSeconds: sliderMax,
+          characterNames,
         }),
       });
       if (scriptRes.ok && scriptData.script?.scriptPrompt) {
@@ -2177,7 +2191,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     setGenConfirmLoading(false);
     const sec = Math.min(
       sliderMax,
-      Math.max(sliderMin, duration),
+      Math.max(sliderMin, script.totalSeconds ?? duration),
     );
     setDuration(sec);
     setGenConfirmScript(null);
@@ -2248,7 +2262,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       status: "running" as const,
       targetSeconds: outputTargetSeconds,
       startedAt,
-      prompt: userPrompt,
+      prompt: finalUserPrompt,
       resolution: media === "video" ? quotedVideoResolution : undefined,
     }));
     setGenerating(true);
@@ -2291,7 +2305,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         const name = normalizeCharacterName(refNames[i] || "");
         return name ? { ...r, label: name } : r;
       });
-      const linked = resolveCharacterRefsForPrompt(userPrompt, namedRefs);
+      const linked = resolveCharacterRefsForPrompt(finalUserPrompt, namedRefs);
       const activeRefs = linked.refs;
       const finalPrompt = finalUserPrompt;
       const mode =

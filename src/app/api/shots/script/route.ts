@@ -10,6 +10,7 @@ type Body = {
   enhancedPrompt?: string;
   minSeconds?: number;
   maxSeconds?: number;
+  characterNames?: { subject?: string; object?: string };
 };
 
 /**
@@ -36,6 +37,7 @@ export async function POST(request: Request) {
       enhancedPrompt: body.enhancedPrompt?.trim() || undefined,
       minSeconds: body.minSeconds,
       maxSeconds: body.maxSeconds,
+      characterNames: body.characterNames,
     });
 
     return NextResponse.json({

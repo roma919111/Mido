@@ -206,36 +206,61 @@ export function extractActionBeats(prompt: string): string[] {
 }
 
 /** Guess two character display names from the prompt (فاعل / مفعول به). */
-export function guessCharacterNames(prompt: string): {
+export function guessCharacterNames(
+  prompt: string,
+  overrides?: { subject?: string; object?: string },
+): {
   subject: string;
   object: string;
 } {
+  const overrideSubject = overrides?.subject?.trim();
+  const overrideObject = overrides?.object?.trim();
+  if (overrideSubject && overrideObject) {
+    return { subject: overrideSubject, object: overrideObject };
+  }
+
   const core = cleanCore(prompt);
   const arabic = hasArabic(core);
-  if (arabic) {
-    const names = [
-      ...core.matchAll(
-        /(?:^|[\s،,])((?:دانو|ميدو|دانية|أحمد|محمد|سارة|ليان|نور|ريم|عمر|خالد|يوسف|لينا|ميا|علي|حسن|فاطمة|زينب)(?:\w*)?)/gu,
-      ),
-    ]
-      .map((m) => m[1]!.trim())
-      .filter(Boolean);
-    const uniq = uniqKeepOrder(names);
-    if (uniq.length >= 2) {
-      return { subject: uniq[0]!, object: uniq[1]! };
+  let subject = overrideSubject || "";
+  let object = overrideObject || "";
+
+  if (!subject || !object) {
+    if (arabic) {
+      const names = [
+        ...core.matchAll(
+          /(?:^|[\s،,])((?:دانو|ميدو|دانية|أحمد|محمد|سارة|ليان|نور|ريم|عمر|خالد|يوسف|لينا|ميا|علي|حسن|فاطمة|زينب)(?:\w*)?)/gu,
+        ),
+      ]
+        .map((m) => m[1]!.trim())
+        .filter(Boolean);
+      const uniq = uniqKeepOrder(names);
+      if (!subject) {
+        subject = uniq[0] || "الفاعل";
+      }
+      if (!object) {
+        object =
+          uniq.length >= 2
+            ? uniq[1]!
+            : uniq.length === 1
+              ? "الشخصية الأخرى"
+              : "المفعول به";
+      }
+    } else {
+      const en = [...core.matchAll(/\b([A-Z][a-z]{2,20})\b/g)].map((m) => m[1]!);
+      const uniq = uniqKeepOrder(en);
+      if (!subject) subject = uniq[0] || "the lead";
+      if (!object) {
+        object =
+          uniq.length >= 2
+            ? uniq[1]!
+            : uniq.length === 1
+              ? "the other character"
+              : "the partner";
+      }
     }
-    if (uniq.length === 1) {
-      return { subject: uniq[0]!, object: "الشخصية الأخرى" };
-    }
-    return { subject: "الفاعل", object: "المفعول به" };
   }
-  const en = [
-    ...core.matchAll(/\b([A-Z][a-z]{2,20})\b/g),
-  ].map((m) => m[1]!);
-  const uniq = uniqKeepOrder(en);
-  if (uniq.length >= 2) return { subject: uniq[0]!, object: uniq[1]! };
-  if (uniq.length === 1) return { subject: uniq[0]!, object: "the other character" };
-  return { subject: "the lead", object: "the partner" };
+
+  return { subject, object };
 }
 
 function inventSubjectState(
@@ -317,11 +342,14 @@ function inventObjectState(
 }
 
 /** Local chronological triples — one subject/object state per action (no cross-reuse). */
-export function planShotTriplesLocal(prompt: string): ActionTriple[] {
+export function planShotTriplesLocal(
+  prompt: string,
+  characterNames?: { subject?: string; object?: string },
+): ActionTriple[] {
   const core = cleanCore(prompt);
   const arabic = hasArabic(core);
   const actions = extractActionBeats(core);
-  const names = guessCharacterNames(core);
+  const names = guessCharacterNames(core, characterNames);
   const list = (actions.length ? actions : [shortenAction(core) || core]).slice(
     0,
     8,
@@ -626,10 +654,11 @@ export function buildVeronixShotScript(input: {
   totalSeconds?: number;
   minSeconds?: number;
   maxSeconds?: number;
+  characterNames?: { subject?: string; object?: string };
 }): VeronixShotScript {
   const enhanced = (input.enhancedPrompt || "").trim();
   const source = enhanced || input.originalPrompt;
-  const triples = planShotTriplesLocal(source);
+  const triples = planShotTriplesLocal(source, input.characterNames);
   return packTriplesToScript(triples, {
     sceneCore: enhanced || cleanCore(input.originalPrompt),
     minSeconds: input.minSeconds,
@@ -643,6 +672,7 @@ export async function buildVeronixShotScriptAsync(input: {
   enhancedPrompt?: string;
   minSeconds?: number;
   maxSeconds?: number;
+  characterNames?: { subject?: string; object?: string };
 }): Promise<VeronixShotScript> {
   const enhanced = (input.enhancedPrompt || "").trim();
   const source = enhanced || input.originalPrompt;
