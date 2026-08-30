@@ -100,6 +100,7 @@ import { ModelSelect } from "@/components/veronix/ModelSelect";
 import { StudioMediaTabs } from "@/components/veronix/StudioMediaTabs";
 import { useLocale } from "@/components/veronix/LocaleProvider";
 import { shareAsset } from "@/lib/share-asset";
+import { DEPLOY_BUILD } from "@/lib/deploy-version";
 import type { CustomerUser } from "./AppHeader";
 
 /** Catalog id for VYRONIX image studio (Seedream under the hood). */
@@ -3270,6 +3271,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           فشل التوليد · تم استرجاع الكريديت
         </div>
       ) : null}
+
+      <p
+        className="pb-3 text-center text-[9px] tabular-nums tracking-wider text-white/20"
+        aria-hidden
+      >
+        {DEPLOY_BUILD}
+      </p>
 
     </div>
   );
