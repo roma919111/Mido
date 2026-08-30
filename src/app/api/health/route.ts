@@ -10,6 +10,7 @@ import { isKlingVideoConfigured } from "@/lib/kling-video";
 import { isFluxVideoConfigured } from "@/lib/flux-video";
 import { ffmpegAvailable } from "@/lib/iptv-hls-ffmpeg";
 import { getVyronixSurface } from "@/lib/vyronix-surface";
+import { DEPLOY_BUILD } from "@/lib/deploy-version";
 
 export const runtime = "nodejs";
 
@@ -28,6 +29,7 @@ export async function GET() {
     ok: true,
     service: "vyronix",
     surface: getVyronixSurface(),
+    build: DEPLOY_BUILD,
     dataDirOk,
     ffmpeg: ffmpegAvailable(),
     providers: {
