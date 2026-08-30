@@ -25,3 +25,8 @@ export type MiniMaxH3Quality = keyof typeof MINIMAX_H3_OUTPUT_USD_PER_SEC;
 /** Input material — first 5 reference images free, then billed each. */
 export const MINIMAX_H3_FREE_REFERENCE_IMAGES = 5;
 export const MINIMAX_H3_EXTRA_IMAGE_USD = 0.04;
+
+/** MiniMax H3 API duration window — single source of truth for UI + clamp. */
+export const MINIMAX_H3_DURATION_MIN = 1;
+export const MINIMAX_H3_DURATION_MAX = 15;
+export const MINIMAX_H3_DURATION_DEFAULT = 5;

@@ -1,6 +1,11 @@
 import { VERONIX_MODEL_ID } from "@/lib/free-trial";
 import { SEEDANCE_MINI_MODEL_ID } from "@/lib/byteplus-constants";
 import {
+  MINIMAX_H3_DURATION_DEFAULT,
+  MINIMAX_H3_DURATION_MAX,
+  MINIMAX_H3_DURATION_MIN,
+} from "@/lib/minimax-constants";
+import {
   pixverseDurationMax,
   pixverseProductTagline,
 } from "@/lib/pixverse-constants";
@@ -311,9 +316,9 @@ const VIDEO_MODELS_BASE: CatalogModel[] = [
     tagline: "تم إنشاؤه بواسطة VYRONIX — أول فيديو مجاني (مقدمة + 4 ثوانٍ · 768P)",
     resolutions: ["768P", "2K"],
     resolutionDefault: "768P",
-    durationMin: 1,
-    durationMax: 15,
-    durationDefault: 5,
+    durationMin: MINIMAX_H3_DURATION_MIN,
+    durationMax: MINIMAX_H3_DURATION_MAX,
+    durationDefault: MINIMAX_H3_DURATION_DEFAULT,
     audioSupported: false,
     audioDefault: false,
     audioParam: null,
@@ -377,9 +382,9 @@ const VIDEO_MODELS_BASE: CatalogModel[] = [
     modes: ["text2video", "image2video", "element2video"],
     resolutions: ["768P", "2K"],
     resolutionDefault: "768P",
-    durationMin: 1,
-    durationMax: 15,
-    durationDefault: 5,
+    durationMin: MINIMAX_H3_DURATION_MIN,
+    durationMax: MINIMAX_H3_DURATION_MAX,
+    durationDefault: MINIMAX_H3_DURATION_DEFAULT,
     audioSupported: false,
     audioDefault: false,
     audioParam: null,
