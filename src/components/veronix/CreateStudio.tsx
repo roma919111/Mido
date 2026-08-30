@@ -46,7 +46,6 @@ import {
 import {
   clampVyronixShotSeconds,
   vyronixShotTiming,
-  VYRONIX_MODEL_SHOT_SECONDS,
 } from "@/lib/vyronix-duration";
 import {
   FREE_VERONIX_DURATION_SECONDS,
@@ -431,33 +430,27 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         : usesVyronixShotLength
           ? MINIMAX_H3_DURATION_MAX
           : durationBounds.max;
-  /** Paid Vyronix/MiniMax: lock per-shot length to model-native max (15s). */
-  const vyronixShotLocked =
-    usesVyronixShotLength && !freeSettingsLocked && !freeTrial;
-  const vyronixShotSeconds = vyronixShotLocked
-    ? MINIMAX_H3_DURATION_MAX
-    : clampVyronixShotSeconds(duration);
-  const vyronixTiming = useMemo(
-    () =>
-      usesVyronixShotLength
-        ? vyronixShotTiming({
-            prompt,
-            perShotSeconds: vyronixShotSeconds,
-          })
-        : null,
-    [usesVyronixShotLength, prompt, vyronixShotSeconds],
-  );
+  /** Vyronix/MiniMax: slider value = exact clip seconds sent to the API (WYSIWYG). */
   const sliderValue = Math.min(
     sliderMax,
     Math.max(
       sliderMin,
-      usesVyronixShotLength ? vyronixShotSeconds : duration,
+      usesVyronixShotLength
+        ? clampVyronixShotSeconds(duration)
+        : duration,
     ),
   );
-  const quotedVideoDuration =
-    media === "video" && usesVyronixShotLength
-      ? vyronixShotSeconds
-      : duration;
+  const vyronixTiming = useMemo(
+    () =>
+      usesVyronixShotLength && vyronixAuto
+        ? vyronixShotTiming({
+            prompt,
+            perShotSeconds: sliderValue,
+          })
+        : null,
+    [usesVyronixShotLength, vyronixAuto, prompt, sliderValue],
+  );
+  const quotedVideoDuration = media === "video" ? sliderValue : duration;
   const localQuote = useMemo(
     () =>
       quoteCreditsLocal({
@@ -504,10 +497,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       setGenerateAudio(false);
       return;
     }
-    // Paid Vyronix / MiniMax: default to model-native max per shot (15s).
+    // Paid Vyronix / MiniMax: default within model bounds (slider = output seconds).
     setDuration(
       model.id === VERONIX_MODEL_ID || usesMiniMaxVideoBackend(model.id)
-        ? MINIMAX_H3_DURATION_MAX
+        ? MINIMAX_H3_DURATION_DEFAULT
         : options.duration.default || options.duration.max,
     );
     if (model.id === VERONIX_MODEL_ID) {
@@ -1009,13 +1002,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     selectedModelId,
   ]);
 
-  // Paid Vyronix/MiniMax: always send model-native per-shot length (15s).
-  useEffect(() => {
-    if (!vyronixShotLocked) return;
-    if (duration !== MINIMAX_H3_DURATION_MAX) {
-      setDuration(MINIMAX_H3_DURATION_MAX);
-    }
-  }, [vyronixShotLocked, duration]);
   useEffect(() => {
     if (media !== "video") return;
     if (String(resolution).toLowerCase() === "720p" && applyClarity) {
@@ -1025,11 +1011,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
   const countdownTargetSeconds =
     preview?.targetSeconds ||
-    (media === "video"
-      ? usesVyronixShotLength
-        ? vyronixShotSeconds
-        : Math.min(sliderMax, Math.max(sliderMin, duration))
-      : 1);
+    (media === "video" ? sliderValue : 1);
 
   useEffect(() => {
     let cancelled = false;
@@ -1401,16 +1383,15 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       setShotHint(null);
       if (data.finalState) setPromptSceneState(data.finalState);
 
-      // Recommend model-native per-shot length (15s) — never total ÷ shot count.
+      // Recommend duration within model bounds — never override the slider mid-generate.
       let recommendedSec: number | null = null;
       if (media === "video" && !freeSettingsLocked) {
+        recommendedSec = idealScriptSeconds(next, {
+          min: sliderMin,
+          max: sliderMax,
+        });
         if (usesMiniMaxVideoBackend(selectedModelId)) {
-          recommendedSec = MINIMAX_H3_DURATION_MAX;
-        } else {
-          recommendedSec = idealScriptSeconds(next, {
-            min: sliderMin,
-            max: sliderMax,
-          });
+          recommendedSec = clampVyronixShotSeconds(recommendedSec);
         }
         setDuration(recommendedSec);
       }
@@ -2277,12 +2258,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     const startedAt = Date.now();
     const outputTargetSeconds =
       media === "video"
-        ? usesVyronixShotLength
-          ? vyronixShotSeconds
-          : Math.min(
-              sliderMax,
-              Math.max(sliderMin, opts?.durationSeconds ?? duration),
-            )
+        ? Math.min(
+            sliderMax,
+            Math.max(sliderMin, opts?.durationSeconds ?? sliderValue),
+          )
         : 1;
     const placeholders: StudioJob[] = Array.from({ length: requestCount }, () => ({
       clientId: newStudioClientId(),
@@ -3045,13 +3024,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 <div className="space-y-1">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/55">
                     {locale === "en"
-                      ? `SHOT LENGTH — UP TO ${MINIMAX_H3_DURATION_MAX}S`
-                      : `طول اللقطة — حتى ${MINIMAX_H3_DURATION_MAX} ث`}
+                      ? `CLIP LENGTH — ${sliderMin}–${sliderMax}S`
+                      : `مدة المقطع — ${sliderMin}–${sliderMax} ث`}
                   </p>
                   <p className="text-[11px] leading-relaxed text-white/45">
                     {locale === "en"
-                      ? `H3 (MiniMax) ~${VYRONIX_MODEL_SHOT_SECONDS}s per shot — for longer video enable Auto or add shots (blank line).`
-                      : `H3 (MiniMax) ~${VYRONIX_MODEL_SHOT_SECONDS} ث لكل لقطة — للفيديو الأطول فعّل Auto أو أضف لقطات (سطر فارغ).`}
+                      ? "What you pick is what you get — 10s on the bar → 10s video output."
+                      : "ما تختاره على الشريط = مدة الخرج — ١٠ ث على الشريط → مقطع ١٠ ث."}
                   </p>
                 </div>
                 <input
@@ -3060,9 +3039,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                   max={sliderMax}
                   step={1}
                   value={sliderValue}
-                  disabled={freeSettingsLocked || vyronixShotLocked}
+                  disabled={freeSettingsLocked}
                   onChange={(e) => {
-                    if (vyronixShotLocked) return;
                     const raw = Math.round(Number(e.target.value));
                     setDuration(clampVyronixShotSeconds(raw));
                   }}
@@ -3070,17 +3048,16 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 />
                 <div className="text-center">
                   <p className="text-2xl font-bold tabular-nums text-[#22f0ff]">
-                    {sliderValue}s
+                    {sliderValue}
                     <span className="text-base font-semibold text-white/55">
-                      {locale === "en" ? "/shot" : "/لقطة"}
+                      {locale === "en" ? "s output" : " ث خرج"}
                     </span>
                   </p>
-                  {vyronixTiming && vyronixTiming.shotCount > 0 ? (
+                  {vyronixTiming && vyronixTiming.shotCount > 1 ? (
                     <p className="mt-1 text-[11px] tabular-nums text-white/40">
-                      ≈ {sliderValue.toFixed(1)}s
-                      {locale === "en" ? "/shot" : "/لقطة"} ×{" "}
-                      {vyronixTiming.shotCount} → ~
-                      {sliderValue * vyronixTiming.shotCount}s
+                      Vyronix Auto: {sliderValue}s × {vyronixTiming.shotCount}{" "}
+                      {locale === "en" ? "shots" : "لقطات"} → ~
+                      {vyronixTiming.totalSeconds}s
                     </p>
                   ) : null}
                 </div>
@@ -3095,18 +3072,20 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                   <span>
                     <span className="font-semibold text-white">Vyronix Auto</span>
                     {locale === "en"
-                      ? ` — Generate up to 120s — first paragraph = scene anchor, each next paragraph = one shot (~${VYRONIX_MODEL_SHOT_SECONDS}s).`
-                      : ` — توليد حتى 120ث — الفقرة الأولى = مشهد أساسي، كل فقرة تالية = لقطة (~${VYRONIX_MODEL_SHOT_SECONDS}ث).`}
+                      ? ` — each paragraph = one ${sliderValue}s clip (up to 120s stitched).`
+                      : ` — كل فقرة = مقطع ${sliderValue} ث (دمج حتى 120ث).`}
                   </span>
                 </label>
                 {!freeSettingsLocked ? (
                   <p className="text-[11px] text-white/40">
                     {locale === "en"
-                      ? `−${creditCost.toLocaleString("en-US")} credits per ${sliderValue}s clip`
-                      : `−${creditCost.toLocaleString("en-US")} كريدت لكل مقطع ${sliderValue}ث`}
+                      ? `−${creditCost.toLocaleString("en-US")} credits · ${sliderValue}s clip`
+                      : `−${creditCost.toLocaleString("en-US")} كريدت · مقطع ${sliderValue} ث`}
                   </p>
                 ) : (
-                  <p className="text-[11px] text-[#22f0ff]">تجربة مجانية · {sliderValue}ث/لقطة</p>
+                  <p className="text-[11px] text-[#22f0ff]">
+                    تجربة مجانية · {sliderValue} ث خرج
+                  </p>
                 )}
               </>
             ) : (

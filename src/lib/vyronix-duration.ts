@@ -1,6 +1,6 @@
 /**
- * Vyronix / MiniMax H3 shot timing — always aligned with model-native duration bounds.
- * Per-shot length must never be derived by dividing total ÷ shot count.
+ * Vyronix / MiniMax H3 clip timing.
+ * Slider value maps 1:1 to API duration (10s on bar → 10s output).
  */
 
 import {
