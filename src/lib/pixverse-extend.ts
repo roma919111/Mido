@@ -145,7 +145,7 @@ export async function findPixVerseChainAsset(
   const assets = await listAssetsForUser(userId, { includeHidden: true });
   const hit = assets.find((a) => {
     if (!isPixVerseExtendAsset(a)) return false;
-    const meta = a.jobMeta;
+    const meta: unknown = a.jobMeta;
     if (isPixVerseExtendJobMeta(meta)) {
       return meta.part1VideoId === pvId || meta.part2VideoId === pvId;
     }
