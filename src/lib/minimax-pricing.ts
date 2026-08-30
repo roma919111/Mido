@@ -20,6 +20,9 @@ import {
 import { VERONIX_PROFIT_MARKUP } from "@/lib/byteplus-pricing";
 import { VERONIX_MODEL_ID } from "@/lib/free-trial";
 import {
+  MINIMAX_H3_DURATION_DEFAULT,
+  MINIMAX_H3_DURATION_MAX,
+  MINIMAX_H3_DURATION_MIN,
   MINIMAX_H3_EXTRA_IMAGE_USD,
   MINIMAX_H3_FREE_REFERENCE_IMAGES,
   MINIMAX_H3_MODEL_ID,
@@ -75,8 +78,14 @@ export function normalizeMiniMaxH3Quality(
 }
 
 export function clampMiniMaxH3Duration(duration?: number | null): number {
-  const n = Math.round(Number(duration) || 5);
-  return Math.max(1, Math.min(15, Number.isFinite(n) ? n : 5));
+  const n = Math.round(Number(duration) || MINIMAX_H3_DURATION_DEFAULT);
+  return Math.max(
+    MINIMAX_H3_DURATION_MIN,
+    Math.min(
+      MINIMAX_H3_DURATION_MAX,
+      Number.isFinite(n) ? n : MINIMAX_H3_DURATION_DEFAULT,
+    ),
+  );
 }
 
 export function miniMaxH3CostUsdPerSecond(quality: MiniMaxH3Quality): number {

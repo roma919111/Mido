@@ -39,6 +39,16 @@ import {
   usesMiniMaxVideoBackend,
 } from "@/lib/minimax-pricing";
 import {
+  MINIMAX_H3_DURATION_DEFAULT,
+  MINIMAX_H3_DURATION_MAX,
+  MINIMAX_H3_DURATION_MIN,
+} from "@/lib/minimax-constants";
+import {
+  clampVyronixShotSeconds,
+  vyronixShotTiming,
+  VYRONIX_MODEL_SHOT_SECONDS,
+} from "@/lib/vyronix-duration";
+import {
   FREE_VERONIX_DURATION_SECONDS,
   FREE_VERONIX_RESOLUTION,
   VERONIX_MODEL_ID,
@@ -274,6 +284,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
    * 4–15s Seedance clip. Flag kept for any restored running multi jobs.
    */
   const [multiShotOn, setMultiShotOn] = useState(false);
+  /** Vyronix Auto — each paragraph becomes one native-length shot (up to 8). */
+  const [vyronixAuto, setVyronixAuto] = useState(false);
   const [shotHint, setShotHint] = useState<{
     count: number;
     totalCredits: number | null;
@@ -364,6 +376,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const durationBounds = durationBoundsForModel(selectedModel);
   const formOptions = formOptionsForModel(selectedModel);
   const usesMiniMax = usesMiniMaxVideoBackend(selectedModelId);
+  const usesVyronixShotLength = media === "video" && usesMiniMax;
   const resolutionOptions = formOptions.resolutions;
   /** Quote + API must use a tier this model actually supports. */
   const quotedVideoResolution = useMemo(() => {
@@ -392,35 +405,6 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     usesMiniMax,
     formOptions.resolutionDefault,
   ]);
-  const localQuote = useMemo(
-    () =>
-      quoteCreditsLocal({
-        modelId: selectedModelId,
-        media,
-        mode: quoteMode,
-        aspectRatio,
-        resolution:
-          media === "video" ? quotedVideoResolution : resolution || DEFAULT_IMAGE_RESOLUTION,
-        duration: media === "video" ? duration : undefined,
-        generateAudio: media === "video" ? generateAudio : undefined,
-        hasVideoReferences:
-          (selectedModelId === PIXVERSE_MODEL_ID ||
-            selectedModelId === FLUX_VIDEO_MODEL_ID ||
-            isSeedance2FamilyModel(selectedModelId)) &&
-          refVideos.length > 0,
-      }),
-    [
-      selectedModelId,
-      media,
-      quoteMode,
-      aspectRatio,
-      quotedVideoResolution,
-      duration,
-      generateAudio,
-      refVideos.length,
-    ],
-  );
-  const creditCost = freeTrial ? 0 : localQuote.totalCredits;
   /** Exact count for this tap — never more than remaining slots. */
   const requestCountPreview = freeTrial
     ? 1
@@ -434,7 +418,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   );
   const sliderMin = paidDurationMode
     ? PAID_DURATION_MIN
-    : durationBounds.min;
+    : usesVyronixShotLength
+      ? MINIMAX_H3_DURATION_MIN
+      : durationBounds.min;
   const sliderMax =
     media === "video" &&
     selectedModelId === PIXVERSE_MODEL_ID &&
@@ -442,7 +428,65 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       ? pixverseDurationMax()
       : paidDurationMode
         ? PAID_DURATION_MAX
-        : durationBounds.max;
+        : usesVyronixShotLength
+          ? MINIMAX_H3_DURATION_MAX
+          : durationBounds.max;
+  /** Paid Vyronix/MiniMax: lock per-shot length to model-native max (15s). */
+  const vyronixShotLocked =
+    usesVyronixShotLength && !freeSettingsLocked && !freeTrial;
+  const vyronixShotSeconds = vyronixShotLocked
+    ? MINIMAX_H3_DURATION_MAX
+    : clampVyronixShotSeconds(duration);
+  const vyronixTiming = useMemo(
+    () =>
+      usesVyronixShotLength
+        ? vyronixShotTiming({
+            prompt,
+            perShotSeconds: vyronixShotSeconds,
+          })
+        : null,
+    [usesVyronixShotLength, prompt, vyronixShotSeconds],
+  );
+  const sliderValue = Math.min(
+    sliderMax,
+    Math.max(
+      sliderMin,
+      usesVyronixShotLength ? vyronixShotSeconds : duration,
+    ),
+  );
+  const quotedVideoDuration =
+    media === "video" && usesVyronixShotLength
+      ? vyronixShotSeconds
+      : duration;
+  const localQuote = useMemo(
+    () =>
+      quoteCreditsLocal({
+        modelId: selectedModelId,
+        media,
+        mode: quoteMode,
+        aspectRatio,
+        resolution:
+          media === "video" ? quotedVideoResolution : resolution || DEFAULT_IMAGE_RESOLUTION,
+        duration: media === "video" ? quotedVideoDuration : undefined,
+        generateAudio: media === "video" ? generateAudio : undefined,
+        hasVideoReferences:
+          (selectedModelId === PIXVERSE_MODEL_ID ||
+            selectedModelId === FLUX_VIDEO_MODEL_ID ||
+            isSeedance2FamilyModel(selectedModelId)) &&
+          refVideos.length > 0,
+      }),
+    [
+      selectedModelId,
+      media,
+      quoteMode,
+      aspectRatio,
+      quotedVideoResolution,
+      quotedVideoDuration,
+      generateAudio,
+      refVideos.length,
+    ],
+  );
+  const creditCost = freeTrial ? 0 : localQuote.totalCredits;
 
   const applyVideoModelDefaults = (model: CatalogModel | null | undefined) => {
     if (restoreFromEditRef.current) return;
@@ -460,10 +504,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       setGenerateAudio(false);
       return;
     }
-    // Paid Vyronix: default 5s. Slider follows MiniMax bounds (1–15s).
+    // Paid Vyronix / MiniMax: default to model-native max per shot (15s).
     setDuration(
-      model.id === VERONIX_MODEL_ID
-        ? DEFAULT_PAID_DURATION_SECONDS
+      model.id === VERONIX_MODEL_ID || usesMiniMaxVideoBackend(model.id)
+        ? MINIMAX_H3_DURATION_MAX
         : options.duration.default || options.duration.max,
     );
     if (model.id === VERONIX_MODEL_ID) {
@@ -965,7 +1009,13 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     selectedModelId,
   ]);
 
-  // Native 720p already meets the free upgrade target — never keep the checkbox on.
+  // Paid Vyronix/MiniMax: always send model-native per-shot length (15s).
+  useEffect(() => {
+    if (!vyronixShotLocked) return;
+    if (duration !== MINIMAX_H3_DURATION_MAX) {
+      setDuration(MINIMAX_H3_DURATION_MAX);
+    }
+  }, [vyronixShotLocked, duration]);
   useEffect(() => {
     if (media !== "video") return;
     if (String(resolution).toLowerCase() === "720p" && applyClarity) {
@@ -976,7 +1026,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const countdownTargetSeconds =
     preview?.targetSeconds ||
     (media === "video"
-      ? Math.min(sliderMax, Math.max(sliderMin, duration))
+      ? usesVyronixShotLength
+        ? vyronixShotSeconds
+        : Math.min(sliderMax, Math.max(sliderMin, duration))
       : 1);
 
   useEffect(() => {
@@ -1349,13 +1401,17 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       setShotHint(null);
       if (data.finalState) setPromptSceneState(data.finalState);
 
-      // Recommend duration that fits unique actions once (no verb repeats).
+      // Recommend model-native per-shot length (15s) — never total ÷ shot count.
       let recommendedSec: number | null = null;
       if (media === "video" && !freeSettingsLocked) {
-        recommendedSec = idealScriptSeconds(next, {
-          min: sliderMin,
-          max: sliderMax,
-        });
+        if (usesMiniMaxVideoBackend(selectedModelId)) {
+          recommendedSec = MINIMAX_H3_DURATION_MAX;
+        } else {
+          recommendedSec = idealScriptSeconds(next, {
+            min: sliderMin,
+            max: sliderMax,
+          });
+        }
         setDuration(recommendedSec);
       }
 
@@ -2221,10 +2277,12 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     const startedAt = Date.now();
     const outputTargetSeconds =
       media === "video"
-        ? Math.min(
-            sliderMax,
-            Math.max(sliderMin, opts?.durationSeconds ?? duration),
-          )
+        ? usesVyronixShotLength
+          ? vyronixShotSeconds
+          : Math.min(
+              sliderMax,
+              Math.max(sliderMin, opts?.durationSeconds ?? duration),
+            )
         : 1;
     const placeholders: StudioJob[] = Array.from({ length: requestCount }, () => ({
       clientId: newStudioClientId(),
@@ -2982,47 +3040,120 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 Fusion: المدة تلقائية من الفيديو المرجعي (PixVerse Omni).
               </p>
             ) : null}
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-white/70">{t.create.duration}</span>
-              <span className="font-semibold tabular-nums text-[#22f0ff]">
-                {pixverseFusionOn
-                  ? "auto"
-                  : `${Math.min(sliderMax, Math.max(sliderMin, duration))}ث`}
-                {!pixverseFusionOn && freeSettingsLocked
-                  ? " · مجاني أول مرة"
-                  : !pixverseFusionOn
-                    ? ` · −${creditCost.toLocaleString("en-US")} كريدت`
-                    : ""}
-              </span>
-            </div>
-            <input
-              type="range"
-              min={sliderMin}
-              max={sliderMax}
-              step={1}
-              value={Math.min(sliderMax, Math.max(sliderMin, duration))}
-              disabled={freeSettingsLocked || pixverseFusionOn}
-              onChange={(e) => {
-                const raw = Math.round(Number(e.target.value));
-                setDuration(
-                  Math.min(sliderMax, Math.max(sliderMin, raw)),
-                );
-              }}
-              className="w-full accent-[#22f0ff] disabled:opacity-60"
-            />
-            <div className="flex justify-between text-[10px] text-white/35">
-              <span>{sliderMin}s</span>
-              {selectedModelId === VERONIX_MODEL_ID &&
-              !user?.freeVeronixUsed &&
-              (user?.credits ?? 0) <= 0 ? (
-                <span className="text-[#22f0ff]">تجربة مجانية</span>
-              ) : (
-                <span className="text-[#22f0ff]">
-                  {paidDurationMode ? "4 → 15 ثانية" : `أقصى ${sliderMax}s`}
-                </span>
-              )}
-              <span>{sliderMax}s</span>
-            </div>
+            {usesVyronixShotLength && !pixverseFusionOn ? (
+              <>
+                <div className="space-y-1">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/55">
+                    {locale === "en"
+                      ? `SHOT LENGTH — UP TO ${MINIMAX_H3_DURATION_MAX}S`
+                      : `طول اللقطة — حتى ${MINIMAX_H3_DURATION_MAX} ث`}
+                  </p>
+                  <p className="text-[11px] leading-relaxed text-white/45">
+                    {locale === "en"
+                      ? `H3 (MiniMax) ~${VYRONIX_MODEL_SHOT_SECONDS}s per shot — for longer video enable Auto or add shots (blank line).`
+                      : `H3 (MiniMax) ~${VYRONIX_MODEL_SHOT_SECONDS} ث لكل لقطة — للفيديو الأطول فعّل Auto أو أضف لقطات (سطر فارغ).`}
+                  </p>
+                </div>
+                <input
+                  type="range"
+                  min={sliderMin}
+                  max={sliderMax}
+                  step={1}
+                  value={sliderValue}
+                  disabled={freeSettingsLocked || vyronixShotLocked}
+                  onChange={(e) => {
+                    if (vyronixShotLocked) return;
+                    const raw = Math.round(Number(e.target.value));
+                    setDuration(clampVyronixShotSeconds(raw));
+                  }}
+                  className="w-full accent-[#22f0ff] disabled:opacity-60"
+                />
+                <div className="text-center">
+                  <p className="text-2xl font-bold tabular-nums text-[#22f0ff]">
+                    {sliderValue}s
+                    <span className="text-base font-semibold text-white/55">
+                      {locale === "en" ? "/shot" : "/لقطة"}
+                    </span>
+                  </p>
+                  {vyronixTiming && vyronixTiming.shotCount > 0 ? (
+                    <p className="mt-1 text-[11px] tabular-nums text-white/40">
+                      ≈ {sliderValue.toFixed(1)}s
+                      {locale === "en" ? "/shot" : "/لقطة"} ×{" "}
+                      {vyronixTiming.shotCount} → ~
+                      {sliderValue * vyronixTiming.shotCount}s
+                    </p>
+                  ) : null}
+                </div>
+                <label className="flex items-start gap-2 text-sm text-white/70">
+                  <input
+                    type="checkbox"
+                    checked={vyronixAuto}
+                    disabled={freeSettingsLocked}
+                    onChange={(e) => setVyronixAuto(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <span className="font-semibold text-white">Vyronix Auto</span>
+                    {locale === "en"
+                      ? ` — Generate up to 120s — first paragraph = scene anchor, each next paragraph = one shot (~${VYRONIX_MODEL_SHOT_SECONDS}s).`
+                      : ` — توليد حتى 120ث — الفقرة الأولى = مشهد أساسي، كل فقرة تالية = لقطة (~${VYRONIX_MODEL_SHOT_SECONDS}ث).`}
+                  </span>
+                </label>
+                {!freeSettingsLocked ? (
+                  <p className="text-[11px] text-white/40">
+                    {locale === "en"
+                      ? `−${creditCost.toLocaleString("en-US")} credits per ${sliderValue}s clip`
+                      : `−${creditCost.toLocaleString("en-US")} كريدت لكل مقطع ${sliderValue}ث`}
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-[#22f0ff]">تجربة مجانية · {sliderValue}ث/لقطة</p>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-white/70">{t.create.duration}</span>
+                  <span className="font-semibold tabular-nums text-[#22f0ff]">
+                    {pixverseFusionOn
+                      ? "auto"
+                      : `${sliderValue}ث`}
+                    {!pixverseFusionOn && freeSettingsLocked
+                      ? " · مجاني أول مرة"
+                      : !pixverseFusionOn
+                        ? ` · −${creditCost.toLocaleString("en-US")} كريدت`
+                        : ""}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={sliderMin}
+                  max={sliderMax}
+                  step={1}
+                  value={sliderValue}
+                  disabled={freeSettingsLocked || pixverseFusionOn}
+                  onChange={(e) => {
+                    const raw = Math.round(Number(e.target.value));
+                    setDuration(
+                      Math.min(sliderMax, Math.max(sliderMin, raw)),
+                    );
+                  }}
+                  className="w-full accent-[#22f0ff] disabled:opacity-60"
+                />
+                <div className="flex justify-between text-[10px] text-white/35">
+                  <span>{sliderMin}s</span>
+                  {selectedModelId === VERONIX_MODEL_ID &&
+                  !user?.freeVeronixUsed &&
+                  (user?.credits ?? 0) <= 0 ? (
+                    <span className="text-[#22f0ff]">تجربة مجانية</span>
+                  ) : (
+                    <span className="text-[#22f0ff]">
+                      {paidDurationMode ? "4 → 15 ثانية" : `أقصى ${sliderMax}s`}
+                    </span>
+                  )}
+                  <span>{sliderMax}s</span>
+                </div>
+              </>
+            )}
             {selectedModelId === PIXVERSE_MODEL_ID &&
             !pixverseFusionOn &&
             duration > PIXVERSE_NATIVE_MAX_DURATION ? (
