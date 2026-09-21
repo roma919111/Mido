@@ -5,6 +5,7 @@ import {
   isPlayerPublicAsset,
   isPlayerSurface,
 } from "@/lib/vyronix-surface";
+import { parseTenantSlugFromHost } from "@/lib/tenant-host";
 
 /**
  * Player-only origin (Europe): refuse AI/studio routes so this replica
@@ -27,6 +28,21 @@ export function proxy(request: NextRequest) {
   }
 
   if (!isPlayerSurface()) {
+    const tenantSlug = parseTenantSlugFromHost(request.headers.get("host"));
+    if (tenantSlug) {
+      const allow =
+        pathname.startsWith("/api/tenant") ||
+        pathname.startsWith("/api/health") ||
+        pathname.startsWith("/_next/") ||
+        pathname.startsWith("/tenant-portal/");
+      if (allow) return NextResponse.next();
+      if (pathname === "/" || pathname === "") {
+        const url = request.nextUrl.clone();
+        url.pathname = `/tenant-portal/${tenantSlug}`;
+        return NextResponse.rewrite(url);
+      }
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
     return NextResponse.next();
   }
 

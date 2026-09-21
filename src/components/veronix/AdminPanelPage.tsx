@@ -8,6 +8,7 @@ import {
   Check,
   Coins,
   Lock,
+  Mic,
   MonitorPlay,
   RefreshCw,
   Search,
@@ -22,6 +23,7 @@ import { fetchJson } from "@/lib/fetch-json";
 import { AdminModelEconomicsTable } from "./AdminModelEconomicsTable";
 import { loginHref } from "@/lib/auth-next";
 import { IptvDeviceAdminPanel } from "@/components/iptv/IptvDeviceAdminPanel";
+import { VoiceTenantAdminPanel } from "@/components/veronix/voice/VoiceTenantAdminPanel";
 
 type AdminUser = {
   id: string;
@@ -59,12 +61,14 @@ const PLAN_LABEL: Record<string, string> = {
   pro: "الترا",
 };
 
-type AdminTab = "ai" | "player";
+type AdminTab = "ai" | "player" | "voice";
 
 function readAdminTab(tabParam: string | null, hash = ""): AdminTab {
   const hashId = hash.replace(/^#/, "");
+  if (tabParam === "voice" || tabParam === "fabi") return "voice";
   if (tabParam === "player" || tabParam === "devices" || tabParam === "operator") return "player";
   if (hashId === "player" || hashId === "devices") return "player";
+  if (hashId === "voice" || hashId === "fabi") return "voice";
   return "ai";
 }
 
@@ -75,6 +79,7 @@ export function AdminPanelPage() {
   const [hash, setHash] = useState("");
   const tab = readAdminTab(tabParam, hash);
   const [playerMounted, setPlayerMounted] = useState(tab === "player");
+  const [voiceMounted, setVoiceMounted] = useState(tab === "voice");
   const [me, setMe] = useState<CustomerUser | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -124,11 +129,14 @@ export function AdminPanelPage() {
 
   useEffect(() => {
     if (tab === "player") setPlayerMounted(true);
+    if (tab === "voice") setVoiceMounted(true);
   }, [tab]);
 
   function setTab(next: AdminTab) {
     setHash("");
-    router.replace(next === "player" ? "/admin?tab=player" : "/admin");
+    if (next === "player") router.replace("/admin?tab=player");
+    else if (next === "voice") router.replace("/admin?tab=voice");
+    else router.replace("/admin");
   }
 
   const load = useCallback(async (search = q) => {
@@ -244,7 +252,9 @@ export function AdminPanelPage() {
             <p className="mt-1 text-sm text-white/45">
               {tab === "player"
                 ? "اشتراكات الأجهزة · MAC ورقم الجهاز · الاستضافة · الانتهاء"
-                : "إدارة المشتركين · الكريدت · القفل · الباقات · التجربة المجانية"}
+                : tab === "voice"
+                  ? "المساعد الصوتي · السجل التجاري · الموافقة · الدفع · *.vyronix.app"
+                  : "إدارة المشتركين · الكريدت · القفل · الباقات · التجربة المجانية"}
             </p>
           </div>
           <button
@@ -268,6 +278,7 @@ export function AdminPanelPage() {
           {(
             [
               ["ai", "قسم الذكاء الاصطناعي والكريدت", Sparkles],
+              ["voice", "المساعد الصوتي · Fabi", Mic],
               ["player", "قسم اشتراكات المشغّل", MonitorPlay],
             ] as const
           ).map(([id, label, Icon]) => {
@@ -278,7 +289,7 @@ export function AdminPanelPage() {
                 type="button"
                 role="tab"
                 aria-selected={active}
-                aria-controls={id === "player" ? "player" : "ai"}
+                aria-controls={id === "player" ? "player" : id === "voice" ? "voice" : "ai"}
                 onClick={() => setTab(id)}
                 className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
                   active ? "bg-white text-black" : "text-white/60 hover:text-white"
@@ -611,6 +622,12 @@ export function AdminPanelPage() {
 
         <AdminModelEconomicsTable />
         </div>
+
+        {(tab === "voice" || voiceMounted) && (
+          <section hidden={tab !== "voice"} id="voice" aria-labelledby="voice">
+            <VoiceTenantAdminPanel />
+          </section>
+        )}
 
         {(tab === "player" || playerMounted) && (
           <section hidden={tab !== "player"} id="player" className="mt-6">
