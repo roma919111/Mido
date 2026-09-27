@@ -1,10 +1,9 @@
-# Deploy studio (vyronix.app) from GitHub main — nixpacks build, not Docker rollback.
-# Add repo secret: RAILWAY_TOKEN = Project Token from Railway agile-serenity / Mido.
+# Manual only — do NOT auto-deploy main until H3LabClient + /api/h3-lab are restored in git.
+# Production studio should stay on the last Railway Docker rollback until then.
+# Secret: RAILWAY_TOKEN (Project token for agile-serenity / Mido).
 name: Deploy Vyronix Studio (Railway)
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:
