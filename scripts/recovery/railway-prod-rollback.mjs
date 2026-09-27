@@ -29,6 +29,7 @@ const res = await fetch("https://api.railway.app/graphql/v2", {
   headers: {
     "Content-Type": "application/json",
     Authorization: `Bearer ${TOKEN}`,
+    "Project-Access-Token": TOKEN,
   },
   body: JSON.stringify({
     query: mutation,
