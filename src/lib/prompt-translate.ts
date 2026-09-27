@@ -17,6 +17,13 @@ export function hasArabic(text: string): boolean {
   return /[\u0600-\u06FF]/.test(text);
 }
 
+/** Literal English translation check (H3 enhance «literal» mode). */
+export function isAcceptableLiteralEnglish(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed || hasArabic(trimmed)) return false;
+  return (trimmed.match(/[A-Za-z]/g) || []).length >= 4;
+}
+
 /** Rough check: mostly Latin letters (English cinematic prompt). */
 export function isMostlyEnglish(text: string): boolean {
   const trimmed = text.trim();
