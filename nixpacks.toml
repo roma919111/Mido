@@ -1,3 +1,7 @@
 [phases.setup]
 nixPkgs = ["nodejs_20", "ffmpeg"]
 aptPkgs = ["ffmpeg"]
+
+# Railway sets NODE_ENV=production; Next still needs Tailwind/PostCSS at build time.
+[phases.install]
+cmds = ["npm ci --include=dev"]
