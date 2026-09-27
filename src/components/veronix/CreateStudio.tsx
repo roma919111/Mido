@@ -95,10 +95,12 @@ import {
   type StudioJob,
 } from "@/lib/studio-jobs";
 import {
+  assetHasDeliverableOutput,
   isLtxDeployedHistoryId,
   LTX_DEPLOYED_STATUS_POLL_MS,
   playableUrlFromStatusApi,
 } from "@/lib/studio-deliverable";
+import { VERONIX_DEPLOYED_MODEL_ID } from "@/lib/ltx25-deployed";
 import { StudioResultGrid } from "@/components/veronix/StudioResultGrid";
 import { ModelSelect } from "@/components/veronix/ModelSelect";
 import { StudioMediaTabs } from "@/components/veronix/StudioMediaTabs";
@@ -126,6 +128,132 @@ function previewStatusPollMs(
 ): number {
   if (isLtxDeployedHistoryId(historyId)) return LTX_DEPLOYED_STATUS_POLL_MS;
   return mediaType === "image" ? 2500 : PREVIEW_POLL_MS;
+}
+
+type StudioAssetRow = {
+  id: string;
+  url: string;
+  mediaType: "image" | "video";
+  historyId?: string;
+  status: string;
+  mode?: string;
+  model?: string;
+  createdAt?: string;
+  prompt?: string;
+  targetSeconds?: number;
+  error?: string;
+};
+
+function mergeStudioJobsWithAssets(
+  jobs: StudioJob[],
+  assets: StudioAssetRow[],
+): StudioJob[] {
+  const byId = new Map(assets.map((a) => [a.id, a]));
+  let next = jobs.map((j) => {
+    if (!j.assetId && !j.historyId) return j;
+    const a =
+      (j.assetId && byId.get(j.assetId)) ||
+      (j.historyId
+        ? assets.find((x) => x.historyId && x.historyId === j.historyId)
+        : undefined);
+    if (!a) return j;
+    const hideUntilStitch =
+      a.status === "running" &&
+      (a.mode === "pixverse-verb-chain" ||
+        a.mode === "pixverse-extend" ||
+        (Number(a.targetSeconds || 0) > 15 &&
+          Boolean(a.historyId?.startsWith("pv:"))));
+    const mergedUrl = hideUntilStitch
+      ? ""
+      : a.status === "running"
+        ? a.url || j.url || ""
+        : a.url || j.url;
+    let status: StudioJob["status"] =
+      a.status === "completed" ||
+      a.status === "failed" ||
+      a.status === "running"
+        ? (a.status as StudioJob["status"])
+        : j.status;
+    const historyId = a.historyId || j.historyId;
+    const isLtx =
+      isLtxDeployedHistoryId(historyId) ||
+      String(a.model || "").trim() === VERONIX_DEPLOYED_MODEL_ID;
+    if (
+      isLtx &&
+      mergedUrl &&
+      assetHasDeliverableOutput({
+        status: a.status,
+        url: mergedUrl,
+        historyId,
+      })
+    ) {
+      status = "completed";
+    }
+    return {
+      ...j,
+      url: mergedUrl,
+      historyId,
+      assetId: a.id || j.assetId,
+      status,
+      error: a.error || j.error,
+      prompt: j.prompt || a.prompt || j.prompt,
+      targetSeconds: j.targetSeconds || inferTargetSecondsFromAsset(a),
+      startedAt:
+        j.startedAt ||
+        (a.createdAt ? lockEtaStart(a.id, a.createdAt) : j.startedAt),
+    };
+  });
+
+  const synced = syncRunningJobsFromAssets(next, assets);
+  next = synced.jobs;
+  for (const key of synced.clearedKeys) activePreviewPolls.delete(key);
+  next = pruneGhostRunningJobs(next, {
+    maxWallMs: studioMaxWallMs(next),
+    staleGraceMs: STALE_RUNNING_GRACE_MS,
+  }).jobs;
+  return next.slice(0, 12);
+}
+
+async function finalizeRunningJobsWithStatus(
+  jobs: StudioJob[],
+): Promise<StudioJob[]> {
+  let next = jobs;
+  for (const job of jobs) {
+    if (job.status !== "running" || !job.assetId) continue;
+    try {
+      const { res, data } = await fetchJson<{
+        status?: string;
+        urls?: string[];
+        provider?: string;
+        historyId?: string;
+      }>(`/api/status?assetId=${encodeURIComponent(job.assetId)}`);
+      if (!res.ok) continue;
+      const playable = playableUrlFromStatusApi({
+        status: data.status,
+        urls: data.urls,
+        provider: data.provider,
+        historyId: data.historyId || job.historyId,
+      });
+      if (!playable) continue;
+      next = patchJob(
+        next,
+        { assetId: job.assetId, clientId: job.clientId },
+        {
+          url: playable,
+          historyId: data.historyId || job.historyId,
+          status: "completed",
+          completedAt: Date.now(),
+          error: undefined,
+        },
+      );
+      activePreviewPolls.delete(job.assetId);
+      if (job.clientId) activePreviewPolls.delete(job.clientId);
+      if (job.historyId) activePreviewPolls.delete(job.historyId);
+    } catch {
+      // ignore — next reconcile tick
+    }
+  }
+  return next;
 }
 /**
  * Hard wall-clock stop per generate job (real seconds from THIS Generate tap).
@@ -270,6 +398,8 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const [status, setStatus] = useState<string | null>(null);
   const [platformReady, setPlatformReady] = useState<boolean | null>(null);
   const [jobs, setJobs] = useState<StudioJob[]>([]);
+  const jobsRef = useRef(jobs);
+  jobsRef.current = jobs;
   const [shareNote, setShareNote] = useState<string | null>(null);
   const [genStartedAt, setGenStartedAt] = useState<number | null>(null);
   const [multiProgress, setMultiProgress] = useState<{
@@ -665,126 +795,77 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         staleGraceMs: STALE_RUNNING_GRACE_MS,
       }).jobs;
 
-      if (!cancelled && stored.length) {
-        setJobs((prev) => mergeHydratedJobs(prev, stored));
-      }
+      let hydrated = stored;
 
       if (user) {
         try {
-          const { res, data } = await fetchJson<{
-            assets?: Array<{
-              id: string;
-              url: string;
-              mediaType: "image" | "video";
-              historyId?: string;
-              status: string;
-              mode?: string;
-              createdAt?: string;
-              prompt?: string;
-              targetSeconds?: number;
-              error?: string;
-            }>;
-          }>("/api/assets");
+          const { res, data } = await fetchJson<{ assets?: StudioAssetRow[] }>(
+            "/api/assets",
+          );
           if (!cancelled && res.ok) {
             const assets = (data.assets || []).filter(
               (a) => a.mode !== "sequence-part",
             );
-            const byId = new Map(assets.map((a) => [a.id, a]));
+            hydrated = mergeStudioJobsWithAssets(stored, assets);
+            hydrated = await finalizeRunningJobsWithStatus(hydrated);
+            if (!cancelled) {
+              setJobs((prev) => mergeHydratedJobs(prev, hydrated));
+              writeStoredJobs(hydrated);
+            }
 
-            setJobs((prev) => {
-              let next = prev.map((j) => {
-                if (!j.assetId && !j.historyId) return j;
-                const a =
-                  (j.assetId && byId.get(j.assetId)) ||
-                  (j.historyId
-                    ? assets.find(
-                        (x) => x.historyId && x.historyId === j.historyId,
-                      )
-                    : undefined);
-                if (!a) return j;
-                const status =
-                  a.status === "completed" ||
-                  a.status === "failed" ||
-                  a.status === "running"
-                    ? (a.status as StudioJob["status"])
-                    : j.status;
-                const hideUntilStitch =
-                  a.status === "running" &&
-                  (a.mode === "pixverse-verb-chain" ||
-                    a.mode === "pixverse-extend" ||
-                    (Number(a.targetSeconds || 0) > 15 &&
-                      Boolean(a.historyId?.startsWith("pv:"))));
-                return {
-                  ...j,
-                  url: hideUntilStitch
-                    ? ""
-                    : a.status === "running"
-                      ? a.url || ""
-                      : a.url || j.url,
-                  historyId: a.historyId || j.historyId,
-                  assetId: a.id || j.assetId,
-                  status,
-                  error: a.error || j.error,
-                  prompt: j.prompt || a.prompt || j.prompt,
-                  targetSeconds:
-                    j.targetSeconds || inferTargetSecondsFromAsset(a),
-                  startedAt:
-                    j.startedAt ||
-                    (a.createdAt
-                      ? lockEtaStart(a.id, a.createdAt)
-                      : j.startedAt),
-                };
-              });
-
-              const synced = syncRunningJobsFromAssets(next, assets);
-              next = synced.jobs;
-              for (const key of synced.clearedKeys) activePreviewPolls.delete(key);
-              next = pruneGhostRunningJobs(next, {
-                maxWallMs: studioMaxWallMs(next),
-                staleGraceMs: STALE_RUNNING_GRACE_MS,
-              }).jobs;
-              return next.slice(0, 12);
-            });
-
-            // Resume polling only for jobs already restored on the grid (no ghost cards).
-            const resumeTargets = assets.filter((a) => {
-              if (a.status !== "running") return false;
-              const started = lockEtaStart(a.id, a.createdAt);
-              const wallMs = generateWallMs({
-                clientId: "",
-                url: "",
-                mediaType: (a.mediaType as StudioJob["mediaType"]) || "video",
-                historyId: a.historyId,
-                status: "running",
-                startedAt: started,
-                assetId: a.id,
-                targetSeconds: inferTargetSecondsFromAsset(a),
-              });
-              return Date.now() - started < wallMs;
-            });
             const storedAssetIds = new Set(
               stored.map((j) => j.assetId).filter(Boolean) as string[],
             );
-            for (const running of resumeTargets) {
-              if (!storedAssetIds.has(running.id)) continue;
-              if (!(running.historyId || running.mediaType === "image")) continue;
-              const started = lockEtaStart(running.id, running.createdAt);
-              setGenStartedAt(started);
+            const stillRunning = hydrated.filter(
+              (j) =>
+                j.status === "running" &&
+                j.assetId &&
+                storedAssetIds.has(j.assetId),
+            );
+            if (stillRunning.length) {
+              const first = stillRunning[0]!;
+              setGenStartedAt(first.startedAt || Date.now());
               setStatus("توليد قيد المتابعة — يمكنك توليد جديد");
-              const resumeId = ++genRunIdRef.current;
-              void pollPreview(
-                running.historyId || "",
-                running.mediaType,
-                started,
-                false,
-                running.id,
-                resumeId,
+            } else {
+              setGenStartedAt(null);
+              setStatus((s) =>
+                s && /توليد قيد/i.test(s) ? null : s,
               );
             }
+            for (const job of stillRunning) {
+              const asset = assets.find((a) => a.id === job.assetId);
+              const started =
+                job.startedAt ||
+                (asset?.createdAt
+                  ? lockEtaStart(asset.id, asset.createdAt)
+                  : Date.now());
+              const wallMs = generateWallMs({
+                ...job,
+                startedAt: started,
+                status: "running",
+              });
+              if (Date.now() - started >= wallMs) continue;
+              const resumeId = ++genRunIdRef.current;
+              void pollPreview(
+                job.historyId || "",
+                job.mediaType,
+                started,
+                false,
+                job.assetId,
+                resumeId,
+                job.clientId,
+              );
+            }
+          } else if (!cancelled && stored.length) {
+            setJobs((prev) => mergeHydratedJobs(prev, stored));
           }
         } catch {
-          // ignore
+          if (!cancelled && stored.length) {
+            setJobs((prev) => mergeHydratedJobs(prev, stored));
+          }
         }
+      } else if (!cancelled && stored.length) {
+        setJobs((prev) => mergeHydratedJobs(prev, stored));
       }
       if (!cancelled) setPreviewHydrated(true);
     })();
@@ -886,37 +967,31 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         if (cancelled || !aliveRef.current || !res.ok) return;
         const assets = data.assets || [];
 
-        // Immediate setState so clocks drop as soon as Assets is done.
-        if (!aliveRef.current) return;
-        setJobs((prev) => {
-          const { jobs: synced, changed, clearedKeys } = syncRunningJobsFromAssets(
-            prev,
-            assets,
-          );
-          const pruned = pruneGhostRunningJobs(synced, {
-            maxWallMs: studioMaxWallMs(synced),
-            staleGraceMs: STALE_RUNNING_GRACE_MS,
-          });
-          if (!changed && !pruned.changed) return prev;
-          for (const key of clearedKeys) activePreviewPolls.delete(key);
-          writeStoredJobs(pruned.jobs);
-          return pruned.jobs;
-        });
+        let next = mergeStudioJobsWithAssets(jobsRef.current, assets);
+        next = await finalizeRunningJobsWithStatus(next);
+        if (cancelled || !aliveRef.current) return;
+        writeStoredJobs(next);
+        setJobs(next);
       } catch {
         // ignore — next tick retries
       }
     };
 
     void reconcile();
-    const id = window.setInterval(() => void reconcile(), 15_000);
+    const id = window.setInterval(() => void reconcile(), 5_000);
     const onVis = () => {
       if (!document.hidden) void reconcile();
     };
+    const onPageShow = () => {
+      void reconcile();
+    };
     document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pageshow", onPageShow);
     return () => {
       cancelled = true;
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("pageshow", onPageShow);
     };
   }, [user?.id, hasRunningJobs, lockedMedia, media]);
 

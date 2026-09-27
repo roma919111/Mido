@@ -151,6 +151,21 @@ function scheduleLtx25BackgroundPersist(
  * When HF has a URL but the asset is still "running", expose preview immediately
  * and persist to disk without blocking the status response.
  */
+/** Wire HF preview URLs on running LTX rows (Assets list + refresh after navigation). */
+export async function refreshRunningLtxAssetPreviews(
+  userId: string,
+  assets: AssetRecord[],
+): Promise<AssetRecord[]> {
+  return Promise.all(
+    assets.map(async (asset) => {
+      if (asset.status !== "running" || !isLtx25DeployedAsset(asset)) {
+        return asset;
+      }
+      return ensureLtx25PreviewDelivered(userId, asset);
+    }),
+  );
+}
+
 export async function ensureLtx25PreviewDelivered(
   userId: string,
   asset: AssetRecord,
