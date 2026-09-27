@@ -1,10 +1,8 @@
-# Deploy studio (vyronix.app) from GitHub main — nixpacks build, not Docker rollback.
-# Add repo secret: RAILWAY_TOKEN = Project Token from Railway agile-serenity / Mido.
+# Manual deploy only — production stays on Docker rollback until you explicitly deploy main.
+# GitHub secret (one of): RAILWAY_PROJECT_TOKEN or RAILWAY_TOKEN = Project token (agile-serenity / Mido).
 name: Deploy Vyronix Studio (Railway)
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -16,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     container: ghcr.io/railwayapp/cli:latest
     env:
-      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_PROJECT_TOKEN || secrets.RAILWAY_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
