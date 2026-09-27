@@ -194,6 +194,42 @@ export function syncRunningJobsFromAssets(
       .slice(0, 120)
       .toLowerCase();
 
+  const takeLtxPreviewWhileRunning = (
+    a: AssetSyncRow | undefined,
+    j: StudioJob,
+  ): StudioJob | null => {
+    if (!a || a.status !== "running" || !a.url) return null;
+    const historyId = a.historyId || j.historyId;
+    if (!isLtxDeployedHistoryId(historyId)) return null;
+    if (
+      !assetHasDeliverableOutput({
+        status: a.status,
+        url: a.url,
+        historyId,
+      })
+    ) {
+      return null;
+    }
+    if (usedAssetIds.has(a.id)) return null;
+    usedAssetIds.add(a.id);
+    changed = true;
+    if (j.assetId) clearedKeys.push(j.assetId);
+    if (j.historyId) clearedKeys.push(j.historyId);
+    if (a.historyId) clearedKeys.push(a.historyId);
+    if (j.clientId) clearedKeys.push(j.clientId);
+    return {
+      ...j,
+      url: a.url,
+      historyId: historyId || j.historyId,
+      assetId: a.id || j.assetId,
+      status: "completed",
+      error: undefined,
+      targetSeconds: j.targetSeconds || a.targetSeconds || j.targetSeconds,
+      prompt: j.prompt || a.prompt || j.prompt,
+      completedAt: j.completedAt || Date.now(),
+    };
+  };
+
   const takeCompleted = (a: AssetSyncRow | undefined, j: StudioJob): StudioJob | null => {
     if (!a || a.status !== "completed" || !a.url) return null;
     if (usedAssetIds.has(a.id)) return null;
@@ -239,6 +275,8 @@ export function syncRunningJobsFromAssets(
         ? rows.find((x) => x.historyId && x.historyId === j.historyId)
         : undefined);
 
+    const ltxPreview = takeLtxPreviewWhileRunning(direct, j);
+    if (ltxPreview) return ltxPreview;
     const done = takeCompleted(direct, j);
     if (done) return done;
     const fail = takeFailed(direct, j);
