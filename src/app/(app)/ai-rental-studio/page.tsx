@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
-import { H3RentalStudioShell } from "@/components/veronix/H3RentalStudioShell";
+import { Suspense } from "react";
+import { Loader2 } from "lucide-react";
+import { H3VastLabPage } from "@/components/veronix/H3VastLabPage";
 import {
   AI_RENTAL_STUDIO_NAME,
   AI_RENTAL_STUDIO_NAME_AR,
@@ -20,7 +22,16 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default async function H3VastLabPage() {
-  const { locale } = await getRequestDictionary();
-  return <H3RentalStudioShell ar={locale === "ar"} />;
+export default function AiRentalStudioPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#0b0d12] px-6">
+          <Loader2 className="h-8 w-8 animate-spin text-[#22f0ff]" />
+        </div>
+      }
+    >
+      <H3VastLabPage />
+    </Suspense>
+  );
 }
