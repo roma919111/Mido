@@ -68,6 +68,10 @@ import {
   type RentalEngine,
 } from "@/lib/h3-lab-client-storage";
 import { hasArabic, isAcceptableLiteralEnglish } from "@/lib/h3-lab-prompt";
+import {
+  readLastOriginalPrompt,
+  writeLastOriginalPrompt,
+} from "@/lib/last-original-prompt";
 import { VERONIX_DEPLOYED_MODEL_ID } from "@/lib/ltx25-deployed";
 import type { VisualReference } from "@/lib/types";
 
@@ -767,6 +771,7 @@ export function H3LabClient({
     characterNames,
   );
   const isAdmin = isAdminUser(user);
+  const lastOriginalPromptRef = useRef(readLastOriginalPrompt());
   const namedCharacters = useMemo(
     () => characters.filter((c) => isCharacterName(c.name)),
     [characters],
@@ -1690,19 +1695,43 @@ export function H3LabClient({
     setOutputCount((n) => Math.min(Math.max(1, n), maxParallel));
   }, [maxParallel]);
 
-  const generate = async () => {
+  const generate = async (opts?: { useLastOriginal?: boolean }) => {
     if (generating || submittingRef.current || enhancing || stopping || gpuRebooting) return;
-    if (prompt.trim().length < 3) {
+
+    const useLastOriginal = !!opts?.useLastOriginal;
+    let promptToSend = prompt;
+    if (useLastOriginal) {
+      const original = (
+        lastOriginalPromptRef.current.trim() ||
+        originalPrompt.trim() ||
+        prompt.trim()
+      ).trim();
+      if (original.length < 3) {
+        setError(
+          ar
+            ? "لا يوجد برومبت أصلي سابق — اكتب وصفًا أو استخدم Generate أولًا."
+            : "No saved original prompt — type a prompt or use Generate first.",
+        );
+        return;
+      }
+      promptToSend = original;
+      lastOriginalPromptRef.current = original;
+      writeLastOriginalPrompt(original);
+    } else if (prompt.trim().length < 3) {
       setError(
         ar
           ? "اكتب وصف المشهد (3 أحرف على الأقل)"
           : "Enter a scene description (at least 3 characters)",
       );
       return;
+    } else {
+      const userOriginal = prompt.trim();
+      lastOriginalPromptRef.current = userOriginal;
+      writeLastOriginalPrompt(userOriginal);
     }
+
     if (configLoaded && config && !canSubmitConfig && !rentalPaid) return;
 
-    let promptToSend = prompt;
     submittingRef.current = true;
     stopPolling();
     pollingActiveRef.current = true;
@@ -1710,7 +1739,7 @@ export function H3LabClient({
     setError("");
     setInfo("");
     setSubmittedPrompt("");
-    if (!enhanceMode) setOriginalPrompt("");
+    if (!useLastOriginal && !enhanceMode) setOriginalPrompt("");
     setVideoUrl(null);
     setVariants([]);
     setSelectedVariantIndex(0);
@@ -1803,7 +1832,11 @@ export function H3LabClient({
         locale,
         gpu_only: gpuOnly || undefined,
         prompt_ready:
-          (gpuOnly && (isAdmin || enhanceMode === "literal" || enhanceMode === "screenplay")) ||
+          (gpuOnly &&
+            (useLastOriginal ||
+              isAdmin ||
+              enhanceMode === "literal" ||
+              enhanceMode === "screenplay")) ||
           (gpuOnly && !hasArabic(promptToSend)) ||
           undefined,
         variant_batch_id: variant?.variantBatchId,
@@ -2786,6 +2819,24 @@ export function H3LabClient({
                           {ar ? `حتى ${maxParallel} معاً` : `Up to ${maxParallel} parallel`}
                         </span>
                       </div>
+                      {isAdmin ? (
+                        <button
+                          type="button"
+                          disabled={generateDisabled}
+                          title={
+                            ar
+                              ? "توليد بالبرومبت الأصلي الأخير دون تعديل (أدمن)"
+                              : "Generate with last original prompt unchanged (admin)"
+                          }
+                          onClick={() => {
+                            if (!generateDisabled) void generate({ useLastOriginal: true });
+                          }}
+                          className="flex h-[3.25rem] max-w-[42%] shrink-0 flex-col items-center justify-center gap-0.5 rounded-2xl border border-amber-400/35 bg-amber-500/10 px-2 text-[11px] font-bold leading-tight text-amber-50 transition enabled:active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 sm:max-w-none sm:px-3 sm:text-xs"
+                        >
+                          <span>جنريت آخر</span>
+                          <span className="font-normal text-amber-100/75">أصلي</span>
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         disabled={generateDisabled}
