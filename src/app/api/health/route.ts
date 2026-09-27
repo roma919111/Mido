@@ -10,6 +10,7 @@ import { isKlingVideoConfigured } from "@/lib/kling-video";
 import { isFluxVideoConfigured } from "@/lib/flux-video";
 import { ffmpegAvailable } from "@/lib/iptv-hls-ffmpeg";
 import { getVyronixSurface } from "@/lib/vyronix-surface";
+import { getVyronixBuildStamp } from "@/lib/vyronix-build";
 
 export const runtime = "nodejs";
 
@@ -39,6 +40,7 @@ export async function GET() {
       kling: isKlingVideoConfigured(),
       flux: isFluxVideoConfigured(),
     },
+    build: getVyronixBuildStamp(),
     ts: new Date().toISOString(),
   });
 }
