@@ -44,6 +44,11 @@ import {
   pixverseChainPollNote,
   tickPixVerseExtendJob,
 } from "@/lib/pixverse-extend";
+import {
+  buildLtx25StatusPayload,
+  ensureLtx25PreviewDelivered,
+  isLtx25DeployedAsset,
+} from "@/lib/ltx25-deployed-job";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -65,6 +70,14 @@ export async function GET(request: Request) {
     const asset = await findAssetById(user.id, assetId);
     if (!asset) {
       return NextResponse.json({ error: "Asset not found" }, { status: 404 });
+    }
+
+    if (isLtx25DeployedAsset(asset)) {
+      const refreshed = await ensureLtx25PreviewDelivered(user.id, asset);
+      const ltxPayload = buildLtx25StatusPayload(refreshed);
+      if (ltxPayload) {
+        return NextResponse.json(ltxPayload);
+      }
     }
 
     if (isPixVerseExtendAsset(asset) && asset.status === "running") {

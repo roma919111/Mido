@@ -15,6 +15,8 @@ const ALLOWED_HOST_SUFFIXES = [
   ".pixverseai.cn",
   ".aliyuncs.com",
   ".cloudfront.net",
+  ".hf.space",
+  ".huggingface.co",
 ];
 
 export function isAllowedMediaHost(hostname: string): boolean {
@@ -25,7 +27,9 @@ export function isAllowedMediaHost(hostname: string): boolean {
     host === "byteplus.com" ||
     host === "bytepluses.com" ||
     host === "pixverse.ai" ||
-    host === "pixverseai.cn"
+    host === "pixverseai.cn" ||
+    host.endsWith(".hf.space") ||
+    host === "huggingface.co"
   ) {
     return true;
   }
