@@ -502,6 +502,85 @@ export type Dictionary = {
     ultraRequiredLogin: string;
     upgradeToUltra: string;
   };
+  studioRental: {
+    gateTitle: string;
+    gateBody: string;
+    gateLogin: string;
+    planNote: string;
+    signIn: string;
+    upgrade: string;
+    rentHour: string;
+    prepTitle: string;
+    prepBillingNote: string;
+    prepTipGpu: string;
+    prepTipRefresh: string;
+    prepTipCountdown: string;
+    subscribeAfterFree: string;
+    signupForStudio: string;
+    confirmingPayment: string;
+    confirmPaymentFailed: string;
+    failoverTitle: string;
+    failoverBody: string;
+    failoverFrozenNote: string;
+    studioReady: string;
+    clarityTitle: string;
+    clarityPrice: string;
+    clarityDuration: string;
+    clarityPrep: string;
+    clarityCountdown: string;
+    clarityGpu: string;
+    clarityVideos: string;
+    clarityDestroy: string;
+    clarityRefresh: string;
+    countdownLabel: string;
+    rentalEnded: string;
+    gpuOfferTitle: string;
+    gpuAvailable: string;
+    gpuUnavailable: string;
+    gpuUnavailablePay: string;
+    subscribeButton: string;
+    gpuDedicatedNote: string;
+    studioPreviewHint: string;
+    gpuStatusReady: string;
+    gpuStatusBooting: string;
+    gpuStatusMarket: string;
+    gpuInfraNote: string;
+    gpuCriteriaNote: string;
+    liveOffersTitle: string;
+    liveOffersUpdated: string;
+    selectOfferHint: string;
+    autoPickNote: string;
+    noOffersNote: string;
+    linkPhaseHint: string;
+    adminPaidBadge: string;
+    adminReadyBadge: string;
+    refreshOffers: string;
+    vastManualWarnTitle: string;
+    vastManualWarnBody: string;
+    whatsappLabel: string;
+    whatsappPlaceholder: string;
+    whatsappHint: string;
+    linkTitle: string;
+    linkBody: string;
+    linkLabel: string;
+    linkPlaceholder: string;
+    linkButton: string;
+    manualInfoTitle: string;
+    manualInfoSubtitle: string;
+    manualInfoPrice: string;
+    manualInfoDuration: string;
+    manualInfoGpu: string;
+    manualInfoContinuous: string;
+    manualInfoVideos: string;
+    manualInfoStepContact: string;
+    manualInfoStepActivate: string;
+    manualInfoNotServerless: string;
+    manualInfoRunPodBadge: string;
+    manualInfoWhatsApp: string;
+    manualInfoWhatsAppMissing: string;
+    manualInfoLoginHint: string;
+    manualWhatsAppPrefill: string;
+  };
   lang: {
     ar: string;
     en: string;
@@ -1061,6 +1140,91 @@ export const ar: Dictionary = {
     ultraRequiredLogin: "سجّل الدخول أولاً ثم رقِّ إلى باقة الترا.",
     upgradeToUltra: "الترقية إلى باقة الترا",
   },
+  studioRental: {
+    gateTitle: "AI Rental Studio — تأجير 4 ساعات",
+    gateBody:
+      "الباقة {price} لـ {hours} ساعات فيرونيكس — فيديوهات غير محدودة. تواصل مع الدعم عبر واتساب للتفعيل اليدوي على RunPod (GPU مخصص).",
+    gateLogin: "سجّل الدخول ثم تواصل مع الدعم عبر واتساب لتأجير الاستوديو.",
+    planNote: "4 ساعات · $30 · GPU مخصص RunPod · فيديوهات غير محدودة",
+    signIn: "تسجيل الدخول",
+    upgrade: "تأجير ساعتين — فيديوهات غير محدودة",
+    rentHour: "تأجير ساعتين — ${price}$",
+    prepTitle: "جاري تجهيز الاستوديو…",
+    prepBillingNote: "وقت التجهيز غير محسوب — يبدأ عداد الساعتين فقط عند جاهزية النماذج والاستوديو",
+    prepTipGpu: "تحميل النماذج من السحابة — أول مرة قد تستغرق 20–30 دقيقة.",
+    prepTipRefresh: "يمكنك تحديث الصفحة بأمان — التجهيز يستمر على السيرفر.",
+    prepTipCountdown: "عند الجاهزية ستفتح واجهة الاستوديو ويبدأ عداد الساعتين تلقائياً.",
+    subscribeAfterFree: "تأجير استوديو — ${price}$ / ${hours} ساعة · فيديوهات غير محدودة",
+    signupForStudio: "سجّل عبر Google ثم ادفع لتأجير فيرونيكس لساعتين",
+    confirmingPayment: "جاري تأكيد الدفع وتفعيل الاستوديو…",
+    confirmPaymentFailed: "تعذّر تأكيد الدفع — حدّث الصفحة أو تواصل مع الدعم",
+    failoverTitle: "السيرفر الحالي مشغول — جاري الانتقال…",
+    failoverBody:
+      "السيرفر الحالي مشغول — نبحث عن سيرفر بديل. يرجى الانتظار، هذه العملية لا تُحسب من مدة التأجير.",
+    failoverFrozenNote: "⏸ العداد مجمّد — يستأنف عند جاهزية السيرفر الجديد",
+    studioReady: "● الاستوديو جاهز",
+    clarityTitle: "ما الذي تحصل عليه؟",
+    clarityPrice: "${price} — ساعتان فيرونيكس (بعد الجاهزية)",
+    clarityDuration: "ساعتان استخدام فعلي — MiniMax H3 · فيديوهات غير محدودة",
+    clarityPrep: "تحميل النماذج مجاني — لا يُخصم من ساعتيك (≈20–30 د أول boot)",
+    clarityCountdown: "العداد يبدأ فقط عند «الاستوديو جاهز» (models OK)",
+    clarityGpu: "فيرونيكس · ComfyUI + MiniMax H3",
+    clarityVideos: "Auto 15s/paragraph · max 120s · Turbo · Larry",
+    clarityDestroy: "فيرونيكس يُوقَف تلقائياً عند انتهاء وقتك — خصوصية أعلى",
+    clarityRefresh: "Refresh آمن — لا يعيد العداد ولا يوقف فيرونيكس",
+    countdownLabel: "الوقت المتبقي من ساعتَي التأجير",
+    rentalEnded: "انتهت ساعتَا التأجير — ادفع لتأجير جديد",
+    gpuOfferTitle: "فيرونيكس الاستوديو",
+    gpuAvailable: "متوفر",
+    gpuUnavailable: "غير متوفر — لا يمكن الدفع حتى يتوفر GPU",
+    gpuUnavailablePay: "لا يوجد GPU 2×6000 متاح الآن — زر الاشتراك معطّل حتى يتوفر",
+    subscribeButton: "اشتراك — ${price}$",
+    gpuDedicatedNote: "جلسة استوديو مخصصة — البنية التحتية يديرها فريق فيرونيكس",
+    studioPreviewHint: "MiniMax H3 · فيديو من النص · ساعتان بعد الربط",
+    gpuStatusReady: "متوفر — الاستوديو جاهز",
+    gpuStatusBooting: "جاري التجهيز — فيرونيكس يحمّل النماذج",
+    gpuStatusMarket: "عروض حية — بانتظار تشغيل فيرونيكس",
+    gpuInfraNote: "البنية التحتية على فيرونيكس — أنت تدفع $15 للاستخدام فقط",
+    gpuCriteriaNote: "يتم اختيار فيرونيكس تلقائياً — لا حاجة لاختيار يدوي",
+    liveOffersTitle: "فيرونيكس المتاح",
+    liveOffersUpdated: "آخر تحديث",
+    selectOfferHint: "تم الاختيار تلقائياً",
+    autoPickNote: "✓ فيرونيكس · تم الاختيار تلقائياً",
+    noOffersNote: "لا يوجد فيرونيكس متاح حالياً — حاول التحديث لاحقاً",
+    linkPhaseHint: "① فيرونيكس المختار أدناه — ② أدخل Vyronix ID في لوحة الربط تحت القائمة",
+    adminPaidBadge: "فيرونيكس",
+    adminReadyBadge: "جاهز",
+    refreshOffers: "تحديث",
+    vastManualWarnTitle: "⚠️ لا تحجز يدوياً من cloud.vast.ai",
+    vastManualWarnBody:
+      "الحجز من موقع Vast بالقالب الافتراضي يفشل — خطأ no_compatible_tag. استأجر من هنا: فيرونيكس يشغّل الصورة الصحيحة (MiniMax H3) تلقائياً.",
+    whatsappLabel: "واتساب — لاستلام فيرونيكس ID",
+    whatsappPlaceholder: "9665XXXXXXXX",
+    whatsappHint: "يصلك فيرونيكس ID على إيميلك وواتساب عند اكتمال تحميل فيرونيكس",
+    linkTitle: "ربط الاستوديو — فيرونيكس ID",
+    linkBody:
+      "فيرونيكس ID يظهر أدناه عند الجاهزية — ويُرسل أيضاً على إيميلك وواتساب. أدخله هنا لربط الاستوديو.",
+    linkLabel: "فيرونيكس ID",
+    linkPlaceholder: "49589068",
+    linkButton: "ربط الاستوديو",
+    manualInfoTitle: "تأجير استوديو AI",
+    manualInfoSubtitle: "GPU مخصص يعمل باستمرار — ليس Serverless",
+    manualInfoPrice: "الباقة: {price} مقابل {hours} ساعات توليد",
+    manualInfoDuration: "مدة التأجير: {hours} ساعات",
+    manualInfoGpu: "GPU مخصص على RunPod — يعمل طوال مدة التأجير",
+    manualInfoContinuous: "السيرفر يبقى شغّالاً حتى ينتهي وقتك (ليس دفع لكل طلب)",
+    manualInfoVideos: "فيديوهات غير محدودة خلال مدة التأجير",
+    manualInfoStepContact: "① تواصل مع الدعم عبر واتساب واطلب التأجير",
+    manualInfoStepActivate: "② فريق فيرونيكس يفعّل الاستوديو لك يدوياً على RunPod ويرسل Vyronix ID",
+    manualInfoNotServerless:
+      "التأجير على GPU مخصص (RunPod) وليس Serverless — مناسب للتوليد المكثّف بدون انقطاع.",
+    manualInfoRunPodBadge: "RunPod · GPU مخصص",
+    manualInfoWhatsApp: "تواصل مع الدعم — واتساب",
+    manualInfoWhatsAppMissing: "رقم واتساب الدعم غير مضبوط — تواصل عبر صفحة التواصل.",
+    manualInfoLoginHint: "يُفضّل تسجيل الدخول قبل المراسلة لربط حسابك:",
+    manualWhatsAppPrefill:
+      "مرحباً، أريد تأجير AI Rental Studio:\n• {hours} ساعات — {price}\n• إيميل Vyronix: {email}\n• GPU مخصص RunPod (ليس Serverless)",
+  },
   lang: {
     ar: "العربية",
     en: "English",
@@ -1619,6 +1783,96 @@ export const en: Dictionary = {
       "Trim, merge, filters, and auto subtitles are available on the Ultra plan only. Upgrade to unlock full editing.",
     ultraRequiredLogin: "Sign in first, then upgrade to Ultra.",
     upgradeToUltra: "Upgrade to Ultra",
+  },
+  studioRental: {
+    gateTitle: "AI Rental Studio — 4-hour rental",
+    gateBody:
+      "Package ${price} for {hours} full Vyronix hours — unlimited videos. Contact support on WhatsApp for manual RunPod activation (dedicated GPU).",
+    gateLogin: "Sign in, then contact support on WhatsApp to rent the studio.",
+    planNote: "4 hours · $30 · dedicated RunPod GPU · unlimited videos",
+    signIn: "Sign in",
+    upgrade: "2-hour rental — unlimited videos",
+    rentHour: "Rent 2 hours — ${price}$",
+    prepTitle: "Preparing your studio…",
+    prepBillingNote:
+      "Prep time is free — your 2-hour countdown starts only when models and studio are ready",
+    prepTipGpu: "Loading models from cloud — first boot may take 20–30 minutes.",
+    prepTipRefresh: "Safe to refresh — provisioning continues on the server.",
+    prepTipCountdown:
+      "When ready, the studio opens and your 2-hour countdown starts automatically.",
+    subscribeAfterFree: "Rent studio — ${price}$ / ${hours} hours · unlimited videos",
+    signupForStudio: "Sign in with Google, then pay for a 2-hour Vyronix rental",
+    confirmingPayment: "Confirming payment and activating studio…",
+    confirmPaymentFailed: "Could not confirm payment — refresh or contact support",
+    failoverTitle: "Current server busy — switching…",
+    failoverBody:
+      "Current server busy — finding another host. Please wait; this time is not deducted from your rental.",
+    failoverFrozenNote: "⏸ Clock paused — resumes when the new server is ready",
+    studioReady: "● Studio ready",
+    clarityTitle: "What you get",
+    clarityPrice: "${price} — 2 full Vyronix hours (after ready)",
+    clarityDuration: "2 hours of actual use — MiniMax H3 · unlimited videos",
+    clarityPrep: "Model loading is free — not deducted (≈20–30 min on first boot)",
+    clarityCountdown: "Countdown starts only at «Studio ready» (models OK)",
+    clarityGpu: "Vyronix · ComfyUI + MiniMax H3",
+    clarityVideos: "Auto 15s/paragraph · max 120s · Turbo · Larry",
+    clarityDestroy: "Vyronix auto-stops when your time ends — better privacy",
+    clarityRefresh: "Safe refresh — does not reset clock or stop Vyronix",
+    countdownLabel: "Remaining rental time (2 hours)",
+    rentalEnded: "Your 2-hour rental ended — pay to rent again",
+    gpuOfferTitle: "Studio Vyronix",
+    gpuAvailable: "Available",
+    gpuUnavailable: "Unavailable — pay disabled until GPU is ready",
+    gpuUnavailablePay:
+      "No 2×6000 GPU available now — subscribe stays disabled until supply returns",
+    subscribeButton: "Subscribe — ${price}$",
+    gpuDedicatedNote: "Dedicated studio session — Vyronix runs the infrastructure",
+    studioPreviewHint: "MiniMax H3 · text-to-video · 2 hours after linking",
+    gpuStatusReady: "Available — studio ready",
+    gpuStatusBooting: "Preparing — Vyronix loading models",
+    gpuStatusMarket: "Live offers — waiting for Vyronix boot",
+    gpuInfraNote: "Infrastructure on Vyronix — you pay $15 for usage only",
+    gpuCriteriaNote: "Vyronix is picked automatically — no manual selection",
+    liveOffersTitle: "Available Vyronix",
+    liveOffersUpdated: "Updated",
+    selectOfferHint: "Auto-selected",
+    autoPickNote: "✓ Vyronix · auto-selected",
+    noOffersNote: "No Vyronix available right now — try refresh later",
+    linkPhaseHint:
+      "① Your Vyronix pick below — ② enter Vyronix ID in the link panel under the list",
+    adminPaidBadge: "Vyronix",
+    adminReadyBadge: "Ready",
+    refreshOffers: "Refresh",
+    vastManualWarnTitle: "⚠️ Do not book manually on cloud.vast.ai",
+    vastManualWarnBody:
+      "Vast’s default template fails — no_compatible_tag. Rent here instead: Vyronix launches the correct MiniMax H3 image for you.",
+    whatsappLabel: "WhatsApp — receive Vyronix ID",
+    whatsappPlaceholder: "9665XXXXXXXX",
+    whatsappHint: "Vyronix ID is sent to your email and WhatsApp when Vyronix loading completes",
+    linkTitle: "Link studio — Vyronix ID",
+    linkBody:
+      "Your Vyronix ID appears below when ready — also sent to your email and WhatsApp. Enter it here to link your studio.",
+    linkLabel: "Vyronix ID",
+    linkPlaceholder: "49589068",
+    linkButton: "Link studio",
+    manualInfoTitle: "AI Studio Rental",
+    manualInfoSubtitle: "Dedicated GPU running continuously — not serverless",
+    manualInfoPrice: "Package: {price} for {hours} hours of generation",
+    manualInfoDuration: "Rental duration: {hours} hours",
+    manualInfoGpu: "Dedicated GPU on RunPod — runs for your full rental window",
+    manualInfoContinuous: "Server stays on until your time ends (not pay-per-request)",
+    manualInfoVideos: "Unlimited videos during your rental period",
+    manualInfoStepContact: "① Contact support on WhatsApp to request rental",
+    manualInfoStepActivate:
+      "② Vyronix team activates your studio manually on RunPod and sends your Vyronix ID",
+    manualInfoNotServerless:
+      "Rental is on a dedicated GPU (RunPod), not serverless — ideal for intensive generation without interruption.",
+    manualInfoRunPodBadge: "RunPod · dedicated GPU",
+    manualInfoWhatsApp: "Contact support — WhatsApp",
+    manualInfoWhatsAppMissing: "Support WhatsApp is not configured — use the contact page.",
+    manualInfoLoginHint: "Sign in before messaging so we can link your account:",
+    manualWhatsAppPrefill:
+      "Hi, I want to rent AI Rental Studio:\n• {hours} hours — {price}\n• Vyronix email: {email}\n• Dedicated RunPod GPU (not serverless)",
   },
   lang: {
     ar: "العربية",
