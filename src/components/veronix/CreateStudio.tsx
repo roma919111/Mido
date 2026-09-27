@@ -107,6 +107,11 @@ import { StudioMediaTabs } from "@/components/veronix/StudioMediaTabs";
 import { useLocale } from "@/components/veronix/LocaleProvider";
 import { shareAsset } from "@/lib/share-asset";
 import type { CustomerUser } from "./AppHeader";
+import { isAdminUser } from "@/lib/admin-shared";
+import {
+  readLastOriginalPrompt,
+  writeLastOriginalPrompt,
+} from "@/lib/last-original-prompt";
 
 /** Catalog id for VYRONIX image studio (Seedream under the hood). */
 const VERONIX_IMAGE_MODEL_ID = "vyronix-image";
@@ -394,6 +399,9 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
   const [genConfirmScript, setGenConfirmScript] =
     useState<VeronixShotScript | null>(null);
   const [genConfirmOriginal, setGenConfirmOriginal] = useState("");
+  /** Last customer prompt before Veronix shot-script (admin «Generate last original»). */
+  const lastOriginalPromptRef = useRef(readLastOriginalPrompt());
+  const isAdmin = isAdminUser(user);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [platformReady, setPlatformReady] = useState<boolean | null>(null);
@@ -2203,11 +2211,14 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
 
     // Images: generate immediately with the customer's original prompt.
     if (media !== "video") {
-      void runGenerateWithPrompt(prompt.trim());
+      const original = prompt.trim();
+      lastOriginalPromptRef.current = original;
+      void runGenerateWithPrompt(original);
       return;
     }
 
     const original = prompt.trim();
+    lastOriginalPromptRef.current = original;
     setGenConfirmOriginal(original);
 
     // Instant local script — never block Generate on LLM / enhance network.
@@ -2293,13 +2304,40 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
     setStatus(null);
   }
 
+  /** Admin only: same settings, last original prompt — no shot-script / recommendation sheet. */
+  async function handleGenerateLastOriginal() {
+    setGenFlash(true);
+    window.setTimeout(() => setGenFlash(false), 220);
+    setError(null);
+    setStatus(null);
+    if (!validateGenerateReady()) return;
+    const original = (
+      lastOriginalPromptRef.current.trim() || prompt.trim()
+    ).trim();
+    if (!original) {
+      setError("لا يوجد برومبت أصلي سابق — اكتب وصفًا أو استخدم Generate أولًا.");
+      return;
+    }
+    lastOriginalPromptRef.current = original;
+    writeLastOriginalPrompt(original);
+    try {
+      await runGenerateWithPrompt(original, { bindingPrompt: original });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "فشل بدء التوليد");
+    }
+  }
+
   async function runGenerateWithPrompt(
     promptForGenerate: string,
-    opts?: { durationSeconds?: number },
+    opts?: { durationSeconds?: number; bindingPrompt?: string },
   ) {
     if (!validateGenerateReady()) return;
-    const userPrompt = prompt.trim();
+    const userPrompt = (opts?.bindingPrompt ?? prompt.trim()).trim();
     const finalUserPrompt = (promptForGenerate || userPrompt).trim();
+    if (!opts?.bindingPrompt) {
+      lastOriginalPromptRef.current = userPrompt;
+      writeLastOriginalPrompt(userPrompt);
+    }
     if (!finalUserPrompt) {
       setError("اكتب وصفًا أولًا.");
       return;
@@ -3213,6 +3251,23 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
                 : "حد أقصى 4 معاً"}
             </span>
           </div>
+        ) : null}
+
+        {isAdmin ? (
+          <button
+            type="button"
+            onClick={() => void handleGenerateLastOriginal()}
+            disabled={
+              !selectedModel?.available ||
+              !canStartMore ||
+              genConfirmOpen
+            }
+            title="توليد بالبرومبت الأصلي الأخير دون تعديل (أدمن)"
+            className="flex max-w-[42%] shrink-0 flex-col items-center justify-center gap-0.5 rounded-2xl border border-amber-400/35 bg-amber-500/10 px-2 py-2.5 text-[11px] font-bold leading-tight text-amber-50 transition enabled:active:scale-[0.98] disabled:opacity-50 sm:max-w-none sm:px-3 sm:text-xs"
+          >
+            <span>جنريت آخر</span>
+            <span className="font-normal text-amber-100/75">أصلي</span>
+          </button>
         ) : null}
 
         <button
