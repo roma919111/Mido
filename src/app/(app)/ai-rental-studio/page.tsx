@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { H3RentalStudioShell } from "@/components/veronix/H3RentalStudioShell";
+import { Suspense } from "react";
+import AiRentalStudioClient from "@/components/veronix/AiRentalStudioClient";
 import {
   AI_RENTAL_STUDIO_NAME,
   AI_RENTAL_STUDIO_NAME_AR,
@@ -21,6 +22,9 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function H3VastLabPage() {
-  const { locale } = await getRequestDictionary();
-  return <H3RentalStudioShell ar={locale === "ar"} />;
+  return (
+    <Suspense fallback={null}>
+      <AiRentalStudioClient />
+    </Suspense>
+  );
 }
