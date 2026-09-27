@@ -4,7 +4,7 @@ export const AI_RENTAL_STUDIO_PATH = "/ai-rental-studio";
 export const AI_RENTAL_STUDIO_NAME = "AI Rental Studio";
 export const AI_RENTAL_STUDIO_NAME_AR = "ستوديو التأجير AI";
 
-/** Matches production rental checkout (vyronix.app bundle r393). */
+/** Matches production rental checkout (vyronix.app bundle r394). */
 export const STUDIO_RENTAL_DURATION_HOURS = 4;
 export const STUDIO_RENTAL_PRICE_USD = 30;
 export const STUDIO_RENTAL_PRICING_PATH = "/pricing?feature=studio-rental";
