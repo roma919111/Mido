@@ -4,6 +4,10 @@
  */
 
 import { estimateGenerateSeconds } from "@/lib/generate-eta";
+import {
+  assetHasDeliverableOutput,
+  isLtxDeployedHistoryId,
+} from "@/lib/studio-deliverable";
 
 export type StudioJob = {
   clientId: string;
@@ -119,6 +123,20 @@ export function patchJob(
 }
 
 /** Patch an existing card, or insert when hydrate/prune dropped the placeholder. */
+/** True when status polling can mark the card done (incl. LTX HF URL before full persist). */
+export function studioJobHasPlayableOutput(job: StudioJob): boolean {
+  const url = job.url?.trim();
+  if (!url) return false;
+  const status = String(job.status || "").toLowerCase();
+  return assetHasDeliverableOutput({
+    status,
+    url,
+    historyId: job.historyId,
+  });
+}
+
+export { assetHasDeliverableOutput, isLtxDeployedHistoryId };
+
 export function patchOrUpsertJob(
   jobs: StudioJob[],
   match: { clientId?: string; assetId?: string; historyId?: string },
@@ -335,9 +353,12 @@ export function pruneGhostRunningJobs(
     const wallMs =
       j.historyId?.startsWith("gm:") || j.historyId?.startsWith("mm:")
         ? 45 * 60 * 1000
-        : j.historyId?.startsWith("pv:") && (j.targetSeconds || 0) > 15
+        : j.historyId?.startsWith("vyronix-space-") ||
+            isLtxDeployedHistoryId(j.historyId)
           ? 45 * 60 * 1000
-          : maxWallMs;
+          : j.historyId?.startsWith("pv:") && (j.targetSeconds || 0) > 15
+            ? 45 * 60 * 1000
+            : maxWallMs;
 
     if (started > 0 && now - started >= wallMs) {
       changed = true;
@@ -347,6 +368,8 @@ export function pruneGhostRunningJobs(
         error:
           j.historyId?.startsWith("gm:") ||
           j.historyId?.startsWith("mm:") ||
+          j.historyId?.startsWith("vyronix-space-") ||
+          isLtxDeployedHistoryId(j.historyId) ||
           (j.historyId?.startsWith("pv:") && (j.targetSeconds || 0) > 15)
             ? "انتهت مهلة المتابعة في الإنشاء — افتح الأصول؛ التوليد قد يكون ما زال جاريًا"
             : "انتهت المهلة (10 دقائق) — أعد التوليد",

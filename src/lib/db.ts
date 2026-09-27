@@ -71,7 +71,8 @@ export interface AssetRecord {
   /** Server-side multi-shot / PixVerse extend job plan / progress */
   jobMeta?:
     | import("@/lib/multi-shot-job").MultiShotJobMeta
-    | import("@/lib/pixverse-extend").PixVerseExtendJobMeta;
+    | import("@/lib/pixverse-extend").PixVerseExtendJobMeta
+    | import("@/lib/ltx25-deployed-job").Ltx25DeployedJobMeta;
   /**
    * Character / reference stills used for this generation.
    * Restored by Assets → Edit so the customer can tweak without re-uploading.
