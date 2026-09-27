@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 /**
- * Trigger a Railway deploy for Mido (vyronix.app) from the linked GitHub repo.
+ * DANGER: Redeploys the FULL app from GitHub/nixpacks — changes global UI (nav, etc.).
+ * Do NOT use for rental-only changes while production stays on Docker r393.
+ * Prefer: patch Docker image or rental-only release process.
  * Token: RAILWAY_PROJECT_TOKEN or RAILWAY_TOKEN (Project token, agile-serenity).
  */
 const TOKEN =
