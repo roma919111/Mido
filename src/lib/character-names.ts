@@ -309,3 +309,60 @@ export function withModestWardrobeDirective(prompt: string): string {
   if (!base || /modest casual clothes/i.test(base)) return base;
   return `${base}\n${MODEST_WARDROBE}`;
 }
+
+/** MiniMax H3 Smite79 LoRA — character memory block for rental GPU generate. */
+export function buildH3Smite79CharacterMemory(
+  characters: { name?: string }[],
+): string {
+  if (!characters.length) return "";
+  return characters
+    .map((c, i) => {
+      const name = normalizeCharacterName(c.name || "");
+      return isCharacterName(name)
+        ? `${name} = they, keep face hair and clothing from reference image ${i + 1}`
+        : `Character ${i + 1} = they, keep face and appearance from reference image ${i + 1}`;
+    })
+    .join("\n");
+}
+
+export function buildH3StudioCharacterBundle(
+  userPrompt: string,
+  characters: { name?: string }[],
+): {
+  prompt: string;
+  characterMemory: string;
+  exposedTerms: string;
+} {
+  const prompt = stripInternalPromptNotes(userPrompt.trim());
+  const characterMemory = buildH3Smite79CharacterMemory(characters);
+  const named = characters
+    .map((c, index) => ({ index, name: normalizeCharacterName(c.name || "") }))
+    .filter((c) => isCharacterName(c.name));
+  const exposedTerms = named
+    .map((c) => `${c.name} = face and appearance from reference image ${c.index + 1}`)
+    .join("\n");
+
+  let scene = prompt;
+  if (named.length > 0) {
+    const matchedIds = new Set(
+      matchNamedCharacters(
+        scene,
+        named.map((c, i) => ({
+          id: String(i),
+          type: "image" as const,
+          url: "",
+          label: c.name,
+        })),
+      ).map((r) => r.id),
+    );
+    const unmatched = named.filter((c) => !matchedIds.has(String(c.index)));
+    if (unmatched.length > 0) {
+      const list = unmatched.map((c) => c.name).join(", ");
+      scene = scene
+        ? `${scene}\n\n${list} appear in this scene.`
+        : unmatched.map((c) => `${c.name} in a cinematic scene.`).join("\n\n");
+    }
+  }
+
+  return { prompt: scene, characterMemory, exposedTerms };
+}
