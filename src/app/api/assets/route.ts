@@ -78,6 +78,7 @@ import {
   syncIncludesRecover,
   syncIncludesStitch,
 } from "@/lib/server-load-policy";
+import { refreshRunningLtxAssetPreviews } from "@/lib/ltx25-deployed-job";
 
 export const runtime = "nodejs";
 export const maxDuration = 180;
@@ -729,7 +730,8 @@ export async function GET(request: Request) {
   // Heavy recover / stitch / BytePlus sync only runs when explicitly requested.
   if (!wantSync) {
     try {
-      const assets = await listAssetsForUser(user.id);
+      const listed = await listAssetsForUser(user.id);
+      const assets = await refreshRunningLtxAssetPreviews(user.id, listed);
       return NextResponse.json({ assets, fast: true });
     } catch (error) {
       return NextResponse.json(
@@ -754,9 +756,10 @@ export async function GET(request: Request) {
     if (wantHeavy && syncIncludesStitch()) {
       await stitchPendingJobs(user.id);
     }
-    const assets = await syncRunningAssets(user.id, {
+    const synced = await syncRunningAssets(user.id, {
       includeRecover: wantHeavy,
     });
+    const assets = await refreshRunningLtxAssetPreviews(user.id, synced);
     return NextResponse.json({ assets, synced: true, heavy: wantHeavy });
   } catch (error) {
     await recoverOrphanedHiddenAssets(user.id).catch(() => 0);

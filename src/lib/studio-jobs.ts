@@ -8,6 +8,7 @@ import {
   assetHasDeliverableOutput,
   isLtxDeployedHistoryId,
 } from "@/lib/studio-deliverable";
+import { VERONIX_DEPLOYED_MODEL_ID } from "@/lib/ltx25-deployed";
 
 export type StudioJob = {
   clientId: string;
@@ -156,11 +157,18 @@ export type AssetSyncRow = {
   historyId?: string;
   status?: string;
   mode?: string;
+  model?: string;
   error?: string;
   prompt?: string;
   createdAt?: string;
   targetSeconds?: number;
 };
+
+function assetRowIsLtxDeployed(a: AssetSyncRow, job?: StudioJob): boolean {
+  const historyId = a.historyId || job?.historyId;
+  if (isLtxDeployedHistoryId(historyId)) return true;
+  return String(a.model || "").trim() === VERONIX_DEPLOYED_MODEL_ID;
+}
 
 /**
  * Mark Create "running" cards done when Assets already has the finished clip.
@@ -200,7 +208,7 @@ export function syncRunningJobsFromAssets(
   ): StudioJob | null => {
     if (!a || a.status !== "running" || !a.url) return null;
     const historyId = a.historyId || j.historyId;
-    if (!isLtxDeployedHistoryId(historyId)) return null;
+    if (!assetRowIsLtxDeployed(a, j)) return null;
     if (
       !assetHasDeliverableOutput({
         status: a.status,
