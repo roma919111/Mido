@@ -237,17 +237,20 @@ export function buildLtx25StatusPayload(asset: AssetRecord): Ltx25StatusPayload 
         historyId: asset.historyId,
       }) ||
       remote!;
+    const persistPending =
+      parseLtx25JobMeta(asset.jobMeta)?.persist === "pending" ||
+      asset.status === "running";
     return {
       assetId: asset.id,
-      status: "RUNNING",
+      // Treat HF preview as done for UI/polling; disk persist continues in background.
+      status: "COMPLETED",
       urls: [url],
       live: true,
       provider: "ltx25",
-      pollAfterSeconds: 1.2,
-      note:
-        parseLtx25JobMeta(asset.jobMeta)?.persist === "pending"
-          ? "جاري حفظ نسخة Vyronix في الخلفية…"
-          : undefined,
+      pollAfterSeconds: persistPending ? 1.2 : undefined,
+      note: persistPending
+        ? "جاري حفظ نسخة Vyronix في الخلفية…"
+        : undefined,
     };
   }
 

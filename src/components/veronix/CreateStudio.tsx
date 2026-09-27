@@ -94,6 +94,11 @@ import {
   writeStoredJobs,
   type StudioJob,
 } from "@/lib/studio-jobs";
+import {
+  isLtxDeployedHistoryId,
+  LTX_DEPLOYED_STATUS_POLL_MS,
+  playableUrlFromStatusApi,
+} from "@/lib/studio-deliverable";
 import { StudioResultGrid } from "@/components/veronix/StudioResultGrid";
 import { ModelSelect } from "@/components/veronix/ModelSelect";
 import { StudioMediaTabs } from "@/components/veronix/StudioMediaTabs";
@@ -114,6 +119,14 @@ const PAID_DURATION_MAX = 15;
 /** Poll long enough for a slow Seedance beat (~6–7 min). */
 const PREVIEW_POLL_ATTEMPTS = 80;
 const PREVIEW_POLL_MS = 5000;
+
+function previewStatusPollMs(
+  mediaType: "image" | "video",
+  historyId?: string | null,
+): number {
+  if (isLtxDeployedHistoryId(historyId)) return LTX_DEPLOYED_STATUS_POLL_MS;
+  return mediaType === "image" ? 2500 : PREVIEW_POLL_MS;
+}
 /**
  * Hard wall-clock stop per generate job (real seconds from THIS Generate tap).
  * Seedance 4–15s clips commonly need several minutes — 180s was too short
@@ -1674,19 +1687,22 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           error?: string;
           note?: string;
           creditsRefunded?: boolean;
+          provider?: string;
         }>(`/api/status?assetId=${encodeURIComponent(assetId)}`);
         if (!res.ok) return false;
         const st = String(data.status || "").toUpperCase();
-        const url = data.urls?.[0];
         if (data.note && st === "RUNNING") {
           setStatus(data.note);
         }
-        if (url && st === "COMPLETED") {
-          await markCompleted(url, liveHistoryId);
+        const playable = playableUrlFromStatusApi({
+          status: data.status,
+          urls: data.urls,
+          provider: data.provider,
+          historyId: liveHistoryId || historyId,
+        });
+        if (playable) {
+          await markCompleted(playable, liveHistoryId);
           return true;
-        }
-        if (url && st === "RUNNING") {
-          return false;
         }
         if (st === "FAILED" || st === "CANCELLED") {
           const failMsg =
@@ -1727,9 +1743,10 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
       assetId,
       targetSeconds: countdownTargetSeconds,
     });
+    const statusPollMs = previewStatusPollMs(mediaType, liveHistoryId || historyId);
     const maxPollAttempts =
       mediaType === "video"
-        ? Math.max(PREVIEW_POLL_ATTEMPTS, Math.ceil(pollWallMs / PREVIEW_POLL_MS) + 2)
+        ? Math.max(PREVIEW_POLL_ATTEMPTS, Math.ceil(pollWallMs / statusPollMs) + 2)
         : PREVIEW_POLL_ATTEMPTS;
     try {
     for (let i = 0; i < maxPollAttempts; i += 1) {
@@ -1756,7 +1773,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         setGenStartedAt(null);
         return;
       }
-      await new Promise((r) => setTimeout(r, mediaType === "image" ? 2500 : PREVIEW_POLL_MS));
+      await new Promise((r) => setTimeout(r, statusPollMs));
       try {
         // Every other tick: trust Assets/DB first (fixes "ready in Assets, spinning on Create").
         if (i % 2 === 0 && (await tryAssetReady())) return;
@@ -1773,6 +1790,7 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
           creditsRefunded?: boolean;
           pollAfterSeconds?: number;
           historyId?: string;
+          provider?: string;
         }>(`/api/status?${statusQs.toString()}`);
         if (!res.ok) {
           pollErrors += 1;
@@ -1795,17 +1813,20 @@ export function CreateStudio({ user, onUserRefresh, lockedMedia }: CreateStudioP
         }
         pollErrors = 0;
         const st = String(data.status || "").toUpperCase();
-        const url = data.urls?.[0];
         if (data.note && st === "RUNNING") {
           setStatus(data.note);
         }
-        if (url && st === "COMPLETED") {
-          await markCompleted(url, liveHistoryId);
+        const playable = playableUrlFromStatusApi({
+          status: data.status,
+          urls: data.urls,
+          provider: data.provider,
+          historyId: data.historyId || liveHistoryId || historyId,
+        });
+        if (playable) {
+          await markCompleted(playable, liveHistoryId);
           return;
         }
-        if (url && st === "RUNNING") {
-          continue;
-        }
+        const url = data.urls?.[0];
         if (st === "COMPLETED" && !url) {
           const failMsg =
             data.error || "اكتمل التوليد لكن الفيديو غير متاح — أعد المحاولة";

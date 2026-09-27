@@ -36,3 +36,21 @@ export function assetHasDeliverableOutput(job: {
 
 /** Client poll interval for LTX deployed jobs (ms). */
 export const LTX_DEPLOYED_STATUS_POLL_MS = 1200;
+
+/** When /api/status may expose a playable URL before status flips to COMPLETED (LTX HF preview). */
+export function playableUrlFromStatusApi(input: {
+  status?: string;
+  urls?: string[];
+  provider?: string;
+  historyId?: string | null;
+}): string | null {
+  const url = String(input.urls?.[0] || "").trim();
+  if (!url) return null;
+  const st = String(input.status || "").toUpperCase();
+  if (st === "COMPLETED" || st === "SUCCEEDED") return url;
+  if (st !== "RUNNING") return null;
+  if (input.provider === "ltx25" || isLtxDeployedHistoryId(input.historyId)) {
+    return isLtxFullPersistedVideoUrl(url) ? url : null;
+  }
+  return null;
+}
